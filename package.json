@@ -1,0 +1,19 @@
+{
+  "name": "campusconnect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CampusConnect — College Community Portal (MERN: MongoDB, Express, React, Node.js)",
+  "scripts": {
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "seed": "npm run seed --prefix server",
+    "dev": "concurrently -k -n API,WEB -c magenta,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "test": "npm test --prefix server",
+    "seed:academic": "npm run seed:academic --prefix server",
+    "mobile": "npm start --prefix mobile"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

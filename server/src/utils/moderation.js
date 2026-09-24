@@ -30,7 +30,7 @@ export async function autoFlag({ targetType, targetId, replyId, excerpt }) {
       reason: 'inappropriate',
       details: `Auto-flagged by content filter: "${String(excerpt).slice(0, 120)}"`,
     });
-    await notifyRoles(['admin', 'faculty'], {
+    await notifyRoles(['admin', 'faculty', 'hod'], {
       type: 'report',
       title: 'Content auto-flagged for review',
       message: String(excerpt).slice(0, 120),

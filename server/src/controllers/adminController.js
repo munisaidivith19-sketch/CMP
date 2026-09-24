@@ -12,6 +12,7 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate } from '../util
 import { ROLES } from '../constants.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
+import { pick } from '../utils/http.js';
 
 /** Last `n` months as 'YYYY-MM' keys, oldest first. */
 function monthKeys(n) {
@@ -191,7 +192,7 @@ export const listUsers = asyncHandler(async (req, res) => {
 
   const [items, total] = await Promise.all([
     User.find(filter)
-      .select('name email role department year section semester rollNo avatar isActive lastLogin createdAt')
+      .select('name email role department year section semester rollNo employeeId stayType phone parentPhone avatar isActive lastLogin createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -199,6 +200,45 @@ export const listUsers = asyncHandler(async (req, res) => {
     User.countDocuments(filter),
   ]);
   res.json({ items, ...pageMeta(total, page, limit) });
+});
+
+// Fields an admin may set per role when provisioning a login. `email` + `password`
+// are always required (see routes/index.js for the per-role validation chain);
+// this list only controls which extra profile fields get copied from the body.
+const CREATE_FIELDS = {
+  student: ['rollNo', 'year', 'department', 'section', 'semester', 'stayType', 'phone', 'parentPhone'],
+  faculty: ['employeeId', 'department', 'section', 'designation', 'phone'],
+  hod: ['employeeId', 'department', 'phone'],
+  principal: ['employeeId', 'phone'],
+  club_admin: ['rollNo', 'year', 'department', 'section', 'semester', 'stayType', 'phone', 'parentPhone'],
+  admin: ['employeeId', 'phone'],
+};
+
+/**
+ * Admin-provisioned login: no self-registration exists for staff, and students
+ * are normally seeded/admin-created too so their college email is the username
+ * from day one. Never accessible to anyone but an admin (see route guard).
+ */
+export const createUser = asyncHandler(async (req, res) => {
+  const { role } = req.body;
+  const email = String(req.body.email).toLowerCase().trim();
+  if (await User.exists({ email })) throw new ApiError(409, 'An account with this email already exists');
+  if (req.body.employeeId) {
+    const dupe = await User.exists({ employeeId: String(req.body.employeeId).trim() });
+    if (dupe) throw new ApiError(409, 'That employee ID is already in use');
+  }
+
+  const data = pick(req.body, CREATE_FIELDS[role] || []);
+  const user = await User.create({ name: req.body.name, email, password: req.body.password, role, ...data });
+
+  logActivity(req, 'admin.user_create', { entityType: 'user', entityId: user._id, summary: `${role}: ${user.email}` });
+  notifyUsers([user._id], {
+    type: 'system',
+    title: 'Your Vexon account is ready',
+    message: `Sign in with ${user.email} using the password your administrator gave you.`,
+  }, { push: false });
+
+  res.status(201).json(user);
 });
 
 export const updateUser = asyncHandler(async (req, res) => {
@@ -212,7 +252,7 @@ export const updateUser = asyncHandler(async (req, res) => {
   const changes = [];
   // Academic placement (drives timetable + attendance roster) — admin-assigned only.
   const academic = [];
-  for (const key of ['department', 'year', 'section', 'semester', 'rollNo']) {
+  for (const key of ['department', 'year', 'section', 'semester', 'rollNo', 'employeeId', 'stayType', 'phone', 'parentPhone']) {
     if (req.body[key] === undefined) continue;
     const value = req.body[key] === '' || req.body[key] === null ? undefined : req.body[key];
     if (String(value ?? '') !== String(user[key] ?? '')) {

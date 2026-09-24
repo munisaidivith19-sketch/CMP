@@ -17,7 +17,7 @@ const conversationSchema = new Schema(
 
     // Denormalised for the conversation list.
     lastMessage: {
-      body: { type: String, maxlength: 200 },
+      body: { type: String, maxlength: 400 }, // encrypted preview
       sender: { type: Schema.Types.ObjectId, ref: 'User' },
       sentAt: Date,
     },
@@ -35,6 +35,13 @@ const conversationSchema = new Schema(
     linkedDepartment: { type: String, trim: true, maxlength: 80 },
 
     pinnedMessages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
+
+    // Group/class channels created by faculty or HOD wait for an admin. A pending
+    // or rejected conversation stays inactive, so nobody can open or message it.
+    status: { type: String, enum: ['active', 'pending', 'rejected'], default: 'active', index: true },
+    reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    reviewedAt: Date,
+    rejectReason: { type: String, trim: true, maxlength: 300 },
 
     isActive: { type: Boolean, default: true },
   },

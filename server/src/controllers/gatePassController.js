@@ -7,7 +7,7 @@ import { sameId } from '../utils/permissions.js';
 import { emitToRoles, emitToUsers } from '../config/socket.js';
 import { timestampFilter, resolveRange, toDay } from '../utils/dates.js';
 
-export const GATE_STAFF = ['admin', 'faculty'];
+export const GATE_STAFF = ['admin', 'faculty', 'hod'];
 const HOUR = 3600000;
 // A pass can be used from 1 h before the requested exit until 2 h after the expected return.
 const EARLY_EXIT_MS = HOUR;

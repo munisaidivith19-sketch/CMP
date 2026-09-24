@@ -1,5 +1,11 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'admin'];
-export const MODERATOR_ROLES = ['admin', 'faculty'];
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin'];
+// Can mark attendance, moderate content and see beyond their own record.
+export const MODERATOR_ROLES = ['admin', 'faculty', 'hod', 'principal'];
+// Department-scoped management: sees/acts on their own department only.
+export const HOD_ROLES = ['hod'];
+// Every role an admin can hand out credentials for from the admin panel.
+export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin'];
+export const STAY_TYPES = ['hosteler', 'day_scholar'];
 
 export const CLUB_CATEGORIES = [
   'technical',

@@ -22,6 +22,8 @@ import {
   WEEKDAYS,
   ATTENDANCE_STATUSES,
   CONVERSATION_TYPES,
+  STAY_TYPES,
+  STAFF_ROLES,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
@@ -35,6 +37,7 @@ import * as notes from '../controllers/notificationController.js';
 import * as admin from '../controllers/adminController.js';
 import * as chat from '../controllers/chatController.js';
 import * as attendance from '../controllers/attendanceController.js';
+import * as staffAttendance from '../controllers/staffAttendanceController.js';
 import * as timetable from '../controllers/timetableController.js';
 import * as gatePass from '../controllers/gatePassController.js';
 import * as lostFound from '../controllers/lostFoundController.js';
@@ -276,7 +279,7 @@ router.get('/announcements', ann.listAnnouncements);
 router.post('/announcements', writeLimiter, ...announcementRules(), ann.createAnnouncement);
 router.put('/announcements/:id', idParam('id'), ...announcementRules(true), ann.updateAnnouncement);
 router.delete('/announcements/:id', idParam('id'), ann.deleteAnnouncement);
-router.patch('/announcements/:id/pin', idParam('id'), authorize('admin', 'faculty'), ann.togglePin);
+router.patch('/announcements/:id/pin', idParam('id'), authorize('admin', 'faculty', 'hod'), ann.togglePin);
 
 // ── Discussions ────────────────────────────────────────────────────
 router.get('/discussions', disc.listDiscussions);
@@ -317,7 +320,7 @@ router.post('/discussions/:id/replies/:replyId/upvote', idParam('id', 'replyId')
 router.patch(
   '/discussions/:id/moderate/:action',
   idParam('id'),
-  authorize('admin', 'faculty'),
+  authorize('admin', 'faculty', 'hod'),
   (req, res, next) => (['lock', 'pin', 'hide'].includes(req.params.action) ? next() : res.status(404).end()),
   disc.moderateDiscussion
 );
@@ -334,11 +337,11 @@ router.post(
   validate,
   reports.createReport
 );
-router.get('/reports', authorize('admin', 'faculty'), reports.listReports);
+router.get('/reports', authorize('admin', 'faculty', 'hod', 'principal'), reports.listReports);
 router.patch(
   '/reports/:id',
   idParam('id'),
-  authorize('admin', 'faculty'),
+  authorize('admin', 'faculty', 'hod'),
   body('action').isIn(REPORT_ACTIONS),
   body('note').optional().trim().isLength({ max: 500 }),
   validate,
@@ -352,8 +355,54 @@ router.patch('/notifications/:id/read', idParam('id'), notes.markRead);
 router.delete('/notifications/:id', idParam('id'), notes.deleteNotification);
 
 // ── Admin ──────────────────────────────────────────────────────────
-router.get('/admin/analytics', authorize('admin', 'faculty'), admin.analytics);
+router.get('/admin/analytics', authorize('admin', 'faculty', 'hod', 'principal'), admin.analytics);
 router.get('/admin/users', authorize('admin'), admin.listUsers);
+router.post(
+  '/admin/users',
+  writeLimiter,
+  authorize('admin'),
+  body('name').trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2–80 characters'),
+  body('email').trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
+  password('password'),
+  body('role').isIn(ROLES).withMessage('Choose a role'),
+  // Student / club admin.
+  body('rollNo')
+    .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
+    .trim()
+    .isLength({ min: 1, max: 30 })
+    .withMessage('Roll number is required'),
+  body('year')
+    .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
+    .isInt({ min: 1, max: 6 })
+    .withMessage('Year is required')
+    .toInt(),
+  body('stayType')
+    .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
+    .isIn(STAY_TYPES)
+    .withMessage('Select hosteler or day scholar'),
+  body('parentPhone')
+    .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
+    .trim()
+    .isLength({ min: 6, max: 20 })
+    .withMessage("Parent's mobile number is required"),
+  // Faculty / HOD / Principal / Admin.
+  body('employeeId')
+    .if((_v, { req }) => STAFF_ROLES.includes(req.body.role))
+    .trim()
+    .isLength({ min: 1, max: 30 })
+    .withMessage('Employee ID is required'),
+  // Everyone except Principal needs a department on file.
+  body('department')
+    .if((_v, { req }) => req.body.role !== 'principal')
+    .trim()
+    .isLength({ min: 1, max: 80 })
+    .withMessage('Department is required'),
+  body('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }).matches(/^[A-Za-z0-9-]*$/),
+  body('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }).toInt(),
+  body('phone').optional({ values: 'falsy' }).trim().isLength({ max: 20 }),
+  validate,
+  admin.createUser
+);
 router.patch(
   '/admin/users/:id',
   idParam('id'),
@@ -370,6 +419,10 @@ router.patch(
     .withMessage('Section may contain letters, numbers and dashes'),
   body('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }).toInt(),
   body('rollNo').optional({ values: 'null' }).trim().isLength({ max: 30 }),
+  body('employeeId').optional({ values: 'null' }).trim().isLength({ max: 30 }),
+  body('stayType').optional({ values: 'null' }).isIn(STAY_TYPES),
+  body('phone').optional({ values: 'null' }).trim().isLength({ max: 20 }),
+  body('parentPhone').optional({ values: 'null' }).trim().isLength({ max: 20 }),
   validate,
   admin.updateUser
 );
@@ -381,12 +434,26 @@ router.get('/admin/activity', authorize('admin'), admin.listActivity);
 
 // ── Chat ───────────────────────────────────────────────────────────
 const STUDENT_ROLES = ['student', 'club_admin'];
-const STAFF = ['admin', 'faculty'];
+// Can act: mark attendance, review corrections/gate passes, verify at the gate.
+// HOD acts across their whole department (enforced inside each controller).
+const STAFF = ['admin', 'faculty', 'hod'];
+// Read-only staff views. Principal sees every dashboard but cannot mark/review/verify.
+const STAFF_VIEW = [...STAFF, 'principal'];
 
 router.get('/chat/conversations', query('search').optional().isString().isLength({ max: 64 }), validate, chat.listConversations);
 router.get('/chat/unread', chat.getUnreadTotal);
 router.get('/chat/search', query('q').optional().isString().isLength({ max: 64 }), validate, chat.searchMessages);
 router.get('/chat/users/online', chat.getOnlineUsers);
+router.get('/chat/requests', query('status').optional().isIn(['pending', 'all']), validate, chat.listGroupRequests);
+router.patch(
+  '/chat/requests/:id',
+  idParam('id'),
+  authorize('admin'),
+  body('action').isIn(['approve', 'reject']).withMessage('Choose approve or reject'),
+  body('reason').optional().trim().isLength({ max: 300 }),
+  validate,
+  chat.reviewGroupRequest
+);
 router.post(
   '/chat/conversations',
   writeLimiter,
@@ -473,11 +540,39 @@ router.post(
 router.get('/attendance/my', ...rangeQuery, query('semester').optional().isInt({ min: 1, max: 12 }), validate, attendance.getMyAttendance);
 router.get('/attendance/records', ...rangeQuery, validate, attendance.getAttendanceRecords);
 router.get('/attendance/trends', ...rangeQuery, validate, attendance.getAttendanceTrends);
-router.get('/attendance/sessions', authorize(...STAFF), ...rangeQuery, validate, attendance.listSessions);
-router.get('/attendance/low', authorize(...STAFF), ...rangeQuery, validate, attendance.getLowAttendance);
-router.get('/attendance/student/:id', idParam('id'), authorize(...STAFF), ...rangeQuery, validate, attendance.getStudentAttendance);
-router.get('/attendance/subject/:subjectId', idParam('subjectId'), authorize(...STAFF), ...rangeQuery, validate, attendance.getSubjectAttendance);
-router.get('/attendance/section', authorize(...STAFF), ...rangeQuery, validate, attendance.getSectionAttendance);
+router.get('/attendance/sessions', authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.listSessions);
+router.get('/attendance/low', authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getLowAttendance);
+router.get('/attendance/student/:id', idParam('id'), authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getStudentAttendance);
+router.get('/attendance/subject/:subjectId', idParam('subjectId'), authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getSubjectAttendance);
+router.get('/attendance/section', authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getSectionAttendance);
+
+// Daily headcount for the admin (college) / HOD (own department) dashboard.
+const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
+const summaryQuery = [
+  query('date').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Date must be YYYY-MM-DD'),
+  query('department').optional({ values: 'falsy' }).trim().isLength({ max: 80 }),
+  query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  query('status').optional({ values: 'falsy' }).isIn(['present', 'absent', 'leave', 'unmarked']),
+  validate,
+];
+router.get('/attendance/summary', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.attendanceSummary);
+router.get('/attendance/summary/students', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.summaryStudents);
+router.get('/attendance/summary/faculty', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.summaryFaculty);
+
+// Faculty attendance: HOD marks their department, admin marks anyone.
+router.get('/attendance/faculty/roster', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.facultyRoster);
+router.post(
+  '/attendance/faculty/mark',
+  writeLimiter,
+  authorize('admin', 'hod'),
+  dateField('date'),
+  body('records').isArray({ min: 1, max: 500 }).withMessage('Records are required'),
+  body('records.*.faculty').isMongoId(),
+  body('records.*.status').isIn(['present', 'absent', 'leave']),
+  body('records.*.note').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
+  validate,
+  staffAttendance.markFaculty
+);
 router.post(
   '/attendance/corrections',
   writeLimiter,
@@ -567,7 +662,7 @@ router.post(
   gatePass.createGatePass
 );
 router.get('/gate-pass', ...rangeQuery, validate, gatePass.listGatePasses);
-router.get('/gate-pass/dashboard', authorize(...STAFF), gatePass.gateDashboard);
+router.get('/gate-pass/dashboard', authorize(...STAFF_VIEW), gatePass.gateDashboard);
 router.post(
   '/gate-pass/verify',
   verifyLimiter,
@@ -645,10 +740,10 @@ router.patch(
 
 // ── Advanced Analytics ─────────────────────────────────────────────
 router.get('/analytics/student', ...rangeQuery, validate, analytics.studentAnalytics);
-router.get('/analytics/faculty', authorize(...STAFF), ...rangeQuery, validate, analytics.facultyAnalytics);
-router.get('/analytics/department', authorize(...STAFF), ...rangeQuery, validate, analytics.departmentAnalytics);
-router.get('/analytics/college', authorize('admin'), ...rangeQuery, validate, analytics.collegeAnalytics);
-router.get('/analytics/gate', authorize(...STAFF), ...rangeQuery, validate, analytics.gateAnalytics);
+router.get('/analytics/faculty', authorize(...STAFF_VIEW), ...rangeQuery, validate, analytics.facultyAnalytics);
+router.get('/analytics/department', authorize(...STAFF_VIEW), ...rangeQuery, validate, analytics.departmentAnalytics);
+router.get('/analytics/college', authorize('admin', 'principal'), ...rangeQuery, validate, analytics.collegeAnalytics);
+router.get('/analytics/gate', authorize(...STAFF_VIEW), ...rangeQuery, validate, analytics.gateAnalytics);
 router.get('/analytics/club/:id', param('id').isString().isLength({ min: 1, max: 80 }), ...rangeQuery, validate, analytics.clubAnalytics);
 
 export default router;

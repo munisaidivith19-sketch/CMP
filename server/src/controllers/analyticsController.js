@@ -189,6 +189,8 @@ export const facultyAnalytics = asyncHandler(async (req, res) => {
   const w = windowFrom(req.query, 'month');
   const filter = { isActive: true };
   if (req.user.role === 'faculty' || req.query.mine === 'true') filter.faculty = req.user._id;
+  // HOD sees every subject in their department, not just ones they personally teach.
+  else if (req.user.role === 'hod' && req.user.department) filter.department = req.user.department;
   const mySubjects = await Subject.find(filter).select('name code department semester sections').lean();
   const subjectIds = mySubjects.map((s) => s._id);
   const match = { subject: { $in: subjectIds }, ...(w.days_ ? { date: w.days_ } : {}) };
@@ -246,9 +248,9 @@ export const facultyAnalytics = asyncHandler(async (req, res) => {
 export const departmentAnalytics = asyncHandler(async (req, res) => {
   const w = windowFrom(req.query, 'month');
   let dept = req.query.department || req.user.department;
-  if (req.user.role === 'faculty') {
+  if (['faculty', 'hod'].includes(req.user.role)) {
     if (req.query.department && req.query.department !== req.user.department) {
-      throw new ApiError(403, 'Faculty can view analytics for their own department only');
+      throw new ApiError(403, 'You can view analytics for your own department only');
     }
     dept = req.user.department;
   }
@@ -394,7 +396,7 @@ export const clubAnalytics = asyncHandler(async (req, res) => {
     ? await Club.findById(req.params.id).lean()
     : await Club.findOne({ slug: req.params.id }).lean();
   if (!club) throw new ApiError(404, 'Club not found');
-  if (!canManageClub(req.user, club) && !['admin', 'faculty'].includes(req.user.role)) {
+  if (!canManageClub(req.user, club) && !['admin', 'faculty', 'hod', 'principal'].includes(req.user.role)) {
     throw new ApiError(403, 'Only club admins, the faculty advisor or staff can view club analytics');
   }
 

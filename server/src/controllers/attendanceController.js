@@ -40,9 +40,11 @@ const isAssigned = (subject, user) => subject.faculty?.some((f) => sameId(f, use
  * teach plus their own department (class mentor / HOD view).
  */
 async function staffScope(user) {
-  if (user.role === 'admin') return {};
+  // Admin and Principal see every department; Principal is otherwise read-only.
+  if (['admin', 'principal'].includes(user.role)) return {};
   const subjects = await Subject.find({ faculty: user._id }).distinct('_id');
   const or = [{ subject: { $in: subjects } }];
+  // HOD has no personal subjects, so this becomes a plain department filter for them.
   if (user.department) or.push({ department: user.department });
   return { $or: or };
 }
@@ -64,15 +66,20 @@ function normaliseSection(subject, section) {
 }
 
 function assertCanMark(user, subject) {
+  if (user.role === 'principal') throw new ApiError(403, 'Principal access is read-only');
   if (user.role === 'faculty' && !isAssigned(subject, user)) {
     throw new ApiError(403, 'You are not assigned to this subject');
+  }
+  // HOD marks for their whole department, not just subjects they personally teach.
+  if (user.role === 'hod' && subject.department !== user.department) {
+    throw new ApiError(403, 'You can only mark attendance for your own department');
   }
 }
 
 function assertEditable(user, day) {
   if (day > today()) throw new ApiError(422, 'Attendance cannot be marked for a future date');
-  if (user.role !== 'admin' && day < addDays(today(), -EDIT_WINDOW_DAYS)) {
-    throw new ApiError(403, `Attendance older than ${EDIT_WINDOW_DAYS} days can only be changed by an admin or through a correction request`);
+  if (!['admin', 'hod'].includes(user.role) && day < addDays(today(), -EDIT_WINDOW_DAYS)) {
+    throw new ApiError(403, `Attendance older than ${EDIT_WINDOW_DAYS} days can only be changed by an admin/HOD or through a correction request`);
   }
 }
 
@@ -288,7 +295,12 @@ export const getStudentAttendance = asyncHandler(async (req, res) => {
   const student = await User.findById(req.params.id).select('name rollNo avatar department section semester year role').lean();
   if (!student || !STUDENT_ROLES.includes(student.role)) throw new ApiError(404, 'Student not found');
   const query = { ...req.query };
-  if (req.user.role === 'faculty' && student.department !== req.user.department) {
+  const outsideDept = student.department !== req.user.department;
+  // HOD (and Principal, who never reaches here — see assertCanMark) is department-only: no subject fallback.
+  if (req.user.role === 'hod' && outsideDept) {
+    throw new ApiError(403, 'This student is outside your department');
+  }
+  if (req.user.role === 'faculty' && outsideDept) {
     const mine = await Subject.find({ faculty: req.user._id }).distinct('_id');
     if (!mine.length) throw new ApiError(403, 'This student is outside your department and subjects');
     // Restrict to the subjects this faculty teaches.
@@ -591,6 +603,8 @@ export const listCorrections = asyncHandler(async (req, res) => {
     if (req.query.student) filter.student = oid(req.query.student, 'student');
     if (req.user.role === 'faculty') {
       filter.subject = { $in: await Subject.find({ faculty: req.user._id }).distinct('_id') };
+    } else if (req.user.role === 'hod' && req.user.department) {
+      filter.subject = { $in: await Subject.find({ department: req.user.department }).distinct('_id') };
     }
   }
   if (req.query.subject && !filter.subject) filter.subject = oid(req.query.subject, 'subject');
@@ -620,6 +634,11 @@ export const reviewCorrection = asyncHandler(async (req, res) => {
   if (req.user.role === 'faculty') {
     const subject = await Subject.findById(request.subject).select('faculty');
     if (!subject || !isAssigned(subject, req.user)) throw new ApiError(403, 'You are not assigned to this subject');
+  } else if (req.user.role === 'hod') {
+    const subject = await Subject.findById(request.subject).select('department');
+    if (!subject || subject.department !== req.user.department) {
+      throw new ApiError(403, 'You can only review corrections for your own department');
+    }
   }
 
   const { action, note } = req.body; // 'approved' | 'rejected'

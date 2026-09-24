@@ -88,8 +88,10 @@ ok('read receipt from web reached Android');
 // Persistence: read straight from MongoDB, then refetch history like a reload would.
 await mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/cmp');
 const stored = await mongoose.connection.db.collection('messages').find({ conversation: new mongoose.Types.ObjectId(conv._id) }).sort({ createdAt: 1 }).toArray();
-if (stored.map((m) => m.body).join('|') !== 'Hello from the browser 👋|Hi from Android 📱') throw new Error('MongoDB does not hold both messages');
-ok('both messages are persisted in MongoDB');
+const { open } = await import('../src/utils/cipher.js');
+if (!stored.every((m) => m.body.startsWith('enc:v1:'))) throw new Error('messages are not encrypted at rest');
+if (stored.map((m) => open(m.body)).join('|') !== 'Hello from the browser 👋|Hi from Android 📱') throw new Error('MongoDB does not hold both messages');
+ok('both messages are persisted in MongoDB (encrypted at rest)');
 const history = await call(`/chat/conversations/${conv._id}/messages`, { token: phone.accessToken });
 if (history.messages.length !== 2 || String(history.messages[1].replyTo?._id) !== String(m1._id)) throw new Error('history after reload is wrong');
 ok('history after "refresh" is complete and ordered (reply link intact)');

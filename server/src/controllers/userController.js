@@ -5,7 +5,7 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '.
 import { persistFile } from '../utils/storage.js';
 import { logActivity } from '../utils/activity.js';
 
-const DIRECTORY_FIELDS = 'name role department year avatar designation skills interests bio';
+const DIRECTORY_FIELDS = 'name role department year section avatar designation employeeId skills interests bio';
 
 /** Student / faculty directory with search and filters. */
 export const listUsers = asyncHandler(async (req, res) => {
@@ -31,16 +31,17 @@ export const listUsers = asyncHandler(async (req, res) => {
 
 export const getUser = asyncHandler(async (req, res) => {
   const user = await User.findOne({ _id: req.params.id, isActive: true })
-    .select(`${DIRECTORY_FIELDS} rollNo extracurriculars achievements clubs createdAt email phone`)
+    .select(`${DIRECTORY_FIELDS} rollNo stayType extracurriculars achievements clubs createdAt email phone parentPhone`)
     .populate('clubs', 'name slug logo category')
     .lean();
   if (!user) throw new ApiError(404, 'User not found');
 
-  // Contact details are private: visible to the owner, faculty and admins only.
-  const canSeeContact = String(user._id) === String(req.user._id) || ['admin', 'faculty'].includes(req.user.role);
+  // Contact details are private: visible to the owner and staff only.
+  const canSeeContact = String(user._id) === String(req.user._id) || ['admin', 'faculty', 'hod', 'principal'].includes(req.user.role);
   if (!canSeeContact) {
     delete user.email;
     delete user.phone;
+    delete user.parentPhone;
   }
 
   const [eventsJoined, eventsAttended, discussions] = await Promise.all([
@@ -66,6 +67,8 @@ const PROFILE_FIELDS = [
   'designation',
   'bio',
   'phone',
+  'parentPhone',
+  'stayType',
   'interests',
   'skills',
   'extracurriculars',

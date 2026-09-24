@@ -6,7 +6,8 @@ const messageSchema = new Schema(
   {
     conversation: { type: Schema.Types.ObjectId, ref: 'Conversation', required: true, index: true },
     sender: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    body: { type: String, required: true, trim: true, maxlength: 5000 },
+    // AES-256-GCM ciphertext (see utils/cipher.js); the API caps plaintext at 5000 chars.
+    body: { type: String, required: true, maxlength: 8000 },
 
     replyTo: { type: Schema.Types.ObjectId, ref: 'Message' },
     attachment: {
@@ -27,6 +28,5 @@ const messageSchema = new Schema(
 );
 
 messageSchema.index({ conversation: 1, createdAt: -1 });
-messageSchema.index({ conversation: 1, body: 'text' });
 
 export default mongoose.model('Message', messageSchema);

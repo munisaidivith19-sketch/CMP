@@ -76,7 +76,7 @@ export function initSocket(httpServer) {
     socket.on('discussion:join', async (id, cb) => {
       if (!mongoose.isValidObjectId(id)) return ack(cb, { ok: false });
       const d = await Discussion.findById(id).select('isHidden').lean().catch(() => null);
-      if (!d || (d.isHidden && !['admin', 'faculty'].includes(role))) return ack(cb, { ok: false });
+      if (!d || (d.isHidden && !['admin', 'faculty', 'hod', 'principal'].includes(role))) return ack(cb, { ok: false });
       socket.join(`discussion:${id}`);
       return ack(cb, { ok: true });
     });

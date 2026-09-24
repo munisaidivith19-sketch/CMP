@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { ROLES } from '../constants.js';
+import { ROLES, STAY_TYPES } from '../constants.js';
 
 const { Schema } = mongoose;
 
@@ -41,6 +41,12 @@ const userSchema = new Schema(
     section: { type: String, trim: true, uppercase: true, maxlength: 10, index: true },
     semester: { type: Number, min: 1, max: 12 },
     rollNo: { type: String, trim: true, maxlength: 30 },
+    // Staff (faculty / HOD / principal) identifier, assigned by an administrator.
+    employeeId: { type: String, trim: true, maxlength: 30 },
+    // Student residence type.
+    stayType: { type: String, enum: STAY_TYPES },
+    // Only meaningful for students; never shown to classmates, only to staff.
+    parentPhone: { type: String, trim: true, maxlength: 20 },
     designation: { type: String, trim: true, maxlength: 80 }, // faculty
     bio: { type: String, trim: true, maxlength: 500 },
     avatar: String,
@@ -77,6 +83,10 @@ const userSchema = new Schema(
 
 userSchema.index({ role: 1, department: 1, section: 1, isActive: 1 });
 userSchema.index(
+  { employeeId: 1 },
+  { unique: true, name: 'unique_employee_id', partialFilterExpression: { employeeId: { $type: 'string' } } }
+);
+userSchema.index(
   { name: 'text', department: 'text', skills: 'text', interests: 'text' },
   { weights: { name: 5, skills: 3, interests: 2, department: 1 }, name: 'user_text' }
 );
@@ -105,6 +115,6 @@ userSchema.set('toJSON', {
   },
 });
 
-export const PUBLIC_USER_FIELDS = 'name email role department year section avatar designation';
+export const PUBLIC_USER_FIELDS = 'name email role department year section avatar designation employeeId';
 
 export default mongoose.model('User', userSchema);

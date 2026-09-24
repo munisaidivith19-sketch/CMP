@@ -37,7 +37,7 @@ export const listSubjects = asyncHandler(async (req, res) => {
 
 async function assertFaculty(ids = []) {
   if (!ids.length) return;
-  const n = await User.countDocuments({ _id: { $in: ids }, role: { $in: ['faculty', 'admin'] }, isActive: true });
+  const n = await User.countDocuments({ _id: { $in: ids }, role: { $in: ['faculty', 'hod', 'admin'] }, isActive: true });
   if (n !== new Set(ids.map(String)).size) throw new ApiError(422, 'Every assigned faculty member must be an active faculty account');
 }
 

@@ -107,7 +107,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     club = await Club.findOne({ _id: req.body.club, status: 'approved' });
     if (!club) throw new ApiError(400, 'Club not found');
     if (!canManageClub(req.user, club)) throw new ApiError(403, 'Only admins of this club can create its events');
-  } else if (!['faculty', 'admin'].includes(req.user.role)) {
+  } else if (!['faculty', 'hod', 'principal', 'admin'].includes(req.user.role)) {
     throw new ApiError(403, 'Select one of your clubs to host this event');
   }
 

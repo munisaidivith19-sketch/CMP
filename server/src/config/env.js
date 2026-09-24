@@ -27,6 +27,8 @@ export const env = {
     .filter(Boolean),
   accessSecret: secret('JWT_ACCESS_SECRET', 'dev_access_secret_do_not_use_in_production'),
   refreshSecret: secret('JWT_REFRESH_SECRET', 'dev_refresh_secret_do_not_use_in_production'),
+  // Encrypts chat message bodies at rest. Changing it makes older messages unreadable.
+  chatKey: secret('CHAT_ENCRYPTION_KEY', 'dev_chat_key_do_not_use_in_production'),
   accessExpires: process.env.JWT_ACCESS_EXPIRES || '15m',
   refreshExpires: process.env.JWT_REFRESH_EXPIRES || '7d',
   uploadDir: process.env.UPLOAD_DIR || 'uploads',

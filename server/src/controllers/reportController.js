@@ -47,7 +47,7 @@ export const createReport = asyncHandler(async (req, res) => {
   if (duplicate) throw new ApiError(409, 'You have already reported this');
 
   const report = await Report.create({ targetType, targetId, replyId, reason, details, reporter: req.user._id });
-  notifyRoles(['admin', 'faculty'], {
+  notifyRoles(['admin', 'faculty', 'hod'], {
     type: 'report',
     title: `New ${targetType} report: ${reason}`,
     message: details?.slice(0, 120),

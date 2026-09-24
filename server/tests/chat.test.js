@@ -54,8 +54,11 @@ test('web → Android: message is persisted and delivered live', async () => {
   assert.equal(got.message.body, 'Hi from the browser');
   assert.equal(got.message.sender.name, 'Alice');
 
+  // Persisted — as ciphertext at rest (see utils/cipher.js).
   const stored = await ctx.models.Message.findById(sent.body._id).lean();
-  assert.equal(stored.body, 'Hi from the browser');
+  const { open } = await import('../src/utils/cipher.js');
+  assert.ok(stored.body.startsWith('enc:v1:'));
+  assert.equal(open(stored.body), 'Hi from the browser');
 });
 
 test('Android → web: reply-to, unread counts and history after "refresh"', async () => {
@@ -144,14 +147,75 @@ test('message search is limited to your own conversations', async () => {
   assert.equal(theirs.body.length, 0);
 });
 
-test('groups: members added live, non-admins cannot add', async () => {
-  const g = await ctx.request('POST', '/chat/conversations', {
+test('groups: students cannot create groups; admin groups start at once and members are added live', async () => {
+  const denied = await ctx.request('POST', '/chat/conversations', {
     token: A.token,
     body: { type: 'group', name: 'Project team', participantIds: [String(B.user._id)] },
+  });
+  assert.equal(denied.status, 403);
+
+  const admin = await ctx.createUser({ role: 'admin', name: 'Admin' });
+  const adminSession = await ctx.loginWeb(admin);
+  const g = await ctx.request('POST', '/chat/conversations', {
+    token: adminSession.token,
+    body: { type: 'group', name: 'Project team', participantIds: [String(A.user._id), String(B.user._id)] },
   });
   assert.equal(g.status, 201);
   assert.equal((await ctx.request('POST', `/chat/conversations/${g.body._id}/members`, { token: B.token, body: { userIds: [String(C.user._id)] } })).status, 403);
   const added = nextEvent(C.socket, 'chat:conversation', (p) => p.conversationId === g.body._id);
-  assert.equal((await ctx.request('POST', `/chat/conversations/${g.body._id}/members`, { token: A.token, body: { userIds: [String(C.user._id)] } })).status, 200);
+  assert.equal((await ctx.request('POST', `/chat/conversations/${g.body._id}/members`, { token: adminSession.token, body: { userIds: [String(C.user._id)] } })).status, 200);
   await added;
+});
+
+test('groups: faculty class groups wait for admin approval; HOD/faculty are limited to their department/class', async () => {
+  const [admin, fac, hod, cseA, cseB, ece] = await Promise.all([
+    ctx.createUser({ role: 'admin', name: 'Admin Two' }),
+    ctx.createUser({ role: 'faculty', name: 'Fac', department: 'CSE', section: 'A' }),
+    ctx.createUser({ role: 'hod', name: 'Hod', department: 'CSE' }),
+    ctx.createUser({ name: 'Cse A', department: 'CSE', section: 'A' }),
+    ctx.createUser({ name: 'Cse B', department: 'CSE', section: 'B' }),
+    ctx.createUser({ name: 'Ece', department: 'ECE', section: 'A' }),
+  ]);
+  const [a, f, h, s] = await Promise.all([ctx.loginWeb(admin), ctx.loginWeb(fac), ctx.loginWeb(hod), ctx.loginWeb(cseA)]);
+
+  // Faculty: only their own class.
+  const wrongClass = await ctx.request('POST', '/chat/conversations', { token: f.token, body: { type: 'group', name: 'X', participantIds: [String(cseB._id)] } });
+  assert.equal(wrongClass.status, 403);
+  // HOD: only their department.
+  const wrongDept = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { type: 'group', name: 'Y', participantIds: [String(ece._id)] } });
+  assert.equal(wrongDept.status, 403);
+  const hodGroup = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { type: 'group', name: 'CSE all', participantIds: [String(cseA._id), String(cseB._id)] } });
+  assert.equal(hodGroup.status, 201, 'HOD groups start immediately');
+
+  // Faculty class group → pending, invisible to members until approved.
+  const req = await ctx.request('POST', '/chat/conversations', { token: f.token, body: { type: 'group', name: 'CSE-A class', participantIds: [String(cseA._id)] } });
+  assert.equal(req.status, 202);
+  assert.equal(req.body.pending, true);
+  assert.equal((await ctx.request('GET', `/chat/conversations/${req.body._id}`, { token: s.token })).status, 404);
+  assert.equal((await ctx.request('POST', `/chat/conversations/${req.body._id}/messages`, { token: f.token, body: { body: 'hi' } })).status, 404);
+
+  const queue = await ctx.request('GET', '/chat/requests', { token: a.token });
+  assert.ok(queue.body.some((r) => r._id === req.body._id));
+  const note = await ctx.request('GET', '/notifications', { token: a.token });
+  assert.ok(note.body.items.some((n) => n.link === '/admin/chat-requests'));
+
+  assert.equal((await ctx.request('PATCH', `/chat/requests/${req.body._id}`, { token: f.token, body: { action: 'approve' } })).status, 403);
+  const ok = await ctx.request('PATCH', `/chat/requests/${req.body._id}`, { token: a.token, body: { action: 'approve' } });
+  assert.equal(ok.body.status, 'active');
+  assert.equal((await ctx.request('GET', `/chat/conversations/${req.body._id}`, { token: s.token })).status, 200);
+  assert.equal((await ctx.request('PATCH', `/chat/requests/${req.body._id}`, { token: a.token, body: { action: 'reject' } })).status, 404, 'cannot review twice');
+});
+
+test('chat messages are stored encrypted and read back as plain text', async () => {
+  const sent = await ctx.request('POST', `/chat/conversations/${convId}/messages`, { token: A.token, body: { body: 'secret exam plan' } });
+  assert.equal(sent.body.body, 'secret exam plan');
+  const raw = await ctx.models.Message.findById(sent.body._id).lean();
+  assert.ok(raw.body.startsWith('enc:v1:'), 'body is ciphertext in MongoDB');
+  assert.ok(!raw.body.includes('secret'));
+  const conv = await ctx.models.Conversation.findById(convId).lean();
+  assert.ok(conv.lastMessage.body.startsWith('enc:v1:'));
+  const history = await ctx.request('GET', `/chat/conversations/${convId}/messages`, { token: B.token });
+  assert.ok(history.body.messages.some((m) => m.body === 'secret exam plan'));
+  const search = await ctx.request('GET', '/chat/search?q=exam', { token: B.token });
+  assert.ok(search.body.some((m) => m.body === 'secret exam plan'), 'search still works over encrypted bodies');
 });

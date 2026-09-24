@@ -1,18 +1,26 @@
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
+import Subject from '../models/Subject.js';
 import User, { PUBLIC_USER_FIELDS } from '../models/User.js';
-import { ApiError, asyncHandler, paginate, pageMeta, escapeRegex } from '../utils/http.js';
+import { ApiError, asyncHandler, paginate, pageMeta } from '../utils/http.js';
 import { emitToUsers, isUserOnline } from '../config/socket.js';
 import { sameId } from '../utils/permissions.js';
 import { logActivity } from '../utils/activity.js';
+import { notifyRoles, notifyUsers } from '../utils/notify.js';
+import { open, seal } from '../utils/cipher.js';
 import { markConversationRead } from '../services/chatService.js';
 import { sendPushToUsers } from '../services/pushService.js';
 
 const CHAT_USER_FIELDS = `${PUBLIC_USER_FIELDS} lastSeenAt`;
 const isParticipant = (conv, userId) => conv.participants.some((p) => sameId(p._id || p, userId));
 const participantIds = (conv) => conv.participants.map((p) => String(p._id || p));
-// Class / club channels are created by staff or club admins; anyone may DM or form a group.
-const CHANNEL_CREATORS = ['faculty', 'admin', 'club_admin'];
+const STUDENT_ROLES = ['student', 'club_admin'];
+// Who may start a group / class channel at all. Students only have private chats.
+const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
+// Faculty-created class groups wait for an admin; admin and HOD groups start at once.
+const NEEDS_APPROVAL = ['faculty'];
+// How many recent messages a text search scans (bodies are encrypted, so it runs in memory).
+const SEARCH_WINDOW = 3000;
 
 const unreadFor = (conv, userId) => {
   const counts = conv.unreadCounts;
@@ -20,11 +28,23 @@ const unreadFor = (conv, userId) => {
   return (typeof counts.get === 'function' ? counts.get(String(userId)) : counts[String(userId)]) || 0;
 };
 
+const plainOf = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc);
+
+/** Decrypt a message (and the message it replies to) for an authorised reader. */
+function openMsg(doc) {
+  const m = plainOf(doc);
+  if (!m) return m;
+  const out = { ...m, body: open(m.body) };
+  if (m.replyTo && typeof m.replyTo === 'object') out.replyTo = { ...m.replyTo, body: open(m.replyTo.body) };
+  return out;
+}
+
 function withPresence(conv, userId) {
-  const plain = typeof conv.toObject === 'function' ? conv.toObject() : conv;
+  const plain = plainOf(conv);
   const { unreadCounts: _counts, ...rest } = plain; // per-user counters stay private
   return {
     ...rest,
+    lastMessage: plain.lastMessage ? { ...plain.lastMessage, body: open(plain.lastMessage.body) } : plain.lastMessage,
     unreadCount: unreadFor(conv, userId),
     participants: (plain.participants || []).map((p) => ({ ...p, online: isUserOnline(p._id) })),
   };
@@ -40,6 +60,37 @@ async function loadMemberConversation(id, user) {
   if (!conv || !conv.isActive) throw new ApiError(404, 'Conversation not found');
   if (!isParticipant(conv, user._id)) throw new ApiError(403, 'Not a member of this conversation');
   return conv;
+}
+
+/** Sections a faculty member is responsible for: their mentor section + sections they teach. */
+async function facultySections(user) {
+  const subjects = await Subject.find({ faculty: user._id, isActive: true }).select('sections department').lean();
+  const sections = new Set(subjects.flatMap((s) => (s.sections || []).map((x) => String(x).toUpperCase())));
+  if (user.section) sections.add(String(user.section).toUpperCase());
+  return sections;
+}
+
+/**
+ * Enforce who may be put in a group:
+ *  - admin: anyone;
+ *  - HOD: students and staff of their own department;
+ *  - faculty: students of their own class(es) and staff of their department.
+ */
+async function assertMembersAllowed(user, memberIds) {
+  if (user.role === 'admin' || !memberIds.length) return;
+  const members = await User.find({ _id: { $in: memberIds } }).select('role department section name').lean();
+  if (!user.department) throw new ApiError(422, 'Your account has no department — ask an admin to set it');
+  const outsiders = members.filter((m) => m.department !== user.department);
+  if (outsiders.length) {
+    throw new ApiError(403, `Groups can only include your own department (${outsiders[0].name} is not in ${user.department})`);
+  }
+  if (user.role === 'faculty') {
+    const sections = await facultySections(user);
+    const notMine = members.filter((m) => STUDENT_ROLES.includes(m.role) && !sections.has(String(m.section || '').toUpperCase()));
+    if (notMine.length) {
+      throw new ApiError(403, `Faculty groups can only include students of your own class (${notMine[0].name} is not in your sections)`);
+    }
+  }
 }
 
 // ── List conversations ─────────────────────────────────────────────
@@ -78,11 +129,11 @@ export const createConversation = asyncHandler(async (req, res) => {
 
   if (type === 'private') {
     if (others.length !== 1) throw new ApiError(422, 'Choose one person to start a private chat');
-  } else if (!others.length) {
-    throw new ApiError(422, 'Add at least one other member');
-  }
-  if (['class', 'club'].includes(type) && !CHANNEL_CREATORS.includes(req.user.role)) {
-    throw new ApiError(403, 'Only faculty, admins and club admins can create class or club channels');
+  } else {
+    if (!GROUP_CREATORS.includes(req.user.role)) {
+      throw new ApiError(403, 'Only admins, HODs and faculty can create group chats');
+    }
+    if (!others.length) throw new ApiError(422, 'Add at least one other member');
   }
 
   // Every participant must be a real, active account (ids from the client are not trusted).
@@ -109,18 +160,88 @@ export const createConversation = asyncHandler(async (req, res) => {
   }
 
   if (!name?.trim()) throw new ApiError(422, 'Group conversations need a name');
+  await assertMembersAllowed(req.user, others);
+
+  const pending = NEEDS_APPROVAL.includes(req.user.role);
   const conv = await Conversation.create({
-    type,
+    // Faculty groups are always class groups; HOD groups are department groups.
+    type: req.user.role === 'faculty' ? 'class' : type,
     name: name.trim(),
     description: description?.trim(),
     participants: [req.user._id, ...others],
     admins: [req.user._id],
     createdBy: req.user._id,
+    linkedDepartment: req.user.role === 'admin' ? undefined : req.user.department,
+    status: pending ? 'pending' : 'active',
+    isActive: !pending,
   });
+
+  if (pending) {
+    logActivity(req, 'chat.group_request', { entityType: 'conversation', entityId: conv._id, summary: conv.name });
+    notifyRoles(['admin'], {
+      type: 'chat',
+      title: 'Group chat awaiting approval',
+      message: `${req.user.name} wants to create "${conv.name}" with ${others.length} member${others.length === 1 ? '' : 's'}`,
+      link: '/admin/chat-requests',
+    });
+    const populated = await Conversation.findById(conv._id).populate('participants', CHAT_USER_FIELDS);
+    return res.status(202).json({ ...withPresence(populated, req.user._id), pending: true });
+  }
+
   logActivity(req, 'chat.group_create', { entityType: 'conversation', entityId: conv._id, summary: conv.name });
   const populated = await Conversation.findById(conv._id).populate('participants', CHAT_USER_FIELDS);
   emitToUsers(participantIds(conv), 'chat:conversation', { conversationId: String(conv._id) });
   res.status(201).json(withPresence(populated, req.user._id));
+});
+
+// ── Group approval (admin) ─────────────────────────────────────────
+
+/** Admin: every group request. Everyone else: the requests they made. */
+export const listGroupRequests = asyncHandler(async (req, res) => {
+  const filter = { status: { $in: ['pending', 'rejected'] } };
+  if (req.user.role !== 'admin') filter.createdBy = req.user._id;
+  else if (req.query.status !== 'all') filter.status = 'pending';
+  const requests = await Conversation.find(filter)
+    .populate('createdBy', 'name role department avatar')
+    .populate('participants', 'name role department section rollNo avatar')
+    .populate('reviewedBy', 'name')
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .lean();
+  res.json(requests.map(({ unreadCounts: _c, lastMessage: _l, ...r }) => r));
+});
+
+export const reviewGroupRequest = asyncHandler(async (req, res) => {
+  const { action, reason } = req.body; // 'approve' | 'reject'
+  const approve = action === 'approve';
+  const conv = await Conversation.findOneAndUpdate(
+    { _id: req.params.id, status: 'pending' },
+    {
+      $set: {
+        status: approve ? 'active' : 'rejected',
+        isActive: approve,
+        reviewedBy: req.user._id,
+        reviewedAt: new Date(),
+        ...(approve ? {} : { rejectReason: reason || '' }),
+      },
+    },
+    { new: true }
+  );
+  if (!conv) throw new ApiError(404, 'This request was not found or has already been reviewed');
+
+  logActivity(req, `chat.group_${approve ? 'approved' : 'rejected'}`, { entityType: 'conversation', entityId: conv._id, summary: conv.name });
+  notifyUsers([conv.createdBy], {
+    type: 'chat',
+    title: approve ? `Group "${conv.name}" approved` : `Group "${conv.name}" was not approved`,
+    message: approve ? 'Your group chat is now live.' : reason || 'An administrator rejected the request.',
+    link: approve ? `/chat/${conv._id}` : '/chat',
+  });
+  if (approve) {
+    const members = participantIds(conv).filter((id) => !sameId(id, conv.createdBy));
+    notifyUsers(members, { type: 'chat', title: `You were added to "${conv.name}"`, link: `/chat/${conv._id}` });
+    emitToUsers(participantIds(conv), 'chat:conversation', { conversationId: String(conv._id) });
+  }
+  res.json({ _id: conv._id, status: conv.status });
 });
 
 // ── Get conversation ───────────────────────────────────────────────
@@ -141,10 +262,11 @@ export const sendMessage = asyncHandler(async (req, res) => {
     if (!parent) throw new ApiError(422, 'You can only reply to a message in this conversation');
   }
 
+  const text = String(req.body.body);
   const msg = await Message.create({
     conversation: conv._id,
     sender: req.user._id,
-    body: req.body.body,
+    body: seal(text),
     replyTo: req.body.replyTo || undefined,
     attachment: req.body.attachment?.url ? req.body.attachment : undefined,
     readBy: [req.user._id],
@@ -156,14 +278,14 @@ export const sendMessage = asyncHandler(async (req, res) => {
     { _id: conv._id },
     {
       $set: {
-        lastMessage: { body: msg.body.slice(0, 200), sender: req.user._id, sentAt: msg.createdAt },
+        lastMessage: { body: seal(text.slice(0, 200)), sender: req.user._id, sentAt: msg.createdAt },
         [`unreadCounts.${req.user._id}`]: 0,
       },
       $inc: unreadInc,
     }
   );
 
-  const populated = await populateMessage(Message.findById(msg._id));
+  const populated = openMsg(await populateMessage(Message.findById(msg._id)));
   emitToUsers(participantIds(conv), 'chat:message', { conversationId: String(conv._id), message: populated });
 
   // Android devices that are not connected get a push notification.
@@ -171,7 +293,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
   if (offline.length) {
     sendPushToUsers(offline, {
       title: conv.type === 'private' ? req.user.name : `${req.user.name} · ${conv.name}`,
-      body: msg.body,
+      body: text,
       data: { type: 'chat', conversationId: String(conv._id), link: `/chat/${conv._id}` },
     });
   }
@@ -186,14 +308,20 @@ export const getMessages = asyncHandler(async (req, res) => {
 
   const { page, limit, skip } = paginate(req, 40, 100);
   const filter = { conversation: conv._id };
-  const q = String(req.query.q || '').trim();
-  if (q) {
-    filter.body = { $regex: escapeRegex(q), $options: 'i' };
-    filter.deletedAt = null;
-  }
   if (req.query.before) {
     const before = new Date(req.query.before);
     if (!Number.isNaN(before.getTime())) filter.createdAt = { $lt: before };
+  }
+
+  const q = String(req.query.q || '').trim().toLowerCase();
+  if (q) {
+    // Bodies are encrypted at rest, so matching happens after decryption.
+    const recent = await populateMessage(Message.find({ ...filter, deletedAt: null }))
+      .sort({ createdAt: -1 })
+      .limit(SEARCH_WINDOW)
+      .lean();
+    const hits = recent.map(openMsg).filter((m) => String(m.body).toLowerCase().includes(q));
+    return res.json({ messages: hits.slice(skip, skip + limit).reverse(), pagination: pageMeta(hits.length, page, limit) });
   }
 
   const [messages, total] = await Promise.all([
@@ -201,25 +329,21 @@ export const getMessages = asyncHandler(async (req, res) => {
     Message.countDocuments(filter),
   ]);
 
-  res.json({ messages: messages.reverse(), pagination: pageMeta(total, page, limit) });
+  res.json({ messages: messages.map(openMsg).reverse(), pagination: pageMeta(total, page, limit) });
 });
 
 /** Search messages across every conversation the user belongs to. */
 export const searchMessages = asyncHandler(async (req, res) => {
-  const q = String(req.query.q || '').trim();
+  const q = String(req.query.q || '').trim().toLowerCase();
   if (q.length < 2) return res.json([]);
   const mine = await Conversation.find({ participants: req.user._id, isActive: true }).distinct('_id');
-  const messages = await Message.find({
-    conversation: { $in: mine },
-    deletedAt: null,
-    body: { $regex: escapeRegex(q), $options: 'i' },
-  })
+  const recent = await Message.find({ conversation: { $in: mine }, deletedAt: null })
     .populate('sender', 'name avatar')
     .populate('conversation', 'type name')
     .sort({ createdAt: -1 })
-    .limit(30)
+    .limit(SEARCH_WINDOW)
     .lean();
-  res.json(messages);
+  res.json(recent.map(openMsg).filter((m) => String(m.body).toLowerCase().includes(q)).slice(0, 30));
 });
 
 // ── Delete message ─────────────────────────────────────────────────
@@ -272,7 +396,7 @@ export const togglePinMessage = asyncHandler(async (req, res) => {
     messageId: String(msg._id),
     pinned: Boolean(msg.pinnedBy),
   });
-  res.json(msg);
+  res.json(openMsg(msg));
 });
 
 // ── Mark conversation as read ──────────────────────────────────────
@@ -302,6 +426,7 @@ export const addMembers = asyncHandler(async (req, res) => {
   const requested = [...new Set(req.body.userIds.map(String))];
   const valid = await User.find({ _id: { $in: requested }, isActive: true }).distinct('_id');
   if (!valid.length) throw new ApiError(404, 'No valid users to add');
+  await assertMembersAllowed(req.user, valid);
 
   await Conversation.updateOne({ _id: conv._id }, { $addToSet: { participants: { $each: valid } } });
   const updated = await Conversation.findById(conv._id).populate('participants', CHAT_USER_FIELDS);

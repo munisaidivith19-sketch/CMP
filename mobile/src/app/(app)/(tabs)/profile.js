@@ -9,7 +9,7 @@ import { clearRefreshToken, mobileHeaders, readRefreshToken } from '../../../ser
 import { disconnectSocket } from '../../../services/socket';
 import { getPushToken } from '../../../services/push';
 import { loggedOut, selectUser, setUser } from '../../../store/authSlice';
-import { API_URL } from '../../../config';
+import { fetchWithTimeout, getApiUrl } from '../../../config';
 import { ROLE_LABELS, colors } from '../../../theme';
 
 const Row = ({ label, value }) => (
@@ -46,7 +46,7 @@ export default function Profile() {
     setSigningOut(true);
     try {
       const [refreshToken, pushToken] = await Promise.all([readRefreshToken(), getPushToken().catch(() => null)]);
-      await fetch(`${API_URL}/api/auth/logout`, {
+      await fetchWithTimeout(`${getApiUrl()}/api/auth/logout`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...mobileHeaders() },
         body: JSON.stringify({ refreshToken, pushToken }),

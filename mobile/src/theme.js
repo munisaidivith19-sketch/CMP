@@ -54,5 +54,12 @@ export const shadow = {
   elevation: 3,
 };
 
-export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', admin: 'Admin' };
+export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin' };
 export const STUDENT_ROLES = ['student', 'club_admin'];
+/** Can mark attendance / act on academic data. */
+export const STAFF = ['admin', 'faculty', 'hod'];
+/** Sees today's college (admin, principal) or department (HOD) attendance summary. */
+export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
+/** May start a group chat; faculty groups wait for admin approval. */
+export const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
+export const DEPARTMENTS = ['CSE', 'CSE (Cyber Security)', 'IT', 'AI & DS', 'ECE', 'EEE', 'Mechanical', 'Civil'];

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { io } from 'socket.io-client';
-import { API_URL } from '../config';
+import { getApiUrl } from '../config';
+import { setOnline } from './connection';
 
 /**
  * One Socket.io connection to the SAME server the web app uses. The server
@@ -15,13 +16,14 @@ const dispatch = (event, args) => listeners.get(event)?.forEach((fn) => fn(...ar
 
 export function connectSocket(getToken, { onUnauthorized } = {}) {
   if (socket) return socket;
-  socket = io(API_URL, {
+  socket = io(getApiUrl(), {
     transports: ['websocket'],
     auth: (cb) => cb({ token: getToken() }),
     reconnectionDelayMax: 10000,
   });
   socket.onAny((event, ...args) => dispatch(event, args));
   socket.on('connect', () => {
+    setOnline(true);
     connectHooks.forEach((fn) => fn(socket));
     dispatch('connect', []);
   });
@@ -36,8 +38,11 @@ export function connectSocket(getToken, { onUnauthorized } = {}) {
   };
   socket.on('connect_error', (err) => {
     if (err?.message === 'unauthorized') reauth();
+    else setOnline(false);
   });
   socket.on('disconnect', (reason) => {
+    // Transport loss (not a deliberate logout) means the server is unreachable right now.
+    if (reason === 'transport close' || reason === 'ping timeout' || reason === 'transport error') setOnline(false);
     if (reason === 'io server disconnect') reauth();
   });
   return socket;

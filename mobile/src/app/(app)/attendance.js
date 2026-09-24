@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Alert, Modal, Pressable, View } from 'react-native';
 import { useSelector } from 'react-redux';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Monitor, XCircle } from 'lucide-react-native';
+import { AlertTriangle, CheckCircle2, ClipboardCheck, XCircle } from 'lucide-react-native';
+import StaffAttendance from '../../components/StaffAttendance';
 import { Button, Card, EmptyState, ErrorState, Header, Input, Loading, PercentRing, ProgressBar, Screen, Segmented, SectionTitle, StatusBadge, T } from '../../components/ui';
 import { errMsg, useGetAttendanceRecordsQuery, useGetCorrectionsQuery, useGetMyAttendanceQuery, useRequestCorrectionMutation } from '../../services/api';
 import { selectUser } from '../../store/authSlice';
@@ -47,30 +48,22 @@ function CorrectionSheet({ record, onClose }) {
 
 export default function Attendance() {
   const me = useSelector(selectUser);
-  const isStudent = STUDENT_ROLES.includes(me.role);
+  return STUDENT_ROLES.includes(me.role) ? <StudentAttendance /> : <StaffAttendance />;
+}
+
+function StudentAttendance() {
   const [range, setRange] = useState('semester');
   const [correct, setCorrect] = useState(null);
-  const summary = useGetMyAttendanceQuery({ range }, { skip: !isStudent });
-  const records = useGetAttendanceRecordsQuery({ limit: 30 }, { skip: !isStudent });
-  const corrections = useGetCorrectionsQuery({ limit: 10 }, { skip: !isStudent });
-
-  if (!isStudent) {
-    return (
-      <Screen>
-        <Header back title="Attendance" />
-        <Card>
-          <EmptyState icon={Monitor} title="Mark attendance on the web console" text="Faculty and admins mark classes, review corrections and follow up on low attendance from the Vexon web app. Changes appear here instantly for students." />
-        </Card>
-      </Screen>
-    );
-  }
+  const summary = useGetMyAttendanceQuery({ range });
+  const records = useGetAttendanceRecordsQuery({ limit: 30 });
+  const corrections = useGetCorrectionsQuery({ limit: 10 });
 
   const { data, isLoading, error, refetch, isFetching } = summary;
   const o = data?.overall;
   const low = o && o.totalPeriods > 0 && o.percentage < data.threshold;
 
   return (
-    <Screen refreshing={isFetching && !isLoading} onRefresh={() => [summary, records, corrections].forEach((q) => q.refetch())}>
+    <Screen refreshing={isFetching && !isLoading} onRefresh={() => [summary, records, corrections].forEach((q) => !q.isUninitialized && q.refetch())}>
       <Header back title="Attendance" subtitle="Present ÷ conducted periods" />
       <Segmented value={range} onChange={setRange} options={RANGES} />
       {isLoading ? (

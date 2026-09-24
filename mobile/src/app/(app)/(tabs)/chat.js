@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { FlatList, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { MessageCircle, Plus, Users } from 'lucide-react-native';
+import { Clock, MessageCircle, Plus, ShieldCheck, Users, XCircle } from 'lucide-react-native';
 import { Avatar, Button, EmptyState, ErrorState, Header, IconButton, IconTile, Input, Loading, Screen, T } from '../../../components/ui';
-import { useGetConversationsQuery } from '../../../services/api';
+import { useGetConversationsQuery, useGetGroupRequestsQuery } from '../../../services/api';
 import { useSocketEvent } from '../../../services/socket';
 import { selectUser } from '../../../store/authSlice';
 import { colors, fonts, gradients } from '../../../theme';
@@ -17,6 +17,8 @@ export default function ChatList() {
   const [presence, setPresence] = useState({});
   const [typing, setTyping] = useState({});
   const { data, isLoading, isFetching, error, refetch } = useGetConversationsQuery(search ? { search } : undefined);
+  // Faculty / HOD see their own pending or rejected group requests; admins see what waits for approval.
+  const { data: requests = [] } = useGetGroupRequestsQuery(undefined, { skip: !['admin', 'hod', 'faculty'].includes(me.role) });
 
   useSocketEvent('presence:update', ({ userId, online }) => setPresence((p) => ({ ...p, [userId]: online })));
   useSocketEvent('chat:typing', ({ conversationId, isTyping }) => setTyping((t) => ({ ...t, [conversationId]: isTyping })));
@@ -41,6 +43,34 @@ export default function ChatList() {
           refreshing={isFetching && !isLoading}
           onRefresh={refetch}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 30 }}
+          ListHeaderComponent={
+            search || !requests.length ? null : me.role === 'admin' ? (
+              <Pressable onPress={() => router.push('/admin/chat-requests')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, marginBottom: 6, borderRadius: 20, backgroundColor: colors.warningSoft }}>
+                <ShieldCheck size={22} color="#b45309" />
+                <T v="strong" style={{ flex: 1, color: '#b45309' }}>
+                  {requests.length} group request{requests.length === 1 ? '' : 's'} to review
+                </T>
+              </Pressable>
+            ) : (
+              <View style={{ gap: 4, marginBottom: 6 }}>
+                {requests.map((r) => (
+                  <View key={r._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 20, opacity: 0.85 }}>
+                    <View style={{ width: 48, height: 48, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' }}>
+                      {r.status === 'pending' ? <Clock size={22} color={colors.warning} /> : <XCircle size={22} color={colors.danger} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <T v="strong" numberOfLines={1}>
+                        {r.name}
+                      </T>
+                      <T v="small" numberOfLines={1} style={{ color: r.status === 'pending' ? '#b45309' : colors.danger }}>
+                        {r.status === 'pending' ? 'Waiting for admin approval' : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
+                      </T>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )
+          }
           ListEmptyComponent={
             <EmptyState icon={MessageCircle} title={search ? 'No chats found' : 'No conversations yet'} text="Message a classmate or faculty member — chats sync live with the web app." action={!search && <Button title="New message" icon={Plus} onPress={() => router.push('/chat/new')} />} />
           }

@@ -1,22 +1,28 @@
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import { API_URL } from '../config';
+import { createApi, fetchBaseQuery, retry } from '@reduxjs/toolkit/query/react';
+import { getApiUrl } from '../config';
 import { loggedOut, setCredentials } from '../store/authSlice';
 import { mobileHeaders, refreshSession } from './session';
+import { setOnline } from './connection';
 
-const rawBaseQuery = fetchBaseQuery({
-  baseUrl: `${API_URL}/api`,
-  prepareHeaders: (headers, { getState }) => {
-    const token = getState().auth.accessToken;
-    if (token) headers.set('authorization', `Bearer ${token}`);
-    Object.entries(mobileHeaders()).forEach(([k, v]) => headers.set(k, v));
-    return headers;
-  },
-});
+const NETWORK_ERRORS = ['FETCH_ERROR', 'TIMEOUT_ERROR'];
+
+// Built per request so a server address changed on the login screen applies at once.
+const rawBaseQuery = (args, api, extra) =>
+  fetchBaseQuery({
+    baseUrl: `${getApiUrl()}/api`,
+    timeout: 20000,
+    prepareHeaders: (headers, { getState }) => {
+      const token = getState().auth.accessToken;
+      if (token) headers.set('authorization', `Bearer ${token}`);
+      Object.entries(mobileHeaders()).forEach(([k, v]) => headers.set(k, v));
+      return headers;
+    },
+  })(args, api, extra);
 
 const NO_RETRY = ['/auth/login', '/auth/refresh', '/auth/logout', '/auth/forgot-password', '/auth/reset-password'];
 
 /** Same behaviour as the web client: on 401, refresh once and replay. */
-const baseQuery = async (args, api, extra) => {
+const authedQuery = async (args, api, extra) => {
   let result = await rawBaseQuery(args, api, extra);
   const url = typeof args === 'string' ? args : args.url;
   if (result.error?.status === 401 && !NO_RETRY.some((p) => url.startsWith(p))) {
@@ -28,13 +34,26 @@ const baseQuery = async (args, api, extra) => {
       api.dispatch(loggedOut());
     }
   }
+  setOnline(!NETWORK_ERRORS.includes(result.error?.status));
   return result;
 };
+
+/**
+ * Flaky mobile data: reads are retried (with backoff) when the network drops;
+ * writes never are, so a slow "Save" can't be applied twice.
+ */
+const baseQuery = retry(authedQuery, {
+  maxRetries: 2,
+  retryCondition: (error, _args, { attempt, baseQueryApi }) =>
+    baseQueryApi.type === 'query' && attempt <= 2 && NETWORK_ERRORS.includes(error?.status),
+});
 
 export const api = createApi({
   reducerPath: 'api',
   baseQuery,
-  tagTypes: ['Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat', 'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound'],
+  refetchOnFocus: true,
+  refetchOnReconnect: true,
+  tagTypes: ['Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat', 'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin'],
   endpoints: (b) => ({
     // ── Auth / account ────────────────────────────────
     login: b.mutation({ query: (body) => ({ url: '/auth/login', method: 'POST', body }) }),
@@ -91,6 +110,8 @@ export const api = createApi({
     getMessages: b.query({ query: ({ id, ...params }) => ({ url: `/chat/conversations/${id}/messages`, params }), keepUnusedDataFor: 0 }),
     sendMessage: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/conversations/${id}/messages`, method: 'POST', body }) }),
     deleteMessage: b.mutation({ query: ({ id, msgId }) => ({ url: `/chat/conversations/${id}/messages/${msgId}`, method: 'DELETE' }) }),
+    getGroupRequests: b.query({ query: (params) => ({ url: '/chat/requests', params }), providesTags: ['ChatRequest'] }),
+    reviewGroupRequest: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/requests/${id}`, method: 'PATCH', body }), invalidatesTags: ['ChatRequest', 'Chat', 'Notification'] }),
 
     // ── Timetable / attendance ────────────────────────
     getTimetable: b.query({ query: () => '/timetable', providesTags: ['Timetable'] }),
@@ -99,6 +120,15 @@ export const api = createApi({
     getAttendanceRecords: b.query({ query: (params) => ({ url: '/attendance/records', params }), providesTags: ['Attendance'] }),
     getCorrections: b.query({ query: (params) => ({ url: '/attendance/corrections', params }), providesTags: ['Correction'] }),
     requestCorrection: b.mutation({ query: (body) => ({ url: '/attendance/corrections', method: 'POST', body }), invalidatesTags: ['Correction'] }),
+    getSubjects: b.query({ query: (params) => ({ url: '/subjects', params }) }),
+    getRoster: b.query({ query: (params) => ({ url: '/attendance/roster', params }), providesTags: ['Attendance'], keepUnusedDataFor: 0 }),
+    markClassAttendance: b.mutation({ query: (body) => ({ url: '/attendance/mark', method: 'POST', body }), invalidatesTags: ['Attendance', 'StaffAttendance'] }),
+    getAttendanceSummary: b.query({ query: (params) => ({ url: '/attendance/summary', params }), providesTags: ['Attendance', 'StaffAttendance'] }),
+    getSummaryStudents: b.query({ query: (params) => ({ url: '/attendance/summary/students', params }), providesTags: ['Attendance'] }),
+    getSummaryFaculty: b.query({ query: (params) => ({ url: '/attendance/summary/faculty', params }), providesTags: ['StaffAttendance'] }),
+    getFacultyRoster: b.query({ query: (params) => ({ url: '/attendance/faculty/roster', params }), providesTags: ['StaffAttendance'], keepUnusedDataFor: 0 }),
+    markFacultyAttendance: b.mutation({ query: (body) => ({ url: '/attendance/faculty/mark', method: 'POST', body }), invalidatesTags: ['StaffAttendance'] }),
+    createAdminUser: b.mutation({ query: (body) => ({ url: '/admin/users', method: 'POST', body }), invalidatesTags: ['Admin', 'User'] }),
 
     // ── Gate pass ─────────────────────────────────────
     getGatePasses: b.query({ query: (params) => ({ url: '/gate-pass', params }), providesTags: ['GatePass'] }),
@@ -164,6 +194,17 @@ export const {
   useGetAttendanceRecordsQuery,
   useGetCorrectionsQuery,
   useRequestCorrectionMutation,
+  useGetSubjectsQuery,
+  useGetRosterQuery,
+  useMarkClassAttendanceMutation,
+  useGetAttendanceSummaryQuery,
+  useGetSummaryStudentsQuery,
+  useGetSummaryFacultyQuery,
+  useGetFacultyRosterQuery,
+  useMarkFacultyAttendanceMutation,
+  useCreateAdminUserMutation,
+  useGetGroupRequestsQuery,
+  useReviewGroupRequestMutation,
   useGetGatePassesQuery,
   useGetGatePassQuery,
   useGetGatePassQrQuery,
@@ -177,4 +218,9 @@ export const {
 } = api;
 
 export const errMsg = (err, fallback = 'Something went wrong') =>
-  err?.data?.message || (err?.status === 'FETCH_ERROR' ? 'Cannot reach the Vexon server' : err?.error || fallback);
+  err?.data?.message ||
+  (err?.status === 'FETCH_ERROR'
+    ? 'Cannot reach the Vexon server — check your internet connection'
+    : err?.status === 'TIMEOUT_ERROR'
+      ? 'The server is taking too long — please try again'
+      : err?.error || fallback);

@@ -44,7 +44,7 @@ export default function Security() {
   const others = (sessions.data || []).filter((s) => !s.current);
 
   return (
-    <Screen refreshing={sessions.isFetching} onRefresh={() => [sessions, history].forEach((q) => q.refetch())}>
+    <Screen refreshing={sessions.isFetching} onRefresh={() => [sessions, history].forEach((q) => !q.isUninitialized && q.refetch())}>
       <Header back title="Account security" subtitle="Devices, password and sign-in history." />
       <SectionTitle title="Signed-in devices" />
       {sessions.isLoading ? (

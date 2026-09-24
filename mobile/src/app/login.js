@@ -4,13 +4,60 @@ import { Link, Redirect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDispatch, useSelector } from 'react-redux';
 import { Controller, useForm } from 'react-hook-form';
-import { GraduationCap, Eye, EyeOff } from 'lucide-react-native';
+import { GraduationCap, Eye, EyeOff, Server } from 'lucide-react-native';
 import { Button, Card, Input, Screen, T } from '../components/ui';
 import { errMsg, useLoginMutation } from '../services/api';
 import { saveRefreshToken } from '../services/session';
 import { setCredentials } from '../store/authSlice';
-import { API_URL } from '../config';
+import { checkServer, defaultApiUrl, getApiUrl, isServerOverridden, setServerUrl } from '../config';
 import { colors, gradients } from '../theme';
+
+/**
+ * Where the app finds the backend. A phone on mobile data needs a public address
+ * (a deployed https:// URL or an internet tunnel); this lets one APK use any of them.
+ */
+function ServerSettings() {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState(getApiUrl());
+  const [status, setStatus] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const shown = getApiUrl().replace(/^https?:[/][/]/, '');
+
+  const save = async () => {
+    setBusy(true);
+    const res = await checkServer(url);
+    setStatus(res);
+    if (res.ok) await setServerUrl(url);
+    setBusy(false);
+  };
+  const reset = async () => {
+    const next = await setServerUrl('');
+    setUrl(next);
+    setStatus(null);
+  };
+
+  if (!open) {
+    return (
+      <Pressable onPress={() => setOpen(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }} hitSlop={8} accessibilityRole="button">
+        <Server size={14} color={colors.muted} />
+        <T v="small" style={{ color: colors.muted }}>
+          {shown ? `Server: ${shown}` : 'No server configured — tap to set one'}
+        </T>
+      </Pressable>
+    );
+  }
+  return (
+    <Card style={{ gap: 10 }}>
+      <T v="h3">Server address</T>
+      <T v="small">Use your college's Vexon address, e.g. https://vexon.example.edu</T>
+      <Input value={url} onChangeText={setUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://…" />
+      {status ? <T v="small" style={{ color: status.ok ? colors.success : colors.danger }}>{status.message}</T> : null}
+      <Button title="Test & save" onPress={save} loading={busy} disabled={!url.trim()} />
+      {isServerOverridden() && defaultApiUrl() ? <Button title="Use default server" variant="ghost" onPress={reset} /> : null}
+      <Button title="Close" variant="ghost" onPress={() => setOpen(false)} />
+    </Card>
+  );
+}
 
 export default function Login() {
   const dispatch = useDispatch();
@@ -73,9 +120,7 @@ export default function Login() {
             <T v="small" style={{ color: colors.primary }}>Forgot password?</T>
           </Link>
         </Card>
-        <T v="small" style={{ textAlign: 'center', color: colors.muted }}>
-          {API_URL ? `Server: ${API_URL.replace(/^https?:\/\//, '')}` : 'No server configured — set EXPO_PUBLIC_API_URL'}
-        </T>
+        <ServerSettings />
       </KeyboardAvoidingView>
     </Screen>
   );

@@ -245,6 +245,13 @@ eas build -p android --profile preview --local
 ```
 Push notifications on a standalone APK additionally need Firebase (FCM v1) credentials uploaded with `eas credentials` and `GOOGLE_SERVICES_JSON` pointing to `google-services.json`. Plain-HTTP servers are allowed only when `EXPO_PUBLIC_API_URL` is `http://` (campus LAN); use HTTPS in production.
 
+**Using the app over the internet (mobile data, any Wi-Fi):** the phone needs a *public* address for the API — a LAN IP only works on the same Wi-Fi.
+1. Deploy the API (e.g. Render / Railway / a campus server) with MongoDB Atlas, behind HTTPS. Set `CLIENT_URL`, the JWT secrets and a strong `CHAT_ENCRYPTION_KEY`.
+2. Build the APK with that URL (`eas.json` → `preview.env.EXPO_PUBLIC_API_URL`), **or** open the app's login screen → tap **Server** → enter the address → **Test & save**. The address is stored on the phone, so one APK can be pointed at a new server without rebuilding.
+3. For a quick demo without deploying, an HTTPS tunnel to your PC works too (e.g. `cloudflared tunnel --url http://localhost:5000`) — anyone with the link can reach your dev API while it runs, so use it only briefly.
+
+Reliability on mobile networks: every request has a 20 s timeout, reads retry automatically on network errors (writes never do, so nothing is saved twice), screens refetch when the app returns to the foreground or the connection comes back, an "Offline — reconnecting…" banner shows while the server is unreachable, a launch without internet keeps you signed in with a **Try again** screen, and a screen that crashes shows a recoverable error page instead of closing the app.
+
 ### Tests
 ```bash
 npm test --prefix server                     # 43 integration tests (uses the separate cmp_test database)

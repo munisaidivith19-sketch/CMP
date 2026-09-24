@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import * as Device from 'expo-device';
-import { API_URL } from '../config';
+import { fetchWithTimeout, getApiUrl } from '../config';
 
 const REFRESH_KEY = 'vexon.refreshToken';
 
@@ -24,9 +24,9 @@ export function refreshSession() {
   if (!inflight) {
     inflight = (async () => {
       const refreshToken = await readRefreshToken();
-      if (!refreshToken || !API_URL) return null;
+      if (!refreshToken || !getApiUrl()) return null;
       try {
-        const res = await fetch(`${API_URL}/api/auth/refresh`, {
+        const res = await fetchWithTimeout(`${getApiUrl()}/api/auth/refresh`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...mobileHeaders() },
           body: JSON.stringify({ refreshToken }),

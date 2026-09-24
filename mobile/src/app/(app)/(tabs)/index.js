@@ -5,8 +5,8 @@ import { useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, Megaphone, MessageCircle, Search, Shapes, Sparkles } from 'lucide-react-native';
-import { Avatar, Badge, Card, ErrorState, IconButton, IconTile, Loading, Screen, SectionTitle, T } from '../../../components/ui';
+import { ArrowRight, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, LogIn, LogOut, Megaphone, MessageCircle, Search, Shapes, Sparkles, Users } from 'lucide-react-native';
+import { Avatar, Badge, Card, EmptyState, ErrorState, IconButton, IconTile, Loading, Screen, SectionTitle, T } from '../../../components/ui';
 import {
   useGetAttendanceSummaryQuery,
   useGetChatUnreadQuery,
@@ -14,6 +14,7 @@ import {
   useGetDashboardQuery,
   useGetGatePassesQuery,
   useGetMyAttendanceQuery,
+  useGetSecurityDashboardQuery,
 } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { STUDENT_ROLES, SUMMARY_VIEW, colors, fonts, gradients } from '../../../theme';
@@ -111,8 +112,80 @@ function EventLine({ e, onPress }) {
   );
 }
 
-export default function Home() {
-  const user = useSelector(selectUser);
+/** The gate guard's home: campus in/out counts and the two actions they actually do. Nothing else applies to them. */
+function SecurityHome({ user }) {
+  const { data, isLoading, error, refetch, isFetching } = useGetSecurityDashboardQuery(undefined, { pollingInterval: 30000 });
+
+  return (
+    <Screen refreshing={isFetching && !isLoading} onRefresh={refetch}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Avatar user={user} size={46} />
+        <View style={{ flex: 1 }}>
+          <T v="small">{greeting()},</T>
+          <T v="h2" numberOfLines={1}>
+            {firstName(user.name)} 👋
+          </T>
+        </View>
+      </View>
+
+      {isLoading ? (
+        <Loading />
+      ) : error ? (
+        <ErrorState error={error} onRetry={refetch} />
+      ) : (
+        <>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            <Tile icon={Users} gradient={gradients.violet} label="Total students" value={data.total} />
+            <Tile icon={LogIn} gradient={gradients.emerald} label="Students in" value={data.inside} />
+            <Tile icon={LogOut} gradient={gradients.amber} label="Students out" value={data.outside} />
+            <Tile icon={DoorOpen} gradient={gradients.sky} label="Left today" value={data.leftToday} />
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <Pressable onPress={() => router.push('/gate-pass/in')} style={{ flex: 1 }}>
+              <LinearGradient colors={gradients.emerald} style={{ borderRadius: 24, padding: 20, alignItems: 'center', gap: 8 }}>
+                <LogIn size={30} color="#fff" />
+                <T v="h2" style={{ color: '#fff' }}>IN</T>
+                <T v="small" style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center' }}>Verify a student entering</T>
+              </LinearGradient>
+            </Pressable>
+            <Pressable onPress={() => router.push('/gate-pass/out')} style={{ flex: 1 }}>
+              <LinearGradient colors={gradients.rose} style={{ borderRadius: 24, padding: 20, alignItems: 'center', gap: 8 }}>
+                <LogOut size={30} color="#fff" />
+                <T v="h2" style={{ color: '#fff' }}>OUT</T>
+                <T v="small" style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center' }}>Verify a student leaving</T>
+              </LinearGradient>
+            </Pressable>
+          </View>
+
+          <SectionTitle title={`Students outside (${data.outsideStudents.length})`} />
+          {data.outsideStudents.length ? (
+            data.outsideStudents.map((p) => (
+              <Card key={p._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Avatar user={p.student} size={40} />
+                <View style={{ flex: 1 }}>
+                  <T v="strong" numberOfLines={1}>
+                    {p.student?.name}
+                  </T>
+                  <T v="small" numberOfLines={1}>
+                    {p.student?.rollNo || '—'} · Year {p.student?.year || '—'} · {p.student?.department || '—'}
+                  </T>
+                </View>
+                {p.overdue ? <Badge label="overdue" color="danger" /> : null}
+              </Card>
+            ))
+          ) : (
+            <Card>
+              <EmptyState icon={Users} title="Everyone is on campus" />
+            </Card>
+          )}
+        </>
+      )}
+    </Screen>
+  );
+}
+
+function GeneralHome({ user }) {
   const isStudent = STUDENT_ROLES.includes(user.role);
   const seesSummary = SUMMARY_VIEW.includes(user.role);
   const isHod = user.role === 'hod';
@@ -331,4 +404,9 @@ export default function Home() {
       )}
     </Screen>
   );
+}
+
+export default function Home() {
+  const user = useSelector(selectUser);
+  return user.role === 'security' ? <SecurityHome user={user} /> : <GeneralHome user={user} />;
 }

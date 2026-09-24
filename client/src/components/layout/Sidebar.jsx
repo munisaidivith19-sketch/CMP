@@ -78,6 +78,9 @@ function NavItem({ item, onClick, badge }) {
   );
 }
 
+// Gate guards only deal with entries/exits — the rest of campus life doesn't apply to them.
+const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/timetable', '/attendance', '/analytics'];
+
 export default function Sidebar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -85,6 +88,9 @@ export default function Sidebar() {
   const open = useSelector((s) => s.ui.sidebarOpen);
   const [logout] = useLogoutMutation();
   const close = () => dispatch(setSidebar(false));
+  const isSecurity = user?.role === 'security';
+  const mainItems = MAIN.filter((i) => !isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to));
+  const campusItems = CAMPUS.filter((i) => !isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to));
   const adminItems = ADMIN.filter((i) => i.roles.includes(user?.role));
   const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user });
   const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: user?.role !== 'admin', pollingInterval: 60000 });
@@ -131,11 +137,11 @@ export default function Sidebar() {
 
         <nav className="-mx-1 flex-1 space-y-1 overflow-y-auto px-1 scrollbar-none">
           <p className="px-3.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">Menu</p>
-          {MAIN.map((i) => (
+          {mainItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} />
           ))}
           <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">Campus</p>
-          {CAMPUS.map((i) => (
+          {campusItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'chat' ? unread?.total : 0} />
           ))}
           {adminItems.length > 0 && (

@@ -9,7 +9,10 @@ import {
   CalendarCheck2,
   CalendarDays,
   ClipboardCheck,
+  DoorOpen,
   Flame,
+  LogIn,
+  LogOut,
   MapPin,
   Megaphone,
   MessageSquare,
@@ -17,10 +20,11 @@ import {
   Sparkles,
   ThumbsUp,
   Trophy,
+  Users,
 } from 'lucide-react';
 import { selectUser } from '../features/authSlice';
-import { useGetAttendanceSummaryQuery, useGetDashboardQuery } from '../services/api';
-import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, EmptyState, ErrorState, Skeleton, StatCard, cn } from '../components/ui/primitives';
+import { useGetAttendanceSummaryQuery, useGetDashboardQuery, useGetSecurityDashboardQuery } from '../services/api';
+import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, EmptyState, ErrorState, PageHeader, Skeleton, StatCard, cn } from '../components/ui/primitives';
 import { AnnouncementItem } from '../components/domain';
 import { CategoryDonut, EngagementChart } from '../components/charts';
 import TodayStrip from '../components/TodayStrip';
@@ -174,11 +178,68 @@ function AttendanceStat({ open, onToggle, role }) {
   );
 }
 
+/** The gate guard's dashboard: campus in/out counts and the two actions they actually do — nothing else. */
+function SecurityDashboard() {
+  const { data, isLoading, error, refetch } = useGetSecurityDashboardQuery(undefined, { pollingInterval: 30000 });
+
+  if (isLoading) return <DashboardSkeleton />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader icon={DoorOpen} title="Security console" subtitle="Verify students in and out at the gate." />
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={Users} label="Total students" value={data.total} gradient="from-violet-400 to-indigo-500" />
+        <StatCard icon={LogIn} label="Students in" value={data.inside} gradient="from-emerald-400 to-teal-500" delay={60} />
+        <StatCard icon={LogOut} label="Students out" value={data.outside} gradient="from-amber-400 to-orange-500" delay={120} />
+        <StatCard icon={DoorOpen} label="Left today" value={data.leftToday} gradient="from-sky-400 to-blue-500" delay={180} />
+      </div>
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Link to="/gate-pass/in" className="group block overflow-hidden rounded-[28px] bg-gradient-to-br from-emerald-400 to-teal-600 p-8 text-center text-white shadow-glow transition-transform duration-300 hover:-translate-y-0.5">
+          <LogIn className="mx-auto h-10 w-10" />
+          <p className="mt-3 text-2xl font-extrabold">IN</p>
+          <p className="mt-1 text-sm text-white/85">Verify a student entering</p>
+        </Link>
+        <Link to="/gate-pass/out" className="group block overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 to-pink-600 p-8 text-center text-white shadow-glow transition-transform duration-300 hover:-translate-y-0.5">
+          <LogOut className="mx-auto h-10 w-10" />
+          <p className="mt-3 text-2xl font-extrabold">OUT</p>
+          <p className="mt-1 text-sm text-white/85">Verify a student leaving</p>
+        </Link>
+      </div>
+
+      <Card>
+        <CardHeader title={`Students outside (${data.outsideStudents.length})`} />
+        {data.outsideStudents.length ? (
+          <ul className="divide-y divide-white/60 dark:divide-white/5">
+            {data.outsideStudents.map((p) => (
+              <li key={p._id} className="flex items-center gap-3 py-3">
+                <Avatar user={p.student} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold">{p.student?.name}</p>
+                  <p className="truncate text-xs muted">
+                    {p.student?.rollNo || '—'} · Year {p.student?.year || '—'} · {p.student?.department || '—'}
+                  </p>
+                </div>
+                {p.overdue && <Badge color="danger">overdue</Badge>}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState icon={Users} title="Everyone is on campus" />
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const user = useSelector(selectUser);
-  const { data, isLoading, error, refetch } = useGetDashboardQuery();
+  const isSecurity = user.role === 'security';
+  const { data, isLoading, error, refetch } = useGetDashboardQuery(undefined, { skip: isSecurity });
   const [popover, setPopover] = useState(null);
 
+  if (isSecurity) return <SecurityDashboard />;
   if (isLoading) return <DashboardSkeleton />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
 

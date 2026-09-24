@@ -24,12 +24,18 @@ const ADMIN_ITEMS = [
   { href: '/admin/chat-requests', label: 'Group requests', hint: 'Approve class groups', icon: UsersRound, g: gradients.rose },
 ];
 
+// Security only deals with gate passes and lost & found — the rest of campus life doesn't apply to them.
+const HIDDEN_FOR_SECURITY = ['/timetable', '/attendance', '/events', '/clubs', '/announcements', '/discussions', '/search'];
+
 export default function Campus() {
   const me = useSelector(selectUser);
   const staff = !STUDENT_ROLES.includes(me.role);
+  const isSecurity = me.role === 'security';
   const items = [
     ...(me.role === 'admin' ? ADMIN_ITEMS : []),
-    ...ITEMS.map((i) => (i.href === '/attendance' && staff ? { ...i, hint: me.role === 'principal' ? 'College summary' : 'Mark & review' } : i)),
+    ...ITEMS.filter((i) => !isSecurity || !HIDDEN_FOR_SECURITY.includes(i.href)).map((i) =>
+      i.href === '/attendance' && staff ? { ...i, hint: me.role === 'principal' ? 'College summary' : 'Mark & review' } : i
+    ),
   ];
   return (
     <Screen>

@@ -39,6 +39,7 @@ const Timetable = lazy(() => import('./pages/timetable/Timetable'));
 const Attendance = lazy(() => import('./pages/attendance/Attendance'));
 const GatePass = lazy(() => import('./pages/gatepass/GatePass'));
 const GatePassDetail = lazy(() => import('./pages/gatepass/GatePassDetail'));
+const GateVerify = lazy(() => import('./pages/gatepass/GateVerify'));
 const LostFound = lazy(() => import('./pages/lostfound/LostFound'));
 const LostFoundDetail = lazy(() => import('./pages/lostfound/LostFoundDetail'));
 const Insights = lazy(() => import('./pages/analytics/Insights'));
@@ -138,6 +139,8 @@ export default function App() {
             <Route path="attendance" element={<Attendance />} />
             <Route path="gate-pass" element={<GatePass />} />
             <Route path="gate-pass/review" element={<Navigate to="/gate-pass?tab=review" replace />} />
+            <Route path="gate-pass/in" element={<RequireAuth roles={['security', 'admin']}><GateVerify direction="in" /></RequireAuth>} />
+            <Route path="gate-pass/out" element={<RequireAuth roles={['security', 'admin']}><GateVerify direction="out" /></RequireAuth>} />
             <Route path="gate-pass/:id" element={<GatePassDetail />} />
             <Route path="lost-found" element={<LostFound />} />
             <Route path="lost-found/:id" element={<LostFoundDetail />} />

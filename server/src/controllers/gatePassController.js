@@ -491,11 +491,18 @@ export const securityDashboard = asyncHandler(async (_req, res) => {
   const day = toDay(new Date());
   const todayTs = timestampFilter({ from: day, to: day });
 
-  const [totalStudents, outside, leftToday] = await Promise.all([
+  const [totalStudents, outsideStudents, leftToday] = await Promise.all([
     User.countDocuments({ role: { $in: STUDENT_ROLES }, isActive: true }),
-    GatePass.countDocuments({ status: 'active' }),
+    GatePass.find({ status: 'active' }).populate('student', STUDENT_FIELDS).sort({ actualExit: -1 }).lean(),
     GatePass.countDocuments({ actualExit: todayTs }),
   ]);
+  const outside = outsideStudents.length;
 
-  res.json({ inside: Math.max(0, totalStudents - outside), outside, leftToday });
+  res.json({
+    total: totalStudents,
+    inside: Math.max(0, totalStudents - outside),
+    outside,
+    leftToday,
+    outsideStudents: outsideStudents.map(withFlags),
+  });
 });

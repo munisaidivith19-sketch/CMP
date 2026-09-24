@@ -5,8 +5,11 @@ import { useGetGatePassQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { Avatar, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui/primitives';
 import { StatusBadge } from '../../components/insights';
-import { fmtDateTime, titleCase } from '../../utils/format';
+import { fmtClassDay, fmtDateTime, titleCase } from '../../utils/format';
+import { GATE_PASS_REGARDING } from '../../utils/constants';
 import { PassQr, PassTimeline } from './GatePass';
+
+const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '—');
 
 export default function GatePassDetail() {
   const { id } = useParams();
@@ -25,7 +28,12 @@ export default function GatePassDetail() {
         <ErrorState error={error} onRetry={refetch} />
       ) : (
         <>
-          <PageHeader icon={DoorOpen} title={`${titleCase(pass.reason)} pass`} subtitle={`Requested ${fmtDateTime(pass.createdAt)}`} actions={<StatusBadge status={pass.status} />} />
+          <PageHeader
+            icon={DoorOpen}
+            title={`${GATE_PASS_REGARDING[pass.regarding] || titleCase(pass.regarding)} pass`}
+            subtitle={`Requested ${fmtDateTime(pass.createdAt)}`}
+            actions={<StatusBadge status={pass.status} label={pass.status.replace('pending_', 'Waiting on ')} />}
+          />
           <div className="grid gap-5 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader title="Details" />
@@ -47,26 +55,30 @@ export default function GatePassDetail() {
                   <dd>{pass.description}</dd>
                 </div>
                 <div>
-                  <dt className="label">Destination</dt>
-                  <dd>{pass.destination || '—'}</dd>
+                  <dt className="label">Where</dt>
+                  <dd>{destinationLine(pass.destination)}</dd>
                 </div>
                 <div>
-                  <dt className="label">Expected exit</dt>
-                  <dd>{fmtDateTime(pass.expectedExit)}</dd>
+                  <dt className="label">From date</dt>
+                  <dd>{fmtClassDay(pass.fromDate)}</dd>
                 </div>
                 <div>
-                  <dt className="label">Expected return</dt>
-                  <dd>{fmtDateTime(pass.expectedReturn)}</dd>
+                  <dt className="label">To date</dt>
+                  <dd>{fmtClassDay(pass.toDate)}</dd>
                 </div>
-                {pass.approvedBy && (
+                <div>
+                  <dt className="label">Parent's mobile</dt>
+                  <dd>{pass.parentPhone}</dd>
+                </div>
+                {pass.principalReview?.by && (
                   <div>
                     <dt className="label">Approved by</dt>
-                    <dd>{pass.approvedBy.name}</dd>
+                    <dd>{pass.principalReview.by.name}</dd>
                   </div>
                 )}
                 {pass.rejectedReason && (
                   <div>
-                    <dt className="label">Rejection reason</dt>
+                    <dt className="label">Rejection reason ({pass.rejectedStage})</dt>
                     <dd>{pass.rejectedReason}</dd>
                   </div>
                 )}

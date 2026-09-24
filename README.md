@@ -54,6 +54,7 @@ Open **http://localhost:5173**.
 | Faculty | faculty@campus.edu |
 | HOD (CSE) | hod@campus.edu |
 | Principal | principal@campus.edu |
+| Security | security@campus.edu |
 | Club admin | clubadmin@campus.edu |
 | Student | student@campus.edu |
 

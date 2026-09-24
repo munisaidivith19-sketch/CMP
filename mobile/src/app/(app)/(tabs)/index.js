@@ -17,7 +17,7 @@ import {
 } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { STUDENT_ROLES, SUMMARY_VIEW, colors, fonts, gradients } from '../../../theme';
-import { fmtDateTime, timeAgo, to12h } from '../../../utils/format';
+import { fmtClassDay, timeAgo, to12h } from '../../../utils/format';
 
 /** "Dr. Suresh Kumar" → "Suresh" — skip honorifics in the greeting. */
 const firstName = (name = '') => name.split(' ').find((w) => w && !/^(dr|prof|mr|mrs|ms|miss)[.]?$/i.test(w)) || name;
@@ -129,7 +129,7 @@ export default function Home() {
   const refreshing = dash.isFetching && !dash.isLoading;
   const onRefresh = () => [dash, now, att, summary, passes, unread].forEach((q) => !q.isUninitialized && q.refetch());
   const cls = now.data?.current || now.data?.next;
-  const open = passes.data?.passes?.find((p) => ['pending', 'approved', 'active'].includes(p.status));
+  const open = passes.data?.passes?.find((p) => ['pending_faculty', 'pending_hod', 'pending_principal', 'approved', 'active'].includes(p.status));
   const o = att.data?.overall;
   const low = o && o.totalPeriods > 0 && o.percentage < att.data.threshold;
   const s = summary.data?.students;
@@ -231,8 +231,8 @@ export default function Home() {
               icon={DoorOpen}
               gradient={gradients.cyan}
               label="Gate pass"
-              value={isStudent ? (open ? open.status : 'No active pass') : 'Review passes'}
-              hint={open ? `Return ${fmtDateTime(open.expectedReturn)}` : undefined}
+              value={isStudent ? (open ? open.status.replace(/^pending_/, 'waiting: ') : 'No active pass') : user.role === 'security' ? 'Verify codes' : 'Review passes'}
+              hint={open ? `Return by ${fmtClassDay(open.toDate)}` : undefined}
               onPress={() => router.push('/gate-pass')}
             />
           </View>

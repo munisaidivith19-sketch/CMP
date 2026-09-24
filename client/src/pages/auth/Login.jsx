@@ -17,6 +17,7 @@ const DEMO = [
   { label: 'Faculty', email: 'faculty@campus.edu' },
   { label: 'HOD', email: 'hod@campus.edu' },
   { label: 'Principal', email: 'principal@campus.edu' },
+  { label: 'Security', email: 'security@campus.edu' },
   { label: 'Admin', email: 'admin@campus.edu' },
 ];
 

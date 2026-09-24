@@ -1,10 +1,12 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin'];
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security'];
 // Can mark attendance, moderate content and see beyond their own record.
 export const MODERATOR_ROLES = ['admin', 'faculty', 'hod', 'principal'];
 // Department-scoped management: sees/acts on their own department only.
 export const HOD_ROLES = ['hod'];
 // Every role an admin can hand out credentials for from the admin panel.
-export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin'];
+export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security'];
+// Roles with no department of their own (skip the "department required" rule).
+export const NO_DEPARTMENT_ROLES = ['principal', 'security'];
 export const STAY_TYPES = ['hosteler', 'day_scholar'];
 
 export const CLUB_CATEGORIES = [
@@ -53,12 +55,15 @@ export const NOTIFICATION_TYPES = [
 ];
 
 // ── Gate Pass ───────────────────────────────────────────────────────
+// A request climbs pending_faculty → pending_hod → pending_principal before
+// it is usable; any stage can reject it instead.
 export const GATE_PASS_STATUSES = [
-  'pending', 'approved', 'rejected', 'active', 'completed', 'expired', 'revoked', 'cancelled',
+  'pending_faculty', 'pending_hod', 'pending_principal',
+  'approved', 'rejected', 'active', 'completed', 'expired', 'revoked', 'cancelled',
 ];
-export const GATE_PASS_REASONS = [
-  'medical', 'family_emergency', 'personal', 'official', 'outing', 'other',
-];
+export const GATE_PASS_PENDING_STATUSES = ['pending_faculty', 'pending_hod', 'pending_principal'];
+export const GATE_PASS_REGARDING = ['outing', 'home'];
+export const GATE_PASS_STAGES = ['faculty', 'hod', 'principal'];
 
 // ── Lost & Found ────────────────────────────────────────────────────
 export const LOST_FOUND_TYPES = ['lost', 'found'];

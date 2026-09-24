@@ -88,6 +88,14 @@ async function seed() {
     designation: 'Principal',
     phone: '9840054321',
   });
+  const security = mk({
+    name: 'Vikram Singh Rathore',
+    email: 'security@campus.edu',
+    role: 'security',
+    employeeId: 'EMP-SECURITY-1',
+    designation: 'Chief Security Officer',
+    phone: '9840099999',
+  });
   const clubAdmin = mk({
     name: 'Rahul Verma',
     email: 'clubadmin@campus.edu',
@@ -142,7 +150,7 @@ async function seed() {
     })
   );
 
-  const allUsers = [admin, faculty, faculty2, hod, principal, clubAdmin, clubAdmin2, ...students];
+  const allUsers = [admin, faculty, faculty2, hod, principal, security, clubAdmin, clubAdmin2, ...students];
   for (const u of allUsers) await u.save();
   console.log(`[seed] ${allUsers.length} users`);
 

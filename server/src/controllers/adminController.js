@@ -212,6 +212,7 @@ const CREATE_FIELDS = {
   principal: ['employeeId', 'phone'],
   club_admin: ['rollNo', 'year', 'department', 'section', 'semester', 'stayType', 'phone', 'parentPhone'],
   admin: ['employeeId', 'phone'],
+  security: ['employeeId', 'phone'],
 };
 
 /**

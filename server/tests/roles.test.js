@@ -13,7 +13,9 @@ let s2;
 let sEce;
 let subject;
 
-const ymd = (d) => d.toISOString().slice(0, 10);
+// The server buckets attendance days in campus time (Asia/Kolkata, see server/src/config/env.js),
+// not UTC — near midnight IST those two disagree on "today", so match the server here too.
+const ymd = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
 const daysAgo = (n) => ymd(new Date(Date.now() - n * 86400000));
 
 before(async () => {

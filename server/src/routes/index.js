@@ -15,7 +15,7 @@ import {
   REPORT_REASONS,
   REPORT_TARGETS,
   ROLES,
-  GATE_PASS_REASONS,
+  GATE_PASS_REGARDING,
   LOST_FOUND_TYPES,
   LOST_FOUND_CATEGORIES,
   LOST_FOUND_STATUSES,
@@ -24,6 +24,7 @@ import {
   CONVERSATION_TYPES,
   STAY_TYPES,
   STAFF_ROLES,
+  NO_DEPARTMENT_ROLES,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
@@ -391,9 +392,9 @@ router.post(
     .trim()
     .isLength({ min: 1, max: 30 })
     .withMessage('Employee ID is required'),
-  // Everyone except Principal needs a department on file.
+  // Everyone except Principal and Security needs a department on file.
   body('department')
-    .if((_v, { req }) => req.body.role !== 'principal')
+    .if((_v, { req }) => !NO_DEPARTMENT_ROLES.includes(req.body.role))
     .trim()
     .isLength({ min: 1, max: 80 })
     .withMessage('Department is required'),
@@ -649,46 +650,55 @@ router.put('/timetable/:id', idParam('id'), authorize('admin'), ...slotRules(tru
 router.delete('/timetable/:id', idParam('id'), authorize('admin'), timetable.deleteSlot);
 
 // ── Gate Pass ──────────────────────────────────────────────────────
-router.post(
-  '/gate-pass',
-  writeLimiter,
-  authorize(...STUDENT_ROLES),
-  body('reason').isIn(GATE_PASS_REASONS).withMessage('Select a valid reason'),
+// Approval climbs faculty (class in-charge) → HOD → principal; security
+// only ever sees approved/active/completed passes to record OUT / IN.
+const GATE_FACULTY = ['faculty', 'admin'];
+const GATE_HOD = ['hod', 'admin'];
+const GATE_PRINCIPAL = ['principal', 'admin'];
+const GATE_SECURITY = ['security', 'admin'];
+const GATE_VIEW = [...STAFF_VIEW, 'security'];
+
+const gateDestinationRules = [
+  body('regarding').isIn(GATE_PASS_REGARDING).withMessage('Select a valid reason'),
   body('description').trim().isLength({ min: 5, max: 500 }).withMessage('Please describe the reason (5+ characters)'),
-  body('destination').optional().trim().isLength({ max: 160 }),
-  body('expectedExit').isISO8601().withMessage('Expected exit time required'),
-  body('expectedReturn').isISO8601().withMessage('Expected return time required'),
+  body('fromDate').isISO8601().withMessage('Departure date required'),
+  body('toDate').isISO8601().withMessage('Return date required'),
+  body('parentPhone').trim().isLength({ min: 6, max: 20 }).withMessage("Parent's mobile number is required"),
+  body('destination.state').trim().isLength({ min: 1, max: 80 }).withMessage('State is required'),
+  body('destination.district').trim().isLength({ min: 1, max: 80 }).withMessage('District is required'),
+  body('destination.area').trim().isLength({ min: 1, max: 120 }).withMessage('Village / area is required'),
+];
+const gateReviewRules = (actions) => [
+  idParam('id'),
+  body('action').isIn(actions),
+  body('reason').optional().trim().isLength({ max: 300 }),
   validate,
-  gatePass.createGatePass
-);
+];
+
+router.post('/gate-pass', writeLimiter, authorize(...STUDENT_ROLES), ...gateDestinationRules, validate, gatePass.createGatePass);
 router.get('/gate-pass', ...rangeQuery, validate, gatePass.listGatePasses);
-router.get('/gate-pass/dashboard', authorize(...STAFF_VIEW), gatePass.gateDashboard);
+router.get('/gate-pass/dashboard', authorize(...GATE_VIEW), gatePass.gateDashboard);
+router.get('/gate-pass/dashboard/security', authorize(...GATE_SECURITY), gatePass.securityDashboard);
 router.post(
   '/gate-pass/verify',
   verifyLimiter,
-  authorize(...STAFF),
-  body('code').isString().trim().isLength({ min: 6, max: 40 }).withMessage('Verification code is required'),
+  authorize(...GATE_SECURITY),
+  body('code').isString().trim().isLength({ min: 4, max: 20 }).withMessage('Verification code is required'),
   validate,
   gatePass.verifyGatePass
 );
 router.get('/gate-pass/:id', idParam('id'), gatePass.getGatePass);
 router.get('/gate-pass/:id/qr', idParam('id'), gatePass.getGatePassQr);
-router.patch(
-  '/gate-pass/:id/review',
-  idParam('id'),
-  authorize(...STAFF),
-  body('action').isIn(['approved', 'rejected']),
-  body('rejectedReason').optional().trim().isLength({ max: 300 }),
-  validate,
-  gatePass.reviewGatePass
-);
+router.patch('/gate-pass/:id/faculty-review', authorize(...GATE_FACULTY), ...gateReviewRules(['forward', 'reject']), gatePass.facultyReview);
+router.patch('/gate-pass/:id/hod-review', authorize(...GATE_HOD), ...gateReviewRules(['forward', 'reject']), gatePass.hodReview);
+router.patch('/gate-pass/:id/principal-review', authorize(...GATE_PRINCIPAL), ...gateReviewRules(['approve', 'reject']), gatePass.principalReview);
 router.patch('/gate-pass/:id/cancel', idParam('id'), gatePass.cancelGatePass);
-router.patch('/gate-pass/:id/exit', idParam('id'), authorize(...STAFF), gatePass.recordExit);
-router.patch('/gate-pass/:id/return', idParam('id'), authorize(...STAFF), gatePass.recordReturn);
+router.patch('/gate-pass/:id/out', idParam('id'), authorize(...GATE_SECURITY), gatePass.recordOut);
+router.patch('/gate-pass/:id/in', idParam('id'), authorize(...GATE_SECURITY), gatePass.recordIn);
 router.patch(
   '/gate-pass/:id/revoke',
   idParam('id'),
-  authorize(...STAFF),
+  authorize('admin', 'principal'),
   body('reason').optional().trim().isLength({ max: 300 }),
   validate,
   gatePass.revokeGatePass

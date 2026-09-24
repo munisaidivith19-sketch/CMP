@@ -29,7 +29,7 @@ export default function TodayStrip({ user }) {
   const { data: att } = useGetMyAttendanceQuery({ range: 'semester' }, { skip: !isStudent });
   const { data: passes } = useGetGatePassesQuery({ limit: 5 }, { skip: !isStudent });
   const { data: unread } = useGetChatUnreadQuery();
-  const open = passes?.passes?.find((p) => ['pending', 'approved', 'active'].includes(p.status));
+  const open = passes?.passes?.find((p) => ['pending_faculty', 'pending_hod', 'pending_principal', 'approved', 'active'].includes(p.status));
 
   const cls = now?.current || now?.next;
   return (
@@ -58,8 +58,8 @@ export default function TodayStrip({ user }) {
         to="/gate-pass"
         icon={DoorOpen}
         label="Gate pass"
-        value={isStudent ? (open ? open.status.replace('_', ' ') : 'No active pass') : 'Review & verify'}
-        hint={isStudent && open ? `Return by ${new Date(open.expectedReturn).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}` : undefined}
+        value={isStudent ? (open ? open.status.replace(/^pending_/, 'waiting: ').replace('_', ' ') : 'No active pass') : user.role === 'security' ? 'Verify codes' : 'Review & verify'}
+        hint={isStudent && open ? `Return by ${new Date(open.toDate).toLocaleDateString('en-IN', { dateStyle: 'medium' })}` : undefined}
         tone="from-cyan-400 to-sky-500"
       />
       <Tile to="/chat" icon={MessageCircle} label="Messages" value={unread?.total ? `${unread.total} unread` : 'All caught up'} hint={unread?.conversations ? `in ${unread.conversations} chat${unread.conversations > 1 ? 's' : ''}` : undefined} tone="from-primary-400 to-primary-600" />

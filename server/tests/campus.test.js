@@ -3,24 +3,40 @@ import assert from 'node:assert/strict';
 import { startServer, nextEvent } from './helpers.js';
 
 let ctx;
-let staff;
-let student; // Android
+let staff; // faculty, class in-charge of CSE-A
+let student; // Android — CSE-A
+let student2; // CSE-A — used only where a second, independent request is needed
 let other;
+let hod;
+let principal;
+let security;
+let outsiderFaculty; // different section — must not be able to act
 let studentSocket;
 let staffSocket;
 
 const inMinutes = (m) => new Date(Date.now() + m * 60000).toISOString();
+const inDays = (d) => new Date(Date.now() + d * 86400000).toISOString();
 
 before(async () => {
   ctx = await startServer();
-  const [f, s, o] = await Promise.all([
-    ctx.createUser({ role: 'faculty', name: 'Warden' }),
-    ctx.createUser({ name: 'Gate Student', rollNo: 'R1' }),
+  const [f, s, s2, o, h, p, sec, of] = await Promise.all([
+    ctx.createUser({ role: 'faculty', name: 'Warden', department: 'CSE', section: 'A' }),
+    ctx.createUser({ name: 'Gate Student', rollNo: 'R1', department: 'CSE', section: 'A' }),
+    ctx.createUser({ name: 'Second Gate Student', rollNo: 'R2', department: 'CSE', section: 'A' }),
     ctx.createUser({ name: 'Other Student' }),
+    ctx.createUser({ role: 'hod', name: 'HOD CSE', department: 'CSE', employeeId: 'H-1' }),
+    ctx.createUser({ role: 'principal', name: 'Principal', employeeId: 'P-1' }),
+    ctx.createUser({ role: 'security', name: 'Gatekeeper', employeeId: 'S-1' }),
+    ctx.createUser({ role: 'faculty', name: 'Other Faculty', department: 'ECE', section: 'B' }),
   ]);
   staff = { u: f, ...(await ctx.loginWeb(f)) };
   student = { u: s, ...(await ctx.loginMobile(s)) };
+  student2 = { u: s2, ...(await ctx.loginWeb(s2)) };
   other = { u: o, ...(await ctx.loginWeb(o)) };
+  hod = { u: h, ...(await ctx.loginWeb(h)) };
+  principal = { u: p, ...(await ctx.loginWeb(p)) };
+  security = { u: sec, ...(await ctx.loginWeb(sec)) };
+  outsiderFaculty = { u: of, ...(await ctx.loginWeb(of)) };
   studentSocket = await ctx.connect(student.token);
   staffSocket = await ctx.connect(staff.token);
 });
@@ -32,87 +48,128 @@ after(async () => {
 
 let passId;
 let code;
+const gateBody = () => ({
+  regarding: 'outing',
+  description: 'Visiting family for the weekend',
+  // Departure "today" so the early-exit window is already open when the test verifies OUT.
+  fromDate: new Date().toISOString().slice(0, 10),
+  toDate: inDays(1).slice(0, 10),
+  parentPhone: '9800000000',
+  destination: { state: 'Tamil Nadu', district: 'Chennai', area: 'T. Nagar' },
+});
 
-test('gate pass: request → staff sees it live; staff cannot request; one open pass at a time', async () => {
-  const body = { reason: 'medical', description: 'Dentist appointment', destination: 'City clinic', expectedExit: inMinutes(10), expectedReturn: inMinutes(180) };
+test('gate pass: student requests → class faculty sees it live; staff cannot request; one open pass at a time', async () => {
+  const body = gateBody();
   assert.equal((await ctx.request('POST', '/gate-pass', { token: staff.token, body })).status, 403);
-  const bad = await ctx.request('POST', '/gate-pass', { token: student.token, body: { ...body, expectedReturn: inMinutes(5) } });
+  const bad = await ctx.request('POST', '/gate-pass', { token: student.token, body: { ...body, toDate: inDays(-5).slice(0, 10) } });
   assert.equal(bad.status, 422);
 
-  const live = nextEvent(staffSocket, 'gatepass:updated', (p) => p.status === 'pending');
+  const live = nextEvent(staffSocket, 'gatepass:updated', (p) => p.status === 'pending_faculty');
   const res = await ctx.request('POST', '/gate-pass', { token: student.token, body });
-  assert.equal(res.status, 201);
+  assert.equal(res.status, 201, JSON.stringify(res.body));
   passId = res.body._id;
+  assert.equal(res.body.status, 'pending_faculty');
   assert.equal(res.body.verificationCode, undefined, 'no code before approval');
   await live;
   assert.equal((await ctx.request('POST', '/gate-pass', { token: student.token, body })).status, 409);
+
+  // A different section's faculty does not see it in their queue.
+  const outsiderList = await ctx.request('GET', '/gate-pass', { token: outsiderFaculty.token });
+  assert.ok(!outsiderList.body.passes.some((p) => p._id === passId));
 });
 
-test('gate pass: approval issues a hidden, owner-only QR code and notifies the student live', async () => {
-  const live = nextEvent(studentSocket, 'gatepass:updated', (p) => p.status === 'approved');
-  const r = await ctx.request('PATCH', `/gate-pass/${passId}/review`, { token: staff.token, body: { action: 'approved' } });
-  assert.equal(r.status, 200);
-  assert.equal(r.body.verificationCode, undefined, 'code never leaks in staff responses');
-  await live;
+test('gate pass: faculty forwards to HOD, HOD forwards to principal, principal approves with a 4-char code', async () => {
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/faculty-review`, { token: outsiderFaculty.token, body: { action: 'forward' } })).status, 403);
 
-  const list = await ctx.request('GET', '/gate-pass', { token: staff.token });
-  assert.ok(list.body.passes.every((p) => p.verificationCode === undefined));
+  const toHod = await ctx.request('PATCH', `/gate-pass/${passId}/faculty-review`, { token: staff.token, body: { action: 'forward' } });
+  assert.equal(toHod.status, 200, JSON.stringify(toHod.body));
+  assert.equal(toHod.body.status, 'pending_hod');
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/faculty-review`, { token: staff.token, body: { action: 'forward' } })).status, 422, 'already moved on');
+
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/hod-review`, { token: outsiderFaculty.token, body: { action: 'forward' } })).status, 403);
+  const toPrincipal = await ctx.request('PATCH', `/gate-pass/${passId}/hod-review`, { token: hod.token, body: { action: 'forward' } });
+  assert.equal(toPrincipal.status, 200);
+  assert.equal(toPrincipal.body.status, 'pending_principal');
+
+  const live = nextEvent(studentSocket, 'gatepass:updated', (p) => p.status === 'approved');
+  const approved = await ctx.request('PATCH', `/gate-pass/${passId}/principal-review`, { token: principal.token, body: { action: 'approve' } });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.status, 'approved');
+  assert.equal(approved.body.verificationCode, undefined, 'code never leaks in staff responses');
+  await live;
 
   assert.equal((await ctx.request('GET', `/gate-pass/${passId}/qr`, { token: other.token })).status, 403);
   assert.equal((await ctx.request('GET', `/gate-pass/${passId}/qr`, { token: staff.token })).status, 403);
-  assert.equal((await ctx.request('GET', `/gate-pass/${passId}`, { token: other.token })).status, 403);
-
   const qr = await ctx.request('GET', `/gate-pass/${passId}/qr`, { token: student.token });
   assert.equal(qr.status, 200);
   code = qr.body.code;
-  assert.match(code, /^[A-HJ-NP-Z2-9]{12}$/);
+  assert.match(code, /^[A-Z]{2}[0-9]{2}$/, 'code is 2 letters + 2 digits');
   assert.ok(qr.body.qr.startsWith('data:image/png;base64,'));
-  assert.equal(qr.body.payload, `CCGP:${code}`, 'QR holds only the opaque code');
-  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/review`, { token: staff.token, body: { action: 'rejected' } })).status, 422);
+  assert.equal(qr.body.payload, `CCGP:${code}`);
 });
 
-test('gate pass: verify → exit → return; the code is consumed after return', async () => {
-  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: student.token, body: { code } })).status, 403);
-  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: staff.token, body: { code: 'AAAAAAAAAAAA' } })).status, 404);
+test('gate pass: any stage can reject, ending the request', async () => {
+  const body = gateBody();
+  const p = await ctx.request('POST', '/gate-pass', { token: student2.token, body });
+  const rejected = await ctx.request('PATCH', `/gate-pass/${p.body._id}/faculty-review`, { token: staff.token, body: { action: 'reject', reason: 'No supporting document' } });
+  assert.equal(rejected.status, 200);
+  assert.equal(rejected.body.status, 'rejected');
+  assert.equal(rejected.body.rejectedStage, 'faculty');
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${p.body._id}/faculty-review`, { token: staff.token, body: { action: 'forward' } })).status, 422);
+});
 
-  const v = await ctx.request('POST', '/gate-pass/verify', { token: staff.token, body: { code: `CCGP:${code.toLowerCase()}` } });
+test('gate pass: security verifies the code and records OUT then IN; class faculty is notified on return', async () => {
+  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: student.token, body: { code } })).status, 403);
+  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code: 'ZZ99' } })).status, 404);
+
+  const v = await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code: `CCGP:${code.toLowerCase()}` } });
   assert.equal(v.status, 200);
   assert.equal(v.body.valid, true);
-  assert.equal(v.body.nextAction, 'exit');
+  assert.equal(v.body.nextAction, 'out');
   assert.equal(v.body.pass.student.name, 'Gate Student');
 
   const out = nextEvent(studentSocket, 'gatepass:updated', (p) => p.status === 'active');
-  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/exit`, { token: staff.token })).status, 200);
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/out`, { token: security.token })).status, 200);
   await out;
-  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/exit`, { token: staff.token })).status, 422, 'exit is single-use');
-  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: staff.token, body: { code } })).body.nextAction, 'return');
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/out`, { token: security.token })).status, 422, 'OUT is single-use');
+  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code } })).body.nextAction, 'in');
 
-  const dash = await ctx.request('GET', '/gate-pass/dashboard', { token: staff.token });
-  assert.equal(dash.body.studentsOutside, 1);
+  const dash = await ctx.request('GET', '/gate-pass/dashboard/security', { token: security.token });
+  assert.equal(dash.status, 200);
+  assert.equal(dash.body.outside, 1);
+  assert.ok(dash.body.inside >= 0);
 
-  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/return`, { token: staff.token })).status, 200);
-  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: staff.token, body: { code } })).status, 404, 'code consumed');
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/in`, { token: security.token })).status, 200);
+  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code } })).status, 404, 'code consumed');
   const done = await ctx.request('GET', `/gate-pass/${passId}`, { token: student.token });
   assert.equal(done.body.status, 'completed');
-  assert.ok(done.body.actualExit && done.body.actualReturn && done.body.approvedAt);
+  assert.ok(done.body.actualExit && done.body.actualReturn);
+
+  const notified = await ctx.request('GET', '/notifications', { token: staff.token });
+  assert.ok(notified.body.items.some((n) => n.title === 'Student back on campus'));
 });
 
-test('gate pass: student can cancel; staff can revoke; expired passes are swept', async () => {
-  const body = { reason: 'outing', description: 'Market visit', expectedExit: inMinutes(30), expectedReturn: inMinutes(120) };
+test('gate pass: student can cancel while pending; admin/principal can revoke; expired requests are swept', async () => {
+  const body = gateBody();
   const p1 = await ctx.request('POST', '/gate-pass', { token: student.token, body });
   assert.equal((await ctx.request('PATCH', `/gate-pass/${p1.body._id}/cancel`, { token: other.token })).status, 404);
   assert.equal((await ctx.request('PATCH', `/gate-pass/${p1.body._id}/cancel`, { token: student.token })).body.status, 'cancelled');
 
   const p2 = await ctx.request('POST', '/gate-pass', { token: student.token, body });
-  await ctx.request('PATCH', `/gate-pass/${p2.body._id}/review`, { token: staff.token, body: { action: 'approved' } });
+  await ctx.request('PATCH', `/gate-pass/${p2.body._id}/faculty-review`, { token: staff.token, body: { action: 'forward' } });
+  await ctx.request('PATCH', `/gate-pass/${p2.body._id}/hod-review`, { token: hod.token, body: { action: 'forward' } });
+  await ctx.request('PATCH', `/gate-pass/${p2.body._id}/principal-review`, { token: principal.token, body: { action: 'approve' } });
   const qr = await ctx.request('GET', `/gate-pass/${p2.body._id}/qr`, { token: student.token });
-  const rv = await ctx.request('PATCH', `/gate-pass/${p2.body._id}/revoke`, { token: staff.token, body: { reason: 'Campus lockdown' } });
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${p2.body._id}/revoke`, { token: staff.token, body: {} })).status, 403, 'only admin/principal can revoke');
+  const rv = await ctx.request('PATCH', `/gate-pass/${p2.body._id}/revoke`, { token: principal.token, body: { reason: 'Campus lockdown' } });
   assert.equal(rv.body.status, 'revoked');
-  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: staff.token, body: { code: qr.body.code } })).status, 404, 'revoked code is dead');
+  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code: qr.body.code } })).status, 404, 'revoked code is dead');
 
   // An approved pass whose window closed becomes expired.
   const p3 = await ctx.request('POST', '/gate-pass', { token: student.token, body });
-  await ctx.request('PATCH', `/gate-pass/${p3.body._id}/review`, { token: staff.token, body: { action: 'approved' } });
+  await ctx.request('PATCH', `/gate-pass/${p3.body._id}/faculty-review`, { token: staff.token, body: { action: 'forward' } });
+  await ctx.request('PATCH', `/gate-pass/${p3.body._id}/hod-review`, { token: hod.token, body: { action: 'forward' } });
+  await ctx.request('PATCH', `/gate-pass/${p3.body._id}/principal-review`, { token: principal.token, body: { action: 'approve' } });
   await ctx.models.GatePass.updateOne({ _id: p3.body._id }, { verificationExpiry: new Date(Date.now() - 1000) });
   const { expireGatePasses } = await import('../src/controllers/gatePassController.js');
   assert.equal(await expireGatePasses(), 1);

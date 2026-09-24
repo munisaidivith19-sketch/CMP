@@ -486,12 +486,13 @@ export const gateAnalytics = asyncHandler(async (req, res) => {
         $group: {
           _id: null,
           avgMs: { $avg: { $subtract: ['$actualReturn', '$actualExit'] } },
-          late: { $sum: { $cond: [{ $gt: ['$actualReturn', '$expectedReturn'] }, 1, 0] } },
+          // "Late" = returned after the end of the requested return day.
+          late: { $sum: { $cond: [{ $gt: ['$actualReturn', { $add: ['$toDate', 86400000] }] }, 1, 0] } },
           count: { $sum: 1 },
         },
       },
     ]),
-    GatePass.aggregate([{ $match: ts }, { $group: { _id: '$reason', count: { $sum: 1 } } }, { $project: { _id: 0, reason: '$_id', count: 1 } }, { $sort: { count: -1 } }]),
+    GatePass.aggregate([{ $match: ts }, { $group: { _id: '$regarding', count: { $sum: 1 } } }, { $project: { _id: 0, reason: '$_id', count: 1 } }, { $sort: { count: -1 } }]),
   ]);
 
   res.json({

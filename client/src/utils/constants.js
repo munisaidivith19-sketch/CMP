@@ -1,5 +1,5 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin'];
-export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin' };
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security'];
+export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security' };
 
 export const STUDENT_ROLES = ['student', 'club_admin'];
 /** Can act on academic data (mark attendance, moderate…). */
@@ -8,9 +8,22 @@ export const STAFF = ['admin', 'faculty', 'hod'];
 export const STAFF_VIEW = [...STAFF, 'principal'];
 /** Sees the daily college / department attendance summary. */
 export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
+/** The gate pass approval chain, in order. */
+export const GATE_APPROVAL_ROLES = ['faculty', 'hod', 'principal'];
 export const STAY_TYPES = { hosteler: 'Hosteler', day_scholar: 'Day Scholar' };
 
 export const DEPARTMENTS = ['CSE', 'CSE (Cyber Security)', 'IT', 'AI & DS', 'ECE', 'EEE', 'Mechanical', 'Civil'];
+
+export const GATE_PASS_REGARDING = { outing: 'Outing', home: 'Home' };
+
+export const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
+  'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+  'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana',
+  'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi',
+  'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
+];
 
 export const CLUB_CATEGORIES = [
   'technical',

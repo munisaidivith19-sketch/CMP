@@ -14,6 +14,7 @@ const FORMS = {
   faculty: ['name', 'employeeId', 'department', 'section', 'email', 'phone', 'password'],
   hod: ['name', 'employeeId', 'department', 'email', 'phone', 'password'],
   principal: ['name', 'employeeId', 'email', 'phone', 'password'],
+  security: ['name', 'employeeId', 'email', 'phone', 'password'],
 };
 const REQUIRED = new Set(['name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId']);
 const EMPTY = { name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '' };

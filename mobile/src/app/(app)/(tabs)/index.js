@@ -17,7 +17,7 @@ function greeting() {
 
 function Tile({ icon, gradient, label, value, hint, href }) {
   return (
-    <Card onPress={() => router.push(href)} style={{ flex: 1, minWidth: '46%', gap: 10 }}>
+    <Card onPress={() => router.push(href)} style={{ width: '47.8%', gap: 10 }}>
       <IconTile icon={icon} gradient={gradient} size={38} />
       <View>
         <T v="label">{label}</T>

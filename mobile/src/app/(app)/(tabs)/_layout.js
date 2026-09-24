@@ -1,9 +1,11 @@
 import { Tabs } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, Home, LayoutGrid, MessageCircle, UserRound } from 'lucide-react-native';
 import { useGetChatUnreadQuery, useGetNotificationsQuery } from '../../../services/api';
 import { colors, fonts } from '../../../theme';
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
   const { data: chat } = useGetChatUnreadQuery();
   const { data: notes } = useGetNotificationsQuery({ limit: 1 });
   const badge = (n) => (n ? (n > 99 ? '99+' : n) : undefined);
@@ -15,7 +17,8 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11 },
-        tabBarStyle: { backgroundColor: 'rgba(255,255,255,0.96)', borderTopColor: 'rgba(108,93,211,0.1)', height: 64, paddingBottom: 8, paddingTop: 6 },
+        // Leave room for the Android gesture bar / iOS home indicator.
+        tabBarStyle: { backgroundColor: 'rgba(255,255,255,0.96)', borderTopColor: 'rgba(108,93,211,0.1)', height: 60 + insets.bottom, paddingBottom: 8 + insets.bottom, paddingTop: 6 },
         tabBarBadgeStyle: { backgroundColor: colors.danger, fontFamily: fonts.bold, fontSize: 10 },
       }}
     >

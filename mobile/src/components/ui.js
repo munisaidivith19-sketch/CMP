@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -304,7 +304,7 @@ export function PercentRing({ value = 0, size = 120, stroke = 11, threshold = 75
         <Circle cx={size / 2} cy={size / 2} r={r} stroke={pctColor(pct, threshold)} strokeWidth={stroke} fill="none" strokeLinecap="round" strokeDasharray={`${c} ${c}`} strokeDashoffset={c - (pct / 100) * c} />
       </Svg>
       <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-        <T v="h2">{pct % 1 ? pct.toFixed(1) : pct}%</T>
+        <T v="h2">{+pct.toFixed(2)}%</T>
         {sub ? <T v="small">{sub}</T> : null}
       </View>
     </View>
@@ -323,7 +323,12 @@ export function ProgressBar({ value = 0, threshold = 75 }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   blob: { position: 'absolute', width: 340, height: 340, borderRadius: 340 },
-  card: { backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, ...shadow },
+  // Android draws elevation shadows *through* translucent backgrounds (a pale inner
+  // rectangle), so glass cards there get no elevation and a slightly firmer fill.
+  card: Platform.select({
+    android: { backgroundColor: 'rgba(255,255,255,0.82)', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border },
+    default: { backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, ...shadow },
+  }),
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.md, paddingHorizontal: 18, paddingVertical: 13 },
   btnSmall: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.sm },
   btnText: { fontFamily: fonts.bold, fontSize: 14 },

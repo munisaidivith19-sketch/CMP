@@ -33,7 +33,7 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
+    "android": "expo run:android",
     "build:apk": "eas build -p android --profile preview",
     "build:apk:local": "eas build -p android --profile preview --local",
     "doctor": "expo-doctor",

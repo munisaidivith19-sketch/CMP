@@ -53,6 +53,7 @@ const CAMPUS = [
 
 const ADMIN = [
   { to: '/admin', label: 'Analytics', icon: BarChart3, roles: ['admin', 'faculty'], end: true },
+  { to: '/admin/attendance', label: 'Attendance', icon: ClipboardCheck, roles: ['admin', 'faculty'] },
   { to: '/admin/reports', label: 'Moderation', icon: ShieldAlert, roles: ['admin', 'faculty'] },
   { to: '/admin/users', label: 'Users', icon: UserCog, roles: ['admin'] },
   { to: '/admin/clubs', label: 'Club approvals', icon: BadgeCheck, roles: ['admin'] },

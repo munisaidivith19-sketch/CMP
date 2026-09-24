@@ -1,4 +1,5 @@
 # CampusConnect — College Community Portal
+### by VEXON TEAM
 
 A full-stack **MERN** platform (MongoDB · Express · React · Node.js) that brings a college's announcements, clubs, events, discussions and people into one place, with real-time notifications, role-based access and an admin analytics panel.
 

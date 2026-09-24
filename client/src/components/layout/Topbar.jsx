@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Menu, Moon, Search, Sun } from 'lucide-react';
+import { CalendarDays, Menu, Moon, Search, Sun } from 'lucide-react';
 import { selectUser } from '../../features/authSlice';
 import { setSidebar, toggleTheme } from '../../features/uiSlice';
 import { Avatar } from '../ui/primitives';
 import NotificationBell from './NotificationBell';
+import CalendarModal from '../CalendarModal';
 import { ROLE_LABELS } from '../../utils/constants';
 
 function greeting() {
@@ -21,6 +22,7 @@ export default function Topbar() {
   const user = useSelector(selectUser);
   const theme = useSelector((s) => s.ui.theme);
   const [q, setQ] = useState('');
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const submit = (e) => {
     e.preventDefault();
@@ -56,6 +58,10 @@ export default function Topbar() {
       <button onClick={() => dispatch(toggleTheme())} className="btn-icon btn-outline shrink-0" aria-label="Toggle theme">
         {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
       </button>
+      <button onClick={() => setCalendarOpen(true)} className="btn-icon btn-outline shrink-0" aria-label="Open calendar" title="Calendar">
+        <CalendarDays className="h-[18px] w-[18px]" />
+      </button>
+      <CalendarModal open={calendarOpen} onClose={() => setCalendarOpen(false)} />
       <NotificationBell />
 
       <Link to="/profile" className="hidden items-center gap-3 rounded-2xl py-1 pl-1 pr-3 transition-colors hover:bg-white/60 dark:hover:bg-white/5 sm:flex">

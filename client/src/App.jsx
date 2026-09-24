@@ -6,6 +6,7 @@ import AppLayout, { Backdrop } from './components/layout/AppLayout';
 import { PageLoader, Spinner } from './components/ui/primitives';
 import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
+import { STAFF_VIEW } from './utils/constants';
 
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -29,6 +30,7 @@ const AdminClubs = lazy(() => import('./pages/admin/AdminClubs'));
 const AdminActivity = lazy(() => import('./pages/admin/AdminActivity'));
 const AdminAcademics = lazy(() => import('./pages/admin/AdminAcademics'));
 const AttendanceDashboard = lazy(() => import('./pages/admin/AttendanceDashboard'));
+const AdminChatRequests = lazy(() => import('./pages/admin/AdminChatRequests'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
 const Security = lazy(() => import('./pages/settings/Security'));
@@ -90,7 +92,7 @@ export default function App() {
     );
   }
 
-  const staff = ['admin', 'faculty'];
+  const staff = STAFF_VIEW;
 
   return (
     <>
@@ -128,6 +130,7 @@ export default function App() {
             <Route path="admin/activity" element={<RequireAuth roles={['admin']}><AdminActivity /></RequireAuth>} />
             <Route path="admin/academics" element={<RequireAuth roles={['admin']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
+            <Route path="admin/chat-requests" element={<RequireAuth roles={['admin']}><AdminChatRequests /></RequireAuth>} />
             <Route path="settings/security" element={<Security />} />
             <Route path="chat" element={<Chat />} />
             <Route path="chat/:id" element={<Chat />} />

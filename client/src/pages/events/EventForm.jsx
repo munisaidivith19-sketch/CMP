@@ -7,7 +7,7 @@ import { Button } from '../../components/ui/primitives';
 import { ImageUpload, Input, Select, TagInput, Textarea } from '../../components/ui/form';
 import { useCreateEventMutation, useGetClubsQuery, useUpdateEventMutation } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { EVENT_CATEGORIES } from '../../utils/constants';
+import { EVENT_CATEGORIES, STAFF_VIEW } from '../../utils/constants';
 import { errMsg, toLocalInput } from '../../utils/format';
 
 const blank = {
@@ -27,7 +27,7 @@ const blank = {
 
 export default function EventForm({ open, onClose, event, defaultClub, onSaved }) {
   const user = useSelector(selectUser);
-  const isStaff = ['admin', 'faculty'].includes(user.role);
+  const isStaff = STAFF_VIEW.includes(user.role);
   const { data: clubs } = useGetClubsQuery({ mine: true, limit: 50 }, { skip: !open });
   const manageable = clubs?.items?.filter((c) => c.isManager) || [];
   const [create, { isLoading: creating }] = useCreateEventMutation();

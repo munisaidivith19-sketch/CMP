@@ -17,7 +17,7 @@ import { useSocketEvent, useSocketRoom } from '../../services/socket';
 import { Avatar, Badge, Button, Card, ErrorState, PageLoader, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { ReportButton } from '../../components/domain';
-import { ROLE_LABELS } from '../../utils/constants';
+import { ROLE_LABELS, STAFF_VIEW } from '../../utils/constants';
 import { errMsg, timeAgo } from '../../utils/format';
 
 function Upvote({ active, count, onClick }) {
@@ -152,7 +152,7 @@ export default function DiscussionDetail() {
                     {r.author?.name}
                   </Link>
                   {r.author?._id === d.author._id && <Badge>Author</Badge>}
-                  {['faculty', 'admin'].includes(r.author?.role) && <Badge color="info">{ROLE_LABELS[r.author.role]}</Badge>}
+                  {STAFF_VIEW.includes(r.author?.role) && <Badge color="info">{ROLE_LABELS[r.author.role]}</Badge>}
                   {r.isHidden && <Badge color="danger">hidden</Badge>}
                   <span className="text-xs muted">{timeAgo(r.createdAt)}</span>
                 </div>

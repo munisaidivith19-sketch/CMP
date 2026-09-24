@@ -7,6 +7,8 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
+  Clock,
+  Lock,
   CornerUpLeft,
   Loader2,
   MessageCircle,
@@ -22,6 +24,7 @@ import {
   useDeleteMessageMutation,
   useGetConversationQuery,
   useGetConversationsQuery,
+  useGetGroupRequestsQuery,
   useGetMessagesQuery,
   useGetUsersQuery,
   useLazyGetMessagesQuery,
@@ -34,6 +37,14 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/form';
 import { ROLE_LABELS } from '../../utils/constants';
 import { errMsg, fmtTime, timeAgo } from '../../utils/format';
+
+/** Who may start a group chat. Faculty groups wait for admin approval. */
+const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
+const GROUP_SCOPE = {
+  admin: 'Add anyone on campus.',
+  hod: 'Groups can include students and staff of your department.',
+  faculty: 'Class groups can include students of your sections. An admin approves the group before it goes live.',
+};
 
 const sameId = (a, b) => String(a?._id || a) === String(b?._id || b);
 
@@ -78,7 +89,10 @@ function NewChatModal({ open, onClose, me }) {
   const [group, setGroup] = useState(false);
   const [name, setName] = useState('');
   const [picked, setPicked] = useState([]);
-  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 20 }, { skip: !open });
+  const canGroup = GROUP_CREATORS.includes(me.role);
+  // Group members must come from the creator's own department (admins: anyone).
+  const scope = group && me.role !== 'admin' && me.department ? { department: me.department } : {};
+  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 20, ...scope }, { skip: !open });
   const [create, { isLoading }] = useCreateConversationMutation();
   const people = (data?.items || []).filter((u) => !sameId(u, me));
 
@@ -97,6 +111,10 @@ function NewChatModal({ open, onClose, me }) {
         group ? { type: 'group', name: name.trim(), participantIds: ids } : { type: 'private', participantIds: ids }
       ).unwrap();
       onClose();
+      if (conv.pending) {
+        toast.success('Group request sent — it goes live once an admin approves it');
+        return;
+      }
       navigate(`/chat/${conv._id}`);
     } catch (e) {
       toast.error(errMsg(e, 'Could not start the conversation'));
@@ -110,7 +128,7 @@ function NewChatModal({ open, onClose, me }) {
       open={open}
       onClose={onClose}
       title={group ? 'New group' : 'New message'}
-      subtitle={group ? 'Pick members and give the group a name.' : 'Start a private conversation with anyone on campus.'}
+      subtitle={group ? GROUP_SCOPE[me.role] : 'Start a private conversation with anyone on campus.'}
       footer={
         group && (
           <>
@@ -118,20 +136,22 @@ function NewChatModal({ open, onClose, me }) {
               Cancel
             </Button>
             <Button loading={isLoading} disabled={!picked.length || name.trim().length < 2} onClick={() => start(picked.map((p) => p._id))}>
-              Create group
+              {me.role === 'faculty' ? 'Request group' : 'Create group'}
             </Button>
           </>
         )
       }
     >
-      <div className="mb-3 flex gap-2">
-        <button className={cn('chip', !group && 'chip-active')} onClick={() => setGroup(false)}>
-          Private
-        </button>
-        <button className={cn('chip', group && 'chip-active')} onClick={() => setGroup(true)}>
-          <Users className="h-3.5 w-3.5" /> Group
-        </button>
-      </div>
+      {canGroup && (
+        <div className="mb-3 flex gap-2">
+          <button className={cn('chip', !group && 'chip-active')} onClick={() => setGroup(false)}>
+            Private
+          </button>
+          <button className={cn('chip', group && 'chip-active')} onClick={() => setGroup(true)}>
+            <Users className="h-3.5 w-3.5" /> Group
+          </button>
+        </div>
+      )}
       {group && (
         <Input label="Group name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="e.g. Mini-project team" className="mb-3" />
       )}
@@ -181,6 +201,7 @@ function NewChatModal({ open, onClose, me }) {
 function ConversationList({ activeId, me, presence, typing, onNew }) {
   const [search, setSearch] = useState('');
   const { data, isLoading, error, refetch } = useGetConversationsQuery(search ? { search } : undefined);
+  const { data: requests = [] } = useGetGroupRequestsQuery(undefined, { skip: !['hod', 'faculty'].includes(me.role) });
 
   return (
     <div className="flex h-full flex-col">
@@ -205,6 +226,20 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
             action={!search && <Button size="sm" icon={Plus} onClick={onNew}>New message</Button>}
           />
         )}
+        {!search &&
+          requests.map((r) => (
+            <div key={r._id} className="flex items-center gap-3 rounded-2xl p-2.5 opacity-80" title={r.rejectReason || undefined}>
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/60 text-ink-muted dark:bg-white/5">
+                {r.status === 'pending' ? <Clock className="h-5 w-5" /> : <X className="h-5 w-5" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold">{r.name}</p>
+                <p className={cn('truncate text-xs', r.status === 'pending' ? 'text-amber-600' : 'text-rose-500')}>
+                  {r.status === 'pending' ? 'Waiting for admin approval' : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
+                </p>
+              </div>
+            </div>
+          ))}
         {data?.map((c) => {
           const d = describe(c, me);
           const online = d.other ? presence[d.other._id] ?? d.other.online : false;
@@ -476,6 +511,11 @@ function Thread({ id, me, presence, typingUsers }) {
           </div>
         )}
         {error && <ErrorState error={error} />}
+        {!hasMore && !error && !isLoading && (
+          <p className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-700">
+            <Lock className="h-3 w-3" /> Messages are encrypted before they are stored
+          </p>
+        )}
         {!isLoading && !messages.length && !error && (
           <EmptyState icon={MessageCircle} title="Say hello 👋" text="Messages are delivered instantly on the web and the Android app." />
         )}

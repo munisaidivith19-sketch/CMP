@@ -18,9 +18,14 @@ import { cn } from './ui/primitives';
 import { catStyle } from '../utils/constants';
 import { fmtTime } from '../utils/format';
 
-/** Month calendar with event dots — mirrors the calendar widget in the reference dashboard. */
-export default function MiniCalendar({ events = [] }) {
-  const [month, setMonth] = useState(new Date());
+/**
+ * Month calendar with event dots. Pass `month` + `onMonthChange` to control the
+ * visible month (e.g. to load that month's events); `large` for the full-size view.
+ */
+export default function MiniCalendar({ events = [], month: controlled, onMonthChange, large = false }) {
+  const [own, setOwn] = useState(new Date());
+  const month = controlled || own;
+  const setMonth = onMonthChange || setOwn;
   const [selected, setSelected] = useState(new Date());
 
   const days = useMemo(
@@ -62,7 +67,8 @@ export default function MiniCalendar({ events = [] }) {
               key={day.toISOString()}
               onClick={() => setSelected(day)}
               className={cn(
-                'relative flex aspect-square flex-col items-center justify-center rounded-xl text-xs font-semibold transition-all duration-300 ease-smooth',
+                large ? 'h-14 sm:h-16' : 'aspect-square',
+                'relative flex flex-col items-center justify-center rounded-xl text-xs font-semibold transition-all duration-300 ease-smooth',
                 !isSameMonth(day, month) && 'text-ink-muted/50',
                 active
                   ? 'bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow'
@@ -72,6 +78,9 @@ export default function MiniCalendar({ events = [] }) {
               )}
             >
               {format(day, 'd')}
+              {large && evs.length > 0 && (
+                <span className={cn('mt-0.5 hidden max-w-full truncate px-1 text-[9px] font-medium sm:block', active ? 'text-white/90' : 'muted')}>{evs[0].title}</span>
+              )}
               {evs.length > 0 && (
                 <span className="absolute bottom-1 flex gap-0.5">
                   {evs.slice(0, 3).map((e) => (

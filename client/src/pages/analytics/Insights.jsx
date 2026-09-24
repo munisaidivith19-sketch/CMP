@@ -424,14 +424,14 @@ export default function Insights() {
   const params = rangeParams(range);
 
   const tabs =
-    me.role === 'admin'
+    ['admin', 'principal'].includes(me.role)
       ? [
           { value: 'college', label: 'College' },
           { value: 'department', label: 'Departments' },
           { value: 'classes', label: 'All classes' },
           { value: 'gate', label: 'Gate' },
         ]
-      : me.role === 'faculty'
+      : ['faculty', 'hod'].includes(me.role)
         ? [
             { value: 'classes', label: 'My classes' },
             { value: 'department', label: 'My department' },
@@ -446,7 +446,7 @@ export default function Insights() {
       {tabs.length > 1 && <Tabs tabs={tabs} value={tab} onChange={(t) => setSearch({ tab: t }, { replace: true })} />}
       {tab === 'me' && <MeInsights params={params} />}
       {tab === 'classes' && <FacultyInsights params={params} />}
-      {tab === 'department' && <DepartmentInsights params={params} canPick={me.role === 'admin'} />}
+      {tab === 'department' && <DepartmentInsights params={params} canPick={['admin', 'principal'].includes(me.role)} />}
       {tab === 'college' && <CollegeInsights params={params} />}
       {tab === 'gate' && <GateInsights params={params} />}
     </div>

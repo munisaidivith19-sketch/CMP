@@ -41,7 +41,7 @@ import EventForm from '../events/EventForm';
 import AnnouncementForm from '../announcements/AnnouncementForm';
 import { ClubInsights } from '../analytics/Insights';
 import { selectUser } from '../../features/authSlice';
-import { catStyle, ROLE_LABELS } from '../../utils/constants';
+import { catStyle, ROLE_LABELS, STAFF_VIEW } from '../../utils/constants';
 import { errMsg, friendlyDay, fmtTime, timeAgo } from '../../utils/format';
 
 function Requests({ club }) {
@@ -162,7 +162,7 @@ export default function ClubDetail() {
     { value: 'members', label: 'Members', count: club.memberCount },
     { value: 'events', label: 'Events', count: club.upcomingEvents.length },
     ...(club.isManager ? [{ value: 'requests', label: 'Requests', count: club.pendingCount }] : []),
-    ...(club.isManager || ['admin', 'faculty'].includes(me.role) ? [{ value: 'insights', label: 'Insights' }] : []),
+    ...(club.isManager || STAFF_VIEW.includes(me.role) ? [{ value: 'insights', label: 'Insights' }] : []),
   ];
   const setTab = (t) => setSearch(t === 'about' ? {} : { tab: t });
 
@@ -355,7 +355,7 @@ export default function ClubDetail() {
         </Card>
       )}
 
-      {tab === 'insights' && (club.isManager || ['admin', 'faculty'].includes(me.role)) && <ClubInsights clubId={club._id} />}
+      {tab === 'insights' && (club.isManager || STAFF_VIEW.includes(me.role)) && <ClubInsights clubId={club._id} />}
 
       {tab === 'requests' && club.isManager && (
         <Card>

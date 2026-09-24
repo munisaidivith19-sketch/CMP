@@ -16,17 +16,22 @@ import {
   useReviewCorrectionMutation,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
+import { SUMMARY_VIEW } from '../../utils/constants';
+import { DailySummary, FacultyMarking } from './DailySummary';
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { MiniStat, PercentBadge, PercentBars, RangeFilter, StatusBadge, rangeParams } from '../../components/insights';
 import { errMsg, fmtClassDay, fmtDateTime, todayKey } from '../../utils/format';
+
+/** Faculty pick from subjects they teach, an HOD from their department's, admin from all. */
+const subjectScope = (me) => (me.role === 'faculty' ? { mine: 'true' } : me.role === 'hod' ? { department: me.department } : undefined);
 
 const todayName = () => ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
 
 /* ── Mark attendance ────────────────────────────────────────────── */
 function MarkAttendance({ preset, onPresetUsed }) {
   const me = useSelector(selectUser);
-  const { data: subjects = [], isLoading: loadingSubjects } = useGetSubjectsQuery(me.role === 'faculty' ? { mine: 'true' } : undefined);
+  const { data: subjects = [], isLoading: loadingSubjects } = useGetSubjectsQuery(subjectScope(me));
   const { data: tt } = useGetTimetableQuery(undefined, { skip: me.role !== 'faculty' });
   const [form, setForm] = useState({ subjectId: '', section: '', date: todayKey(), period: '' });
   const [marks, setMarks] = useState({});
@@ -417,7 +422,7 @@ function Corrections() {
 /* ── Class overview (per subject) ───────────────────────────────── */
 function ClassOverview() {
   const me = useSelector(selectUser);
-  const { data: subjects = [] } = useGetSubjectsQuery(me.role === 'faculty' ? { mine: 'true' } : undefined);
+  const { data: subjects = [] } = useGetSubjectsQuery(subjectScope(me));
   const [subjectId, setSubjectId] = useState('');
   const [section, setSection] = useState('');
   const [range, setRange] = useState({ range: 'semester' });
@@ -501,31 +506,40 @@ function ClassOverview() {
 }
 
 export default function StaffAttendance() {
+  const me = useSelector(selectUser);
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') || 'mark';
+  const canMark = me.role !== 'principal';
+  const seesSummary = SUMMARY_VIEW.includes(me.role);
+  const tabs = [
+    ...(canMark ? [{ value: 'mark', label: 'Mark attendance' }] : []),
+    ...(seesSummary ? [{ value: 'today', label: 'Daily summary' }] : []),
+    ...(['admin', 'hod'].includes(me.role) ? [{ value: 'faculty', label: 'Faculty attendance' }] : []),
+    { value: 'sessions', label: 'History' },
+    { value: 'overview', label: 'Class overview' },
+    { value: 'low', label: 'Low attendance' },
+    { value: 'corrections', label: 'Corrections' },
+  ];
+  const requested = params.get('tab');
+  const tab = tabs.some((t) => t.value === requested) ? requested : tabs[0].value;
   const [preset, setPreset] = useState(null);
-  const setTab = (t) => setParams(t === 'mark' ? {} : { tab: t }, { replace: true });
+  const setTab = (t) => setParams(t === tabs[0].value ? {} : { tab: t }, { replace: true });
   const { data: pending } = useGetCorrectionsQuery({ status: 'pending', limit: 1 });
+  const withCount = tabs.map((t) => (t.value === 'corrections' ? { ...t, count: pending?.pagination?.total || undefined } : t));
 
   return (
     <div className="space-y-5">
       <PageHeader
         icon={ClipboardCheck}
         title="Attendance"
-        subtitle="Mark classes, review corrections and follow up on low attendance."
+        subtitle={
+          canMark
+            ? 'Mark classes, review corrections and follow up on low attendance.'
+            : 'College-wide attendance — daily summary, class overview and low attendance.'
+        }
       />
-      <Tabs
-        tabs={[
-          { value: 'mark', label: 'Mark attendance' },
-          { value: 'sessions', label: 'History' },
-          { value: 'overview', label: 'Class overview' },
-          { value: 'low', label: 'Low attendance' },
-          { value: 'corrections', label: 'Corrections', count: pending?.pagination?.total || undefined },
-        ]}
-        value={tab}
-        onChange={setTab}
-        className="max-w-full"
-      />
+      <Tabs tabs={withCount} value={tab} onChange={setTab} className="max-w-full" />
+      {tab === 'today' && <DailySummary />}
+      {tab === 'faculty' && <FacultyMarking />}
       {tab === 'mark' && <MarkAttendance preset={preset} onPresetUsed={() => setPreset(null)} />}
       {tab === 'sessions' && (
         <Sessions

@@ -23,14 +23,15 @@ import {
   Shapes,
   Sparkles,
   UserCog,
+  UsersRound,
   X,
 } from 'lucide-react';
 import { setSidebar } from '../../features/uiSlice';
 import { loggedOut, selectUser } from '../../features/authSlice';
-import { api, useGetChatUnreadQuery, useLogoutMutation } from '../../services/api';
+import { api, useGetChatUnreadQuery, useGetGroupRequestsQuery, useLogoutMutation } from '../../services/api';
 import { disconnectSocket } from '../../services/socket';
 import { Avatar, cn } from '../ui/primitives';
-import { ROLE_LABELS } from '../../utils/constants';
+import { ROLE_LABELS, STAFF_VIEW } from '../../utils/constants';
 
 const MAIN = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -52,10 +53,11 @@ const CAMPUS = [
 ];
 
 const ADMIN = [
-  { to: '/admin', label: 'Analytics', icon: BarChart3, roles: ['admin', 'faculty'], end: true },
-  { to: '/admin/attendance', label: 'Attendance', icon: ClipboardCheck, roles: ['admin', 'faculty'] },
-  { to: '/admin/reports', label: 'Moderation', icon: ShieldAlert, roles: ['admin', 'faculty'] },
+  { to: '/admin', label: 'Analytics', icon: BarChart3, roles: STAFF_VIEW, end: true },
+  { to: '/admin/attendance', label: 'Attendance', icon: ClipboardCheck, roles: STAFF_VIEW },
+  { to: '/admin/reports', label: 'Moderation', icon: ShieldAlert, roles: STAFF_VIEW },
   { to: '/admin/users', label: 'Users', icon: UserCog, roles: ['admin'] },
+  { to: '/admin/chat-requests', label: 'Group requests', icon: UsersRound, roles: ['admin'], badge: 'groups' },
   { to: '/admin/clubs', label: 'Club approvals', icon: BadgeCheck, roles: ['admin'] },
   { to: '/admin/academics', label: 'Academics', icon: BookOpenCheck, roles: ['admin'] },
   { to: '/admin/activity', label: 'Activity log', icon: Activity, roles: ['admin'] },
@@ -85,6 +87,7 @@ export default function Sidebar() {
   const close = () => dispatch(setSidebar(false));
   const adminItems = ADMIN.filter((i) => i.roles.includes(user?.role));
   const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user });
+  const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: user?.role !== 'admin', pollingInterval: 60000 });
 
   const onLogout = async () => {
     try {
@@ -139,7 +142,7 @@ export default function Sidebar() {
             <>
               <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">Administration</p>
               {adminItems.map((i) => (
-                <NavItem key={i.to} item={i} onClick={close} />
+                <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'groups' ? groupRequests?.length : 0} />
               ))}
             </>
           )}

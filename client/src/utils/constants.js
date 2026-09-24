@@ -1,5 +1,14 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'admin'];
-export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', admin: 'Admin' };
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin'];
+export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin' };
+
+export const STUDENT_ROLES = ['student', 'club_admin'];
+/** Can act on academic data (mark attendance, moderate…). */
+export const STAFF = ['admin', 'faculty', 'hod'];
+/** Staff plus the read-only principal. */
+export const STAFF_VIEW = [...STAFF, 'principal'];
+/** Sees the daily college / department attendance summary. */
+export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
+export const STAY_TYPES = { hosteler: 'Hosteler', day_scholar: 'Day Scholar' };
 
 export const DEPARTMENTS = ['CSE', 'CSE (Cyber Security)', 'IT', 'AI & DS', 'ECE', 'EEE', 'Mechanical', 'Civil'];
 

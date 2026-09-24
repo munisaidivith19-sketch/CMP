@@ -48,6 +48,7 @@ const baseQueryWithReauth = async (args, api, extra) => {
 const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
+  'ChatRequest', 'StaffAttendance',
 ];
 
 export const api = createApi({
@@ -236,6 +237,7 @@ export const api = createApi({
       invalidatesTags: ['Admin', 'User'],
     }),
     getActivity: b.query({ query: (params) => ({ url: '/admin/activity', params }), providesTags: ['Admin'] }),
+    createAdminUser: b.mutation({ query: (body) => ({ url: '/admin/users', method: 'POST', body }), invalidatesTags: ['Admin', 'User'] }),
 
     // ── Chat ──────────────────────────────────────────
     getConversations: b.query({ query: (params) => ({ url: '/chat/conversations', params }), providesTags: ['Chat'] }),
@@ -253,6 +255,11 @@ export const api = createApi({
     addChatMembers: b.mutation({
       query: ({ id, userIds }) => ({ url: `/chat/conversations/${id}/members`, method: 'POST', body: { userIds } }),
       invalidatesTags: ['Chat'],
+    }),
+    getGroupRequests: b.query({ query: (params) => ({ url: '/chat/requests', params }), providesTags: ['ChatRequest'] }),
+    reviewGroupRequest: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/chat/requests/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['ChatRequest', 'Chat', 'Notification'],
     }),
     leaveConversation: b.mutation({
       query: ({ id, userId }) => ({ url: `/chat/conversations/${id}/members/${userId}`, method: 'DELETE' }),
@@ -277,6 +284,14 @@ export const api = createApi({
     reviewCorrection: b.mutation({
       query: ({ id, ...body }) => ({ url: `/attendance/corrections/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['Correction', 'Attendance'],
+    }),
+    getAttendanceSummary: b.query({ query: (params) => ({ url: '/attendance/summary', params }), providesTags: ['Attendance', 'StaffAttendance'] }),
+    getSummaryStudents: b.query({ query: (params) => ({ url: '/attendance/summary/students', params }), providesTags: ['Attendance'] }),
+    getSummaryFaculty: b.query({ query: (params) => ({ url: '/attendance/summary/faculty', params }), providesTags: ['StaffAttendance'] }),
+    getFacultyRoster: b.query({ query: (params) => ({ url: '/attendance/faculty/roster', params }), providesTags: ['StaffAttendance'] }),
+    markFacultyAttendance: b.mutation({
+      query: (body) => ({ url: '/attendance/faculty/mark', method: 'POST', body }),
+      invalidatesTags: ['StaffAttendance'],
     }),
 
     // ── Timetable / subjects ──────────────────────────
@@ -384,6 +399,14 @@ export const {
   useGetAdminUsersQuery,
   useUpdateAdminUserMutation,
   useGetActivityQuery,
+  useCreateAdminUserMutation,
+  useGetGroupRequestsQuery,
+  useReviewGroupRequestMutation,
+  useGetAttendanceSummaryQuery,
+  useGetSummaryStudentsQuery,
+  useGetSummaryFacultyQuery,
+  useGetFacultyRosterQuery,
+  useMarkFacultyAttendanceMutation,
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useGetSessionsQuery,

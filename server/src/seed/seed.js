@@ -71,6 +71,23 @@ async function seed() {
     designation: 'Assistant Professor',
     interests: ['cultural', 'arts'],
   });
+  const hod = mk({
+    name: 'Dr. Lakshmi Narayanan',
+    email: 'hod@campus.edu',
+    role: 'hod',
+    department: 'CSE',
+    employeeId: 'EMP-HOD-CSE',
+    designation: 'Professor & Head, CSE',
+    phone: '9840012345',
+  });
+  const principal = mk({
+    name: 'Dr. Ramesh Babu',
+    email: 'principal@campus.edu',
+    role: 'principal',
+    employeeId: 'EMP-PRINCIPAL',
+    designation: 'Principal',
+    phone: '9840054321',
+  });
   const clubAdmin = mk({
     name: 'Rahul Verma',
     email: 'clubadmin@campus.edu',
@@ -125,7 +142,7 @@ async function seed() {
     })
   );
 
-  const allUsers = [admin, faculty, faculty2, clubAdmin, clubAdmin2, ...students];
+  const allUsers = [admin, faculty, faculty2, hod, principal, clubAdmin, clubAdmin2, ...students];
   for (const u of allUsers) await u.save();
   console.log(`[seed] ${allUsers.length} users`);
 

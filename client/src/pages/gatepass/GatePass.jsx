@@ -36,6 +36,7 @@ import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, Select, Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
 import { errMsg, fmtDateTime, timeAgo, titleCase, toLocalInput } from '../../utils/format';
+import { STAFF_VIEW } from '../../utils/constants';
 
 export const GATE_REASONS = ['medical', 'family_emergency', 'personal', 'official', 'outing', 'other'];
 const OPEN = ['pending', 'approved', 'active'];
@@ -602,5 +603,5 @@ function StaffGatePass() {
 
 export default function GatePass() {
   const me = useSelector(selectUser);
-  return ['admin', 'faculty'].includes(me.role) ? <StaffGatePass /> : <StudentGatePass />;
+  return STAFF_VIEW.includes(me.role) ? <StaffGatePass /> : <StudentGatePass />;
 }

@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, Search, UserCog } from 'lucide-react';
+import { Ban, CheckCircle2, Search, UserCog, UserPlus } from 'lucide-react';
 import { useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, Select } from '../../components/ui/form';
 import { selectUser } from '../../features/authSlice';
+import CreateUserModal from '../../components/CreateUserModal';
 import { DEPARTMENTS, ROLES, ROLE_LABELS } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo } from '../../utils/format';
 
@@ -72,6 +73,7 @@ export default function AdminUsers() {
   const [page, setPage] = useState(1);
   const [pending, setPending] = useState(null);
   const [classEdit, setClassEdit] = useState(null);
+  const [creating, setCreating] = useState(false);
   const { data, isLoading } = useGetAdminUsersQuery({ q: q || undefined, role: role || undefined, status: status || undefined, page });
   const [update, { isLoading: saving }] = useUpdateAdminUserMutation();
 
@@ -86,7 +88,17 @@ export default function AdminUsers() {
 
   return (
     <div>
-      <PageHeader icon={UserCog} title="User management" subtitle="Assign roles and suspend or reactivate accounts. Changes sign the user out everywhere." />
+      <PageHeader
+        icon={UserCog}
+        title="User management"
+        subtitle="Create logins for students, faculty, HODs and the principal; assign roles and suspend or reactivate accounts."
+        actions={
+          <Button icon={UserPlus} onClick={() => setCreating(true)}>
+            Create login
+          </Button>
+        }
+      />
+      <CreateUserModal open={creating} onClose={() => setCreating(false)} />
       <Card className="mb-6 grid gap-3 md:grid-cols-[1fr_180px_180px]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
@@ -145,7 +157,10 @@ export default function AdminUsers() {
                           <Avatar user={u} size="sm" />
                           <div className="min-w-0">
                             <p className="truncate font-bold">{u.name}</p>
-                            <p className="truncate text-xs muted">{u.email}</p>
+                            <p className="truncate text-xs muted">
+                              {u.email}
+                              {u.rollNo || u.employeeId ? ` · ${u.rollNo || u.employeeId}` : ''}
+                            </p>
                           </div>
                         </Link>
                       </td>

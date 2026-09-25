@@ -13,7 +13,15 @@ The UI is a **glassmorphism** take on a modern education admin dashboard. It use
 
 
 |MOBILE APP UI |
-| |[MOBIILE UI](docs/screenshots/mobileui.png) | 
+| ![MOBIILE UI](docs/screenshots/mobileui.png) | 
+
+
+
+
+
+
+
+
 
 |---|---|
 ---

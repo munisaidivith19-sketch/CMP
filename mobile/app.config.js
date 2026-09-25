@@ -24,13 +24,13 @@ module.exports = {
     splash: {
       image: './assets/splash-icon.png',
       resizeMode: 'contain',
-      backgroundColor: '#eef0fb',
+      backgroundColor: '#EFF5FC',
     },
     android: {
       package: process.env.ANDROID_PACKAGE || 'com.vexon.campus',
       versionCode: 1,
       adaptiveIcon: {
-        backgroundColor: '#6c5dd3',
+        backgroundColor: '#1D6FEB',
         foregroundImage: './assets/android-icon-foreground.png',
         backgroundImage: './assets/android-icon-background.png',
         monochromeImage: './assets/android-icon-monochrome.png',
@@ -45,9 +45,9 @@ module.exports = {
       'expo-router',
       'expo-secure-store',
       'expo-font',
-      ['expo-notifications', { color: '#6c5dd3' }],
+      ['expo-notifications', { color: '#1D6FEB' }],
       ['expo-image-picker', { photosPermission: 'Vexon uses your photos to attach a picture to a lost or found item report.', cameraPermission: false }],
-      ['expo-splash-screen', { image: './assets/splash-icon.png', backgroundColor: '#eef0fb', imageWidth: 180 }],
+      ['expo-splash-screen', { image: './assets/splash-icon.png', backgroundColor: '#EFF5FC', imageWidth: 180 }],
       ['expo-build-properties', { android: { usesCleartextTraffic: allowCleartext } }],
     ],
     experiments: { typedRoutes: false },

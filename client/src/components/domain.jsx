@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { CalendarDays, CheckCircle2, Clock, Flag, MapPin, Pin, Star, Users } from 'lucide-react';
@@ -7,14 +8,19 @@ import { Avatar, Badge, Button, Card, CategoryBadge, ProgressBar, cn } from './u
 import { Modal } from './ui/Modal';
 import { Select, Textarea } from './ui/form';
 import { useCancelRegistrationMutation, useCreateReportMutation, useRegisterEventMutation } from '../services/api';
-import { catStyle, REPORT_REASONS } from '../utils/constants';
+import { selectUser } from '../features/authSlice';
+import { catStyle, REPORT_REASONS, STUDENT_ROLES } from '../utils/constants';
 import { errMsg, friendlyDay, fmtTime, timeAgo } from '../utils/format';
 
 /* ── Event registration button ──────────────────────────────────── */
 export function RegisterButton({ event, size = 'md', className }) {
+  const user = useSelector(selectUser);
   const [register, { isLoading: registering }] = useRegisterEventMutation();
   const [cancel, { isLoading: cancelling }] = useCancelRegistrationMutation();
   const isPast = event.isPast ?? new Date(event.endDate) < new Date();
+
+  // Only students register for events — faculty/HOD/principal/admin/security don't.
+  if (!STUDENT_ROLES.includes(user?.role)) return null;
 
   if (isPast) return <Badge color="neutral">Ended</Badge>;
 

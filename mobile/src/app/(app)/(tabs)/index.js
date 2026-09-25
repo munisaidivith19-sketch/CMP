@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, LogIn, LogOut, Megaphone, MessageCircle, Search, Shapes, Sparkles, Users } from 'lucide-react-native';
 import { Avatar, Badge, Card, EmptyState, ErrorState, IconButton, IconTile, Loading, Screen, SectionTitle, T } from '../../../components/ui';
+import { assetUrl } from '../../../config';
 import {
   useGetAttendanceSummaryQuery,
   useGetChatUnreadQuery,
@@ -91,14 +92,18 @@ function Row({ label, value, tone }) {
 function EventLine({ e, onPress }) {
   return (
     <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.75)' }}>
-      <LinearGradient colors={gradients.sky} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}>
-        <T v="small" style={{ color: '#fff', fontSize: 9, fontFamily: fonts.bold }}>
-          {format(new Date(e.startDate), 'MMM').toUpperCase()}
-        </T>
-        <T v="h3" style={{ color: '#fff', lineHeight: 18 }}>
-          {format(new Date(e.startDate), 'dd')}
-        </T>
-      </LinearGradient>
+      {e.poster ? (
+        <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primarySoft }} resizeMode="cover" />
+      ) : (
+        <LinearGradient colors={gradients.sky} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}>
+          <T v="small" style={{ color: '#fff', fontSize: 9, fontFamily: fonts.bold }}>
+            {format(new Date(e.startDate), 'MMM').toUpperCase()}
+          </T>
+          <T v="h3" style={{ color: '#fff', lineHeight: 18 }}>
+            {format(new Date(e.startDate), 'dd')}
+          </T>
+        </LinearGradient>
+      )}
       <View style={{ flex: 1 }}>
         <T v="strong" numberOfLines={1}>
           {e.title}
@@ -316,7 +321,11 @@ function GeneralHome({ user }) {
               <SectionTitle title="Recommended for you" action="All events" onAction={() => router.push('/events')} />
               {d.recommended.slice(0, 3).map((e) => (
                 <Card key={e._id} onPress={() => router.push(`/events/${e._id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <IconTile icon={Sparkles} gradient={gradients.hero} size={42} />
+                  {e.poster ? (
+                    <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: colors.primarySoft }} resizeMode="cover" />
+                  ) : (
+                    <IconTile icon={Sparkles} gradient={gradients.hero} size={42} />
+                  )}
                   <View style={{ flex: 1 }}>
                     <T v="strong" numberOfLines={1}>
                       {e.title}

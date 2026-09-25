@@ -208,7 +208,7 @@ function MarkClass() {
           </View>
           <Card padded={false}>
             {r.students.map((s, i) => (
-              <View key={s._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderColor: 'rgba(108,93,211,0.08)' }}>
+              <View key={s._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderColor: 'rgba(29,111,235,0.1)' }}>
                 <View style={{ flex: 1 }}>
                   <T v="strong" numberOfLines={1}>
                     {s.name}
@@ -311,7 +311,7 @@ function DailySummary() {
       ) : (
         <Card padded={false}>
           {rows.map((row, i) => (
-            <View key={row._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i ? 1 : 0, borderColor: 'rgba(108,93,211,0.08)' }}>
+            <View key={row._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i ? 1 : 0, borderColor: 'rgba(29,111,235,0.1)' }}>
               <Avatar user={row} size={36} />
               <View style={{ flex: 1 }}>
                 <T v="strong" numberOfLines={1}>
@@ -377,7 +377,7 @@ function FacultyMarking() {
           {!r.editable ? <LockNote text={r.lockedReason} /> : null}
           <Card padded={false}>
             {r.faculty.map((f, i) => (
-              <View key={f._id} style={{ padding: 12, gap: 8, borderTopWidth: i ? 1 : 0, borderColor: 'rgba(108,93,211,0.08)' }}>
+              <View key={f._id} style={{ padding: 12, gap: 8, borderTopWidth: i ? 1 : 0, borderColor: 'rgba(29,111,235,0.1)' }}>
                 <View>
                   <T v="strong" numberOfLines={1}>
                     {f.name}

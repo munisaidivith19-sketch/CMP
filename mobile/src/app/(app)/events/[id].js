@@ -1,14 +1,17 @@
 import { Alert, Image, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSelector } from 'react-redux';
 import { CalendarDays, MapPin, Users } from 'lucide-react-native';
 import { Button, Card, ErrorState, Header, Loading, ProgressBar, Screen, StatusBadge, T } from '../../../components/ui';
 import { errMsg, useCancelRegistrationMutation, useGetEventQuery, useRegisterEventMutation } from '../../../services/api';
 import { assetUrl } from '../../../config';
-import { colors } from '../../../theme';
+import { selectUser } from '../../../store/authSlice';
+import { STUDENT_ROLES, colors } from '../../../theme';
 import { fmtDateTime, titleCase } from '../../../utils/format';
 
 export default function EventDetail() {
   const { id } = useLocalSearchParams();
+  const me = useSelector(selectUser);
   const { data: e, isLoading, error, refetch, isFetching } = useGetEventQuery(id);
   const [register, { isLoading: registering }] = useRegisterEventMutation();
   const [cancel, { isLoading: cancelling }] = useCancelRegistrationMutation();
@@ -65,7 +68,7 @@ export default function EventDetail() {
         <T v="body">{e.description}</T>
       </Card>
       {e.myStatus ? <StatusBadge status={e.myStatus} label={`You are ${e.myStatus}`} /> : null}
-      {e.isPast ? (
+      {!STUDENT_ROLES.includes(me.role) ? null : e.isPast ? (
         <T v="small" style={{ textAlign: 'center' }}>This event has ended.</T>
       ) : (
         <Button title={e.myStatus ? 'Cancel registration' : full ? 'Join waitlist' : 'Register'} variant={e.myStatus ? 'danger' : 'primary'} loading={registering || cancelling} onPress={act} />

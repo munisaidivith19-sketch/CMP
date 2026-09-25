@@ -49,6 +49,10 @@ import { uploadFile } from '../controllers/uploadController.js';
 
 const router = Router();
 
+// Only students (and club admins, who are students who also run a club) join
+// clubs or register for events — faculty/HOD/principal/admin/security don't.
+const STUDENT_ROLES = ['student', 'club_admin'];
+
 // ── Reusable validators ────────────────────────────────────────────
 const password = (field) =>
   body(field)
@@ -197,7 +201,7 @@ router.patch(
   validate,
   clubs.reviewClub
 );
-router.post('/clubs/:id/join', idParam('id'), body('message').optional().trim().isLength({ max: 300 }), validate, clubs.requestJoin);
+router.post('/clubs/:id/join', idParam('id'), authorize(...STUDENT_ROLES), body('message').optional().trim().isLength({ max: 300 }), validate, clubs.requestJoin);
 router.delete('/clubs/:id/join', idParam('id'), clubs.cancelRequest);
 router.post('/clubs/:id/leave', idParam('id'), clubs.leaveClub);
 router.get('/clubs/:id/requests', idParam('id'), clubs.listRequests);
@@ -247,7 +251,7 @@ router.post('/events', writeLimiter, ...eventRules(), events.createEvent);
 router.get('/events/:id', idParam('id'), events.getEvent);
 router.put('/events/:id', idParam('id'), ...eventRules(true), events.updateEvent);
 router.delete('/events/:id', idParam('id'), events.deleteEvent);
-router.post('/events/:id/register', idParam('id'), events.registerForEvent);
+router.post('/events/:id/register', idParam('id'), authorize(...STUDENT_ROLES), events.registerForEvent);
 router.delete('/events/:id/register', idParam('id'), events.cancelRegistration);
 router.get('/events/:id/participants', idParam('id'), events.getParticipants);
 router.patch(
@@ -434,7 +438,6 @@ router.get('/admin/activity', authorize('admin'), admin.listActivity);
 // ════════════════════════════════════════════════════════════════════
 
 // ── Chat ───────────────────────────────────────────────────────────
-const STUDENT_ROLES = ['student', 'club_admin'];
 // Can act: mark attendance, review corrections/gate passes, verify at the gate.
 // HOD acts across their whole department (enforced inside each controller).
 const STAFF = ['admin', 'faculty', 'hod'];

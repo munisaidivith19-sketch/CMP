@@ -18,7 +18,7 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11 },
         // Leave room for the Android gesture bar / iOS home indicator.
-        tabBarStyle: { backgroundColor: 'rgba(255,255,255,0.96)', borderTopColor: 'rgba(108,93,211,0.1)', height: 60 + insets.bottom, paddingBottom: 8 + insets.bottom, paddingTop: 6 },
+        tabBarStyle: { backgroundColor: 'rgba(255,255,255,0.96)', borderTopColor: 'rgba(29,111,235,0.12)', height: 60 + insets.bottom, paddingBottom: 8 + insets.bottom, paddingTop: 6 },
         tabBarBadgeStyle: { backgroundColor: colors.danger, fontFamily: fonts.bold, fontSize: 10 },
       }}
     >

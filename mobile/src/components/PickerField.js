@@ -38,7 +38,7 @@ export default function PickerField({ label, value, onChange, options, placehold
                   setOpen(false);
                   setQ('');
                 }}
-                style={{ paddingVertical: 14, borderBottomWidth: 1, borderColor: 'rgba(108,93,211,0.08)' }}
+                style={{ paddingVertical: 14, borderBottomWidth: 1, borderColor: 'rgba(29,111,235,0.1)' }}
               >
                 <T v="body" style={item === value ? { color: colors.primary, fontFamily: fonts.bold } : null}>
                   {item}

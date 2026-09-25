@@ -24,7 +24,7 @@ export async function getPushToken() {
       name: 'Vexon',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 200, 150, 200],
-      lightColor: '#6c5dd3',
+      lightColor: '#1D6FEB',
     });
   }
   if (!Device.isDevice) return null;

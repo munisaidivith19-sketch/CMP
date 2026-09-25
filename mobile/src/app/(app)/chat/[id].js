@@ -148,7 +148,7 @@ export default function Thread() {
   return (
     <Screen scroll={false}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: 1, borderColor: 'rgba(108,93,211,0.08)' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: 1, borderColor: 'rgba(29,111,235,0.1)' }}>
           <View style={{ flex: 1 }}>
             <Header back title={d.title || 'Chat'} subtitle={status} right={d.group ? <IconTile icon={Users} gradient={gradients.hero} size={40} /> : <Avatar user={d.other} size={40} online={isOnline} />} />
           </View>
@@ -212,7 +212,7 @@ export default function Thread() {
           />
         )}
 
-        <View style={{ padding: 10, borderTopWidth: 1, borderColor: 'rgba(108,93,211,0.08)', backgroundColor: 'rgba(255,255,255,0.7)' }}>
+        <View style={{ padding: 10, borderTopWidth: 1, borderColor: 'rgba(29,111,235,0.1)', backgroundColor: 'rgba(255,255,255,0.7)' }}>
           {replyTo ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primarySoft, borderRadius: 14, padding: 8, marginBottom: 8 }}>
               <CornerUpLeft size={14} color={colors.primary} />

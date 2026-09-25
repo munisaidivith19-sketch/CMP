@@ -41,7 +41,7 @@ import EventForm from '../events/EventForm';
 import AnnouncementForm from '../announcements/AnnouncementForm';
 import { ClubInsights } from '../analytics/Insights';
 import { selectUser } from '../../features/authSlice';
-import { catStyle, ROLE_LABELS, STAFF_VIEW } from '../../utils/constants';
+import { catStyle, ROLE_LABELS, STAFF_VIEW, STUDENT_ROLES } from '../../utils/constants';
 import { errMsg, friendlyDay, fmtTime, timeAgo } from '../../utils/format';
 
 function Requests({ club }) {
@@ -220,6 +220,7 @@ export default function ClubDetail() {
               </>
             )}
             {club.status === 'approved' &&
+              STUDENT_ROLES.includes(me.role) &&
               (club.isMember ? (
                 <Button variant="outline" icon={LogOut} loading={leaving} onClick={() => setConfirm('leave')}>
                   Leave

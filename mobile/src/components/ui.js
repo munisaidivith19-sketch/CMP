@@ -32,8 +32,8 @@ export function Screen({ children, scroll = true, refreshing = false, onRefresh,
   return (
     <SafeAreaView style={styles.screen} edges={edges}>
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <View style={[styles.blob, { top: -120, left: -100, backgroundColor: 'rgba(172,164,255,0.45)' }]} />
-        <View style={[styles.blob, { top: 180, right: -140, backgroundColor: 'rgba(240,171,252,0.3)' }]} />
+        <View style={[styles.blob, { top: -120, left: -100, backgroundColor: 'rgba(67,150,239,0.16)' }]} />
+        <View style={[styles.blob, { top: 180, right: -140, backgroundColor: 'rgba(29,111,235,0.1)' }]} />
       </View>
       <Body
         style={{ flex: 1 }}
@@ -300,7 +300,7 @@ export function PercentRing({ value = 0, size = 120, stroke = 11, threshold = 75
   return (
     <View style={{ width: size, height: size }} accessibilityLabel={`${pct} percent`}>
       <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(108,93,211,0.12)" strokeWidth={stroke} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(29,111,235,0.14)" strokeWidth={stroke} fill="none" />
         <Circle cx={size / 2} cy={size / 2} r={r} stroke={pctColor(pct, threshold)} strokeWidth={stroke} fill="none" strokeLinecap="round" strokeDasharray={`${c} ${c}`} strokeDashoffset={c - (pct / 100) * c} />
       </Svg>
       <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
@@ -326,19 +326,19 @@ const styles = StyleSheet.create({
   // Android draws elevation shadows *through* translucent backgrounds (a pale inner
   // rectangle), so glass cards there get no elevation and a slightly firmer fill.
   card: Platform.select({
-    android: { backgroundColor: 'rgba(255,255,255,0.82)', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border },
+    android: { backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border },
     default: { backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, ...shadow },
   }),
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.md, paddingHorizontal: 18, paddingVertical: 13 },
   btnSmall: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.sm },
   btnText: { fontFamily: fonts.bold, fontSize: 14 },
-  iconBtn: { width: 40, height: 40, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.7)', borderWidth: 1, borderColor: colors.border },
-  input: { backgroundColor: 'rgba(255,255,255,0.75)', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
-  segment: { backgroundColor: 'rgba(255,255,255,0.55)', borderRadius: 18, padding: 4, gap: 4, borderWidth: 1, borderColor: colors.border },
+  iconBtn: { width: 40, height: 40, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.88)', borderWidth: 1, borderColor: colors.border },
+  input: { backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
+  segment: { backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 18, padding: 4, gap: 4, borderWidth: 1, borderColor: colors.border },
   segmentItem: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14 },
   segmentActive: { backgroundColor: '#fff', ...shadow, shadowOpacity: 0.08 },
   segmentText: { fontFamily: fonts.bold, fontSize: 13, color: colors.soft },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.6)' },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.8)' },
   chipText: { fontFamily: fonts.semibold, fontSize: 12, color: colors.soft },
   online: { position: 'absolute', right: -1, bottom: -1, backgroundColor: colors.success, borderWidth: 2, borderColor: '#fff' },
 });

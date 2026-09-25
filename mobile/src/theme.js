@@ -1,19 +1,23 @@
-/** Vexon design tokens — the same palette and type as the web app (tailwind.config.js). */
+/**
+ * Vexon design tokens — a "classic" light glass look (sky-blue, airline-style):
+ * crisp white cards with just enough translucency to read as glass, no heavy
+ * blur, high-contrast navy text, no dark backgrounds.
+ */
 export const colors = {
-  bg: '#eef0fb',
-  card: 'rgba(255,255,255,0.72)',
-  cardStrong: 'rgba(255,255,255,0.88)',
-  border: 'rgba(255,255,255,0.85)',
-  ink: '#1b1d3a',
-  soft: '#5c5f7e',
-  muted: '#9295b3',
-  primary50: '#f1f0ff',
-  primary100: '#e5e3ff',
-  primary300: '#aca4ff',
-  primary400: '#8a7bff',
-  primary: '#6c5dd3',
-  primary600: '#5b47c7',
-  fuchsia: '#d946ef',
+  bg: '#EFF5FC',
+  card: 'rgba(255,255,255,0.86)',
+  cardStrong: 'rgba(255,255,255,0.97)',
+  border: 'rgba(31,111,235,0.14)',
+  ink: '#101B2D',
+  soft: '#48566C',
+  muted: '#8592A6',
+  primary50: '#EAF3FF',
+  primary100: '#D2E6FF',
+  primary300: '#7EB6F7',
+  primary400: '#4396EF',
+  primary: '#1D6FEB',
+  primary600: '#1257C4',
+  fuchsia: '#d946ef', // unused elsewhere; kept for now
   success: '#10b981',
   successSoft: 'rgba(16,185,129,0.12)',
   danger: '#f43f5e',
@@ -23,15 +27,15 @@ export const colors = {
   info: '#0ea5e9',
   infoSoft: 'rgba(14,165,233,0.12)',
   neutralSoft: 'rgba(100,116,139,0.12)',
-  primarySoft: 'rgba(108,93,211,0.1)',
+  primarySoft: 'rgba(29,111,235,0.1)',
 };
 
 export const gradients = {
-  primary: ['#8a7bff', '#6c5dd3', '#5b47c7'],
-  hero: ['#8a7bff', '#6c5dd3', '#d946ef'],
+  primary: ['#4396EF', '#1D6FEB', '#1257C4'],
+  hero: ['#3E8BF2', '#1D6FEB', '#0B4F9E'],
   emerald: ['#34d399', '#14b8a6'],
   rose: ['#fb7185', '#ec4899'],
-  sky: ['#38bdf8', '#3b82f6'],
+  sky: ['#38bdf8', '#1D6FEB'],
   amber: ['#fbbf24', '#f97316'],
   violet: ['#a78bfa', '#6366f1'],
   cyan: ['#22d3ee', '#0ea5e9'],
@@ -46,11 +50,12 @@ export const fonts = {
 
 export const radius = { sm: 12, md: 18, lg: 24, xl: 28 };
 
+// Crisp, shallow shadow rather than a hazy glow — keeps cards feeling defined, not blurred.
 export const shadow = {
-  shadowColor: '#4c38a8',
-  shadowOpacity: 0.12,
-  shadowRadius: 18,
-  shadowOffset: { width: 0, height: 8 },
+  shadowColor: '#0F2A4A',
+  shadowOpacity: 0.1,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 5 },
   elevation: 3,
 };
 

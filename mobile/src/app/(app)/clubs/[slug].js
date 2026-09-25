@@ -1,12 +1,15 @@
 import { Alert, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSelector } from 'react-redux';
 import { Avatar, Badge, Button, Card, ErrorState, Header, Loading, Screen, SectionTitle, T } from '../../../components/ui';
 import { errMsg, useCancelJoinMutation, useGetClubQuery, useJoinClubMutation, useLeaveClubMutation } from '../../../services/api';
-import { colors } from '../../../theme';
+import { selectUser } from '../../../store/authSlice';
+import { STUDENT_ROLES, colors } from '../../../theme';
 import { fmtDateTime, titleCase } from '../../../utils/format';
 
 export default function ClubDetail() {
   const { slug } = useLocalSearchParams();
+  const me = useSelector(selectUser);
   const { data: c, isLoading, error, refetch, isFetching } = useGetClubQuery(slug);
   const [join, { isLoading: joining }] = useJoinClubMutation();
   const [cancel, { isLoading: cancelling }] = useCancelJoinMutation();
@@ -31,13 +34,15 @@ export default function ClubDetail() {
         <Avatar name={c.name} uri={c.logo} size={72} />
         {c.tagline ? <T v="strong" style={{ textAlign: 'center' }}>{c.tagline}</T> : null}
         <T v="small">{c.memberCount} members</T>
-        {c.isMember ? (
-          <Button title="Leave club" variant="danger" small loading={leaving} onPress={() => Alert.alert('Leave this club?', '', [{ text: 'Stay', style: 'cancel' }, { text: 'Leave', style: 'destructive', onPress: run(() => leave(c._id)) }])} />
-        ) : c.hasRequested ? (
-          <Button title="Cancel join request" variant="soft" small loading={cancelling} onPress={run(() => cancel(c._id), 'Request withdrawn')} />
-        ) : (
-          <Button title="Request to join" small loading={joining} onPress={run(() => join({ id: c._id, message: '' }), 'Request sent — club admins will review it')} />
-        )}
+        {STUDENT_ROLES.includes(me.role) ? (
+          c.isMember ? (
+            <Button title="Leave club" variant="danger" small loading={leaving} onPress={() => Alert.alert('Leave this club?', '', [{ text: 'Stay', style: 'cancel' }, { text: 'Leave', style: 'destructive', onPress: run(() => leave(c._id)) }])} />
+          ) : c.hasRequested ? (
+            <Button title="Cancel join request" variant="soft" small loading={cancelling} onPress={run(() => cancel(c._id), 'Request withdrawn')} />
+          ) : (
+            <Button title="Request to join" small loading={joining} onPress={run(() => join({ id: c._id, message: '' }), 'Request sent — club admins will review it')} />
+          )
+        ) : null}
       </Card>
       <Card>
         <T v="body">{c.description}</T>

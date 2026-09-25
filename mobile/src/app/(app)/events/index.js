@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { FlatList, View } from 'react-native';
+import { FlatList, Image, View } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { format } from 'date-fns';
 import { CalendarDays, MapPin } from 'lucide-react-native';
 import { Card, EmptyState, ErrorState, Header, Loading, Screen, Segmented, StatusBadge, T } from '../../../components/ui';
 import { useGetEventsQuery } from '../../../services/api';
+import { assetUrl } from '../../../config';
 import { colors, fonts, gradients } from '../../../theme';
 
 export default function Events() {
@@ -35,10 +36,14 @@ export default function Events() {
           ListEmptyComponent={<EmptyState icon={CalendarDays} title="No events here" />}
           renderItem={({ item: e }) => (
             <Card onPress={() => router.push(`/events/${e._id}`)} style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-              <LinearGradient colors={gradients.sky} style={{ width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
-                <T style={{ color: '#fff', fontSize: 10, fontFamily: fonts.bold }}>{format(new Date(e.startDate), 'MMM').toUpperCase()}</T>
-                <T style={{ color: '#fff', fontSize: 20, fontFamily: fonts.extrabold, lineHeight: 22 }}>{format(new Date(e.startDate), 'dd')}</T>
-              </LinearGradient>
+              {e.poster ? (
+                <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 54, height: 54, borderRadius: 18, backgroundColor: colors.primarySoft }} resizeMode="cover" />
+              ) : (
+                <LinearGradient colors={gradients.sky} style={{ width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
+                  <T style={{ color: '#fff', fontSize: 10, fontFamily: fonts.bold }}>{format(new Date(e.startDate), 'MMM').toUpperCase()}</T>
+                  <T style={{ color: '#fff', fontSize: 20, fontFamily: fonts.extrabold, lineHeight: 22 }}>{format(new Date(e.startDate), 'dd')}</T>
+                </LinearGradient>
+              )}
               <View style={{ flex: 1, gap: 2 }}>
                 <T v="strong" numberOfLines={1}>
                   {e.title}

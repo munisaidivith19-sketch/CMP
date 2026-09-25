@@ -27,6 +27,12 @@ if not "%BOOTED%"=="1" (
     goto waitboot
 )
 
+REM Link the emulator's ports to this PC so the app can reach Metro (8081) and
+REM the API (5000). An emulator restart drops these links, which leaves the app
+REM stuck on a black screen, so they are re-created on every launch.
+adb reverse tcp:8081 tcp:8081 >nul
+adb reverse tcp:5000 tcp:5000 >nul
+
 echo Emulator ready. Starting Expo dev server...
 start "Vexon Metro" cmd /k "cd /d "%PROJECT_ROOT%mobile" && npx expo start --dev-client"
 

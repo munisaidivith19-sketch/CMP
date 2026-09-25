@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: vexon-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
+      # Render sits in front of the app as a single reverse-proxy hop — this
+      # makes rate limiting see the real visitor IP instead of Render's.
+      - key: TRUST_PROXY
+        value: "1"
+      # Paste your MongoDB Atlas connection string here after creating the cluster.
+      - key: MONGO_URI
+        sync: false
+      # Your web app's URL, if you deploy one (comma-separate more than one).
+      # Safe to leave as a placeholder if you're only using the mobile app.
+      - key: CLIENT_URL
+        value: https://example.com
+      - key: APP_URL
+        value: https://example.com
+      # Auto-generated securely by Render — you never see or set these yourself.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CHAT_ENCRYPTION_KEY
+        generateValue: true
+      # Optional: set these (from cloudinary.com, free tier) so uploaded photos
+      # survive restarts — Render's own disk is wiped on every deploy/restart.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

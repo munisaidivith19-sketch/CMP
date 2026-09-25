@@ -153,7 +153,12 @@ export const listGatePasses = asyncHandler(async (req, res) => {
   } else if (role === 'admin') {
     if (req.query.student) filter.student = req.query.student;
   } else if (role === 'faculty') {
-    filter = { $or: [{ 'facultyReview.by': req.user._id }, { status: 'pending_faculty', department: req.user.department, section: req.user.section }] };
+    // A class in-charge (section set) only sees their own class. A faculty member
+    // with no section assigned isn't tied to one class, so — matching the fallback
+    // notification sent when a request has no in-charge to reach — they see every
+    // pending request in their department instead of matching nothing at all.
+    const scope = req.user.section ? { department: req.user.department, section: req.user.section } : { department: req.user.department };
+    filter = { $or: [{ 'facultyReview.by': req.user._id }, { status: 'pending_faculty', ...scope }] };
   } else if (role === 'hod') {
     filter = { $or: [{ 'hodReview.by': req.user._id }, { status: 'pending_hod', department: req.user.department }] };
   } else if (role === 'principal') {
@@ -191,7 +196,7 @@ export const listGatePasses = asyncHandler(async (req, res) => {
 function canView(pass, user) {
   if (sameId(pass.student, user)) return true;
   if (['admin', 'security'].includes(user.role)) return true;
-  if (user.role === 'faculty') return pass.department === user.department && pass.section === user.section;
+  if (user.role === 'faculty') return pass.department === user.department && (!user.section || pass.section === user.section);
   if (user.role === 'hod') return pass.department === user.department;
   if (user.role === 'principal') return true;
   return false;
@@ -284,7 +289,7 @@ export const facultyReview = asyncHandler((req, res) =>
     from: 'pending_faculty',
     to: 'pending_hod',
     reviewField: 'facultyReview',
-    canAct: (pass, user) => isAdmin(user) || (user.role === 'faculty' && pass.department === user.department && pass.section === user.section),
+    canAct: (pass, user) => isAdmin(user) || (user.role === 'faculty' && pass.department === user.department && (!user.section || pass.section === user.section)),
     forwardTitle: 'Gate pass forwarded to HOD',
     forwardNotify: (pass) => notifyStage(hodFilter(pass.department), { type: 'gate_pass', title: 'Gate pass needs your review', message: `Forwarded by class faculty · ${pass.department}`, link: '/gate-pass?tab=review' }),
   })

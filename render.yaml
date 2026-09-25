@@ -16,7 +16,8 @@ services:
       # makes rate limiting see the real visitor IP instead of Render's.
       - key: TRUST_PROXY
         value: "1"
-      # Paste your MongoDB Atlas connection string here after creating the cluster.
+      # Paste your MongoDB Atlas connection string in Render's dashboard when it
+      # asks (never here — this file is pushed to GitHub, so secrets don't belong in it).
       - key: MONGO_URI
         sync: false
       # Your web app's URL, if you deploy one (comma-separate more than one).

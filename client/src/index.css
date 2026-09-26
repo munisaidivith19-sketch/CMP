@@ -9,16 +9,16 @@
     color-scheme: light;
   }
   .dark {
-    color-scheme: light;
+    color-scheme: dark;
   }
   html {
     -webkit-tap-highlight-color: transparent;
   }
   body {
-    @apply min-h-screen bg-[#eef0fb] font-sans text-ink antialiased dark:bg-[#faf7f2] dark:text-[#2c2416];
+    @apply min-h-screen bg-[#eef0fb] font-sans text-ink antialiased dark:bg-[#0f1021] dark:text-primary-50;
   }
   ::selection {
-    @apply bg-primary-200 text-primary-900;
+    @apply bg-primary-200 text-primary-900 dark:bg-primary-600 dark:text-white;
   }
   * {
     scrollbar-width: thin;
@@ -30,17 +30,17 @@
   /* ── Glass surfaces ─────────────────────────────── */
   .glass {
     @apply border border-white/70 bg-white/55 shadow-glass backdrop-blur-2xl backdrop-saturate-150
-      dark:border-[#e8dcc8]/60 dark:bg-[#fffdf9]/70 dark:shadow-[0_8px_32px_-8px_rgba(180,140,80,0.15),inset_0_1px_0_0_rgba(255,255,255,0.9)];
+      dark:border-white/10 dark:bg-ink/40 dark:shadow-glass-dark;
   }
   .glass-strong {
     @apply border border-white/80 bg-white/75 shadow-glass backdrop-blur-2xl backdrop-saturate-150
-      dark:border-[#e8dcc8]/70 dark:bg-[#fefcf8]/85 dark:shadow-[0_8px_32px_-8px_rgba(180,140,80,0.18),inset_0_1px_0_0_rgba(255,255,255,0.95)];
+      dark:border-white/15 dark:bg-ink/70 dark:shadow-glass-dark;
   }
   .card {
     @apply glass rounded-[28px] p-5 transition-all duration-500 ease-smooth;
   }
   .card-hover {
-    @apply hover:-translate-y-1 hover:bg-white/70 hover:shadow-soft dark:hover:bg-[#fff9f0]/80;
+    @apply hover:-translate-y-1 hover:bg-white/70 hover:shadow-soft dark:hover:bg-ink/80;
   }
 
   /* ── Buttons ────────────────────────────────────── */
@@ -55,22 +55,23 @@
       hover:-translate-y-0.5 hover:shadow-[0_14px_34px_-8px_rgba(108,93,211,0.7)] hover:brightness-110;
   }
   .btn-soft {
-    @apply bg-primary-500/10 text-primary-600 hover:bg-primary-500/20 dark:bg-primary-500/10 dark:text-primary-600
-      dark:hover:bg-primary-500/20;
+    @apply bg-primary-500/10 text-primary-600 hover:bg-primary-500/20 dark:bg-primary-500/20 dark:text-primary-300
+      dark:hover:bg-primary-500/30;
   }
   .btn-ghost {
-    @apply text-ink-soft hover:bg-white/70 hover:text-ink dark:text-[#6b5a3e] dark:hover:bg-[#f0e8d8]/70 dark:hover:text-[#2c2416];
+    @apply text-ink-soft hover:bg-white/70 hover:text-ink dark:text-ink-muted dark:hover:bg-white/10 dark:hover:text-primary-50;
   }
   .btn-outline {
     @apply border border-white/80 bg-white/50 text-ink backdrop-blur-xl hover:-translate-y-0.5 hover:bg-white/80 hover:shadow-soft
-      dark:border-[#e0d0b0]/60 dark:bg-[#fffdf9]/50 dark:text-[#2c2416] dark:hover:bg-[#fffdf9]/80;
+      dark:border-white/15 dark:bg-ink/40 dark:text-primary-50 dark:hover:bg-white/10;
   }
   .btn-danger {
     @apply bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white hover:shadow-[0_10px_24px_-8px_rgba(244,63,94,0.6)]
-      dark:text-rose-600;
+      dark:bg-rose-500/20 dark:text-rose-400 dark:hover:bg-rose-500 dark:hover:text-white;
   }
   .btn-success {
-    @apply bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white dark:text-emerald-700;
+    @apply bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white 
+      dark:bg-emerald-500/20 dark:text-emerald-400 dark:hover:bg-emerald-500 dark:hover:text-white;
   }
   .btn-icon {
     @apply btn h-10 w-10 rounded-2xl p-0;
@@ -81,44 +82,44 @@
     @apply w-full rounded-2xl border border-white/80 bg-white/60 px-4 py-2.5 text-sm text-ink shadow-[inset_0_1px_2px_rgba(27,29,58,0.04)]
       backdrop-blur-xl transition-all duration-300 ease-smooth placeholder:text-ink-muted
       hover:bg-white/80 focus:border-primary-300 focus:bg-white/90 focus:outline-none focus:ring-4 focus:ring-primary-400/15
-      dark:border-[#d8c9a8]/60 dark:bg-[#fffdf9]/60 dark:text-[#2c2416] dark:placeholder:text-[#b0966e] dark:hover:bg-[#fffdf9]/80
-      dark:focus:border-primary-400/50 dark:focus:bg-white/90;
+      dark:border-white/10 dark:bg-ink/40 dark:text-primary-50 dark:placeholder:text-ink-soft dark:hover:bg-ink/60
+      dark:focus:border-primary-500/50 dark:focus:bg-ink/80;
   }
   .input-error {
-    @apply border-rose-300 focus:border-rose-400 focus:ring-rose-400/15 dark:border-rose-400/40;
+    @apply border-rose-300 focus:border-rose-400 focus:ring-rose-400/15 dark:border-rose-500/50 dark:focus:border-rose-400;
   }
   .label {
-    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-soft dark:text-[#8a7256];
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-soft dark:text-ink-muted;
   }
 
   /* ── Misc ───────────────────────────────────────── */
   .chip {
     @apply inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/55 px-3.5 py-1.5 text-xs font-semibold
       text-ink-soft backdrop-blur-xl transition-all duration-300 ease-smooth hover:bg-white hover:text-ink
-      dark:border-[#d8c9a8]/60 dark:bg-[#fffdf9]/55 dark:text-[#6b5a3e] dark:hover:bg-[#fff9f0] dark:hover:text-[#2c2416];
+      dark:border-white/10 dark:bg-ink/40 dark:text-ink-muted dark:hover:bg-white/10 dark:hover:text-primary-50;
   }
   .chip-active {
     @apply border-transparent bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow hover:bg-primary-500 hover:text-white;
   }
   .section-title {
-    @apply text-base font-bold tracking-tight text-ink dark:text-[#2c2416];
+    @apply text-base font-bold tracking-tight text-ink dark:text-primary-50;
   }
   .muted {
-    @apply text-ink-soft dark:text-[#8a7256];
+    @apply text-ink-soft dark:text-ink-muted;
   }
   .divider {
-    @apply border-t border-white/70 dark:border-[#d8c9a8]/50;
+    @apply border-t border-white/70 dark:border-white/10;
   }
   .nav-link {
     @apply flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-semibold text-ink-soft transition-all duration-300 ease-smooth
-      hover:bg-white/70 hover:text-ink dark:text-[#8a7256] dark:hover:bg-[#f0e8d8]/70 dark:hover:text-[#2c2416];
+      hover:bg-white/70 hover:text-ink dark:text-ink-muted dark:hover:bg-white/5 dark:hover:text-primary-50;
   }
   .nav-link-active {
     @apply bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow hover:bg-primary-500 hover:text-white
       dark:text-white dark:hover:bg-primary-500;
   }
   .table-row {
-    @apply transition-colors duration-200 hover:bg-white/50 dark:hover:bg-[#f0e8d8]/60;
+    @apply transition-colors duration-200 hover:bg-white/50 dark:hover:bg-white/5;
   }
 }
 
@@ -138,10 +139,19 @@
 .recharts-cartesian-grid line {
   stroke: rgba(146, 149, 179, 0.18);
 }
+.dark .recharts-cartesian-grid line {
+  stroke: rgba(255, 255, 255, 0.05);
+}
 .recharts-text {
   fill: #9295b3;
   font-size: 11px;
 }
+.dark .recharts-text {
+  fill: #5c5f7e;
+}
 .recharts-tooltip-cursor {
   fill: rgba(108, 93, 211, 0.06);
+}
+.dark .recharts-tooltip-cursor {
+  fill: rgba(255, 255, 255, 0.03);
 }

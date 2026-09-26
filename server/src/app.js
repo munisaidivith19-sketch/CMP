@@ -44,7 +44,7 @@ export function createApp() {
   app.use(mongoSanitize()); // strips $ and . keys → blocks NoSQL operator injection
   if (!env.isProd && process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
-  // Uploaded files: never sniffed or executed by the browser.
+  // Uploaded files
   app.use(
     '/uploads',
     express.static(UPLOAD_ROOT, {
@@ -60,7 +60,7 @@ export function createApp() {
   app.use('/api', apiLimiter, routes);
   app.use('/api', notFound);
 
-  // Production: serve the built React app from the same server.
+  // RENDER 
   if (fs.existsSync(CLIENT_DIST)) {
     app.use(express.static(CLIENT_DIST, { index: false, maxAge: '1h' }));
     app.get('*', (_req, res) => res.sendFile(path.join(CLIENT_DIST, 'index.html')));

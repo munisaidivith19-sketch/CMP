@@ -11,6 +11,25 @@ The UI is a **glassmorphism** take on a modern education admin dashboard. It use
 |---|---|
 | ![Dark](docs/screenshots/dashboard-dark.png) | ![Analytics](docs/screenshots/analytics.png) |
 
+
+
+
+
+|MOBILE APP UI |
+
+|---|---|
+
+| ![MOBIILE UI](docs/screenshots/mobileui.png) | 
+
+
+
+
+
+
+
+
+
+|---|---|
 ---
 
 ## 1. Quick start (local MongoDB Community Server)

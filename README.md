@@ -5,8 +5,6 @@ A full-stack **MERN** platform (MongoDB · Express · React · Node.js) that bri
 
 The UI is a **glassmorphism** take on a modern education admin dashboard. It uses frosted-glass cards, soft gradient backdrops, rounded 28–32 px corners, smooth easing, animated pill buttons and a light and dark theme.
 
-![Dashboard](docs/screenshots/dashboard.png)
-
 | Dark mode | Analytics |
 |---|---|
 | ![Dark](docs/screenshots/dashboard-dark.png) | ![Analytics](docs/screenshots/analytics.png) |

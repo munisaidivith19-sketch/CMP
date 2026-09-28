@@ -18,6 +18,16 @@ export const TIMETABLE_VIEW_ROLES = ROLES.filter((r) => !TIMETABLE_BLOCKED_ROLES
 // (enforced in the controller, never trusting a client-supplied department).
 export const TIMETABLE_WRITE_ROLES = ['admin', 'hod'];
 
+// ── Study Materials ─────────────────────────────────────────────────
+// Same "no access at all" roles as the timetable.
+export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security'];
+export const STUDY_MATERIAL_VIEW_ROLES = ROLES.filter((r) => !STUDY_MATERIAL_BLOCKED_ROLES.includes(r));
+// Upload/edit/delete: faculty only for their own current timetable assignment,
+// HOD only within their own department, admin college-wide — enforced in the
+// controller (never by role alone).
+export const STUDY_MATERIAL_WRITE_ROLES = ['faculty', 'hod', 'admin'];
+export const STUDY_MATERIAL_CATEGORIES = ['notes', 'question_bank', 'lab_manual', 'syllabus', 'assignment', 'other'];
+
 export const CLUB_CATEGORIES = [
   'technical',
   'cultural',

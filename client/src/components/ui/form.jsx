@@ -234,6 +234,54 @@ export function ImageUpload({ label, value, onChange, hint, aspect = 'aspect-[16
   );
 }
 
+/** Single document upload (PDF/DOC/DOCX/TXT). value = {url, name, mimeType, size} | null. */
+export function DocumentUpload({ label, value, onChange, hint }) {
+  const inputRef = useRef(null);
+  const [upload, { isLoading }] = useUploadFileMutation();
+
+  const onFile = async (file) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) return toast.error('File must be under 10 MB');
+    try {
+      const res = await upload({ file, kind: 'document' }).unwrap();
+      onChange({ url: res.url, name: res.name, mimeType: res.mimeType, size: res.size });
+    } catch (e) {
+      toast.error(errMsg(e, 'Upload failed'));
+    }
+  };
+
+  return (
+    <Field label={label} hint={hint || 'PDF, DOC, DOCX or TXT · max 10 MB'}>
+      {value?.url ? (
+        <span className="chip w-full justify-between">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <FileText className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{value.name || 'File'}</span>
+          </span>
+          <button type="button" aria-label="Remove file" onClick={() => onChange(null)}>
+            <X className="h-3.5 w-3.5 hover:text-rose-500" />
+          </button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={isLoading} className="btn btn-outline w-full">
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          {isLoading ? 'Uploading…' : 'Choose file'}
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf,.doc,.docx,.txt"
+        className="hidden"
+        onChange={(e) => {
+          onFile(e.target.files?.[0]);
+          e.target.value = '';
+        }}
+      />
+    </Field>
+  );
+}
+
 /** Multiple attachments (images or PDFs). value = [{url, name, mimeType}] */
 export function AttachmentInput({ label, value = [], onChange, max = 5 }) {
   const inputRef = useRef(null);

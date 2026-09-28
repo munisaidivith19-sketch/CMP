@@ -13,6 +13,8 @@ import { ROLES, STAFF_VIEW, STUDENT_ROLES } from './utils/constants';
 const PEOPLE_DIRECTORY_ROLES = ROLES.filter((r) => !STUDENT_ROLES.includes(r));
 // Warden/Security have zero timetable access anywhere in the app.
 const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
+// Warden/Security have zero Study Materials access either.
+const STUDY_MATERIAL_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
 
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -42,6 +44,7 @@ const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
 const Security = lazy(() => import('./pages/settings/Security'));
 const Chat = lazy(() => import('./pages/chat/Chat'));
 const Timetable = lazy(() => import('./pages/timetable/Timetable'));
+const StudyMaterials = lazy(() => import('./pages/materials/StudyMaterials'));
 const Attendance = lazy(() => import('./pages/attendance/Attendance'));
 const GatePass = lazy(() => import('./pages/gatepass/GatePass'));
 const GatePassDetail = lazy(() => import('./pages/gatepass/GatePassDetail'));
@@ -145,6 +148,7 @@ export default function App() {
             <Route path="chat" element={<Chat />} />
             <Route path="chat/:id" element={<Chat />} />
             <Route path="timetable" element={<RequireAuth roles={TIMETABLE_ROLES}><Timetable /></RequireAuth>} />
+            <Route path="study-materials" element={<RequireAuth roles={STUDY_MATERIAL_ROLES}><StudyMaterials /></RequireAuth>} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="gate-pass" element={<GatePass />} />
             <Route path="gate-pass/review" element={<Navigate to="/gate-pass?tab=review" replace />} />

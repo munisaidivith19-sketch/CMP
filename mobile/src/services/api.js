@@ -53,7 +53,7 @@ export const api = createApi({
   baseQuery,
   refetchOnFocus: true,
   refetchOnReconnect: true,
-  tagTypes: ['Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat', 'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin'],
+  tagTypes: ['Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat', 'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin', 'StudyMaterial'],
   endpoints: (b) => ({
     // ── Auth / account ────────────────────────────────
     login: b.mutation({ query: (body) => ({ url: '/auth/login', method: 'POST', body }) }),
@@ -66,6 +66,15 @@ export const api = createApi({
     getLoginHistory: b.query({ query: (params) => ({ url: '/auth/login-history', params }), providesTags: ['Session'] }),
     registerPushToken: b.mutation({ query: (token) => ({ url: '/auth/push-token', method: 'POST', body: { token } }) }),
     updateMe: b.mutation({ query: (body) => ({ url: '/users/me', method: 'PUT', body }), invalidatesTags: ['Me', 'User'] }),
+
+    // ── Study materials + JNN Study Assistant (same backend endpoints as the web) ──
+    getStudyMaterials: b.query({ query: (params) => ({ url: '/study-materials', params }), providesTags: ['StudyMaterial'] }),
+    askStudyAssistant: b.mutation({
+      // Web research can take a while — allow longer than the default 20s.
+      query: (body) => ({ url: '/ai/study-assistant/chat', method: 'POST', body, timeout: 90000 }),
+    }),
+    getAssistantConversation: b.query({ query: (id) => `/ai/study-assistant/conversations/${id}`, keepUnusedDataFor: 0 }),
+    deleteAssistantConversation: b.mutation({ query: (id) => ({ url: `/ai/study-assistant/conversations/${id}`, method: 'DELETE' }) }),
 
     // ── Dashboard / search / uploads ──────────────────
     getDashboard: b.query({ query: () => '/dashboard', providesTags: ['Dashboard'] }),
@@ -233,6 +242,10 @@ export const {
   useGetLostFoundMatchesQuery,
   useReportLostFoundMutation,
   useCloseLostFoundMutation,
+  useGetStudyMaterialsQuery,
+  useAskStudyAssistantMutation,
+  useLazyGetAssistantConversationQuery,
+  useDeleteAssistantConversationMutation,
 } = api;
 
 export const errMsg = (err, fallback = 'Something went wrong') =>

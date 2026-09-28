@@ -1,4 +1,5 @@
 import rateLimit from 'express-rate-limit';
+import { env } from '../config/env.js';
 
 const json = (message) => ({ message });
 
@@ -61,3 +62,19 @@ export const passwordResetSubmitLimiter = rateLimit({
   legacyHeaders: false,
   message: json('Too many attempts. Request a new reset link and try again later.'),
 });
+
+// ── JNN Study Assistant ──────────────────────────────────────────────
+// Per authenticated user (not per IP — a whole hostel can share one IP), and
+// configurable from the backend .env (AI_RATE_LIMIT_PER_MINUTE / _PER_HOUR).
+const aiLimiter = (windowMs, limit, message) =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => `ai:${req.user?._id || req.ip}`,
+    message: json(message),
+  });
+
+export const aiMinuteLimiter = aiLimiter(60 * 1000, env.ai.rateLimitPerMinute, 'You are asking questions too quickly. Please wait a moment and try again.');
+export const aiHourLimiter = aiLimiter(60 * 60 * 1000, env.ai.rateLimitPerHour, 'You have reached the hourly limit for the Study Assistant. Please try again later.');

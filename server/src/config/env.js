@@ -53,6 +53,36 @@ export const env = {
   },
 };
 
+const num = (name, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
+};
+
+/**
+ * JNN Study Assistant (Groq). The key is read ONLY here, from the backend
+ * environment — replacing it in .env and restarting the server is all it
+ * takes to rotate it; no code references a literal key anywhere.
+ */
+env.ai = {
+  groqApiKey: (process.env.GROQ_API_KEY || '').trim(),
+  // openai/gpt-oss-20b is a current Groq production model with built-in browser_search.
+  model: (process.env.GROQ_MODEL || '').trim() || 'openai/gpt-oss-20b',
+  webSearchEnabled: process.env.AI_WEB_SEARCH_ENABLED !== 'false',
+  maxMessageLength: num('AI_MAX_MESSAGE_LENGTH', 4000, { max: 20000 }),
+  maxOutputTokens: num('AI_MAX_OUTPUT_TOKENS', 1500, { max: 16000 }),
+  requestTimeoutMs: num('AI_REQUEST_TIMEOUT_MS', 30000, { min: 1000, max: 300000 }),
+  maxRetries: num('AI_MAX_RETRIES', 2, { min: 0, max: 5 }),
+  rateLimitPerMinute: num('AI_RATE_LIMIT_PER_MINUTE', 10),
+  rateLimitPerHour: num('AI_RATE_LIMIT_PER_HOUR', 60),
+  // Stored messages per conversation (oldest are trimmed beyond this).
+  maxConversationMessages: num('AI_MAX_CONVERSATION_MESSAGES', 30, { min: 2, max: 500 }),
+  // Recent messages actually sent to the model as context.
+  historyMessages: num('AI_HISTORY_MESSAGES', 10, { min: 0, max: 50 }),
+  maxConcurrent: num('AI_MAX_CONCURRENT', 20, { max: 1000 }),
+  maxQueue: num('AI_MAX_QUEUE', 100, { min: 0, max: 10000 }),
+  ragChunks: num('AI_RAG_CHUNKS', 6, { max: 20 }),
+};
+
 env.cloudinary.enabled = Boolean(
   env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret
 );

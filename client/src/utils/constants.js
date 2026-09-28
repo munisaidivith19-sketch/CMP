@@ -22,6 +22,17 @@ export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VL
 // (user management, timetable, attendance) picks from this fixed list.
 export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'];
 
+export const STUDY_MATERIAL_CATEGORY_LABELS = {
+  notes: 'Notes',
+  question_bank: 'Question Bank',
+  lab_manual: 'Lab Manual',
+  syllabus: 'Syllabus',
+  assignment: 'Assignment',
+  other: 'Other',
+};
+// Warden/Security have no access to Study Materials, same as the timetable.
+export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security'];
+
 export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 /** Roles that can add, edit and delete timetable periods (HOD: own department only). */
 export const TIMETABLE_EDITORS = ['admin', 'hod'];

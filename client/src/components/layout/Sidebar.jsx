@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   BarChart3,
   Bell,
+  BookOpen,
   BookOpenCheck,
   CalendarClock,
   CalendarDays,
@@ -46,6 +47,7 @@ const MAIN = [
 const CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
   { to: '/timetable', label: 'Timetable', icon: CalendarClock, excludeRoles: ['warden', 'security'] },
+  { to: '/study-materials', label: 'Study Materials', icon: BookOpen, excludeRoles: ['warden', 'security'] },
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },

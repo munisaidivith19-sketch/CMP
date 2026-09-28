@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, Megaphone, MessagesSquare, PackageSearch, Search, Shapes, ShieldCheck, UserPlus, UsersRound } from 'lucide-react-native';
+import { BookOpen, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, Megaphone, MessagesSquare, PackageSearch, Search, Shapes, ShieldCheck, UserPlus, UsersRound } from 'lucide-react-native';
 import { Card, Header, IconTile, Screen, T } from '../../../components/ui';
 import { STUDENT_ROLES, gradients } from '../../../theme';
 import { selectUser } from '../../../store/authSlice';
@@ -9,6 +9,7 @@ import { selectUser } from '../../../store/authSlice';
 const ITEMS = [
   { href: '/timetable', label: 'Timetable', hint: 'Today & this week', icon: CalendarClock, g: gradients.violet },
   { href: '/attendance', label: 'Attendance', hint: 'Subject-wise %', icon: ClipboardCheck, g: gradients.emerald },
+  { href: '/study-materials', label: 'Study Materials', hint: 'Notes & AI assistant', icon: BookOpen, g: gradients.sky },
   { href: '/gate-pass', label: 'Gate pass', hint: 'Request & QR', icon: DoorOpen, g: gradients.cyan },
   { href: '/lost-found', label: 'Lost & found', hint: 'Report or search', icon: PackageSearch, g: gradients.amber },
   { href: '/events', label: 'Events', hint: 'Register', icon: CalendarDays, g: gradients.sky },
@@ -25,9 +26,9 @@ const ADMIN_ITEMS = [
 ];
 
 // Security only deals with gate passes and lost & found — the rest of campus life doesn't apply to them.
-const HIDDEN_FOR_SECURITY = ['/timetable', '/attendance', '/events', '/clubs', '/announcements', '/discussions', '/search'];
-// Warden/Security have zero timetable access anywhere in the app.
-const HIDDEN_FOR_NO_TIMETABLE = ['/timetable'];
+const HIDDEN_FOR_SECURITY = ['/timetable', '/study-materials', '/attendance', '/events', '/clubs', '/announcements', '/discussions', '/search'];
+// Warden/Security have zero timetable or study-materials access anywhere in the app.
+const HIDDEN_FOR_NO_TIMETABLE = ['/timetable', '/study-materials'];
 const NO_TIMETABLE_ROLES = ['warden', 'security'];
 
 export default function Campus() {

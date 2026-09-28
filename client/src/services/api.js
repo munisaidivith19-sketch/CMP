@@ -48,7 +48,7 @@ const baseQueryWithReauth = async (args, api, extra) => {
 const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
-  'ChatRequest', 'StaffAttendance', 'Complaint',
+  'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation',
 ];
 
 export const api = createApi({
@@ -298,6 +298,26 @@ export const api = createApi({
     getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
     getCurrentClass: b.query({ query: () => '/timetable/current', providesTags: ['Timetable'] }),
     getTimetableFacultyOptions: b.query({ query: () => '/timetable/faculty-options', providesTags: ['User'] }),
+
+    // ── Study materials ────────────────────────────────
+    getStudyMaterials: b.query({ query: (params) => ({ url: '/study-materials', params }), providesTags: ['StudyMaterial'] }),
+    getStudyMaterial: b.query({ query: (id) => `/study-materials/${id}`, providesTags: ['StudyMaterial'] }),
+    getMyTeachingAssignments: b.query({ query: () => '/study-materials/my-assignments' }),
+    uploadStudyMaterial: b.mutation({ query: (body) => ({ url: '/study-materials', method: 'POST', body }), invalidatesTags: ['StudyMaterial'] }),
+    updateStudyMaterial: b.mutation({ query: ({ id, ...body }) => ({ url: `/study-materials/${id}`, method: 'PUT', body }), invalidatesTags: ['StudyMaterial'] }),
+    deleteStudyMaterial: b.mutation({ query: (id) => ({ url: `/study-materials/${id}`, method: 'DELETE' }), invalidatesTags: ['StudyMaterial'] }),
+
+    // ── JNN Study Assistant (chat itself streams via services/studyAssistant.js) ──
+    getAssistantConversations: b.query({ query: () => '/ai/study-assistant/conversations', providesTags: ['AssistantConversation'] }),
+    getAssistantConversation: b.query({ query: (id) => `/ai/study-assistant/conversations/${id}`, keepUnusedDataFor: 0 }),
+    sendAssistantMessage: b.mutation({
+      query: (body) => ({ url: '/ai/study-assistant/chat', method: 'POST', body }),
+      invalidatesTags: ['AssistantConversation'],
+    }),
+    deleteAssistantConversation: b.mutation({
+      query: (id) => ({ url: `/ai/study-assistant/conversations/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['AssistantConversation'],
+    }),
     getMyPeriods: b.query({ query: () => '/attendance/my-periods', providesTags: ['Attendance', 'Timetable'] }),
     getSubjects: b.query({ query: (params) => ({ url: '/subjects', params }), providesTags: ['Subject'] }),
     createSubject: b.mutation({ query: (body) => ({ url: '/subjects', method: 'POST', body }), invalidatesTags: ['Subject'] }),
@@ -455,6 +475,16 @@ export const {
   useGetTimetableQuery,
   useGetCurrentClassQuery,
   useGetTimetableFacultyOptionsQuery,
+  useGetStudyMaterialsQuery,
+  useGetStudyMaterialQuery,
+  useGetMyTeachingAssignmentsQuery,
+  useUploadStudyMaterialMutation,
+  useUpdateStudyMaterialMutation,
+  useDeleteStudyMaterialMutation,
+  useGetAssistantConversationsQuery,
+  useLazyGetAssistantConversationQuery,
+  useSendAssistantMessageMutation,
+  useDeleteAssistantConversationMutation,
   useGetMyPeriodsQuery,
   useGetSubjectsQuery,
   useCreateSubjectMutation,

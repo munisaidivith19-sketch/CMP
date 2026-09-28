@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import { protect, authorize } from '../middleware/auth.js';
 import { idParam, validate } from '../middleware/validate.js';
-import { authLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { aiHourLimiter, aiMinuteLimiter, authLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { realtimeChanges } from '../middleware/realtime.js';
 import { upload } from '../utils/storage.js';
 import {
@@ -30,6 +30,9 @@ import {
   COMPLAINT_ESCALATE_TO,
   TIMETABLE_VIEW_ROLES,
   TIMETABLE_WRITE_ROLES,
+  STUDY_MATERIAL_VIEW_ROLES,
+  STUDY_MATERIAL_WRITE_ROLES,
+  STUDY_MATERIAL_CATEGORIES,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
@@ -49,6 +52,9 @@ import * as gatePass from '../controllers/gatePassController.js';
 import * as lostFound from '../controllers/lostFoundController.js';
 import * as complaints from '../controllers/complaintController.js';
 import { COMPLAINT_AUTHORITY_ROLES } from '../controllers/complaintController.js';
+import * as materials from '../controllers/studyMaterialController.js';
+import * as ai from '../controllers/aiController.js';
+import { env } from '../config/env.js';
 import * as analytics from '../controllers/analyticsController.js';
 import { globalSearch } from '../controllers/searchController.js';
 import { getDashboard } from '../controllers/dashboardController.js';
@@ -668,6 +674,64 @@ router.delete('/subjects/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES
 router.post('/timetable', writeLimiter, authorize(...TIMETABLE_WRITE_ROLES), ...slotRules(), timetable.createSlot);
 router.put('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), ...slotRules(true), timetable.updateSlot);
 router.delete('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), timetable.deleteSlot);
+
+// ── Study Materials ────────────────────────────────────────────────
+// Upload/edit/delete authorization is never role-only — the controller
+// re-verifies the *current* timetable assignment (faculty) or department
+// (HOD) for every write, never trusting department/section/semester/subject
+// sent by the client.
+const materialWriteRules = (optional = false) => {
+  const o = (chain) => (optional ? chain.optional() : chain);
+  return [
+    o(body('title')).trim().isLength({ min: 2, max: 150 }).withMessage('Title is required'),
+    body('description').optional().trim().isLength({ max: 1000 }),
+    body('category').optional().isIn(STUDY_MATERIAL_CATEGORIES),
+    o(body('subjectId')).isMongoId().withMessage('Choose a subject'),
+    body('department').optional().trim().isLength({ max: 80 }),
+    body('section').optional().trim().isLength({ max: 10 }),
+    body('semester').optional().isInt({ min: 1, max: 12 }).toInt(),
+    body('year').optional({ values: 'falsy' }).isInt({ min: 1, max: 6 }).toInt(),
+    safeUrl('file.url'), // missing/invalid file.url is caught by the controller (422 "A file is required")
+    body('file.name').optional().trim().isLength({ max: 150 }),
+    body('file.mimeType').optional().trim().isLength({ max: 100 }),
+    body('file.size').optional().isInt({ min: 0 }),
+    validate,
+  ];
+};
+
+router.get('/study-materials', authorize(...STUDY_MATERIAL_VIEW_ROLES), materials.listMaterials);
+router.get('/study-materials/my-assignments', authorize('faculty'), materials.getMyAssignments);
+router.get('/study-materials/:id', authorize(...STUDY_MATERIAL_VIEW_ROLES), idParam('id'), materials.getMaterial);
+router.post('/study-materials', writeLimiter, authorize(...STUDY_MATERIAL_WRITE_ROLES), ...materialWriteRules(), materials.createMaterial);
+router.put('/study-materials/:id', idParam('id'), authorize(...STUDY_MATERIAL_WRITE_ROLES), ...materialWriteRules(true), materials.updateMaterial);
+router.delete('/study-materials/:id', idParam('id'), authorize(...STUDY_MATERIAL_WRITE_ROLES), materials.deleteMaterial);
+
+// ── JNN Study Assistant (lives inside Study Materials) ─────────────
+// Same audience as Study Materials. Retrieval scope is always derived from
+// req.user in the service — useStudyMaterials/useWebSearch can only turn a
+// source OFF, never widen access. The Groq key never leaves the backend.
+router.post(
+  '/ai/study-assistant/chat',
+  authorize(...STUDY_MATERIAL_VIEW_ROLES),
+  aiMinuteLimiter,
+  aiHourLimiter,
+  body('message')
+    .isString()
+    .withMessage('Please type a question')
+    .bail()
+    .trim()
+    .isLength({ min: 1, max: env.ai.maxMessageLength })
+    .withMessage(`Questions must be 1–${env.ai.maxMessageLength} characters`),
+  body('conversationId').optional({ values: 'null' }).isMongoId().withMessage('Invalid conversation id'),
+  body('useStudyMaterials').optional().isBoolean({ strict: true }),
+  body('useWebSearch').optional().isBoolean({ strict: true }),
+  body('stream').optional().isBoolean({ strict: true }),
+  validate,
+  ai.chat
+);
+router.get('/ai/study-assistant/conversations', authorize(...STUDY_MATERIAL_VIEW_ROLES), ai.listConversations);
+router.get('/ai/study-assistant/conversations/:id', authorize(...STUDY_MATERIAL_VIEW_ROLES), idParam('id'), ai.getConversation);
+router.delete('/ai/study-assistant/conversations/:id', authorize(...STUDY_MATERIAL_VIEW_ROLES), idParam('id'), ai.deleteConversation);
 
 // ── Gate Pass ──────────────────────────────────────────────────────
 // Approval climbs faculty (class in-charge) → HOD → principal; security

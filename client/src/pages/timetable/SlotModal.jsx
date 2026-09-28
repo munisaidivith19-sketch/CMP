@@ -5,11 +5,11 @@ import { useCreateSlotMutation, useGetSubjectsQuery, useGetTimetableFacultyOptio
 import { Button } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select, TimeInput } from '../../components/ui/form';
-import { WEEKDAYS } from '../../utils/constants';
+import { WEEKDAYS, YEAR_LABELS, yearOfSemester } from '../../utils/constants';
 import { errMsg, titleCase } from '../../utils/format';
 
 /**
- * Add / edit one timetable period for a class (department + section + semester).
+ * Add / edit one timetable period for a class (department + year + section + semester).
  * `preset` pre-fills a new slot, e.g. from clicking an empty cell in the week grid.
  */
 export default function SlotModal({ slot, klass, preset, open, onClose }) {
@@ -46,6 +46,7 @@ export default function SlotModal({ slot, klass, preset, open, onClose }) {
       faculty: v.isBreak ? undefined : v.faculty,
       section: klass.section,
       department: klass.department,
+      year: yearOfSemester(klass.semester),
       semester: Number(klass.semester),
       dayOfWeek: v.dayOfWeek,
       period: Number(v.period),
@@ -68,7 +69,7 @@ export default function SlotModal({ slot, klass, preset, open, onClose }) {
       open={open}
       onClose={onClose}
       title={slot ? 'Edit period' : 'Add period'}
-      subtitle={`${klass.department} · Section ${klass.section} · Semester ${klass.semester}`}
+      subtitle={`${klass.department} · ${YEAR_LABELS[yearOfSemester(klass.semester)]} · Section ${klass.section} · Semester ${klass.semester}`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

@@ -5,7 +5,7 @@ import { ApiError, asyncHandler, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { emitToRoles } from '../config/socket.js';
 import { campusParts } from '../utils/dates.js';
-import { TIMETABLE_VIEW_ROLES } from '../constants.js';
+import { TIMETABLE_VIEW_ROLES, yearOfSemester } from '../constants.js';
 
 // Warden/Security must never receive a timetable event, even a bare
 // department/section identifier — emit only to the roles that can see timetables.
@@ -104,17 +104,20 @@ export const getMyTimetable = asyncHandler(async (req, res) => {
   const filter = { isActive: true };
 
   if (['student', 'club_admin'].includes(user.role)) {
-    if (!user.section || !user.department) {
+    // Class identity comes only from the account, never from the query string.
+    if (!user.section || !user.department || !user.year) {
       return res.json({ slots: [], needsSection: true });
     }
     filter.section = user.section;
     filter.department = user.department;
+    filter.year = user.year;
     if (user.semester) filter.semester = user.semester;
   } else {
     if (user.role === 'faculty' && !req.query.section) filter.faculty = user._id;
     // Staff can look up any class's timetable.
     if (req.query.section) filter.section = String(req.query.section).toUpperCase();
     if (req.query.department) filter.department = String(req.query.department);
+    if (req.query.year) filter.year = Number(req.query.year);
     if (req.query.semester) filter.semester = Number(req.query.semester);
     if (req.query.faculty) filter.faculty = req.query.faculty;
   }
@@ -126,6 +129,7 @@ export const getMyTimetable = asyncHandler(async (req, res) => {
 export const getSectionTimetable = asyncHandler(async (req, res) => {
   const filter = { section: String(req.params.section).toUpperCase(), isActive: true };
   if (req.query.department) filter.department = String(req.query.department);
+  if (req.query.year) filter.year = Number(req.query.year);
   if (req.query.semester) filter.semester = Number(req.query.semester);
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
   res.json(sortSlots(slots));
@@ -144,9 +148,10 @@ export const getCurrentClass = asyncHandler(async (req, res) => {
   const { weekday, time } = campusParts(new Date());
 
   const filter = { dayOfWeek: weekday, isActive: true };
-  if (['student', 'club_admin'].includes(user.role) && user.section && user.department) {
+  if (['student', 'club_admin'].includes(user.role) && user.section && user.department && user.year) {
     filter.section = user.section;
     filter.department = user.department;
+    filter.year = user.year;
     if (user.semester) filter.semester = user.semester;
   } else if (user.role === 'faculty') {
     filter.faculty = user._id;
@@ -174,7 +179,7 @@ async function assertNoConflict(slot, excludeId) {
   if (excludeId) base._id = { $ne: excludeId };
 
   const [sectionClash, facultyClash, roomClash] = await Promise.all([
-    TimetableSlot.findOne({ ...base, section: slot.section, department: slot.department, semester: slot.semester }).populate('subject', 'code').lean(),
+    TimetableSlot.findOne({ ...base, section: slot.section, department: slot.department, year: slot.year, semester: slot.semester }).populate('subject', 'code').lean(),
     slot.isBreak || !slot.faculty ? null : TimetableSlot.findOne({ ...base, faculty: slot.faculty, isBreak: { $ne: true } }).populate('subject', 'code').lean(),
     slot.isBreak || !slot.room ? null : TimetableSlot.findOne({ ...base, room: slot.room, isBreak: { $ne: true } }).populate('subject', 'code').lean(),
   ]);
@@ -192,13 +197,26 @@ async function assertSubjectFaculty(slot) {
   const subject = await Subject.findOne({ _id: slot.subject, isActive: true }).lean();
   if (!subject) throw new ApiError(404, 'Subject not found');
   if (subject.department !== slot.department) throw new ApiError(422, `${subject.code} belongs to ${subject.department}, not ${slot.department}`);
+  if (Number(subject.semester) !== Number(slot.semester)) {
+    throw new ApiError(422, `${subject.code} is a semester ${subject.semester} subject, not semester ${slot.semester}`);
+  }
   if (subject.sections?.length && !subject.sections.map((s) => s.toUpperCase()).includes(slot.section)) {
     throw new ApiError(422, `${subject.code} is not taught to section ${slot.section}`);
   }
   // Cross-department teaching is allowed: the faculty member only has to be an
   // active teaching account, not someone from the class's own department.
-  const ok = await User.exists({ _id: slot.faculty, role: { $in: TEACHING_ROLES }, isActive: true });
-  if (!ok) throw new ApiError(422, 'Choose an active faculty member');
+  const faculty = await User.findOne({ _id: slot.faculty, role: { $in: TEACHING_ROLES }, isActive: true })
+    .select('name teachingYears teachingSections')
+    .lean();
+  if (!faculty) throw new ApiError(422, 'Choose an active faculty member');
+  // Declared teaching scope from the faculty's account bounds what they can be scheduled for.
+  const year = slot.year ?? yearOfSemester(slot.semester);
+  if (faculty.teachingYears?.length && !faculty.teachingYears.includes(year)) {
+    throw new ApiError(422, `${faculty.name} does not handle year ${year} (handles ${faculty.teachingYears.join(', ')})`);
+  }
+  if (faculty.teachingSections?.length && !faculty.teachingSections.includes(slot.section)) {
+    throw new ApiError(422, `${faculty.name} does not handle section ${slot.section} (handles ${faculty.teachingSections.join(', ')})`);
+  }
 }
 
 /**
@@ -224,6 +242,7 @@ export const createSlot = asyncHandler(async (req, res) => {
   data.section = String(data.section).trim().toUpperCase();
   // HOD's slots always belong to their own department, regardless of what was submitted.
   if (req.user.role === 'hod') data.department = req.user.department;
+  if (data.semester && data.year == null) data.year = yearOfSemester(data.semester);
   if (data.isBreak) {
     delete data.subject;
     delete data.faculty;
@@ -245,6 +264,7 @@ export const updateSlot = asyncHandler(async (req, res) => {
   if (data.section) data.section = String(data.section).trim().toUpperCase();
   // An HOD can never move a slot into another department.
   if (req.user.role === 'hod') data.department = req.user.department;
+  if (data.semester !== undefined && data.year === undefined) data.year = yearOfSemester(data.semester);
   const before = { section: slot.section, department: slot.department };
   const AUDITED = ['subject', 'faculty', 'dayOfWeek', 'period', 'startTime', 'endTime', 'room', 'section', 'department', 'semester', 'year'];
   const prior = Object.fromEntries(AUDITED.map((k) => [k, slot[k] == null ? '' : String(slot[k])]));

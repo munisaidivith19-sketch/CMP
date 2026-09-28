@@ -16,7 +16,7 @@ import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, IconButton, PageHeader, Skeleton, Tabs } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, SectionMultiSelect, Select } from '../../components/ui/form';
-import { DEPARTMENTS, SECTIONS, WEEKDAYS as DAYS } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, WEEKDAYS as DAYS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, titleCase } from '../../utils/format';
 import SlotModal from '../timetable/SlotModal';
 
@@ -179,9 +179,9 @@ function Subjects() {
 function Slots() {
   const me = useSelector(selectUser);
   const isHod = me.role === 'hod';
-  const [klass, setKlass] = useState({ department: isHod ? me.department : 'CSE', section: 'A', semester: 5 });
+  const [klass, setKlass] = useState({ department: isHod ? me.department : 'CSE', year: 3, section: 'A', semester: 5 });
   const [applied, setApplied] = useState(klass);
-  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery({ department: applied.department, section: applied.section, semester: applied.semester });
+  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery({ department: applied.department, year: applied.year, section: applied.section, semester: applied.semester });
   const [edit, setEdit] = useState(undefined);
   const [del, setDel] = useState(null);
   const [remove, { isLoading: removing }] = useDeleteSlotMutation();
@@ -194,12 +194,30 @@ function Slots() {
 
   return (
     <div className="space-y-5">
-      <Card className="grid gap-3 sm:grid-cols-[1fr_120px_120px_auto] sm:items-end">
+      <Card className="grid gap-3 sm:grid-cols-[1fr_110px_100px_110px_auto] sm:items-end">
         <div>
           <label className="label" htmlFor="ac-dept">Department</label>
           <select id="ac-dept" className="input" value={klass.department} disabled={isHod} onChange={(e) => setKlass((k) => ({ ...k, department: e.target.value }))}>
             {(isHod ? [me.department] : DEPARTMENTS).map((d) => (
               <option key={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="ac-year">Year</label>
+          <select
+            id="ac-year"
+            className="input"
+            value={klass.year}
+            onChange={(e) => {
+              const year = Number(e.target.value);
+              setKlass((k) => ({ ...k, year, semester: semestersOfYear(year).includes(k.semester) ? k.semester : semestersOfYear(year)[0] }));
+            }}
+          >
+            {ACADEMIC_YEARS.map((y) => (
+              <option key={y} value={y}>
+                {YEAR_LABELS[y]}
+              </option>
             ))}
           </select>
         </div>
@@ -213,7 +231,13 @@ function Slots() {
         </div>
         <div>
           <label className="label" htmlFor="ac-sem">Semester</label>
-          <input id="ac-sem" type="number" min={1} max={12} className="input" value={klass.semester} onChange={(e) => setKlass((k) => ({ ...k, semester: Number(e.target.value) }))} />
+          <select id="ac-sem" className="input" value={klass.semester} onChange={(e) => setKlass((k) => ({ ...k, semester: Number(e.target.value) }))}>
+            {semestersOfYear(klass.year).map((s) => (
+              <option key={s} value={s}>
+                Semester {s}
+              </option>
+            ))}
+          </select>
         </div>
         <Button loading={isFetching} disabled={!klass.section} onClick={() => setApplied(klass)}>
           Load class
@@ -222,7 +246,7 @@ function Slots() {
 
       <Card>
         <CardHeader
-          title={`${applied.department} · Section ${applied.section} · Semester ${applied.semester}`}
+          title={`${applied.department} · ${YEAR_LABELS[applied.year]} · Section ${applied.section} · Semester ${applied.semester}`}
           subtitle="Clashes with other sections, faculty or rooms are rejected automatically."
           action={<Button size="sm" icon={Plus} onClick={() => setEdit(null)}>Add slot</Button>}
         />

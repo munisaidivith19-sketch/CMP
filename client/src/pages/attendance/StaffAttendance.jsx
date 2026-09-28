@@ -16,7 +16,7 @@ import {
   useReviewCorrectionMutation,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { SECTIONS, SUMMARY_VIEW } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, SUMMARY_VIEW, YEAR_LABELS, semestersOfYear, yearOfSemester } from '../../utils/constants';
 import { DailySummary, FacultyMarking } from './DailySummary';
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
@@ -64,8 +64,8 @@ function MyPeriods({ selected, onPick }) {
                     </p>
                     <p className="truncate font-bold">{p.subject?.name}</p>
                     <p className="text-xs muted">
-                      {p.subject?.code} · {p.department} · Section {p.section}
-                      {p.year ? ` · Year ${p.year}` : ''}
+                      {p.subject?.code} · {p.department}
+                      {p.year ? ` · ${YEAR_LABELS[p.year] || `Year ${p.year}`}` : ''} · Section {p.section}
                       {p.semester ? ` · Sem ${p.semester}` : ''}
                     </p>
                   </div>
@@ -101,8 +101,24 @@ function MarkAttendance({ preset, onPresetUsed }) {
   const isFaculty = me.role === 'faculty';
   const { data: subjects = [], isLoading: loadingSubjects } = useGetSubjectsQuery(subjectScope(me), { skip: isFaculty });
   const [form, setForm] = useState({ slotId: '', subjectId: '', section: '', date: todayKey(), period: '' });
+  // Class filters narrowing the subject list: Department + Year + Semester (+ Section below).
+  const [cls, setCls] = useState({ department: me.role === 'hod' ? me.department : '', year: '', semester: '' });
   const [marks, setMarks] = useState({});
   const [save, { isLoading: saving }] = useMarkClassAttendanceMutation();
+  const classSubjects = subjects.filter(
+    (s) =>
+      (!cls.department || s.department === cls.department) &&
+      (!cls.year || yearOfSemester(s.semester) === Number(cls.year)) &&
+      (!cls.semester || s.semester === Number(cls.semester))
+  );
+  const setClass = (patch) => {
+    setCls((c) => {
+      const next = { ...c, ...patch };
+      if (patch.year !== undefined && !semestersOfYear(next.year).includes(Number(next.semester))) next.semester = '';
+      return next;
+    });
+    setForm((f) => ({ ...f, slotId: '', subjectId: '', section: '' }));
+  };
 
   useEffect(() => {
     if (preset) {
@@ -152,14 +168,45 @@ function MarkAttendance({ preset, onPresetUsed }) {
         </div>
       )}
 
-      {!isFaculty && <Card className="grid gap-3 md:grid-cols-4">
+      {!isFaculty && <Card className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
+        <div>
+          <label className="label" htmlFor="m-dept">Department</label>
+          <select id="m-dept" className="input" value={cls.department} disabled={me.role === 'hod'} onChange={(e) => setClass({ department: e.target.value })}>
+            {me.role !== 'hod' && <option value="">Any</option>}
+            {(me.role === 'hod' ? [me.department] : DEPARTMENTS).map((d) => (
+              <option key={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="m-year">Year</label>
+          <select id="m-year" className="input" value={cls.year} onChange={(e) => setClass({ year: e.target.value })}>
+            <option value="">Any</option>
+            {ACADEMIC_YEARS.map((y) => (
+              <option key={y} value={y}>
+                {YEAR_LABELS[y]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="m-sem">Semester</label>
+          <select id="m-sem" className="input" value={cls.semester} onChange={(e) => setClass({ semester: e.target.value })}>
+            <option value="">Any</option>
+            {semestersOfYear(cls.year).map((s) => (
+              <option key={s} value={s}>
+                Semester {s}
+              </option>
+            ))}
+          </select>
+        </div>
         <div>
           <label className="label" htmlFor="m-subject">Subject</label>
           <select id="m-subject" className="input" value={form.subjectId} onChange={(e) => set({ subjectId: e.target.value, section: '' })} disabled={loadingSubjects}>
-            <option value="">{loadingSubjects ? 'Loading…' : subjects.length ? 'Choose subject' : 'No subjects assigned'}</option>
-            {subjects.map((s) => (
+            <option value="">{loadingSubjects ? 'Loading…' : classSubjects.length ? 'Choose subject' : 'No subjects for this class'}</option>
+            {classSubjects.map((s) => (
               <option key={s._id} value={s._id}>
-                {s.code} · {s.name} (Sem {s.semester})
+                {s.code} · {s.name} ({YEAR_LABELS[yearOfSemester(s.semester)]}, Sem {s.semester})
               </option>
             ))}
           </select>
@@ -201,7 +248,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
       {!ready ? (
         isFaculty ? null : (
           <Card>
-            <EmptyState icon={ClipboardList} title="Choose a class" text="Select the subject, section, date and period to load the class roster." />
+            <EmptyState icon={ClipboardList} title="Choose a class" text="Select the department, year, semester, subject, section, date and period to load the class roster." />
           </Card>
         )
       ) : isFetching && !roster ? (

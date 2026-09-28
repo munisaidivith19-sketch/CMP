@@ -4,6 +4,7 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '.
 import { logActivity } from '../utils/activity.js';
 import { assertFacultyAssignment, canManageStudyMaterial, facultyAssignments, materialReadFilter, STUDY_MATERIAL_STUDENT_ROLES } from '../utils/studyMaterialScope.js';
 import { queueIndex, removeFromIndex } from '../services/ai/pdfIndexer.js';
+import { yearOfSemester } from '../constants.js';
 
 const STUDENT_ROLES = STUDY_MATERIAL_STUDENT_ROLES;
 const UPLOADED_BY_FIELDS = 'name role';
@@ -27,7 +28,14 @@ async function resolveScope(user, body, fallback) {
 
   const section = body.section !== undefined ? String(body.section).trim().toUpperCase() : fallback?.section || '';
   const semester = body.semester !== undefined ? Number(body.semester) : fallback?.semester ?? subject.semester;
-  const year = body.year !== undefined ? Number(body.year) : fallback?.year ?? subject.year;
+  if (Number(semester) !== Number(subject.semester)) {
+    throw new ApiError(422, `${subject.code} is a semester ${subject.semester} subject, not semester ${semester}`);
+  }
+  // Year always follows the semester; a client-sent year can only confirm it.
+  const year = yearOfSemester(semester);
+  if (body.year !== undefined && body.year !== null && body.year !== '' && Number(body.year) !== year) {
+    throw new ApiError(422, `Semester ${semester} belongs to year ${year}, not year ${body.year}`);
+  }
 
   let department;
   if (user.role === 'hod') {

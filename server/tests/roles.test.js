@@ -52,11 +52,13 @@ test('admin creates student / faculty / HOD / principal logins with role-specifi
     token: admin.token,
     body: {
       role: 'student', name: 'New Student', email: 'new.student@test.edu', password: 'Welcome123',
-      rollNo: '23CS099', year: 2, department: 'CSE', section: 'b', stayType: 'hosteler', phone: '9000000000', parentPhone: '9111111111',
+      rollNo: '23CS099', year: 2, semester: 3, department: 'CSE', section: 'b', stayType: 'hosteler', phone: '9000000000', parentPhone: '9111111111',
     },
   });
   assert.equal(student.status, 201, JSON.stringify(student.body));
   assert.equal(student.body.section, 'B');
+  assert.equal(student.body.year, 2);
+  assert.equal(student.body.semester, 3);
   assert.equal(student.body.stayType, 'hosteler');
   assert.equal(student.body.password, undefined);
 
@@ -78,9 +80,14 @@ test('admin creates student / faculty / HOD / principal logins with role-specifi
 
   const fac = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'faculty', name: 'New Fac', email: 'new.fac@test.edu', password: 'Welcome123', employeeId: 'E-100', department: 'CSE', section: 'A', phone: '9222' },
+    body: {
+      role: 'faculty', name: 'New Fac', email: 'new.fac@test.edu', password: 'Welcome123', employeeId: 'E-100', department: 'CSE', section: 'A', phone: '9222',
+      teachingYears: [3, 2], teachingSections: ['b', 'A'],
+    },
   });
   assert.equal(fac.status, 201, JSON.stringify(fac.body));
+  assert.deepEqual(fac.body.teachingYears, [2, 3], 'multiple years handled, stored sorted');
+  assert.deepEqual(fac.body.teachingSections, ['A', 'B'], 'multiple sections handled, normalised');
   const dupEmp = await ctx.request('POST', '/admin/users', {
     token: admin.token,
     body: { role: 'hod', name: 'Dup', email: 'dup@test.edu', password: 'Welcome123', employeeId: 'E-100', department: 'IT' },

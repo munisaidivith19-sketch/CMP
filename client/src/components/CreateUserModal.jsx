@@ -4,14 +4,14 @@ import { Eye, EyeOff, KeyRound } from 'lucide-react';
 import { useCreateAdminUserMutation } from '../services/api';
 import { Button, cn } from './ui/primitives';
 import { Modal } from './ui/Modal';
-import { Input, Select } from './ui/form';
-import { DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES } from '../utils/constants';
+import { ChipMultiSelect, Input, Select } from './ui/form';
+import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES, YEAR_LABELS } from '../utils/constants';
 import { errMsg } from '../utils/format';
 
 /** Fields the admin fills in per role — mirrors the server's CREATE_FIELDS. */
 const FORMS = {
-  student: ['name', 'rollNo', 'year', 'department', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
-  faculty: ['name', 'employeeId', 'department', 'section', 'email', 'phone', 'password'],
+  student: ['name', 'rollNo', 'department', 'year', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
+  faculty: ['name', 'employeeId', 'department', 'teachingYears', 'section', 'email', 'phone', 'password'],
   hod: ['name', 'employeeId', 'department', 'email', 'phone', 'password'],
   principal: ['name', 'employeeId', 'email', 'phone', 'password'],
   security: ['name', 'employeeId', 'email', 'phone', 'password'],
@@ -20,8 +20,13 @@ const FORMS = {
   chairman: ['name', 'employeeId', 'email', 'phone', 'password'],
   warden: ['name', 'employeeId', 'email', 'phone', 'password'],
 };
-const REQUIRED = new Set(['name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId']);
-const EMPTY = { name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '' };
+const REQUIRED = new Set(['name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears', 'section']);
+const isRequired = (k, role) => REQUIRED.has(k);
+const EMPTY = {
+  name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '',
+  teachingYears: [],
+};
+const NUMERIC = new Set(['year']);
 
 function suggestPassword() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
@@ -46,15 +51,22 @@ export default function CreateUserModal({ open, onClose }) {
 
   const fields = FORMS[role];
   const set = (k) => (e) => setV((s) => ({ ...s, [k]: e.target.value }));
-  const missing = fields.filter((k) => REQUIRED.has(k) && !String(v[k]).trim());
+  const setList = (k) => (list) => setV((s) => ({ ...s, [k]: list }));
+  const missing = fields.filter((k) => isRequired(k, role) && (Array.isArray(v[k]) ? !v[k].length : !String(v[k]).trim()));
 
   const submit = async (e) => {
     e.preventDefault();
     const body = { role };
     fields.forEach((k) => {
+      if (Array.isArray(v[k])) {
+        if (v[k].length) body[k] = v[k];
+        return;
+      }
       const val = String(v[k]).trim();
-      if (val) body[k] = k === 'year' ? Number(val) : ['section', 'rollNo', 'employeeId'].includes(k) ? val.toUpperCase() : val;
+      if (val) body[k] = NUMERIC.has(k) ? Number(val) : ['section', 'rollNo', 'employeeId'].includes(k) ? val.toUpperCase() : val;
     });
+    // Faculty's class in charge is also their (sole) section handled.
+    if (role === 'faculty' && body.section) body.teachingSections = [body.section];
     try {
       const user = await create(body).unwrap();
       toast.success(`${ROLE_LABELS[role]} login created for ${user.name} — username: ${user.email}`, { duration: 6000 });
@@ -69,8 +81,20 @@ export default function CreateUserModal({ open, onClose }) {
   };
 
   const field = (k) => {
-    const common = { value: v[k], onChange: set(k), error: errors[k], required: REQUIRED.has(k) };
+    const common = { value: v[k], onChange: set(k), error: errors[k], required: isRequired(k, role) };
     switch (k) {
+      case 'teachingYears':
+        return (
+          <ChipMultiSelect
+            key={k}
+            label="Year(s) handling"
+            hint="Select every year this faculty teaches."
+            options={ACADEMIC_YEARS.map((y) => ({ value: y, label: YEAR_LABELS[y] }))}
+            value={v[k]}
+            onChange={setList(k)}
+            error={errors[k]}
+          />
+        );
       case 'name':
         return <Input key={k} label="Full name" maxLength={80} autoComplete="off" {...common} />;
       case 'rollNo':
@@ -78,14 +102,14 @@ export default function CreateUserModal({ open, onClose }) {
       case 'employeeId':
         return <Input key={k} label="Employee ID" maxLength={30} className="uppercase" {...common} />;
       case 'year':
-        return <Select key={k} label="Year" placeholder="Select year" options={[1, 2, 3, 4, 5].map((y) => ({ value: String(y), label: `Year ${y}` }))} {...common} />;
+        return <Select key={k} label="Year" placeholder="Select year" options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))} {...common} />;
       case 'department':
         return <Select key={k} label="Department" placeholder="Select department" options={DEPARTMENTS.map((d) => ({ value: d, label: d }))} {...common} />;
       case 'section':
         return (
           <Select
             key={k}
-            label={role === 'faculty' ? 'Section (class in charge)' : 'Section'}
+            label={role === 'faculty' ? 'Class in charge' : 'Section'}
             placeholder="Select section"
             options={SECTIONS.map((s) => ({ value: s, label: s }))}
             {...common}

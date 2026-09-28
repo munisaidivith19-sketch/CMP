@@ -9,7 +9,7 @@ import Session from '../models/Session.js';
 import { disconnectSessions } from '../config/socket.js';
 import { env } from '../config/env.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate } from '../utils/http.js';
-import { ROLES } from '../constants.js';
+import { ROLES, yearOfSemester } from '../constants.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
 import { pick } from '../utils/http.js';
@@ -192,7 +192,7 @@ export const listUsers = asyncHandler(async (req, res) => {
 
   const [items, total] = await Promise.all([
     User.find(filter)
-      .select('name email role department year section semester rollNo employeeId stayType phone parentPhone avatar isActive lastLogin createdAt')
+      .select('name email role department year section semester teachingYears teachingSections rollNo employeeId stayType phone parentPhone avatar isActive lastLogin createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -207,7 +207,7 @@ export const listUsers = asyncHandler(async (req, res) => {
 // this list only controls which extra profile fields get copied from the body.
 const CREATE_FIELDS = {
   student: ['rollNo', 'year', 'department', 'section', 'semester', 'stayType', 'phone', 'parentPhone'],
-  faculty: ['employeeId', 'department', 'section', 'designation', 'phone'],
+  faculty: ['employeeId', 'department', 'section', 'teachingYears', 'teachingSections', 'designation', 'phone'],
   hod: ['employeeId', 'department', 'phone'],
   principal: ['employeeId', 'phone'],
   club_admin: ['rollNo', 'year', 'department', 'section', 'semester', 'stayType', 'phone', 'parentPhone'],
@@ -265,6 +265,18 @@ export const updateUser = asyncHandler(async (req, res) => {
       academic.push(`${key} → ${value ?? '—'}`);
     }
   }
+  // Declared teaching scope is a faculty-only concept.
+  for (const key of ['teachingYears', 'teachingSections']) {
+    if (req.body[key] === undefined) continue;
+    if ((role ?? user.role) !== 'faculty') throw new ApiError(422, 'Years/sections handled apply to faculty accounts only');
+    if (String(req.body[key]) !== String(user[key] ?? '')) {
+      user[key] = req.body[key];
+      academic.push(`${key} → ${req.body[key].join(', ')}`);
+    }
+  }
+  if (user.year && user.semester && yearOfSemester(user.semester) !== user.year) {
+    throw new ApiError(422, `Semester ${user.semester} belongs to year ${yearOfSemester(user.semester)}, not year ${user.year}`);
+  }
   if (role !== undefined && role !== user.role) {
     user.role = role;
     changes.push(`role → ${role}`);
@@ -293,6 +305,26 @@ export const updateUser = asyncHandler(async (req, res) => {
     logActivity(req, 'admin.user_update', { entityType: 'user', entityId: user._id, summary: `${user.email}: ${changes.join(', ')}` });
   }
   res.json(user);
+});
+
+export const deleteUser = asyncHandler(async (req, res) => {
+  if (String(req.params.id) === String(req.user._id)) {
+    throw new ApiError(400, 'You cannot delete your own account');
+  }
+  const user = await User.findById(req.params.id);
+  if (!user) throw new ApiError(404, 'User not found');
+
+  const live = await Session.find({ user: user._id, revokedAt: null }).distinct('_id');
+  if (live.length) {
+    await Session.updateMany({ _id: { $in: live } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_delete' } });
+    disconnectSessions(live);
+  }
+
+  const { name, email, role } = user;
+  await user.deleteOne();
+
+  logActivity(req, 'admin.user_delete', { entityType: 'user', entityId: req.params.id, summary: `${role}: ${email} (${name})` });
+  res.status(204).end();
 });
 
 export const listActivity = asyncHandler(async (req, res) => {

@@ -1,7 +1,7 @@
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
-import Subject from '../models/Subject.js';
 import User, { PUBLIC_USER_FIELDS } from '../models/User.js';
+import { STUDENT_ROLES, facultyClasses, inClasses } from '../utils/academicScope.js';
 import { ApiError, asyncHandler, paginate, pageMeta } from '../utils/http.js';
 import { emitToUsers, isUserOnline } from '../config/socket.js';
 import { sameId } from '../utils/permissions.js';
@@ -14,7 +14,6 @@ import { sendPushToUsers } from '../services/pushService.js';
 const CHAT_USER_FIELDS = `${PUBLIC_USER_FIELDS} lastSeenAt`;
 const isParticipant = (conv, userId) => conv.participants.some((p) => sameId(p._id || p, userId));
 const participantIds = (conv) => conv.participants.map((p) => String(p._id || p));
-const STUDENT_ROLES = ['student', 'club_admin'];
 // Who may start a group / class channel at all. Students only have private chats.
 const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
 // Faculty-created class groups wait for an admin; admin and HOD groups start at once.
@@ -62,34 +61,32 @@ async function loadMemberConversation(id, user) {
   return conv;
 }
 
-/** Sections a faculty member is responsible for: their mentor section + sections they teach. */
-async function facultySections(user) {
-  const subjects = await Subject.find({ faculty: user._id, isActive: true }).select('sections department').lean();
-  const sections = new Set(subjects.flatMap((s) => (s.sections || []).map((x) => String(x).toUpperCase())));
-  if (user.section) sections.add(String(user.section).toUpperCase());
-  return sections;
-}
-
 /**
  * Enforce who may be put in a group:
  *  - admin: anyone;
  *  - HOD: students and staff of their own department;
- *  - faculty: students of their own class(es) and staff of their department.
+ *  - faculty: students of the exact classes (department + year + section +
+ *    semester) they teach, and staff of their department.
  */
 async function assertMembersAllowed(user, memberIds) {
   if (user.role === 'admin' || !memberIds.length) return;
-  const members = await User.find({ _id: { $in: memberIds } }).select('role department section name').lean();
+  const members = await User.find({ _id: { $in: memberIds } }).select('role department section year semester name').lean();
   if (!user.department) throw new ApiError(422, 'Your account has no department — ask an admin to set it');
+  if (user.role === 'faculty') {
+    const classes = await facultyClasses(user);
+    const notMine = members.filter((m) => STUDENT_ROLES.includes(m.role) && !inClasses(classes, m));
+    if (notMine.length) {
+      throw new ApiError(403, `Faculty groups can only include students of your own class (${notMine[0].name} is not in a class you teach)`);
+    }
+    const staffOutsiders = members.filter((m) => !STUDENT_ROLES.includes(m.role) && m.department !== user.department);
+    if (staffOutsiders.length) {
+      throw new ApiError(403, `Groups can only include staff of your own department (${staffOutsiders[0].name} is not in ${user.department})`);
+    }
+    return;
+  }
   const outsiders = members.filter((m) => m.department !== user.department);
   if (outsiders.length) {
     throw new ApiError(403, `Groups can only include your own department (${outsiders[0].name} is not in ${user.department})`);
-  }
-  if (user.role === 'faculty') {
-    const sections = await facultySections(user);
-    const notMine = members.filter((m) => STUDENT_ROLES.includes(m.role) && !sections.has(String(m.section || '').toUpperCase()));
-    if (notMine.length) {
-      throw new ApiError(403, `Faculty groups can only include students of your own class (${notMine[0].name} is not in your sections)`);
-    }
   }
 }
 

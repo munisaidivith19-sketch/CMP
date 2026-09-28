@@ -46,7 +46,13 @@ export async function startServer() {
 
     async createUser(overrides = {}) {
       const n = Math.random().toString(36).slice(2, 8);
-      return User.create({ name: `User ${n}`, email: `u${n}@test.edu`, password: PASSWORD, role: 'student', ...overrides });
+      // Students get a complete, consistent class placement unless a test says otherwise.
+      const placement = {};
+      if (['student', 'club_admin'].includes(overrides.role || 'student')) {
+        placement.semester = overrides.semester !== undefined ? overrides.semester : overrides.year ? overrides.year * 2 - 1 : 5;
+        placement.year = overrides.year !== undefined ? overrides.year : placement.semester ? Math.ceil(placement.semester / 2) : undefined;
+      }
+      return User.create({ name: `User ${n}`, email: `u${n}@test.edu`, password: PASSWORD, role: 'student', ...placement, ...overrides });
     },
 
     /** Raw JSON request. Returns { status, body, headers }. */

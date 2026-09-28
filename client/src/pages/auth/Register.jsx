@@ -49,11 +49,11 @@ export default function Register() {
           label="College email"
           type="email"
           icon={Mail}
-          placeholder="you@campus.edu"
+          placeholder="you@jnn.edu.in"
           error={errors.email}
           {...register('email', {
             required: 'Email is required',
-            pattern: { value: /^\S+@\S+\.\S+$/, message: 'Enter a valid email' },
+            pattern: { value: /^\S+@jnn\.edu\.in$/i, message: 'Use your @jnn.edu.in college email' },
           })}
         />
         <Select

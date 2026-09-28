@@ -43,6 +43,8 @@ export function materialReadFilter(user) {
   const filter = { isActive: true };
   if (STUDY_MATERIAL_STUDENT_ROLES.includes(user.role)) {
     filter.department = user.department || '__none__';
+    // Year is always pinned, so a student with no semester on file still never sees another year's material.
+    filter.year = user.year || -1;
     if (user.semester) filter.semester = user.semester;
     if (user.section) filter.$or = [{ section: user.section }, { section: '' }, { section: null }];
   }

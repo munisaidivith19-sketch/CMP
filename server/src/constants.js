@@ -9,6 +9,16 @@ export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security', 
 export const NO_DEPARTMENT_ROLES = ['principal', 'security', 'dean', 'ao', 'chairman', 'warden'];
 export const STAY_TYPES = ['hosteler', 'day_scholar'];
 
+// ── Academic structure ──────────────────────────────────────────────
+// A class is Department + Year + Section + Semester. The department string
+// already carries the program (e.g. 'CSE (Cyber Security)').
+export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
+export const ACADEMIC_YEARS = [1, 2, 3, 4];
+export const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
+export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'];
+// Year 1 → semesters 1/2, year 2 → 3/4, year 3 → 5/6, year 4 → 7/8.
+export const yearOfSemester = (semester) => Math.ceil(Number(semester) / 2);
+
 // ── Timetable ───────────────────────────────────────────────────────
 // Warden and Security have zero timetable access (view, write, sockets,
 // notifications) — every other role keeps its existing visibility.

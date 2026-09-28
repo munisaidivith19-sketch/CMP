@@ -12,12 +12,12 @@ import { setCredentials } from '../../features/authSlice';
 import { errMsg } from '../../utils/format';
 
 const DEMO = [
-  { label: 'Student', email: 'student@campus.edu' },
-  { label: 'Club admin', email: 'clubadmin@campus.edu' },
-  { label: 'Faculty', email: 'faculty@campus.edu' },
-  { label: 'HOD', email: 'hod@campus.edu' },
+  { label: 'Student', email: 'vkrishnapatnam23@jnn.edu.in' },
+  { label: 'Chairman', email: 'vc@jnn.edu.in' },
+  { label: 'Faculty', email: 'nkrishnan10@jnn.edu.in' },
+  { label: 'HOD', email: 'vkumar01@jnn.edu.in' },
   { label: 'Principal', email: 'principal@campus.edu' },
-  { label: 'Security', email: 'security@campus.edu' },
+  { label: 'Security', email: 'security@jnn.edu.in' },
   { label: 'Admin', email: 'admin@campus.edu' },
 ];
 
@@ -53,7 +53,7 @@ export default function Login() {
           type="email"
           icon={Mail}
           autoComplete="email"
-          placeholder="you@campus.edu"
+          placeholder="you@jnn.edu.in"
           error={errors.email}
           {...register('email', {
             required: 'Email is required',

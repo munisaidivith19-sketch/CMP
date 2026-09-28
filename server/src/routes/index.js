@@ -33,6 +33,11 @@ import {
   STUDY_MATERIAL_VIEW_ROLES,
   STUDY_MATERIAL_WRITE_ROLES,
   STUDY_MATERIAL_CATEGORIES,
+  ACADEMIC_YEARS,
+  DEPARTMENTS,
+  SEMESTERS,
+  SECTIONS,
+  yearOfSemester,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
@@ -83,6 +88,38 @@ const tagArray = (field) =>
     .isArray({ max: 25 })
     .withMessage(`${field} must be a list (max 25)`)
     .customSanitizer((arr) => arr.map((s) => String(s).trim().toLowerCase().slice(0, 40)).filter(Boolean));
+
+const isStudentRole = (_v, { req }) => STUDENT_ROLES.includes(req.body.role);
+const isFacultyRole = (_v, { req }) => req.body.role === 'faculty';
+
+/** Faculty years/sections handled: distinct multi-select lists, required on create. */
+const teachingScopeRules = (required) => {
+  const list = (field, allowed, normalise, message) => {
+    const chain = body(field);
+    return (required ? chain.if(isFacultyRole) : chain.optional())
+      .isArray({ min: 1, max: allowed.length })
+      .withMessage(message)
+      .bail()
+      .custom((arr) => arr.every((x) => allowed.includes(normalise(x))) && new Set(arr.map(normalise)).size === arr.length)
+      .withMessage(`${message} — distinct values from ${allowed.join(', ')}`)
+      .customSanitizer((arr) => arr.map(normalise).sort());
+  };
+  return [
+    list('teachingYears', ACADEMIC_YEARS, Number, 'Select the year(s) handled'),
+    list('teachingSections', SECTIONS, (s) => String(s).trim().toUpperCase(), 'Select the section(s) handled'),
+  ];
+};
+
+/** Optional `year` that must be 1–4 and, when a semester is sent too, the year that semester belongs to. */
+const yearMatchesSemester = () =>
+  body('year')
+    .optional({ values: 'falsy' })
+    .isIn(ACADEMIC_YEARS)
+    .withMessage('Year must be 1–4')
+    .bail()
+    .custom((y, { req }) => !req.body.semester || yearOfSemester(req.body.semester) === Number(y))
+    .withMessage('That semester does not belong to this year')
+    .toInt();
 
 const safeUrl = (field) =>
   body(field)
@@ -385,15 +422,26 @@ router.post(
   body('role').isIn(ROLES).withMessage('Choose a role'),
   // Student / club admin.
   body('rollNo')
-    .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
+    .if(isStudentRole)
     .trim()
     .isLength({ min: 1, max: 30 })
     .withMessage('Roll number is required'),
-  body('year')
-    .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
-    .isInt({ min: 1, max: 6 })
-    .withMessage('Year is required')
+  // A student belongs to exactly one class: department + year + section + semester.
+  body('department').if(isStudentRole).isIn(DEPARTMENTS).withMessage('Choose a valid department'),
+  body('year').if(isStudentRole).isIn(ACADEMIC_YEARS).withMessage('Year is required (1–4)').toInt(),
+  body('section').if(isStudentRole).trim().toUpperCase().isIn(SECTIONS).withMessage('Section is required'),
+  body('semester')
+    .if(isStudentRole)
+    .optional({ values: 'falsy' })
+    .isIn(SEMESTERS)
+    .withMessage('Semester must be 1–8')
+    .bail()
+    .custom((s, { req }) => yearOfSemester(s) === Number(req.body.year))
+    .withMessage('That semester does not belong to the selected year')
     .toInt(),
+  // Faculty: the year(s) and section(s) they handle — both multi-select.
+  body('department').if(isFacultyRole).isIn(DEPARTMENTS).withMessage('Choose a valid department'),
+  ...teachingScopeRules(true),
   body('stayType')
     .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
     .isIn(STAY_TYPES)
@@ -415,8 +463,8 @@ router.post(
     .trim()
     .isLength({ min: 1, max: 80 })
     .withMessage('Department is required'),
-  body('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }).matches(/^[A-Za-z0-9-]*$/),
-  body('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }).toInt(),
+  // Staff "class in charge" section, optional.
+  body('section').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' }).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
   body('phone').optional({ values: 'falsy' }).trim().isLength({ max: 20 }),
   validate,
   admin.createUser
@@ -428,14 +476,10 @@ router.patch(
   body('role').optional().isIn(ROLES),
   body('isActive').optional().isBoolean(),
   body('department').optional({ values: 'null' }).trim().isLength({ max: 80 }),
-  body('year').optional({ values: 'falsy' }).isInt({ min: 1, max: 6 }).toInt(),
-  body('section')
-    .optional({ values: 'null' })
-    .trim()
-    .isLength({ max: 10 })
-    .matches(/^[A-Za-z0-9-]*$/)
-    .withMessage('Section may contain letters, numbers and dashes'),
-  body('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }).toInt(),
+  body('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4').toInt(),
+  body('section').optional({ values: 'falsy' }).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
+  body('semester').optional({ values: 'falsy' }).isIn(SEMESTERS).withMessage('Semester must be 1–8').toInt(),
+  ...teachingScopeRules(false),
   body('rollNo').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('employeeId').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('stayType').optional({ values: 'null' }).isIn(STAY_TYPES),
@@ -444,6 +488,7 @@ router.patch(
   validate,
   admin.updateUser
 );
+router.delete('/admin/users/:id', idParam('id'), authorize('admin'), admin.deleteUser);
 router.get('/admin/activity', authorize('admin'), admin.listActivity);
 
 // ════════════════════════════════════════════════════════════════════
@@ -629,15 +674,15 @@ const slotRules = (optional = false) => {
     body('isBreak').optional().isBoolean().toBoolean(),
     o(body('subject').if(notBreak)).isMongoId().withMessage('Subject is required'),
     o(body('faculty').if(notBreak)).isMongoId().withMessage('Faculty is required'),
-    o(body('section')).trim().isLength({ min: 1, max: 10 }).withMessage('Section is required'),
+    o(body('section')).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
     o(body('department')).trim().isLength({ min: 1, max: 80 }).withMessage('Department is required'),
     o(body('dayOfWeek')).isIn(WEEKDAYS).withMessage('Choose a day'),
     o(body('period')).isInt({ min: 1, max: 12 }).toInt(),
     o(body('startTime')).matches(HHMM).withMessage('Start time must be HH:mm'),
     o(body('endTime')).matches(HHMM).withMessage('End time must be HH:mm'),
-    o(body('semester')).isInt({ min: 1, max: 12 }).toInt(),
+    o(body('semester')).isIn(SEMESTERS).withMessage('Choose a semester (1–8)').toInt(),
     body('room').optional().trim().isLength({ max: 60 }),
-    body('year').optional({ values: 'falsy' }).isInt({ min: 1, max: 6 }).toInt(),
+    yearMatchesSemester(),
     body('academicYear').optional().trim().isLength({ max: 20 }),
     body('breakLabel').optional().trim().isLength({ max: 40 }),
     validate,
@@ -662,7 +707,14 @@ const subjectRules = (optional = false) => {
 };
 // Warden/Security get zero access to any timetable-related endpoint, including
 // the read-only ones — enforced here, not just by hiding the sidebar item.
-router.get('/timetable', authorize(...TIMETABLE_VIEW_ROLES), timetable.getMyTimetable);
+router.get(
+  '/timetable',
+  authorize(...TIMETABLE_VIEW_ROLES),
+  query('year').optional().isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4'),
+  query('semester').optional().isIn(SEMESTERS).withMessage('Semester must be 1–8'),
+  validate,
+  timetable.getMyTimetable
+);
 router.get('/timetable/current', authorize(...TIMETABLE_VIEW_ROLES), timetable.getCurrentClass);
 router.get('/timetable/faculty-options', authorize(...TIMETABLE_WRITE_ROLES), timetable.listFacultyOptions);
 router.get('/timetable/section/:section', authorize(...TIMETABLE_VIEW_ROLES), param('section').trim().isLength({ min: 1, max: 10 }), validate, timetable.getSectionTimetable);

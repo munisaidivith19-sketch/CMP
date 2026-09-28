@@ -1,4 +1,4 @@
-import { CalendarDays, GraduationCap, MessagesSquare, Shapes } from 'lucide-react';
+import { CalendarDays, MessagesSquare, Shapes } from 'lucide-react';
 import { Backdrop } from '../../components/layout/AppLayout';
 
 const FEATURES = [
@@ -16,10 +16,10 @@ export default function AuthShell({ title, subtitle, children }) {
           <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/20 blur-3xl" />
           <div className="absolute -bottom-24 -left-10 h-72 w-72 rounded-full bg-sky-300/30 blur-3xl" />
           <div className="relative flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
-              <GraduationCap className="h-6 w-6" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/20 backdrop-blur overflow-hidden">
+              <img src="/logo.jpeg" alt="Logo" className="h-full w-full object-cover" />
             </div>
-            <span className="text-lg font-extrabold tracking-tight">CampusConnect</span>
+            <span className="text-lg font-extrabold tracking-tight">J.N.N INSTITUTE OF ENGINEERING</span>
           </div>
           <div className="relative">
             <h2 className="text-3xl font-extrabold leading-tight">

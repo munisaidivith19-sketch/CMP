@@ -22,6 +22,13 @@ export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VL
 // (user management, timetable, attendance) picks from this fixed list.
 export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'];
 
+// A class is Department + Year + Section + Semester; the server enforces the same rule.
+export const ACADEMIC_YEARS = [1, 2, 3, 4];
+export const YEAR_LABELS = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' };
+export const yearOfSemester = (semester) => Math.ceil(Number(semester) / 2);
+/** The two semesters of a year (year 3 → [5, 6]); all eight when no year is chosen. */
+export const semestersOfYear = (year) => (year ? [Number(year) * 2 - 1, Number(year) * 2] : [1, 2, 3, 4, 5, 6, 7, 8]);
+
 export const STUDY_MATERIAL_CATEGORY_LABELS = {
   notes: 'Notes',
   question_bank: 'Question Bank',

@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, Search, UserCog, UserPlus } from 'lucide-react';
-import { useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
+import { Ban, CheckCircle2, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
+import { useDeleteAdminUserMutation, useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { Input, Select } from '../../components/ui/form';
+import { ChipMultiSelect, Input, Select } from '../../components/ui/form';
 import { selectUser } from '../../features/authSlice';
 import CreateUserModal from '../../components/CreateUserModal';
-import { DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo } from '../../utils/format';
 
 /** Department / section / semester decide which timetable and attendance roster a student belongs to. */
@@ -17,19 +17,31 @@ function ClassModal({ user, onClose }) {
   const [update, { isLoading }] = useUpdateAdminUserMutation();
   const [v, setV] = useState({});
   useEffect(() => {
-    if (user) setV({ department: user.department || '', year: user.year || '', section: user.section || '', semester: user.semester || '', rollNo: user.rollNo || '' });
+    if (user) {
+      setV({
+        department: user.department || '', year: user.year || '', section: user.section || '', semester: user.semester || '', rollNo: user.rollNo || '',
+        teachingYears: user.teachingYears || [], teachingSections: user.teachingSections || [],
+      });
+    }
   }, [user]);
   if (!user) return null;
-  const set = (k) => (e) => setV((s) => ({ ...s, [k]: e.target.value }));
+  const isFaculty = user.role === 'faculty';
+  const set = (k) => (e) =>
+    setV((s) => {
+      const next = { ...s, [k]: e.target.value };
+      if (k === 'year' && s.semester && !semestersOfYear(e.target.value).includes(Number(s.semester))) next.semester = '';
+      return next;
+    });
   const save = async () => {
     try {
       await update({
         id: user._id,
         department: v.department || null,
-        year: v.year ? Number(v.year) : undefined,
         section: v.section ? v.section.toUpperCase() : null,
-        semester: v.semester ? Number(v.semester) : undefined,
-        rollNo: v.rollNo || null,
+        // A faculty's class in charge is also their (sole) section handled.
+        ...(isFaculty
+          ? { teachingYears: v.teachingYears, teachingSections: v.section ? [v.section.toUpperCase()] : [] }
+          : { year: v.year ? Number(v.year) : undefined, semester: v.semester ? Number(v.semester) : undefined, rollNo: v.rollNo || null }),
       }).unwrap();
       toast.success('Class details saved');
       onClose();
@@ -41,25 +53,47 @@ function ClassModal({ user, onClose }) {
     <Modal
       open
       onClose={onClose}
-      title={`Class details · ${user.name}`}
-      subtitle="Used for the timetable and attendance roster."
+      title={`${isFaculty ? 'Teaching scope' : 'Class details'} · ${user.name}`}
+      subtitle={isFaculty ? 'Bounds which classes this faculty can be scheduled for in the timetable.' : 'Department, year, section and semester decide the timetable and attendance roster.'}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={isLoading} onClick={save}>
+          <Button loading={isLoading} onClick={save} disabled={isFaculty && (!v.teachingYears?.length || !v.section)}>
             Save
           </Button>
         </>
       }
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        <Select label="Department" placeholder="—" options={[...new Set([user.department, ...DEPARTMENTS].filter(Boolean))]} value={v.department} onChange={set('department')} />
-        <Input label="Roll number" maxLength={30} value={v.rollNo} onChange={set('rollNo')} />
-        <Input label="Year" type="number" min={1} max={6} value={v.year} onChange={set('year')} />
-        <Input label="Semester" type="number" min={1} max={12} value={v.semester} onChange={set('semester')} />
-        <Select label="Section" placeholder="—" options={SECTIONS.map((s) => ({ value: s, label: s }))} value={v.section} onChange={set('section')} />
+        <Select label="Department" placeholder="—" keepCase options={[...new Set([user.department, ...DEPARTMENTS].filter(Boolean))]} value={v.department} onChange={set('department')} />
+        {isFaculty ? (
+          <>
+            <Select label="Class in charge" placeholder="Select section" options={SECTIONS} value={v.section} onChange={set('section')} />
+            <ChipMultiSelect
+              className="sm:col-span-2"
+              label="Year(s) handling"
+              options={ACADEMIC_YEARS.map((y) => ({ value: y, label: YEAR_LABELS[y] }))}
+              value={v.teachingYears || []}
+              onChange={(list) => setV((s) => ({ ...s, teachingYears: list }))}
+            />
+          </>
+        ) : (
+          <>
+            <Input label="Roll number" maxLength={30} value={v.rollNo} onChange={set('rollNo')} />
+            <Select label="Year" placeholder="—" options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))} value={String(v.year || '')} onChange={set('year')} />
+            <Select label="Section" placeholder="—" options={SECTIONS} value={v.section} onChange={set('section')} />
+            <Select
+              label="Semester"
+              placeholder={v.year ? '—' : 'Select year first'}
+              disabled={!v.year}
+              options={semestersOfYear(v.year).map((s) => ({ value: String(s), label: `Semester ${s}` }))}
+              value={String(v.semester || '')}
+              onChange={set('semester')}
+            />
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -72,10 +106,12 @@ export default function AdminUsers() {
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
   const [pending, setPending] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const [classEdit, setClassEdit] = useState(null);
   const [creating, setCreating] = useState(false);
   const { data, isLoading } = useGetAdminUsersQuery({ q: q || undefined, role: role || undefined, status: status || undefined, page });
   const [update, { isLoading: saving }] = useUpdateAdminUserMutation();
+  const [removeUser, { isLoading: deletingSaving }] = useDeleteAdminUserMutation();
 
   const apply = async (id, body, msg) => {
     try {
@@ -165,11 +201,24 @@ export default function AdminUsers() {
                         </Link>
                       </td>
                       <td className="px-3 py-3 text-xs muted">
-                        <button onClick={() => setClassEdit(u)} className="rounded-lg px-1.5 py-1 text-left hover:bg-white/70 hover:text-ink" title="Edit class details">
+                        <button onClick={() => setClassEdit(u)} className="rounded-lg px-1.5 py-1 text-left hover:bg-white/70 hover:text-ink" title={u.role === 'faculty' ? 'Edit teaching scope' : 'Edit class details'}>
                           {u.department || '—'}
-                          {u.year ? ` · Y${u.year}` : ''}
-                          {u.section ? ` · Sec ${u.section}` : ''}
-                          {u.semester ? ` · Sem ${u.semester}` : ''}
+                          {u.role === 'faculty' ? (
+                            <>
+                              {u.teachingYears?.length ? ` · Y${u.teachingYears.join('/')}` : ''}
+                              {u.teachingSections?.length ? ` · Sec ${u.teachingSections.join('/')}` : ''}
+                              {!u.teachingYears?.length && <span className="ml-1 font-semibold text-amber-600">· scope not set</span>}
+                            </>
+                          ) : (
+                            <>
+                              {u.year ? ` · Y${u.year}` : ''}
+                              {u.section ? ` · Sec ${u.section}` : ''}
+                              {u.semester ? ` · Sem ${u.semester}` : ''}
+                              {['student', 'club_admin'].includes(u.role) && (!u.year || !u.section || !u.semester) && (
+                                <span className="ml-1 font-semibold text-amber-600">· incomplete</span>
+                              )}
+                            </>
+                          )}
                         </button>
                       </td>
                       <td className="px-3 py-3">
@@ -191,16 +240,22 @@ export default function AdminUsers() {
                         {u.lastLogin ? timeAgo(u.lastLogin) : 'never'}
                       </td>
                       <td className="px-5 py-3 text-right">
-                        {!self &&
-                          (u.isActive ? (
-                            <Button size="sm" variant="danger" icon={Ban} onClick={() => setPending(u)}>
-                              Suspend
+                        {!self && (
+                          <div className="inline-flex items-center gap-2">
+                            {u.isActive ? (
+                              <Button size="sm" variant="danger" icon={Ban} onClick={() => setPending(u)}>
+                                Suspend
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="success" icon={CheckCircle2} onClick={() => apply(u._id, { isActive: true }, 'Account reactivated')}>
+                                Reactivate
+                              </Button>
+                            )}
+                            <Button size="sm" variant="danger" icon={Trash2} onClick={() => setDeleting(u)}>
+                              Delete
                             </Button>
-                          ) : (
-                            <Button size="sm" variant="success" icon={CheckCircle2} onClick={() => apply(u._id, { isActive: true }, 'Account reactivated')}>
-                              Reactivate
-                            </Button>
-                          ))}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
@@ -225,6 +280,23 @@ export default function AdminUsers() {
         onConfirm={async () => {
           await apply(pending._id, { isActive: false }, 'Account suspended');
           setPending(null);
+        }}
+      />
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        onClose={() => setDeleting(null)}
+        title={`Delete ${deleting?.name}?`}
+        text="This permanently removes the account from the database. This cannot be undone."
+        confirmText="Delete permanently"
+        loading={deletingSaving}
+        onConfirm={async () => {
+          try {
+            await removeUser(deleting._id).unwrap();
+            toast.success('Account deleted');
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+          setDeleting(null);
         }}
       />
     </div>

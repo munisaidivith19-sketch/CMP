@@ -68,6 +68,11 @@ export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
 /** May start a group chat; faculty groups wait for admin approval. */
 export const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
 export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
+// A class is Department + Year + Section + Semester (same rule as the server).
+export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'];
+export const ACADEMIC_YEARS = [1, 2, 3, 4];
+export const YEAR_LABELS = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' };
+export const semestersOfYear = (year) => (year ? [Number(year) * 2 - 1, Number(year) * 2] : []);
 
 export const GATE_PASS_REGARDING = { outing: 'Outing', home: 'Home' };
 export const INDIAN_STATES = [

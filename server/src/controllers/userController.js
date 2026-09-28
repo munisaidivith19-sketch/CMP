@@ -6,7 +6,7 @@ import { persistFile } from '../utils/storage.js';
 import { logActivity } from '../utils/activity.js';
 import { canViewProfile, peopleScopeFilter } from '../utils/peopleScope.js';
 
-const DIRECTORY_FIELDS = 'name role department year section avatar designation employeeId skills interests bio';
+const DIRECTORY_FIELDS = 'name role department year section semester avatar designation employeeId skills interests bio';
 
 /**
  * Student / faculty directory with search and filters.
@@ -19,7 +19,7 @@ const DIRECTORY_FIELDS = 'name role department year section avatar designation e
  */
 export const listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req, 18);
-  const { q, department, role, skill, year, context } = req.query;
+  const { q, department, role, skill, year, section, semester, context } = req.query;
 
   const clauses = [{ isActive: true }];
   if (q) {
@@ -29,6 +29,8 @@ export const listUsers = asyncHandler(async (req, res) => {
   if (department) clauses.push({ department });
   if (role) clauses.push({ role });
   if (year) clauses.push({ year: Number(year) });
+  if (section) clauses.push({ section: String(section).toUpperCase() });
+  if (semester) clauses.push({ semester: Number(semester) });
   if (skill) clauses.push({ skills: String(skill).toLowerCase() });
   if (context !== 'picker') {
     clauses.push(await peopleScopeFilter(req.user));

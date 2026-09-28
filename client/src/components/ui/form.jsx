@@ -107,19 +107,26 @@ export function TimeInput({ label, value = '', onChange, error, hint, className 
 }
 
 /** Toggle chips over the fixed section list (A–H, J). Use with RHF <Controller>; value = string[]. */
-export function SectionMultiSelect({ label, value = [], onChange, error, hint }) {
-  const toggle = (s) => onChange(value.includes(s) ? value.filter((x) => x !== s) : [...value, s].sort());
+/** Compact multi-select as toggle chips. `options` are values or { value, label }. */
+export function ChipMultiSelect({ label, options, value = [], onChange, error, hint, className }) {
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: String(o) }));
+  const order = (list) => opts.map((o) => o.value).filter((v) => list.includes(v));
+  const toggle = (v) => onChange(order(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]));
   return (
-    <Field label={label} error={error} hint={hint}>
-      <div className="flex flex-wrap gap-1.5">
-        {SECTIONS.map((s) => (
-          <button key={s} type="button" onClick={() => toggle(s)} className={cn('chip', value.includes(s) && 'chip-active')}>
-            {s}
+    <Field label={label} error={error} hint={hint} className={className}>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label={label}>
+        {opts.map((o) => (
+          <button key={o.value} type="button" aria-pressed={value.includes(o.value)} onClick={() => toggle(o.value)} className={cn('chip', value.includes(o.value) && 'chip-active')}>
+            {o.label}
           </button>
         ))}
       </div>
     </Field>
   );
+}
+
+export function SectionMultiSelect(props) {
+  return <ChipMultiSelect options={SECTIONS} {...props} />;
 }
 
 /** Chip-style multi value input (Enter or comma to add). Use with RHF <Controller>. */

@@ -6,12 +6,11 @@ import { useDeleteSlotMutation, useGetTimetableQuery } from '../../services/api'
 import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { DEPARTMENTS, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg } from '../../utils/format';
 import SlotModal from './SlotModal';
 
 export const DAYS = WEEKDAYS;
-const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 const DAY_SHORT = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat' };
 const STUDENT_ROLES = ['student', 'club_admin'];
 
@@ -103,7 +102,11 @@ export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }
             {slot.faculty.name}
           </span>
         )}
-        {showSection && <span className="font-semibold">Sec {slot.section} · {slot.department}</span>}
+        {showSection && (
+          <span className="font-semibold">
+            {YEAR_LABELS[slot.year] || `Year ${slot.year}`} · Sec {slot.section} · Sem {slot.semester} · {slot.department}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -124,7 +127,7 @@ export default function Timetable() {
   const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   const isHod = me.role === 'hod';
   const isEditor = TIMETABLE_EDITORS.includes(me.role);
-  const [lookup, setLookup] = useState({ section: '', department: me.department || '', semester: '' });
+  const [lookup, setLookup] = useState({ department: me.department || '', year: '', section: '', semester: '' });
   const [applied, setApplied] = useState(null);
   const [edit, setEdit] = useState(undefined); // undefined = closed, null = new period, object = existing
   const [preset, setPreset] = useState(null);
@@ -132,12 +135,12 @@ export default function Timetable() {
   const [removeSlot, { isLoading: removing }] = useDeleteSlotMutation();
 
   const params = applied?.section
-    ? { section: applied.section, department: applied.department || undefined, semester: applied.semester || undefined }
+    ? { department: applied.department || undefined, year: applied.year, section: applied.section, semester: applied.semester || undefined }
     : undefined;
   const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params);
   const slots = useMemo(() => data?.slots || [], [data]);
 
-  // Editing needs one concrete class: department + section + semester. If no
+  // Editing needs one concrete class: department + year + section + semester. If no
   // semester was picked, fall back to the one semester every loaded period shares.
   const semesters = [...new Set(slots.map((s) => s.semester))];
   const klass =
@@ -163,7 +166,7 @@ export default function Timetable() {
   const nextSlot = todaySlots.find((s) => !s.isBreak && s.startTime > now);
   const periods = useMemo(() => {
     const rows = new Map();
-    slots.filter((s) => !s.isBreak).forEach((s) => rows.set(`${s.startTime}-${s.endTime}`, { startTime: s.startTime, endTime: s.endTime, period: s.period }));
+    slots.forEach((s) => rows.set(`${s.startTime}-${s.endTime}`, { startTime: s.startTime, endTime: s.endTime, period: s.period, isBreak: s.isBreak }));
     return [...rows.values()].sort((a, b) => a.startTime.localeCompare(b.startTime));
   }, [slots]);
   const showSection = !isStudent && !applied?.section;
@@ -175,10 +178,10 @@ export default function Timetable() {
       subtitle={
         isStudent
           ? me.section
-            ? `${me.department} · Section ${me.section}${me.semester ? ` · Semester ${me.semester}` : ''}`
+            ? `${me.department} · ${YEAR_LABELS[me.year] || ''} · Section ${me.section}${me.semester ? ` · Semester ${me.semester}` : ''}`
             : 'Your class schedule'
           : applied?.section
-            ? `Section ${applied.section}${applied.department ? ` · ${applied.department}` : ''}`
+            ? [applied.department, YEAR_LABELS[applied.year], `Section ${applied.section}`, applied.semester && `Semester ${applied.semester}`].filter(Boolean).join(' · ')
             : me.role === 'faculty'
               ? 'Your teaching schedule'
               : 'Class schedules'
@@ -254,7 +257,26 @@ export default function Timetable() {
               ))}
             </select>
           </div>
-          <div className="sm:w-36">
+          <div className="sm:w-32">
+            <label className="label" htmlFor="tt-year">Year</label>
+            <select
+              id="tt-year"
+              className="input"
+              value={lookup.year}
+              onChange={(e) => {
+                const year = e.target.value ? Number(e.target.value) : '';
+                setLookup((l) => ({ ...l, year, semester: semestersOfYear(year).includes(l.semester) ? l.semester : '' }));
+              }}
+            >
+              <option value="">Choose year</option>
+              {ACADEMIC_YEARS.map((y) => (
+                <option key={y} value={y}>
+                  {YEAR_LABELS[y]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:w-32">
             <label className="label" htmlFor="tt-sec">Section</label>
             <select id="tt-sec" className="input" value={lookup.section} onChange={(e) => setLookup((l) => ({ ...l, section: e.target.value }))}>
               <option value="">Choose section</option>
@@ -263,19 +285,19 @@ export default function Timetable() {
               ))}
             </select>
           </div>
-          <div className="sm:w-36">
+          <div className="sm:w-32">
             <label className="label" htmlFor="tt-sem">Semester</label>
-            <select id="tt-sem" className="input" value={lookup.semester} onChange={(e) => setLookup((l) => ({ ...l, semester: e.target.value ? Number(e.target.value) : '' }))}>
-              <option value="">Any</option>
-              {SEMESTERS.map((s) => (
+            <select id="tt-sem" className="input" value={lookup.semester} disabled={!lookup.year} onChange={(e) => setLookup((l) => ({ ...l, semester: e.target.value ? Number(e.target.value) : '' }))}>
+              <option value="">{lookup.year ? 'Any' : 'Year first'}</option>
+              {semestersOfYear(lookup.year).map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  Semester {s}
                 </option>
               ))}
             </select>
           </div>
           <div className="flex gap-2">
-            <Button icon={Search} loading={isFetching} disabled={!lookup.section} onClick={() => setApplied({ ...lookup })}>
+            <Button icon={Search} loading={isFetching} disabled={!lookup.section || !lookup.year} onClick={() => setApplied({ ...lookup })}>
               View class
             </Button>
             {applied && (
@@ -293,7 +315,7 @@ export default function Timetable() {
           <span className="muted">
             {applied?.section && !klass?.semester
               ? 'Choose a semester and press View class to add or edit periods.'
-              : `To add or edit periods, choose ${isHod ? 'a section' : 'a department, section'} and semester, then press View class.`}
+              : `To add or edit periods, choose ${isHod ? 'a year, section' : 'a department, year, section'} and semester, then press View class.`}
           </span>
         </Card>
       )}
@@ -391,12 +413,12 @@ export default function Timetable() {
                 {periods.map((p) => (
                   <tr key={`${p.startTime}-${p.endTime}`}>
                     <td className="px-2 align-top text-xs font-semibold muted">
-                      P{p.period}
+                      {p.isBreak ? 'Break' : `P${p.period}`}
                       <br />
                       {to12h(p.startTime)}
                     </td>
                     {DAYS.map((d) => {
-                      const cell = byDay[d].filter((s) => !s.isBreak && s.startTime === p.startTime);
+                      const cell = byDay[d].filter((s) => s.startTime === p.startTime && Boolean(s.isBreak) === Boolean(p.isBreak));
                       return (
                         <td key={d} className="align-top">
                           {cell.length ? (

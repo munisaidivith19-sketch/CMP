@@ -5,7 +5,7 @@ import { CalendarClock, Clock, Coffee, MapPin, User } from 'lucide-react-native'
 import { Badge, Card, EmptyState, ErrorState, Header, Loading, Screen, Segmented, T } from '../../components/ui';
 import { useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../store/authSlice';
-import { STUDENT_ROLES, colors } from '../../theme';
+import { STUDENT_ROLES, YEAR_LABELS, colors } from '../../theme';
 import { to12h } from '../../utils/format';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -34,7 +34,7 @@ export default function Timetable() {
       <Header
         back
         title="Timetable"
-        subtitle={STUDENT_ROLES.includes(me.role) ? (me.section ? `${me.department} · Section ${me.section}${me.semester ? ` · Sem ${me.semester}` : ''}` : 'Your class schedule') : 'Your teaching schedule'}
+        subtitle={STUDENT_ROLES.includes(me.role) ? (me.section ? `${me.department} · ${YEAR_LABELS[me.year] || ''} · Section ${me.section}${me.semester ? ` · Sem ${me.semester}` : ''}` : 'Your class schedule') : 'Your teaching schedule'}
       />
       <Segmented value={day} onChange={setDay} options={DAYS.map((d) => ({ value: d, label: d === todayName() ? 'Today' : d.slice(0, 3).replace(/^./, (c) => c.toUpperCase()) }))} />
       {isLoading ? (
@@ -77,7 +77,7 @@ export default function Timetable() {
                 {[
                   [Clock, `${to12h(s.startTime)} – ${to12h(s.endTime)}`],
                   s.room ? [MapPin, s.room] : null,
-                  STUDENT_ROLES.includes(me.role) ? [User, s.faculty?.name] : [User, `Sec ${s.section} · ${s.department}`],
+                  STUDENT_ROLES.includes(me.role) ? [User, s.faculty?.name] : [User, `${YEAR_LABELS[s.year] || `Year ${s.year}`} · Sec ${s.section} · Sem ${s.semester} · ${s.department}`],
                 ]
                   .filter(Boolean)
                   .map(([Icon, label]) => (

@@ -37,6 +37,6 @@ const attendanceSessionSchema = new Schema(
 // One session per timetable entry per day.
 attendanceSessionSchema.index({ timetableSlot: 1, date: 1 }, { unique: true, name: 'unique_session' });
 attendanceSessionSchema.index({ faculty: 1, date: -1 });
-attendanceSessionSchema.index({ department: 1, section: 1, date: -1 });
+attendanceSessionSchema.index({ department: 1, year: 1, section: 1, semester: 1, date: -1 }, { name: 'class_sessions' });
 
 export default mongoose.model('AttendanceSession', attendanceSessionSchema);

@@ -238,6 +238,10 @@ export const api = createApi({
     }),
     getActivity: b.query({ query: (params) => ({ url: '/admin/activity', params }), providesTags: ['Admin'] }),
     createAdminUser: b.mutation({ query: (body) => ({ url: '/admin/users', method: 'POST', body }), invalidatesTags: ['Admin', 'User'] }),
+    deleteAdminUser: b.mutation({
+      query: (id) => ({ url: `/admin/users/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Admin', 'User'],
+    }),
 
     // ── Chat ──────────────────────────────────────────
     getConversations: b.query({ query: (params) => ({ url: '/chat/conversations', params }), providesTags: ['Chat'] }),
@@ -435,6 +439,7 @@ export const {
   useUpdateAdminUserMutation,
   useGetActivityQuery,
   useCreateAdminUserMutation,
+  useDeleteAdminUserMutation,
   useGetGroupRequestsQuery,
   useReviewGroupRequestMutation,
   useGetAttendanceSummaryQuery,

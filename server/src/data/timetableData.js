@@ -15,7 +15,7 @@
  * - Optional per subject: `type: 'lab' | 'elective'` (default 'theory'), `credits`.
  */
 
-const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
+import { DEPARTMENTS, yearOfSemester } from '../constants.js';
 
 // First year (semesters 1–2) is common to every department.
 const FIRST_YEAR = {
@@ -95,11 +95,16 @@ const BY_DEPARTMENT = {
       { name: 'Networks Lab', code: 'CY405', type: 'lab', credits: 2 },
     ],
     5: [
-      { name: 'Network Security', code: 'CY501' },
-      { name: 'Cyber Forensics', code: 'CY502' },
-      { name: 'Ethical Hacking', code: 'CY503' },
-      { name: 'Database Management Systems', code: 'CY504' },
-      { name: 'Ethical Hacking Lab', code: 'CY505', type: 'lab', credits: 2 },
+      { name: 'Cryptography & Cybersecurity', code: '22CYT502' },
+      { name: 'Computer Networks', code: '22CYT503' },
+      { name: 'Ethics & AI', code: '22AED021' },
+      { name: 'Engineering Economics & Financial Management', code: '22EET501' },
+      { name: 'Artifical Intelligence & Machine Learning', code: '22CYT501' },
+      { name: 'Elements Of Literature', code: '22MCT002' },
+      { name: 'Mentoring', code: 'Jnn01' },
+      { name: 'NPTEL', code: 'Jnn02' },
+      { name: 'Cryptography & Cybersecurity Laboratory', code: '22CYP501', type: 'lab', credits: 2 },
+      { name: 'Computer Networks Laboratory', code: '22CYP502', type: 'lab', credits: 2 },
     ],
     6: [
       { name: 'Web Application Security', code: 'CY601' },
@@ -349,13 +354,11 @@ const BY_DEPARTMENT = {
   },
 };
 
-const yearOf = (semester) => Math.ceil(semester / 2);
-
 /** Flat list: one block per department + semester, as consumed by syncSubjects. */
 export const timetableSubjects = DEPARTMENTS.flatMap((department) =>
   [1, 2, 3, 4, 5, 6, 7, 8].map((semester) => ({
     department,
-    year: yearOf(semester),
+    year: yearOfSemester(semester),
     semester,
     subjects: semester <= 2 ? FIRST_YEAR[semester] : BY_DEPARTMENT[department]?.[semester] || [],
   }))

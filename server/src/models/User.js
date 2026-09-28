@@ -40,6 +40,10 @@ const userSchema = new Schema(
     // Assigned by an administrator (never self-assigned by students).
     section: { type: String, trim: true, uppercase: true, maxlength: 10, index: true },
     semester: { type: Number, min: 1, max: 12 },
+    // Faculty only: the years/sections they are cleared to teach. An upper bound
+    // on timetable assignment — actual permissions come from TimetableSlot rows.
+    teachingYears: { type: [{ type: Number, min: 1, max: 4 }], default: undefined },
+    teachingSections: { type: [{ type: String, trim: true, uppercase: true, maxlength: 10 }], default: undefined },
     rollNo: { type: String, trim: true, maxlength: 30 },
     // Staff (faculty / HOD / principal) identifier, assigned by an administrator.
     employeeId: { type: String, trim: true, maxlength: 30 },
@@ -81,7 +85,7 @@ const userSchema = new Schema(
   { timestamps: true }
 );
 
-userSchema.index({ role: 1, department: 1, section: 1, isActive: 1 });
+userSchema.index({ role: 1, department: 1, year: 1, section: 1, semester: 1 }, { name: 'class_roster' });
 userSchema.index(
   { employeeId: 1 },
   { unique: true, name: 'unique_employee_id', partialFilterExpression: { employeeId: { $type: 'string' } } }
@@ -115,6 +119,6 @@ userSchema.set('toJSON', {
   },
 });
 
-export const PUBLIC_USER_FIELDS = 'name email role department year section avatar designation employeeId';
+export const PUBLIC_USER_FIELDS = 'name email role department year section semester avatar designation employeeId';
 
 export default mongoose.model('User', userSchema);

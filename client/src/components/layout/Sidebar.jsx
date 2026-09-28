@@ -126,12 +126,12 @@ export default function Sidebar() {
       >
         <div className="mb-6 flex items-center justify-between px-2 pt-1">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow">
-              <GraduationCap className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow overflow-hidden">
+              <img src="/logo.jpeg" alt="Logo" className="h-full w-full object-cover" />
             </div>
             <div>
-              <p className="text-[15px] font-extrabold leading-tight tracking-tight">CampusConnect</p>
-              <p className="text-[11px] font-medium muted">College community</p>
+              <p className="text-[20px] font-extrabold leading-tight tracking-tight">J.N.N </p>
+              <p className="text-[10px] font-medium muted">INSTITUTE OF ENGINEERING</p>
             </div>
           </div>
           <button className="btn-icon btn-ghost lg:hidden" onClick={close} aria-label="Close menu">

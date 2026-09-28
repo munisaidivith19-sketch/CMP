@@ -113,8 +113,13 @@ function recordLogin(req, user, success, reason) {
 
 // Public sign-up always creates a *student*. Faculty / club admin / admin roles
 // are granted by an administrator — never self-assigned.
+const COLLEGE_EMAIL_DOMAIN = /^\S+@jnn\.edu\.in$/i;
+
 export const register = asyncHandler(async (req, res) => {
   const data = pick(req.body, ['name', 'email', 'password', 'department', 'year', 'rollNo']);
+  if (!COLLEGE_EMAIL_DOMAIN.test(String(data.email || ''))) {
+    throw new ApiError(400, 'Use your @jnn.edu.in college email to sign up');
+  }
   const exists = await User.exists({ email: String(data.email).toLowerCase() });
   if (exists) throw new ApiError(409, 'An account with this email already exists');
 

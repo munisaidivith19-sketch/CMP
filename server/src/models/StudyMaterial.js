@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { STUDY_MATERIAL_CATEGORIES } from '../constants.js';
+import { STUDY_MATERIAL_CATEGORIES, yearOfSemester } from '../constants.js';
 
 const { Schema } = mongoose;
 
@@ -50,8 +50,18 @@ const studyMaterialSchema = new Schema(
   { timestamps: true, toJSON: { versionKey: false } }
 );
 
-studyMaterialSchema.index({ department: 1, semester: 1, section: 1, isActive: 1 });
+studyMaterialSchema.index({ department: 1, year: 1, semester: 1, section: 1, isActive: 1 }, { name: 'class_materials' });
 studyMaterialSchema.index({ subject: 1, isActive: 1 });
 studyMaterialSchema.index({ title: 'text', subjectName: 'text', subjectCode: 'text' }, { name: 'study_material_text' });
+
+// Year always follows the semester, so class scoping by year never misses a material.
+studyMaterialSchema.pre('validate', function deriveYear(next) {
+  if (this.semester) {
+    const expected = yearOfSemester(this.semester);
+    if (this.year == null) this.year = expected;
+    else if (this.year !== expected) this.invalidate('year', `Semester ${this.semester} belongs to year ${expected}, not year ${this.year}`);
+  }
+  next();
+});
 
 export default mongoose.model('StudyMaterial', studyMaterialSchema);

@@ -13,6 +13,7 @@ import { sameId } from '../utils/permissions.js';
 import { emitToUsers } from '../config/socket.js';
 import { addDays, campusParts, dayFilter, dayKey, resolveRange, toDay, weekdayOf } from '../utils/dates.js';
 import { clock } from '../utils/clock.js';
+import { yearOfSemester } from '../constants.js';
 
 export const LOW_ATTENDANCE_THRESHOLD = 75;
 // Club admins are students with extra club permissions.
@@ -48,11 +49,19 @@ async function staffScope(user) {
   return { $or: or };
 }
 
-/** Students who belong to a subject's class (department + section + semester). */
+/**
+ * Students who belong to a subject's class: department + year + section +
+ * semester. Year is exact, so 2nd-year and 3rd-year students of the same
+ * section letter never share a roster. A student with no semester on file
+ * (legacy, flagged by the academic migration) still matches on year.
+ */
 function rosterFilter(subject, section) {
   const filter = { role: { $in: STUDENT_ROLES }, isActive: true, department: subject.department };
   if (section) filter.section = section;
-  if (subject.semester) filter.$or = [{ semester: subject.semester }, { semester: null }];
+  if (subject.semester) {
+    filter.year = subject.year ?? yearOfSemester(subject.semester);
+    filter.semester = { $in: [subject.semester, null] };
+  }
   return filter;
 }
 
@@ -175,7 +184,7 @@ async function ensureSession({ slot, session, subject, day }, user) {
         department: slot.department,
         section: slot.section,
         semester: slot.semester,
-        year: slot.year,
+        year: slot.year ?? yearOfSemester(slot.semester),
         room: slot.room,
         createdBy: user._id,
       })

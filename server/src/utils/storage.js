@@ -9,7 +9,26 @@ import { ApiError } from './http.js';
 export const UPLOAD_ROOT = path.resolve(process.cwd(), env.uploadDir);
 
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const DOCUMENT_TYPES = ['application/pdf'];
+// x-cfb = legacy .doc (OLE compound file); the OOXML .docx signature is detected
+// by file-type as the full vnd.openxmlformats mimetype below.
+const DOCUMENT_TYPES = [
+  'application/pdf',
+  'application/x-cfb',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+
+/** Plain text has no magic bytes — the closest thing to signature-checking it
+ * is confirming the buffer is actually text: no NUL bytes, valid UTF-8. */
+function looksLikePlainText(buffer) {
+  if (!buffer.length || buffer.length > 2 * 1024 * 1024) return false;
+  if (buffer.includes(0)) return false;
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Files are held in memory first so the real type can be checked from the
@@ -51,22 +70,25 @@ export async function persistFile(file, kind = 'image') {
 
   const detected = await fileTypeFromBuffer(file.buffer);
   const allowed = kind === 'document' ? [...IMAGE_TYPES, ...DOCUMENT_TYPES] : IMAGE_TYPES;
-  if (!detected || !allowed.includes(detected.mime)) {
+  const isPlainText = kind === 'document' && !detected && looksLikePlainText(file.buffer);
+  if (!isPlainText && (!detected || !allowed.includes(detected.mime))) {
     throw new ApiError(
       415,
       kind === 'document'
-        ? 'Only JPG, PNG, WEBP, GIF or PDF files are allowed'
+        ? 'Only JPG, PNG, WEBP, GIF, PDF, DOC, DOCX or TXT files are allowed'
         : 'Only JPG, PNG, WEBP or GIF images are allowed'
     );
   }
 
-  const meta = { name: safeName(file.originalname), mimeType: detected.mime, size: file.size };
+  const mimeType = isPlainText ? 'text/plain' : detected.mime;
+  const ext = isPlainText ? 'txt' : detected.ext;
+  const meta = { name: safeName(file.originalname), mimeType, size: file.size };
 
   if (env.cloudinary.enabled) {
     const cloudinary = await getCloudinary();
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
-        { folder: 'campusconnect', resource_type: detected.mime === 'application/pdf' ? 'raw' : 'image' },
+        { folder: 'campusconnect', resource_type: mimeType.startsWith('image/') ? 'image' : 'raw' },
         (err, res) => (err ? reject(err) : resolve(res))
       );
       stream.end(file.buffer);
@@ -75,7 +97,7 @@ export async function persistFile(file, kind = 'image') {
   }
 
   await fs.mkdir(UPLOAD_ROOT, { recursive: true });
-  const filename = `${crypto.randomUUID()}.${detected.ext}`;
+  const filename = `${crypto.randomUUID()}.${ext}`;
   await fs.writeFile(path.join(UPLOAD_ROOT, filename), file.buffer, { mode: 0o644 });
   return { ...meta, url: `/uploads/${filename}` };
 }

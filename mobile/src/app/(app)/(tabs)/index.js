@@ -194,11 +194,12 @@ function GeneralHome({ user }) {
   const isStudent = STUDENT_ROLES.includes(user.role);
   const seesSummary = SUMMARY_VIEW.includes(user.role);
   const isHod = user.role === 'hod';
+  const noTimetable = ['warden', 'security'].includes(user.role);
   const [sheet, setSheet] = useState(null);
   const close = () => setSheet(null);
 
   const dash = useGetDashboardQuery();
-  const now = useGetCurrentClassQuery(undefined, { pollingInterval: 120000 });
+  const now = useGetCurrentClassQuery(undefined, { pollingInterval: 120000, skip: noTimetable });
   const att = useGetMyAttendanceQuery({ range: 'semester' }, { skip: !isStudent });
   const summary = useGetAttendanceSummaryQuery(undefined, { skip: !seesSummary, pollingInterval: 120000 });
   const passes = useGetGatePassesQuery({ limit: 5 }, { skip: !isStudent });
@@ -247,9 +248,15 @@ function GeneralHome({ user }) {
           {format(new Date(), 'EEEE, dd MMMM')}
         </T>
         <T v="h2" style={{ color: '#fff' }}>
-          {cls ? `${now.data?.current ? 'Now' : 'Next'}: ${cls.subject?.name}` : now.data?.today?.length ? 'Classes are done for today' : 'No classes today'}
+          {noTimetable
+            ? 'Welcome back'
+            : cls
+              ? `${now.data?.current ? 'Now' : 'Next'}: ${cls.subject?.name}`
+              : now.data?.today?.length
+                ? 'Classes are done for today'
+                : 'No classes today'}
         </T>
-        {cls ? (
+        {!noTimetable && cls ? (
           <T v="small" style={{ color: 'rgba(255,255,255,0.85)' }}>
             {to12h(cls.startTime)} – {to12h(cls.endTime)}
             {cls.room ? ` · ${cls.room}` : ''}
@@ -304,7 +311,9 @@ function GeneralHome({ user }) {
               onPress={() => (seesSummary ? setSheet('attendance') : router.push('/attendance'))}
             />
             <Tile icon={MessageCircle} gradient={gradients.primary} label="Messages" value={unread.data?.total ? `${unread.data.total} unread` : 'All caught up'} onPress={() => router.push('/chat')} />
-            <Tile icon={CalendarClock} gradient={gradients.amber} label="Timetable" value={`${now.data?.today?.filter((x) => !x.isBreak).length ?? 0} classes today`} onPress={() => router.push('/timetable')} />
+            {!noTimetable && (
+              <Tile icon={CalendarClock} gradient={gradients.amber} label="Timetable" value={`${now.data?.today?.filter((x) => !x.isBreak).length ?? 0} classes today`} onPress={() => router.push('/timetable')} />
+            )}
             <Tile
               icon={DoorOpen}
               gradient={gradients.cyan}

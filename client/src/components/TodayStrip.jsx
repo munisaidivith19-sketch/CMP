@@ -4,6 +4,7 @@ import { useGetChatUnreadQuery, useGetCurrentClassQuery, useGetGatePassesQuery, 
 import { Card, cn } from './ui/primitives';
 
 const STUDENT_ROLES = ['student', 'club_admin'];
+const NO_TIMETABLE_ROLES = ['warden', 'security'];
 
 function Tile({ to, icon: Icon, label, value, hint, tone }) {
   return (
@@ -25,7 +26,8 @@ function Tile({ to, icon: Icon, label, value, hint, tone }) {
 /** "Today" shortcuts on the dashboard: current class, attendance, gate pass, unread chats. */
 export default function TodayStrip({ user }) {
   const isStudent = STUDENT_ROLES.includes(user.role);
-  const { data: now } = useGetCurrentClassQuery(undefined, { pollingInterval: 120000 });
+  const noTimetable = NO_TIMETABLE_ROLES.includes(user.role);
+  const { data: now } = useGetCurrentClassQuery(undefined, { pollingInterval: 120000, skip: noTimetable });
   const { data: att } = useGetMyAttendanceQuery({ range: 'semester' }, { skip: !isStudent });
   const { data: passes } = useGetGatePassesQuery({ limit: 5 }, { skip: !isStudent });
   const { data: unread } = useGetChatUnreadQuery();
@@ -34,14 +36,16 @@ export default function TodayStrip({ user }) {
   const cls = now?.current || now?.next;
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Tile
-        to="/timetable"
-        icon={CalendarClock}
-        label={now?.current ? 'In class now' : 'Next class'}
-        value={cls ? `${cls.subject?.code} · ${cls.subject?.name}` : now?.today?.length ? 'Done for today' : 'No classes today'}
-        hint={cls ? `${cls.startTime}–${cls.endTime}${cls.room ? ` · ${cls.room}` : ''}${user.role === 'faculty' ? ` · Sec ${cls.section}` : ''}` : undefined}
-        tone="from-indigo-400 to-violet-500"
-      />
+      {!noTimetable && (
+        <Tile
+          to="/timetable"
+          icon={CalendarClock}
+          label={now?.current ? 'In class now' : 'Next class'}
+          value={cls ? `${cls.subject?.code} · ${cls.subject?.name}` : now?.today?.length ? 'Done for today' : 'No classes today'}
+          hint={cls ? `${cls.startTime}–${cls.endTime}${cls.room ? ` · ${cls.room}` : ''}${user.role === 'faculty' ? ` · Sec ${cls.section}` : ''}` : undefined}
+          tone="from-indigo-400 to-violet-500"
+        />
+      )}
       {isStudent ? (
         <Tile
           to="/attendance"

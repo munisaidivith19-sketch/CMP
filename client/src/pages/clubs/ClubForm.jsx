@@ -28,7 +28,9 @@ export default function ClubForm({ open, onClose, club, onSaved }) {
   const isAdmin = user.role === 'admin';
   const [create, { isLoading: creating }] = useCreateClubMutation();
   const [update, { isLoading: updating }] = useUpdateClubMutation();
-  const { data: faculty } = useGetUsersQuery({ role: 'faculty', limit: 50 }, { skip: !open });
+  // 'picker' context: choosing a faculty advisor, not browsing the People
+  // directory — stays open to club admins (students), same as before.
+  const { data: faculty } = useGetUsersQuery({ role: 'faculty', limit: 50, context: 'picker' }, { skip: !open });
 
   const {
     register,

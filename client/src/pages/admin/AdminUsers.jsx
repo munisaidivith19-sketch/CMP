@@ -9,7 +9,7 @@ import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, Select } from '../../components/ui/form';
 import { selectUser } from '../../features/authSlice';
 import CreateUserModal from '../../components/CreateUserModal';
-import { DEPARTMENTS, ROLES, ROLE_LABELS } from '../../utils/constants';
+import { DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo } from '../../utils/format';
 
 /** Department / section / semester decide which timetable and attendance roster a student belongs to. */
@@ -59,7 +59,7 @@ function ClassModal({ user, onClose }) {
         <Input label="Roll number" maxLength={30} value={v.rollNo} onChange={set('rollNo')} />
         <Input label="Year" type="number" min={1} max={6} value={v.year} onChange={set('year')} />
         <Input label="Semester" type="number" min={1} max={12} value={v.semester} onChange={set('semester')} />
-        <Input label="Section" maxLength={10} className="uppercase" placeholder="e.g. A" value={v.section} onChange={set('section')} />
+        <Select label="Section" placeholder="—" options={SECTIONS.map((s) => ({ value: s, label: s }))} value={v.section} onChange={set('section')} />
       </div>
     </Modal>
   );

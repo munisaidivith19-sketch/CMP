@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { CalendarClock, Clock, Coffee, MapPin, Search, User } from 'lucide-react';
-import { useGetTimetableQuery } from '../../services/api';
+import toast from 'react-hot-toast';
+import { CalendarClock, Clock, Coffee, MapPin, Pencil, Plus, Search, Trash2, User } from 'lucide-react';
+import { useDeleteSlotMutation, useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../../components/ui/primitives';
-import { DEPARTMENTS } from '../../utils/constants';
+import { ConfirmDialog } from '../../components/ui/Modal';
+import { DEPARTMENTS, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS } from '../../utils/constants';
+import { errMsg } from '../../utils/format';
+import SlotModal from './SlotModal';
 
-export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+export const DAYS = WEEKDAYS;
+const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 const DAY_SHORT = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat' };
 const STUDENT_ROLES = ['student', 'club_admin'];
 
@@ -30,7 +35,23 @@ function useClock() {
   return now;
 }
 
-export function SlotCard({ slot, state, showSection, compact }) {
+/** Edit / delete buttons shown on a period for HOD and Admin. */
+function SlotActions({ slot, onEdit, onDelete, light }) {
+  if (!onEdit) return null;
+  const btn = cn('rounded-lg p-1 transition-colors', light ? 'text-white/85 hover:bg-white/20' : 'text-ink-muted hover:bg-white');
+  return (
+    <div className="flex shrink-0 gap-0.5">
+      <button type="button" className={btn} aria-label="Edit period" title="Edit period" onClick={() => onEdit(slot)}>
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" className={cn(btn, 'hover:!text-rose-500')} aria-label="Delete period" title="Delete period" onClick={() => onDelete(slot)}>
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }) {
   if (slot.isBreak) {
     return (
       <div className="flex items-center gap-3 rounded-2xl border border-dashed border-primary-300/50 px-4 py-2.5 text-sm muted">
@@ -39,6 +60,7 @@ export function SlotCard({ slot, state, showSection, compact }) {
         <span className="ml-auto text-xs">
           {to12h(slot.startTime)} – {to12h(slot.endTime)}
         </span>
+        <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} />
       </div>
     );
   }
@@ -57,9 +79,12 @@ export function SlotCard({ slot, state, showSection, compact }) {
           </p>
           <p className="truncate font-bold">{slot.subject?.name}</p>
         </div>
-        {state === 'now' && <Badge className="!bg-white/25 !text-white">Now</Badge>}
-        {state === 'next' && <Badge color="info">Next</Badge>}
-        {slot.subject?.type === 'lab' && state !== 'now' && <Badge color="warning">Lab</Badge>}
+        <div className="flex shrink-0 items-center gap-1">
+          {state === 'now' && <Badge className="!bg-white/25 !text-white">Now</Badge>}
+          {state === 'next' && <Badge color="info">Next</Badge>}
+          {slot.subject?.type === 'lab' && state !== 'now' && <Badge color="warning">Lab</Badge>}
+          <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} light={state === 'now'} />
+        </div>
       </div>
       <div className={cn('mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs', state === 'now' ? 'text-white/85' : 'muted')}>
         <span className="flex items-center gap-1">
@@ -97,12 +122,34 @@ export default function Timetable() {
   const now = useClock();
   const [view, setView] = useState('today');
   const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
-  const [lookup, setLookup] = useState({ section: '', department: me.department || '' });
+  const isHod = me.role === 'hod';
+  const isEditor = TIMETABLE_EDITORS.includes(me.role);
+  const [lookup, setLookup] = useState({ section: '', department: me.department || '', semester: '' });
   const [applied, setApplied] = useState(null);
+  const [edit, setEdit] = useState(undefined); // undefined = closed, null = new period, object = existing
+  const [preset, setPreset] = useState(null);
+  const [del, setDel] = useState(null);
+  const [removeSlot, { isLoading: removing }] = useDeleteSlotMutation();
 
-  const params = applied?.section ? { section: applied.section, department: applied.department || undefined } : undefined;
+  const params = applied?.section
+    ? { section: applied.section, department: applied.department || undefined, semester: applied.semester || undefined }
+    : undefined;
   const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params);
   const slots = useMemo(() => data?.slots || [], [data]);
+
+  // Editing needs one concrete class: department + section + semester. If no
+  // semester was picked, fall back to the one semester every loaded period shares.
+  const semesters = [...new Set(slots.map((s) => s.semester))];
+  const klass =
+    applied?.section && applied.department
+      ? { ...applied, semester: applied.semester || (semesters.length === 1 ? semesters[0] : '') }
+      : null;
+  const canEditClass = isEditor && klass?.semester && (!isHod || klass.department === me.department);
+  const openNew = (p = null) => {
+    setPreset(p);
+    setEdit(null);
+  };
+  const editProps = canEditClass ? { onEdit: (s) => { setPreset(null); setEdit(s); }, onDelete: setDel } : {};
 
   const byDay = useMemo(() => {
     const map = Object.fromEntries(DAYS.map((d) => [d, []]));
@@ -136,8 +183,40 @@ export default function Timetable() {
               ? 'Your teaching schedule'
               : 'Class schedules'
       }
-      actions={<Tabs tabs={[{ value: 'today', label: 'Today' }, { value: 'week', label: 'Week' }]} value={view} onChange={setView} />}
+      actions={
+        <>
+          {canEditClass && (
+            <Button icon={Plus} onClick={() => openNew()}>
+              Add period
+            </Button>
+          )}
+          <Tabs tabs={[{ value: 'today', label: 'Today' }, { value: 'week', label: 'Week' }]} value={view} onChange={setView} />
+        </>
+      }
     />
+  );
+
+  const dialogs = (
+    <>
+      {klass?.semester && <SlotModal open={edit !== undefined} slot={edit} klass={klass} preset={preset} onClose={() => setEdit(undefined)} />}
+      <ConfirmDialog
+        open={Boolean(del)}
+        onClose={() => setDel(null)}
+        title="Remove this period?"
+        text="Students and faculty see the change immediately."
+        confirmText="Remove"
+        loading={removing}
+        onConfirm={async () => {
+          try {
+            await removeSlot(del._id).unwrap();
+            toast.success('Period removed');
+          } catch (e) {
+            toast.error(errMsg(e));
+          }
+          setDel(null);
+        }}
+      />
+    </>
   );
 
   if (isLoading) {
@@ -168,16 +247,32 @@ export default function Timetable() {
         <Card className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label className="label" htmlFor="tt-dept">Department</label>
-            <select id="tt-dept" className="input" value={lookup.department} onChange={(e) => setLookup((l) => ({ ...l, department: e.target.value }))}>
-              <option value="">Any</option>
-              {[...new Set([me.department, ...DEPARTMENTS].filter(Boolean))].map((d) => (
+            <select id="tt-dept" className="input" value={lookup.department} disabled={isHod} onChange={(e) => setLookup((l) => ({ ...l, department: e.target.value }))}>
+              {!isHod && <option value="">Any</option>}
+              {(isHod ? [me.department] : [...new Set([me.department, ...DEPARTMENTS].filter(Boolean))]).map((d) => (
                 <option key={d}>{d}</option>
               ))}
             </select>
           </div>
-          <div className="sm:w-40">
+          <div className="sm:w-36">
             <label className="label" htmlFor="tt-sec">Section</label>
-            <input id="tt-sec" className="input uppercase" maxLength={10} placeholder="e.g. A" value={lookup.section} onChange={(e) => setLookup((l) => ({ ...l, section: e.target.value.toUpperCase() }))} />
+            <select id="tt-sec" className="input" value={lookup.section} onChange={(e) => setLookup((l) => ({ ...l, section: e.target.value }))}>
+              <option value="">Choose section</option>
+              {SECTIONS.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div className="sm:w-36">
+            <label className="label" htmlFor="tt-sem">Semester</label>
+            <select id="tt-sem" className="input" value={lookup.semester} onChange={(e) => setLookup((l) => ({ ...l, semester: e.target.value ? Number(e.target.value) : '' }))}>
+              <option value="">Any</option>
+              {SEMESTERS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex gap-2">
             <Button icon={Search} loading={isFetching} disabled={!lookup.section} onClick={() => setApplied({ ...lookup })}>
@@ -192,6 +287,17 @@ export default function Timetable() {
         </Card>
       )}
 
+      {isEditor && !canEditClass && (
+        <Card className="flex items-center gap-3 !py-3 text-sm">
+          <Pencil className="h-4 w-4 shrink-0 text-primary-500" />
+          <span className="muted">
+            {applied?.section && !klass?.semester
+              ? 'Choose a semester and press View class to add or edit periods.'
+              : `To add or edit periods, choose ${isHod ? 'a section' : 'a department, section'} and semester, then press View class.`}
+          </span>
+        </Card>
+      )}
+
       {data?.needsSection ? (
         <Card>
           <EmptyState
@@ -202,7 +308,12 @@ export default function Timetable() {
         </Card>
       ) : !slots.length ? (
         <Card>
-          <EmptyState icon={CalendarClock} title="No classes scheduled" text={isStudent ? 'Your class timetable has not been published yet.' : 'No timetable entries match this view.'} />
+          <EmptyState
+            icon={CalendarClock}
+            title="No classes scheduled"
+            text={isStudent ? 'Your class timetable has not been published yet.' : 'No timetable entries match this view.'}
+            action={canEditClass && <Button icon={Plus} onClick={() => openNew()}>Add first period</Button>}
+          />
         </Card>
       ) : view === 'today' ? (
         <div className="grid gap-5 xl:grid-cols-3">
@@ -214,7 +325,7 @@ export default function Timetable() {
               <div className="space-y-2.5">
                 {todaySlots.map((s) => {
                   const st = slotState(s, today, now);
-                  return <SlotCard key={s._id} slot={s} state={st === 'future' && s === nextSlot ? 'next' : st} showSection={showSection} />;
+                  return <SlotCard key={s._id} slot={s} state={st === 'future' && s === nextSlot ? 'next' : st} showSection={showSection} {...editProps} />;
                 })}
               </div>
             )}
@@ -254,7 +365,12 @@ export default function Timetable() {
               ))}
             </div>
             <div className="space-y-2.5">
-              {byDay[day].length ? byDay[day].map((s) => <SlotCard key={s._id} slot={s} state={slotState(s, day, now)} showSection={showSection} />) : <Card><p className="text-sm muted">No classes.</p></Card>}
+              {byDay[day].length ? byDay[day].map((s) => <SlotCard key={s._id} slot={s} state={slotState(s, day, now)} showSection={showSection} {...editProps} />) : <Card><p className="text-sm muted">No classes.</p></Card>}
+              {canEditClass && (
+                <Button variant="soft" size="sm" icon={Plus} className="w-full" onClick={() => openNew({ dayOfWeek: day })}>
+                  Add period on {DAY_SHORT[day]}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -286,9 +402,19 @@ export default function Timetable() {
                           {cell.length ? (
                             <div className="space-y-1.5">
                               {cell.map((s) => (
-                                <SlotCard key={s._id} slot={s} state={slotState(s, d, now)} compact showSection={showSection} />
+                                <SlotCard key={s._id} slot={s} state={slotState(s, d, now)} compact showSection={showSection} {...editProps} />
                               ))}
                             </div>
+                          ) : canEditClass ? (
+                            <button
+                              type="button"
+                              onClick={() => openNew({ dayOfWeek: d, period: p.period, startTime: p.startTime, endTime: p.endTime })}
+                              className="flex h-full min-h-[68px] w-full items-center justify-center rounded-2xl border border-dashed border-primary-300/50 text-primary-500 transition-colors hover:bg-primary-500/5"
+                              aria-label={`Add period on ${DAY_SHORT[d]} at ${to12h(p.startTime)}`}
+                              title="Add period"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
                           ) : (
                             <div className="h-full min-h-[68px] rounded-2xl border border-dashed border-primary-300/30" aria-label="Free period" />
                           )}
@@ -302,6 +428,7 @@ export default function Timetable() {
           </Card>
         </>
       )}
+      {dialogs}
     </div>
   );
 }

@@ -4,9 +4,14 @@ import { connectDB } from './config/db.js';
 import { initSocket } from './config/socket.js';
 import { createApp } from './app.js';
 import { expireGatePasses } from './controllers/gatePassController.js';
+import { syncSubjects } from './utils/syncSubjects.js';
 
 async function start() {
   await connectDB();
+  // Make sure every subject in data/timetableData.js exists for the timetable.
+  await syncSubjects()
+    .then((n) => n && console.log(`[subjects] added ${n} subject(s) from data/timetableData.js`))
+    .catch((err) => console.error('[subjects] sync failed:', err.message));
   const app = createApp();
   const server = http.createServer(app);
   initSocket(server);

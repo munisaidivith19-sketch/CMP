@@ -12,6 +12,7 @@ import {
   DoorOpen,
   LineChart,
   MessageCircle,
+  MessageSquareWarning,
   PackageSearch,
   ShieldCheck,
   GraduationCap,
@@ -21,7 +22,6 @@ import {
   MessagesSquare,
   ShieldAlert,
   Shapes,
-  Sparkles,
   UserCog,
   UsersRound,
   X,
@@ -39,16 +39,17 @@ const MAIN = [
   { to: '/events', label: 'Events', icon: CalendarDays },
   { to: '/clubs', label: 'Clubs', icon: Shapes },
   { to: '/discussions', label: 'Discussions', icon: MessagesSquare },
-  { to: '/people', label: 'People', icon: GraduationCap },
+  { to: '/people', label: 'People', icon: GraduationCap, excludeRoles: ['student', 'club_admin'] },
   { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 
 const CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
-  { to: '/timetable', label: 'Timetable', icon: CalendarClock },
+  { to: '/timetable', label: 'Timetable', icon: CalendarClock, excludeRoles: ['warden', 'security'] },
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
+  { to: '/complaints', label: 'Complaints', icon: MessageSquareWarning },
   { to: '/analytics', label: 'Insights', icon: LineChart },
 ];
 
@@ -56,10 +57,11 @@ const ADMIN = [
   { to: '/admin', label: 'Analytics', icon: BarChart3, roles: STAFF_VIEW, end: true },
   { to: '/admin/attendance', label: 'Attendance', icon: ClipboardCheck, roles: STAFF_VIEW },
   { to: '/admin/reports', label: 'Moderation', icon: ShieldAlert, roles: STAFF_VIEW },
+  { to: '/admin/complaints', label: 'Complaints', icon: MessageSquareWarning, roles: ['admin', 'chairman'] },
   { to: '/admin/users', label: 'Users', icon: UserCog, roles: ['admin'] },
   { to: '/admin/chat-requests', label: 'Group requests', icon: UsersRound, roles: ['admin'], badge: 'groups' },
   { to: '/admin/clubs', label: 'Club approvals', icon: BadgeCheck, roles: ['admin'] },
-  { to: '/admin/academics', label: 'Academics', icon: BookOpenCheck, roles: ['admin'] },
+  { to: '/admin/academics', label: 'Academics', icon: BookOpenCheck, roles: ['admin', 'hod'] },
   { to: '/admin/activity', label: 'Activity log', icon: Activity, roles: ['admin'] },
 ];
 
@@ -79,7 +81,7 @@ function NavItem({ item, onClick, badge }) {
 }
 
 // Gate guards only deal with entries/exits — the rest of campus life doesn't apply to them.
-const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/timetable', '/attendance', '/analytics'];
+const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/attendance', '/analytics', '/complaints'];
 
 export default function Sidebar() {
   const dispatch = useDispatch();
@@ -89,8 +91,8 @@ export default function Sidebar() {
   const [logout] = useLogoutMutation();
   const close = () => dispatch(setSidebar(false));
   const isSecurity = user?.role === 'security';
-  const mainItems = MAIN.filter((i) => !isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to));
-  const campusItems = CAMPUS.filter((i) => !isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to));
+  const mainItems = MAIN.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
+  const campusItems = CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
   const adminItems = ADMIN.filter((i) => i.roles.includes(user?.role));
   const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user });
   const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: user?.role !== 'admin', pollingInterval: 60000 });
@@ -153,16 +155,6 @@ export default function Sidebar() {
             </>
           )}
         </nav>
-
-        <div className="relative mt-4 overflow-hidden rounded-3xl bg-gradient-to-br from-primary-400 via-primary-500 to-fuchsia-500 p-4 text-white shadow-glow">
-          <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/20 blur-xl" />
-          <Sparkles className="relative h-5 w-5" />
-          <p className="relative mt-2 text-sm font-bold">Got something to share?</p>
-          <p className="relative mt-0.5 text-xs text-white/80">Start a discussion or host an event for your campus.</p>
-          <NavLink to="/discussions?new=1" onClick={close} className="btn relative mt-3 w-full bg-white/95 py-2 text-xs text-primary-600 hover:bg-white">
-            Start a discussion
-          </NavLink>
-        </div>
 
         <div className="mt-3 flex items-center gap-3 rounded-2xl p-2">
           <NavLink to="/profile" onClick={close} className="flex min-w-0 flex-1 items-center gap-3">

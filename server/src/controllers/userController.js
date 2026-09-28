@@ -4,23 +4,36 @@ import Discussion from '../models/Discussion.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../utils/http.js';
 import { persistFile } from '../utils/storage.js';
 import { logActivity } from '../utils/activity.js';
+import { canViewProfile, peopleScopeFilter } from '../utils/peopleScope.js';
 
 const DIRECTORY_FIELDS = 'name role department year section avatar designation employeeId skills interests bio';
 
-/** Student / faculty directory with search and filters. */
+/**
+ * Student / faculty directory with search and filters.
+ * `context=picker` is for choosing a specific person for another feature
+ * (starting a chat, picking a club's faculty advisor) — that stays open to
+ * everyone, unrestricted, exactly as before the People-directory lockdown.
+ * Without it, this IS the People directory and is scoped/blocked per role;
+ * the scope is applied at the query level, before pagination, so counts and
+ * results never include anything outside the caller's authorization.
+ */
 export const listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req, 18);
-  const filter = { isActive: true };
-  const { q, department, role, skill, year } = req.query;
+  const { q, department, role, skill, year, context } = req.query;
 
+  const clauses = [{ isActive: true }];
   if (q) {
     const rx = new RegExp(escapeRegex(q), 'i');
-    filter.$or = [{ name: rx }, { department: rx }, { skills: rx }, { interests: rx }];
+    clauses.push({ $or: [{ name: rx }, { department: rx }, { skills: rx }, { interests: rx }] });
   }
-  if (department) filter.department = department;
-  if (role) filter.role = role;
-  if (year) filter.year = Number(year);
-  if (skill) filter.skills = String(skill).toLowerCase();
+  if (department) clauses.push({ department });
+  if (role) clauses.push({ role });
+  if (year) clauses.push({ year: Number(year) });
+  if (skill) clauses.push({ skills: String(skill).toLowerCase() });
+  if (context !== 'picker') {
+    clauses.push(await peopleScopeFilter(req.user));
+  }
+  const filter = clauses.length > 1 ? { $and: clauses } : clauses[0];
 
   const [items, total] = await Promise.all([
     User.find(filter).select(DIRECTORY_FIELDS).sort({ name: 1 }).skip(skip).limit(limit).lean(),
@@ -30,6 +43,8 @@ export const listUsers = asyncHandler(async (req, res) => {
 });
 
 export const getUser = asyncHandler(async (req, res) => {
+  if (!(await canViewProfile(req.user, req.params.id))) throw new ApiError(403, 'Not authorized to view this profile');
+
   const user = await User.findOne({ _id: req.params.id, isActive: true })
     .select(`${DIRECTORY_FIELDS} rollNo stayType extracurriculars achievements clubs createdAt email phone parentPhone`)
     .populate('clubs', 'name slug logo category')

@@ -92,7 +92,10 @@ function NewChatModal({ open, onClose, me }) {
   const canGroup = GROUP_CREATORS.includes(me.role);
   // Group members must come from the creator's own department (admins: anyone).
   const scope = group && me.role !== 'admin' && me.department ? { department: me.department } : {};
-  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 20, ...scope }, { skip: !open });
+  // 'picker' context: looking someone up to start a conversation with, not
+  // browsing the People directory — stays open to every role, unrestricted,
+  // same as before the People-directory lockdown.
+  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 20, context: 'picker', ...scope }, { skip: !open });
   const [create, { isLoading }] = useCreateConversationMutation();
   const people = (data?.items || []).filter((u) => !sameId(u, me));
 

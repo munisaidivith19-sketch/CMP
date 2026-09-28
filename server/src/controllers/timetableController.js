@@ -3,8 +3,20 @@ import TimetableSlot from '../models/TimetableSlot.js';
 import User from '../models/User.js';
 import { ApiError, asyncHandler, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
-import { broadcast } from '../config/socket.js';
+import { emitToRoles } from '../config/socket.js';
 import { campusParts } from '../utils/dates.js';
+import { TIMETABLE_VIEW_ROLES } from '../constants.js';
+
+// Warden/Security must never receive a timetable event, even a bare
+// department/section identifier — emit only to the roles that can see timetables.
+const broadcastTimetable = (payload) => emitToRoles(TIMETABLE_VIEW_ROLES, 'timetable:updated', payload);
+
+/** HOD writes are confined to their own department — never trust the client. */
+function assertOwnDepartment(user, department) {
+  if (user.role === 'hod' && department !== user.department) {
+    throw new ApiError(403, 'You can only manage your own department’s timetable');
+  }
+}
 
 const SLOT_FIELDS = [
   'subject', 'faculty', 'section', 'department', 'room',
@@ -46,6 +58,8 @@ const normaliseSections = (sections) =>
 
 export const createSubject = asyncHandler(async (req, res) => {
   const data = pick(req.body, SUBJECT_FIELDS);
+  // HOD's subjects always belong to their own department, regardless of what was submitted.
+  if (req.user.role === 'hod') data.department = req.user.department;
   data.sections = normaliseSections(data.sections);
   await assertFaculty(data.faculty);
   const dup = await Subject.exists({ code: String(data.code).toUpperCase(), department: data.department, semester: data.semester, isActive: true });
@@ -58,7 +72,10 @@ export const createSubject = asyncHandler(async (req, res) => {
 export const updateSubject = asyncHandler(async (req, res) => {
   const subject = await Subject.findById(req.params.id);
   if (!subject) throw new ApiError(404, 'Subject not found');
+  assertOwnDepartment(req.user, subject.department);
   const data = pick(req.body, [...SUBJECT_FIELDS, 'isActive']);
+  // An HOD can never move a subject into another department.
+  if (req.user.role === 'hod') data.department = req.user.department;
   if (data.sections) data.sections = normaliseSections(data.sections);
   if (data.faculty) await assertFaculty(data.faculty);
   Object.assign(subject, data);
@@ -68,12 +85,14 @@ export const updateSubject = asyncHandler(async (req, res) => {
 });
 
 export const deleteSubject = asyncHandler(async (req, res) => {
+  const existing = await Subject.findById(req.params.id).select('department').lean();
+  if (!existing) throw new ApiError(404, 'Subject not found');
+  assertOwnDepartment(req.user, existing.department);
   const subject = await Subject.findByIdAndUpdate(req.params.id, { isActive: false });
-  if (!subject) throw new ApiError(404, 'Subject not found');
   // Its timetable slots go too, so nobody is scheduled for a retired subject.
   await TimetableSlot.updateMany({ subject: subject._id, isActive: true }, { isActive: false });
   logActivity(req, 'subject.delete', { entityType: 'subject', entityId: subject._id, summary: subject.code });
-  broadcast('timetable:updated', { department: subject.department });
+  broadcastTimetable({ department: subject.department });
   res.json({ message: 'Subject deactivated' });
 });
 
@@ -161,9 +180,12 @@ async function assertNoConflict(slot, excludeId) {
   ]);
   const at = (c) => `${c.dayOfWeek} ${c.startTime}–${c.endTime}`;
   if (sectionClash) throw new ApiError(409, `Section ${slot.section} already has ${sectionClash.subject?.code || sectionClash.breakLabel || 'a slot'} on ${at(sectionClash)}`);
-  if (facultyClash) throw new ApiError(409, `This faculty member already teaches ${facultyClash.subject?.code} (section ${facultyClash.section}) on ${at(facultyClash)}`);
+  if (facultyClash) throw new ApiError(409, `This faculty is already assigned during this time — ${facultyClash.subject?.code}, ${facultyClash.department} section ${facultyClash.section}, ${at(facultyClash)}`);
   if (roomClash) throw new ApiError(409, `Room ${slot.room} is already booked for ${roomClash.subject?.code} (section ${roomClash.section}) on ${at(roomClash)}`);
 }
+
+// Who can be scheduled to teach a period — any department, college-wide.
+const TEACHING_ROLES = ['faculty', 'hod'];
 
 async function assertSubjectFaculty(slot) {
   if (slot.isBreak) return;
@@ -173,14 +195,35 @@ async function assertSubjectFaculty(slot) {
   if (subject.sections?.length && !subject.sections.map((s) => s.toUpperCase()).includes(slot.section)) {
     throw new ApiError(422, `${subject.code} is not taught to section ${slot.section}`);
   }
-  if (!subject.faculty?.some((f) => String(f) === String(slot.faculty))) {
-    throw new ApiError(422, `The selected faculty member is not assigned to ${subject.code}`);
-  }
+  // Cross-department teaching is allowed: the faculty member only has to be an
+  // active teaching account, not someone from the class's own department.
+  const ok = await User.exists({ _id: slot.faculty, role: { $in: TEACHING_ROLES }, isActive: true });
+  if (!ok) throw new ApiError(422, 'Choose an active faculty member');
 }
+
+/**
+ * Attendance marking is gated on Subject.faculty, so a faculty member scheduled
+ * for a period (possibly from another department) is added to that subject.
+ */
+async function linkFacultyToSubject(slot) {
+  if (slot.isBreak || !slot.subject || !slot.faculty) return;
+  await Subject.updateOne({ _id: slot.subject }, { $addToSet: { faculty: slot.faculty } });
+}
+
+/** Every active teaching account in the college, for the "Add period" picker. */
+export const listFacultyOptions = asyncHandler(async (_req, res) => {
+  const faculty = await User.find({ role: { $in: TEACHING_ROLES }, isActive: true })
+    .select('name department')
+    .sort({ name: 1 })
+    .lean();
+  res.json(faculty.map((f) => ({ _id: f._id, name: f.name, department: f.department || '' })));
+});
 
 export const createSlot = asyncHandler(async (req, res) => {
   const data = pick(req.body, SLOT_FIELDS);
   data.section = String(data.section).trim().toUpperCase();
+  // HOD's slots always belong to their own department, regardless of what was submitted.
+  if (req.user.role === 'hod') data.department = req.user.department;
   if (data.isBreak) {
     delete data.subject;
     delete data.faculty;
@@ -188,17 +231,23 @@ export const createSlot = asyncHandler(async (req, res) => {
   await assertSubjectFaculty(data);
   await assertNoConflict(data);
   const slot = await TimetableSlot.create(data);
+  await linkFacultyToSubject(slot);
   logActivity(req, 'timetable.create', { entityType: 'timetable', entityId: slot._id, summary: `${slot.section} ${slot.dayOfWeek} P${slot.period}` });
-  broadcast('timetable:updated', { section: slot.section, department: slot.department });
+  broadcastTimetable({ section: slot.section, department: slot.department });
   res.status(201).json(await populateSlot(TimetableSlot.findById(slot._id)));
 });
 
 export const updateSlot = asyncHandler(async (req, res) => {
   const slot = await TimetableSlot.findById(req.params.id);
   if (!slot || !slot.isActive) throw new ApiError(404, 'Timetable slot not found');
+  assertOwnDepartment(req.user, slot.department);
   const data = pick(req.body, SLOT_FIELDS);
   if (data.section) data.section = String(data.section).trim().toUpperCase();
+  // An HOD can never move a slot into another department.
+  if (req.user.role === 'hod') data.department = req.user.department;
   const before = { section: slot.section, department: slot.department };
+  const AUDITED = ['subject', 'faculty', 'dayOfWeek', 'period', 'startTime', 'endTime', 'room', 'section', 'department', 'semester', 'year'];
+  const prior = Object.fromEntries(AUDITED.map((k) => [k, slot[k] == null ? '' : String(slot[k])]));
   Object.assign(slot, data);
   if (slot.isBreak) {
     slot.subject = undefined;
@@ -207,16 +256,25 @@ export const updateSlot = asyncHandler(async (req, res) => {
   await assertSubjectFaculty(slot);
   await assertNoConflict(slot, slot._id);
   await slot.save();
-  logActivity(req, 'timetable.update', { entityType: 'timetable', entityId: slot._id, summary: `${slot.section} ${slot.dayOfWeek} P${slot.period}` });
-  broadcast('timetable:updated', before);
-  if (before.section !== slot.section) broadcast('timetable:updated', { section: slot.section, department: slot.department });
+  await linkFacultyToSubject(slot);
+  // Past attendance keeps its own session snapshot; only future sessions pick this up.
+  const diff = AUDITED.filter((k) => prior[k] !== (slot[k] == null ? '' : String(slot[k]))).map((k) => `${k}: ${prior[k] || '—'}→${slot[k] ?? '—'}`);
+  logActivity(req, 'timetable.changed', {
+    entityType: 'timetable',
+    entityId: slot._id,
+    summary: `[${req.user.role}] ${slot.department}-${slot.section} ${slot.dayOfWeek} P${slot.period}${diff.length ? ` · ${diff.join('; ')}` : ' · no changes'}`,
+  });
+  broadcastTimetable(before);
+  if (before.section !== slot.section) broadcastTimetable({ section: slot.section, department: slot.department });
   res.json(await populateSlot(TimetableSlot.findById(slot._id)));
 });
 
 export const deleteSlot = asyncHandler(async (req, res) => {
+  const existing = await TimetableSlot.findOne({ _id: req.params.id, isActive: true }).select('department').lean();
+  if (!existing) throw new ApiError(404, 'Timetable slot not found');
+  assertOwnDepartment(req.user, existing.department);
   const slot = await TimetableSlot.findOneAndUpdate({ _id: req.params.id, isActive: true }, { isActive: false });
-  if (!slot) throw new ApiError(404, 'Timetable slot not found');
   logActivity(req, 'timetable.delete', { entityType: 'timetable', entityId: slot._id, summary: `${slot.section} ${slot.dayOfWeek} P${slot.period}` });
-  broadcast('timetable:updated', { section: slot.section, department: slot.department });
+  broadcastTimetable({ section: slot.section, department: slot.department });
   res.json({ message: 'Slot removed' });
 });

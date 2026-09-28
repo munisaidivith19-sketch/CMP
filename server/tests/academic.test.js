@@ -69,10 +69,19 @@ test('timetable: only admins can edit; conflicts are rejected', async () => {
     body: slot({ subject: String(other._id), section: 'B', room: 'LH-2' }),
   });
   assert.equal(facultyClash.status, 409, 'faculty cannot teach two sections at once');
-  assert.match(facultyClash.body.message, /already teaches/);
+  assert.match(facultyClash.body.message, /already assigned during this time/);
 
-  const wrongFaculty = await ctx.request('POST', '/timetable', { token: admin.token, body: slot({ faculty: String(fac2.u._id), dayOfWeek: 'tuesday' }) });
-  assert.equal(wrongFaculty.status, 422, 'faculty must be assigned to the subject');
+  // Cross-department teaching is allowed: an ECE faculty member can take a CSE
+  // period, and is linked to the subject so they can mark its attendance.
+  const crossDept = await ctx.request('POST', '/timetable', { token: admin.token, body: slot({ faculty: String(fac2.u._id), dayOfWeek: 'tuesday' }) });
+  assert.equal(crossDept.status, 201, JSON.stringify(crossDept.body));
+  const linked = await ctx.models.Subject.findById(subject._id).lean();
+  assert.ok(linked.faculty.some((f) => String(f) === String(fac2.u._id)));
+  await ctx.request('DELETE', `/timetable/${crossDept.body._id}`, { token: admin.token });
+  await ctx.models.Subject.updateOne({ _id: subject._id }, { $pull: { faculty: fac2.u._id } });
+
+  const notFaculty = await ctx.request('POST', '/timetable', { token: admin.token, body: slot({ faculty: String(s1.u._id), dayOfWeek: 'tuesday' }) });
+  assert.equal(notFaculty.status, 422, 'only an active faculty account can be scheduled');
 
   const badTime = await ctx.request('POST', '/timetable', { token: admin.token, body: slot({ dayOfWeek: 'friday', startTime: '10:00', endTime: '09:00' }) });
   assert.equal(badTime.status, 422);
@@ -116,22 +125,24 @@ test('attendance: roster lists only the class; outsiders and unassigned faculty 
   assert.equal((await ctx.request('GET', `/attendance/roster?${q}`, { token: s1.token })).status, 403);
 });
 
+// Historical fixtures are marked by admin: faculty may only mark a live
+// timetable period and HOD only today (see attendance-timetable.test.js).
 test('attendance: marking validates students, dates and duplicates; student is notified live', async () => {
   const base = { subjectId: String(subject._id), period: 1, section: 'A' };
   const intruder = await ctx.request('POST', '/attendance/mark', {
-    token: fac.token,
+    token: admin.token,
     body: { ...base, date: daysAgo(1), records: [{ student: String(outsider.u._id), status: 'present' }] },
   });
   assert.equal(intruder.status, 422, 'students from another section are rejected');
 
   const dup = await ctx.request('POST', '/attendance/mark', {
-    token: fac.token,
+    token: admin.token,
     body: { ...base, date: daysAgo(1), records: [{ student: String(s1.u._id), status: 'present' }, { student: String(s1.u._id), status: 'absent' }] },
   });
   assert.equal(dup.status, 422);
 
   const future = await ctx.request('POST', '/attendance/mark', {
-    token: fac.token,
+    token: admin.token,
     body: { ...base, date: ymd(new Date(Date.now() + 3 * 86400000)), records: [{ student: String(s1.u._id), status: 'present' }] },
   });
   assert.equal(future.status, 422);
@@ -147,7 +158,7 @@ test('attendance: marking validates students, dates and duplicates; student is n
   ];
   for (const [d, a, b] of plan) {
     const r = await ctx.request('POST', '/attendance/mark', {
-      token: fac.token,
+      token: admin.token,
       body: { ...base, date: daysAgo(d), records: [{ student: String(s1.u._id), status: a }, { student: String(s2.u._id), status: b }] },
     });
     assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -156,7 +167,7 @@ test('attendance: marking validates students, dates and duplicates; student is n
 
   // Re-marking the same class never creates duplicates; a change is audited.
   const again = await ctx.request('POST', '/attendance/mark', {
-    token: fac.token,
+    token: admin.token,
     body: { ...base, date: daysAgo(4), records: [{ student: String(s1.u._id), status: 'absent' }, { student: String(s2.u._id), status: 'present' }] },
   });
   assert.equal(again.body.created, 0);
@@ -172,7 +183,7 @@ test('attendance: overall % = Σ present ÷ Σ conducted (not an average of subj
   const { Subject } = ctx.models;
   const lab = await Subject.create({ name: 'DB Lab', code: 'CS553', department: 'CSE', semester: 5, faculty: [fac.u._id], sections: ['A'] });
   await ctx.request('POST', '/attendance/mark', {
-    token: fac.token,
+    token: admin.token,
     body: { subjectId: String(lab._id), period: 5, section: 'A', date: daysAgo(1), records: [{ student: String(s1.u._id), status: 'present' }, { student: String(s2.u._id), status: 'present' }] },
   });
   const me = await ctx.request('GET', '/attendance/my', { token: s1.token });
@@ -230,7 +241,7 @@ test('attendance: correction request → faculty approval updates the record wit
   assert.equal((await ctx.request('PATCH', `/attendance/corrections/${req.body._id}`, { token: fac.token, body: { action: 'rejected' } })).status, 422);
 });
 
-test('attendance: faculty edit window; admin may still correct old classes', async () => {
+test('attendance: faculty cannot edit old classes by subject/date; admin can', async () => {
   const old = { subjectId: String(subject._id), period: 2, section: 'A', date: daysAgo(20), records: [{ student: String(s1.u._id), status: 'present' }] };
   assert.equal((await ctx.request('POST', '/attendance/mark', { token: fac.token, body: old })).status, 403);
   assert.equal((await ctx.request('POST', '/attendance/mark', { token: admin.token, body: old })).status, 200);

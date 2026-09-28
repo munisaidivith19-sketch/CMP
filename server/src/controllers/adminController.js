@@ -213,6 +213,10 @@ const CREATE_FIELDS = {
   club_admin: ['rollNo', 'year', 'department', 'section', 'semester', 'stayType', 'phone', 'parentPhone'],
   admin: ['employeeId', 'phone'],
   security: ['employeeId', 'phone'],
+  dean: ['employeeId', 'phone'],
+  ao: ['employeeId', 'phone'],
+  chairman: ['employeeId', 'phone'],
+  warden: ['employeeId', 'phone'],
 };
 
 /**

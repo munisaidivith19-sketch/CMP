@@ -1,50 +1,52 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useSelector } from 'react-redux';
+import { Controller, useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { BookOpenCheck, CalendarClock, Pencil, Plus, Trash2 } from 'lucide-react';
 import {
-  useCreateSlotMutation,
   useCreateSubjectMutation,
   useDeleteSlotMutation,
   useDeleteSubjectMutation,
-  useGetAdminUsersQuery,
   useGetSubjectsQuery,
   useGetTimetableQuery,
-  useUpdateSlotMutation,
+  useGetUsersQuery,
   useUpdateSubjectMutation,
 } from '../../services/api';
+import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, IconButton, PageHeader, Skeleton, Tabs } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
-import { Input, Select } from '../../components/ui/form';
-import { DEPARTMENTS } from '../../utils/constants';
+import { Input, SectionMultiSelect, Select } from '../../components/ui/form';
+import { DEPARTMENTS, SECTIONS, WEEKDAYS as DAYS } from '../../utils/constants';
 import { errMsg, titleCase } from '../../utils/format';
-import { DAYS } from '../timetable/Timetable';
+import SlotModal from '../timetable/SlotModal';
 
-const csv = (v) => String(v || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
-
-function useFacultyOptions() {
-  const { data } = useGetAdminUsersQuery({ role: 'faculty', status: 'active', limit: 50 });
+/** Faculty picker: the generic People endpoint in "picker" mode (not the
+ * People directory), so it works for HOD too, not just admin. */
+function useFacultyOptions(department) {
+  const { data } = useGetUsersQuery({ role: 'faculty', limit: 50, context: 'picker', department });
   return (data?.items || []).map((u) => ({ value: u._id, label: `${u.name}${u.department ? ` · ${u.department}` : ''}` }));
 }
 
 /* ── Subjects ───────────────────────────────────────────────────── */
 function SubjectModal({ subject, open, onClose }) {
-  const faculty = useFacultyOptions();
+  const me = useSelector(selectUser);
+  const isHod = me.role === 'hod';
+  const faculty = useFacultyOptions(isHod ? me.department : undefined);
   const [create, { isLoading: creating }] = useCreateSubjectMutation();
   const [update, { isLoading: updating }] = useUpdateSubjectMutation();
-  const { register, handleSubmit, reset, formState: { errors } } = useForm();
+  const { register, handleSubmit, reset, control, formState: { errors } } = useForm();
 
   useEffect(() => {
     if (open) {
       reset({
         name: subject?.name || '',
         code: subject?.code || '',
-        department: subject?.department || 'CSE',
+        department: subject?.department || (isHod ? me.department : 'CSE'),
         semester: subject?.semester || 1,
         credits: subject?.credits ?? 3,
         type: subject?.type || 'theory',
         faculty: subject?.faculty?.[0]?._id || '',
-        sections: (subject?.sections || []).join(', '),
+        sections: subject?.sections || [],
       });
     }
   }, [open, subject, reset]);
@@ -58,7 +60,7 @@ function SubjectModal({ subject, open, onClose }) {
       credits: Number(v.credits),
       type: v.type,
       faculty: v.faculty ? [v.faculty] : [],
-      sections: csv(v.sections),
+      sections: v.sections || [],
     };
     try {
       if (subject) await update({ id: subject._id, ...body }).unwrap();
@@ -89,19 +91,20 @@ function SubjectModal({ subject, open, onClose }) {
       <form onSubmit={handleSubmit(onSubmit)} className="grid gap-3 sm:grid-cols-2" noValidate>
         <Input label="Name" error={errors.name} {...register('name', { required: 'Required', minLength: { value: 2, message: 'Too short' } })} />
         <Input label="Code" className="uppercase" error={errors.code} {...register('code', { required: 'Required' })} />
-        <Select label="Department" options={DEPARTMENTS} {...register('department')} />
+        <Select label="Department" options={DEPARTMENTS} disabled={isHod} hint={isHod ? 'Locked to your department' : undefined} {...register('department')} />
         <Input label="Semester" type="number" min={1} max={12} {...register('semester', { required: true })} />
         <Input label="Credits" type="number" min={0} max={10} {...register('credits')} />
         <Select label="Type" options={['theory', 'lab', 'elective']} {...register('type')} />
         <Select label="Faculty" placeholder="Unassigned" options={faculty} {...register('faculty')} />
-        <Input label="Sections" placeholder="A, B" hint="Comma-separated" {...register('sections')} />
+        <Controller name="sections" control={control} render={({ field }) => <SectionMultiSelect label="Sections" value={field.value} onChange={field.onChange} />} />
       </form>
     </Modal>
   );
 }
 
 function Subjects() {
-  const { data, isLoading, error, refetch } = useGetSubjectsQuery();
+  const me = useSelector(selectUser);
+  const { data, isLoading, error, refetch } = useGetSubjectsQuery(me.role === 'hod' ? { department: me.department } : undefined);
   const [edit, setEdit] = useState(undefined);
   const [del, setDel] = useState(null);
   const [remove, { isLoading: removing }] = useDeleteSubjectMutation();
@@ -173,108 +176,10 @@ function Subjects() {
 }
 
 /* ── Timetable slots ────────────────────────────────────────────── */
-function SlotModal({ slot, klass, open, onClose }) {
-  const { data: subjects = [] } = useGetSubjectsQuery({ department: klass.department, semester: klass.semester });
-  const [create, { isLoading: creating }] = useCreateSlotMutation();
-  const [update, { isLoading: updating }] = useUpdateSlotMutation();
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
-  const isBreak = watch('isBreak');
-  const subjectId = watch('subject');
-  const subject = subjects.find((s) => s._id === subjectId);
-
-  useEffect(() => {
-    if (open) {
-      reset({
-        isBreak: slot?.isBreak || false,
-        breakLabel: slot?.breakLabel || 'Lunch break',
-        subject: slot?.subject?._id || '',
-        faculty: slot?.faculty?._id || '',
-        dayOfWeek: slot?.dayOfWeek || 'monday',
-        period: slot?.period || 1,
-        startTime: slot?.startTime || '09:00',
-        endTime: slot?.endTime || '09:50',
-        room: slot?.room || '',
-      });
-    }
-  }, [open, slot, reset]);
-
-  const onSubmit = async (v) => {
-    const body = {
-      isBreak: Boolean(v.isBreak),
-      breakLabel: v.isBreak ? v.breakLabel : undefined,
-      subject: v.isBreak ? undefined : v.subject,
-      faculty: v.isBreak ? undefined : v.faculty || subject?.faculty?.[0]?._id,
-      section: klass.section,
-      department: klass.department,
-      semester: Number(klass.semester),
-      dayOfWeek: v.dayOfWeek,
-      period: Number(v.period),
-      startTime: v.startTime,
-      endTime: v.endTime,
-      room: v.room || undefined,
-    };
-    try {
-      if (slot) await update({ id: slot._id, ...body }).unwrap();
-      else await create(body).unwrap();
-      toast.success(slot ? 'Slot updated' : 'Slot added');
-      onClose();
-    } catch (e) {
-      toast.error(errMsg(e));
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={slot ? 'Edit slot' : 'Add slot'}
-      subtitle={`${klass.department} · Section ${klass.section} · Semester ${klass.semester}`}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button loading={creating || updating} onClick={handleSubmit(onSubmit)}>
-            Save
-          </Button>
-        </>
-      }
-    >
-      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-3 sm:grid-cols-2" noValidate>
-        <label className="flex items-center gap-2 text-sm font-semibold sm:col-span-2">
-          <input type="checkbox" {...register('isBreak')} /> This is a break (lunch, recess…)
-        </label>
-        {isBreak ? (
-          <Input label="Break label" className="sm:col-span-2" {...register('breakLabel')} />
-        ) : (
-          <>
-            <Select
-              label="Subject"
-              placeholder={subjects.length ? 'Choose subject' : 'No subjects for this class'}
-              options={subjects.map((s) => ({ value: s._id, label: `${s.code} · ${s.name}` }))}
-              error={errors.subject}
-              {...register('subject', { required: 'Choose a subject' })}
-            />
-            <Select
-              label="Faculty"
-              placeholder="Subject’s faculty"
-              options={(subject?.faculty || []).map((f) => ({ value: f._id, label: f.name }))}
-              {...register('faculty')}
-            />
-          </>
-        )}
-        <Select label="Day" options={DAYS.map((d) => ({ value: d, label: titleCase(d) }))} {...register('dayOfWeek')} />
-        <Input label="Period" type="number" min={1} max={12} {...register('period', { required: true })} />
-        <Input label="Starts" type="time" {...register('startTime', { required: true })} />
-        <Input label="Ends" type="time" {...register('endTime', { required: true })} />
-        {!isBreak && <Input label="Room" className="sm:col-span-2" placeholder="e.g. LH-301" {...register('room')} />}
-      </form>
-    </Modal>
-  );
-}
-
 function Slots() {
-  const [klass, setKlass] = useState({ department: 'CSE', section: 'A', semester: 5 });
+  const me = useSelector(selectUser);
+  const isHod = me.role === 'hod';
+  const [klass, setKlass] = useState({ department: isHod ? me.department : 'CSE', section: 'A', semester: 5 });
   const [applied, setApplied] = useState(klass);
   const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery({ department: applied.department, section: applied.section, semester: applied.semester });
   const [edit, setEdit] = useState(undefined);
@@ -292,15 +197,19 @@ function Slots() {
       <Card className="grid gap-3 sm:grid-cols-[1fr_120px_120px_auto] sm:items-end">
         <div>
           <label className="label" htmlFor="ac-dept">Department</label>
-          <select id="ac-dept" className="input" value={klass.department} onChange={(e) => setKlass((k) => ({ ...k, department: e.target.value }))}>
-            {DEPARTMENTS.map((d) => (
+          <select id="ac-dept" className="input" value={klass.department} disabled={isHod} onChange={(e) => setKlass((k) => ({ ...k, department: e.target.value }))}>
+            {(isHod ? [me.department] : DEPARTMENTS).map((d) => (
               <option key={d}>{d}</option>
             ))}
           </select>
         </div>
         <div>
           <label className="label" htmlFor="ac-sec">Section</label>
-          <input id="ac-sec" className="input uppercase" maxLength={10} value={klass.section} onChange={(e) => setKlass((k) => ({ ...k, section: e.target.value.toUpperCase() }))} />
+          <select id="ac-sec" className="input" value={klass.section} onChange={(e) => setKlass((k) => ({ ...k, section: e.target.value }))}>
+            {SECTIONS.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="label" htmlFor="ac-sem">Semester</label>

@@ -42,7 +42,7 @@ import {
   StatusBadge,
   rangeParams,
 } from '../../components/insights';
-import { DEPARTMENTS } from '../../utils/constants';
+import { DEPARTMENTS, SECTIONS } from '../../utils/constants';
 import { fmtClassDay } from '../../utils/format';
 
 /* ── Skeleton placeholder ──────────────────────────────────────── */
@@ -213,7 +213,12 @@ function DepartmentOverview({ params, canPickDepartment }) {
         )}
         <div>
           <label className="label" htmlFor="ad-section">Section</label>
-          <input id="ad-section" className="input w-28 uppercase" placeholder="e.g. A" maxLength={10} value={section} onChange={(e) => setSection(e.target.value.toUpperCase())} />
+          <select id="ad-section" className="input w-28" value={section} onChange={(e) => setSection(e.target.value)}>
+            <option value="">All</option>
+            {SECTIONS.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
         </div>
       </Card>
 
@@ -300,7 +305,12 @@ function LowAttendanceList({ params }) {
       <Card className="flex flex-wrap items-center gap-3">
         <div>
           <label className="label" htmlFor="la-section">Filter by section</label>
-          <input id="la-section" className="input w-28 uppercase" placeholder="e.g. A" maxLength={10} value={section} onChange={(e) => setSection(e.target.value.toUpperCase())} />
+          <select id="la-section" className="input w-28" value={section} onChange={(e) => setSection(e.target.value)}>
+            <option value="">All</option>
+            {SECTIONS.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
         </div>
       </Card>
 

@@ -25,6 +25,11 @@ import {
   STAY_TYPES,
   STAFF_ROLES,
   NO_DEPARTMENT_ROLES,
+  COMPLAINT_CATEGORIES,
+  COMPLAINT_SUBCATEGORIES,
+  COMPLAINT_ESCALATE_TO,
+  TIMETABLE_VIEW_ROLES,
+  TIMETABLE_WRITE_ROLES,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
@@ -42,6 +47,8 @@ import * as staffAttendance from '../controllers/staffAttendanceController.js';
 import * as timetable from '../controllers/timetableController.js';
 import * as gatePass from '../controllers/gatePassController.js';
 import * as lostFound from '../controllers/lostFoundController.js';
+import * as complaints from '../controllers/complaintController.js';
+import { COMPLAINT_AUTHORITY_ROLES } from '../controllers/complaintController.js';
 import * as analytics from '../controllers/analyticsController.js';
 import { globalSearch } from '../controllers/searchController.js';
 import { getDashboard } from '../controllers/dashboardController.js';
@@ -151,7 +158,7 @@ router.get('/search', query('q').optional().isString().isLength({ max: 64 }), va
 router.post('/uploads', uploadLimiter, upload.single('file'), uploadFile);
 
 // ── Users / profiles ───────────────────────────────────────────────
-router.get('/users', users.listUsers);
+router.get('/users', query('context').optional().isIn(['picker']), validate, users.listUsers);
 router.put(
   '/users/me',
   writeLimiter,
@@ -517,12 +524,18 @@ const rangeQuery = [
   query('groupBy').optional().isIn(['day', 'week', 'month']),
 ];
 
+// A class is identified either by its timetable period (`slotId` — required
+// for faculty, whose date/time then come from the server) or, for HOD/admin
+// edits, by subject + date + period + section.
+const bySlot = (src) => (_v, { req }) => Boolean(req[src].slotId);
+router.get('/attendance/my-periods', authorize('faculty', 'hod', 'admin'), attendance.getMyPeriods);
 router.get(
   '/attendance/roster',
   authorize(...STAFF),
-  query('subjectId').isMongoId().withMessage('Subject is required'),
-  dateField('date', query),
-  query('period').isInt({ min: 1, max: 12 }).withMessage('Period is required'),
+  query('slotId').optional().isMongoId(),
+  query('subjectId').if((v, meta) => !bySlot('query')(v, meta)).isMongoId().withMessage('Subject is required'),
+  dateField('date', query).optional(),
+  query('period').if((v, meta) => !bySlot('query')(v, meta)).isInt({ min: 1, max: 12 }).withMessage('Period is required'),
   query('section').optional().trim().isLength({ max: 10 }),
   validate,
   attendance.getRoster
@@ -531,9 +544,10 @@ router.post(
   '/attendance/mark',
   writeLimiter,
   authorize(...STAFF),
-  body('subjectId').isMongoId().withMessage('Subject is required'),
-  dateField('date'),
-  body('period').isInt({ min: 1, max: 12 }).toInt(),
+  body('slotId').optional().isMongoId(),
+  body('subjectId').if((v, meta) => !bySlot('body')(v, meta)).isMongoId().withMessage('Subject is required'),
+  dateField('date').optional(),
+  body('period').if((v, meta) => !bySlot('body')(v, meta)).isInt({ min: 1, max: 12 }).toInt(),
   body('section').optional().trim().isLength({ max: 10 }),
   body('records').isArray({ min: 1, max: 300 }).withMessage('Records are required'),
   body('records.*.student').isMongoId(),
@@ -640,17 +654,20 @@ const subjectRules = (optional = false) => {
     validate,
   ];
 };
-router.get('/timetable', timetable.getMyTimetable);
-router.get('/timetable/current', timetable.getCurrentClass);
-router.get('/timetable/section/:section', param('section').trim().isLength({ min: 1, max: 10 }), validate, timetable.getSectionTimetable);
-router.get('/timetable/faculty/:id', idParam('id'), timetable.getFacultyTimetable);
-router.get('/subjects', timetable.listSubjects);
-router.post('/subjects', writeLimiter, authorize('admin'), ...subjectRules(), timetable.createSubject);
-router.put('/subjects/:id', idParam('id'), authorize('admin'), ...subjectRules(true), timetable.updateSubject);
-router.delete('/subjects/:id', idParam('id'), authorize('admin'), timetable.deleteSubject);
-router.post('/timetable', writeLimiter, authorize('admin'), ...slotRules(), timetable.createSlot);
-router.put('/timetable/:id', idParam('id'), authorize('admin'), ...slotRules(true), timetable.updateSlot);
-router.delete('/timetable/:id', idParam('id'), authorize('admin'), timetable.deleteSlot);
+// Warden/Security get zero access to any timetable-related endpoint, including
+// the read-only ones — enforced here, not just by hiding the sidebar item.
+router.get('/timetable', authorize(...TIMETABLE_VIEW_ROLES), timetable.getMyTimetable);
+router.get('/timetable/current', authorize(...TIMETABLE_VIEW_ROLES), timetable.getCurrentClass);
+router.get('/timetable/faculty-options', authorize(...TIMETABLE_WRITE_ROLES), timetable.listFacultyOptions);
+router.get('/timetable/section/:section', authorize(...TIMETABLE_VIEW_ROLES), param('section').trim().isLength({ min: 1, max: 10 }), validate, timetable.getSectionTimetable);
+router.get('/timetable/faculty/:id', authorize(...TIMETABLE_VIEW_ROLES), idParam('id'), timetable.getFacultyTimetable);
+router.get('/subjects', authorize(...TIMETABLE_VIEW_ROLES), timetable.listSubjects);
+router.post('/subjects', writeLimiter, authorize(...TIMETABLE_WRITE_ROLES), ...subjectRules(), timetable.createSubject);
+router.put('/subjects/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), ...subjectRules(true), timetable.updateSubject);
+router.delete('/subjects/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), timetable.deleteSubject);
+router.post('/timetable', writeLimiter, authorize(...TIMETABLE_WRITE_ROLES), ...slotRules(), timetable.createSlot);
+router.put('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), ...slotRules(true), timetable.updateSlot);
+router.delete('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), timetable.deleteSlot);
 
 // ── Gate Pass ──────────────────────────────────────────────────────
 // Approval climbs faculty (class in-charge) → HOD → principal; security
@@ -750,6 +767,50 @@ router.patch(
   validate,
   lostFound.updateStatus
 );
+
+// ── Complaints ─────────────────────────────────────────────────────
+// Only students register complaints; routing/escalation is resolved server-side
+// from the database, never from a client-supplied recipient.
+const complaintCreateRules = [
+  body('anonymous').optional().isBoolean().toBoolean(),
+  body('category').isIn(COMPLAINT_CATEGORIES).withMessage('Choose a valid complaint category'),
+  body('subCategory')
+    .custom((v, { req }) => {
+      const allowed = COMPLAINT_SUBCATEGORIES[req.body.category] || [];
+      if (!allowed.length) return true;
+      return allowed.includes(v);
+    })
+    .withMessage('Choose a valid subcategory'),
+  body('escalateTo')
+    .custom((v, { req }) => (COMPLAINT_ESCALATE_TO[req.body.category] || []).includes(String(v || '').toLowerCase()))
+    .withMessage('Choose a valid authority to escalate to'),
+  body('description').trim().isLength({ min: 10, max: 2000 }).withMessage('Describe the complaint (10–2000 characters)'),
+  body('attachments').optional().isArray({ max: 5 }).withMessage('At most 5 supporting files'),
+  body('attachments.*.url')
+    .optional()
+    .isString()
+    .custom((v) => v.startsWith('/uploads/') || /^https:\/\//.test(v))
+    .withMessage('Attachment must be an uploaded file or https URL'),
+  body('attachments.*.name').optional().trim().isLength({ max: 150 }),
+  body('attachments.*.mimeType').optional().trim().isLength({ max: 100 }),
+];
+
+router.post('/complaints', writeLimiter, authorize('student'), ...complaintCreateRules, validate, complaints.createComplaint);
+router.get('/complaints', validate, complaints.listComplaints);
+router.get('/complaints/dashboard', authorize('admin', 'chairman'), complaints.complaintDashboard);
+router.get('/complaints/:id', idParam('id'), validate, complaints.getComplaint);
+router.patch(
+  '/complaints/:id/authority-update',
+  idParam('id'),
+  authorize(...COMPLAINT_AUTHORITY_ROLES, 'admin'),
+  body('status').isIn(['IN_REVIEW', 'IN_PROGRESS', 'RESOLVED']),
+  body('comment').optional().trim().isLength({ max: 500 }),
+  validate,
+  complaints.authorityUpdate
+);
+router.patch('/complaints/:id/not-resolved', idParam('id'), validate, complaints.markNotResolved);
+router.patch('/complaints/:id/resolved', idParam('id'), validate, complaints.markResolved);
+router.patch('/complaints/:id/cancel', idParam('id'), validate, complaints.cancelComplaint);
 
 // ── Advanced Analytics ─────────────────────────────────────────────
 router.get('/analytics/student', ...rangeQuery, validate, analytics.studentAnalytics);

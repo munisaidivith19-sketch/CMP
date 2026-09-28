@@ -48,7 +48,7 @@ const baseQueryWithReauth = async (args, api, extra) => {
 const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
-  'ChatRequest', 'StaffAttendance',
+  'ChatRequest', 'StaffAttendance', 'Complaint',
 ];
 
 export const api = createApi({
@@ -297,6 +297,8 @@ export const api = createApi({
     // ── Timetable / subjects ──────────────────────────
     getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
     getCurrentClass: b.query({ query: () => '/timetable/current', providesTags: ['Timetable'] }),
+    getTimetableFacultyOptions: b.query({ query: () => '/timetable/faculty-options', providesTags: ['User'] }),
+    getMyPeriods: b.query({ query: () => '/attendance/my-periods', providesTags: ['Attendance', 'Timetable'] }),
     getSubjects: b.query({ query: (params) => ({ url: '/subjects', params }), providesTags: ['Subject'] }),
     createSubject: b.mutation({ query: (body) => ({ url: '/subjects', method: 'POST', body }), invalidatesTags: ['Subject'] }),
     updateSubject: b.mutation({ query: ({ id, ...body }) => ({ url: `/subjects/${id}`, method: 'PUT', body }), invalidatesTags: ['Subject', 'Timetable'] }),
@@ -320,6 +322,16 @@ export const api = createApi({
     verifyGatePass: b.mutation({ query: (code) => ({ url: '/gate-pass/verify', method: 'POST', body: { code } }) }),
     recordGateOut: b.mutation({ query: (id) => ({ url: `/gate-pass/${id}/out`, method: 'PATCH' }), invalidatesTags: ['GatePass'] }),
     recordGateIn: b.mutation({ query: (id) => ({ url: `/gate-pass/${id}/in`, method: 'PATCH' }), invalidatesTags: ['GatePass'] }),
+
+    // ── Complaints ────────────────────────────────────
+    getComplaints: b.query({ query: (params) => ({ url: '/complaints', params }), providesTags: ['Complaint'] }),
+    getComplaint: b.query({ query: (id) => `/complaints/${id}`, providesTags: ['Complaint'] }),
+    getComplaintDashboard: b.query({ query: (params) => ({ url: '/complaints/dashboard', params }), providesTags: ['Complaint'] }),
+    createComplaint: b.mutation({ query: (body) => ({ url: '/complaints', method: 'POST', body }), invalidatesTags: ['Complaint'] }),
+    authorityUpdateComplaint: b.mutation({ query: ({ id, ...body }) => ({ url: `/complaints/${id}/authority-update`, method: 'PATCH', body }), invalidatesTags: ['Complaint'] }),
+    markComplaintNotResolved: b.mutation({ query: (id) => ({ url: `/complaints/${id}/not-resolved`, method: 'PATCH' }), invalidatesTags: ['Complaint'] }),
+    markComplaintResolved: b.mutation({ query: (id) => ({ url: `/complaints/${id}/resolved`, method: 'PATCH' }), invalidatesTags: ['Complaint'] }),
+    cancelComplaint: b.mutation({ query: (id) => ({ url: `/complaints/${id}/cancel`, method: 'PATCH' }), invalidatesTags: ['Complaint'] }),
 
     // ── Lost & found ──────────────────────────────────
     getLostFound: b.query({ query: (params) => ({ url: '/lost-found', params }), providesTags: ['LostFound'] }),
@@ -442,6 +454,8 @@ export const {
   useReviewCorrectionMutation,
   useGetTimetableQuery,
   useGetCurrentClassQuery,
+  useGetTimetableFacultyOptionsQuery,
+  useGetMyPeriodsQuery,
   useGetSubjectsQuery,
   useCreateSubjectMutation,
   useUpdateSubjectMutation,
@@ -463,6 +477,14 @@ export const {
   useVerifyGatePassMutation,
   useRecordGateOutMutation,
   useRecordGateInMutation,
+  useGetComplaintsQuery,
+  useGetComplaintQuery,
+  useGetComplaintDashboardQuery,
+  useCreateComplaintMutation,
+  useAuthorityUpdateComplaintMutation,
+  useMarkComplaintNotResolvedMutation,
+  useMarkComplaintResolvedMutation,
+  useCancelComplaintMutation,
   useGetLostFoundQuery,
   useGetLostFoundItemQuery,
   useGetLostFoundMatchesQuery,

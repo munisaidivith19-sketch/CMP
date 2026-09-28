@@ -67,7 +67,7 @@ export const STAFF = ['admin', 'faculty', 'hod'];
 export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
 /** May start a group chat; faculty groups wait for admin approval. */
 export const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
-export const DEPARTMENTS = ['CSE', 'CSE (Cyber Security)', 'IT', 'AI & DS', 'ECE', 'EEE', 'Mechanical', 'Civil'];
+export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
 
 export const GATE_PASS_REGARDING = { outing: 'Outing', home: 'Home' };
 export const INDIAN_STATES = [

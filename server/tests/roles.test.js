@@ -113,14 +113,14 @@ test("parent phone is visible to staff and the owner, never to classmates", asyn
 // ── HOD / Principal attendance scope ──────────────────────────────
 
 test('HOD marks student attendance for any subject in their department only; principal is read-only', async () => {
-  const body = { subjectId: String(subject._id), period: 1, section: 'A', date: daysAgo(1), records: [{ student: String(s1.u._id), status: 'present' }, { student: String(s2.u._id), status: 'absent' }] };
+  const body = { subjectId: String(subject._id), period: 1, section: 'A', date: daysAgo(0), records: [{ student: String(s1.u._id), status: 'present' }, { student: String(s2.u._id), status: 'absent' }] };
   const ok = await ctx.request('POST', '/attendance/mark', { token: hod.token, body });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
 
   const eceSubject = await ctx.models.Subject.create({ name: 'Signals', code: 'EC501', department: 'ECE', semester: 5, faculty: [facEce.u._id], sections: ['A'] });
   const other = await ctx.request('POST', '/attendance/mark', {
     token: hod.token,
-    body: { subjectId: String(eceSubject._id), period: 1, section: 'A', date: daysAgo(1), records: [{ student: String(sEce.u._id), status: 'present' }] },
+    body: { subjectId: String(eceSubject._id), period: 1, section: 'A', date: daysAgo(0), records: [{ student: String(sEce.u._id), status: 'present' }] },
   });
   assert.equal(other.status, 403);
 

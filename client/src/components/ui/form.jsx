@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { cn } from './primitives';
 import { useUploadFileMutation } from '../../services/api';
 import { errMsg } from '../../utils/format';
+import { SECTIONS } from '../../utils/constants';
 
 export function Field({ label, error, hint, children, className }) {
   return (
@@ -38,10 +39,10 @@ export const Textarea = forwardRef(function Textarea({ label, error, hint, class
   );
 });
 
-export const Select = forwardRef(function Select({ label, error, hint, className, options = [], placeholder, ...props }, ref) {
+export const Select = forwardRef(function Select({ label, error, hint, className, options = [], placeholder, keepCase, ...props }, ref) {
   return (
     <Field label={label} error={error} hint={hint} className={className}>
-      <select ref={ref} className={cn('input cursor-pointer appearance-none capitalize', error && 'input-error')} {...props}>
+      <select ref={ref} className={cn('input cursor-pointer appearance-none', !keepCase && 'capitalize', error && 'input-error')} {...props}>
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {options.map((o) => {
           const opt = typeof o === 'object' ? o : { value: o, label: String(o).replace('-', ' ') };
@@ -55,6 +56,71 @@ export const Select = forwardRef(function Select({ label, error, hint, className
     </Field>
   );
 });
+
+const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/**
+ * 12-hour time picker (hour / minute / AM-PM) that always shows AM/PM,
+ * whatever the browser locale. value/onChange use 24-hour "HH:mm".
+ * Use with RHF <Controller>.
+ */
+export function TimeInput({ label, value = '', onChange, error, hint, className }) {
+  const [h24, m] = /^\d{2}:\d{2}$/.test(value) ? value.split(':').map(Number) : [9, 0];
+  const hour = h24 % 12 || 12;
+  const ampm = h24 < 12 ? 'AM' : 'PM';
+  const minute = pad2(m);
+  const minutes = MINUTES.includes(minute) ? MINUTES : [...MINUTES, minute].sort();
+  const emit = (next) => {
+    const hr = Number(next.hour ?? hour);
+    const ap = next.ampm ?? ampm;
+    const to24 = (hr % 12) + (ap === 'PM' ? 12 : 0);
+    onChange(`${pad2(to24)}:${next.minute ?? minute}`);
+  };
+  const sel = cn('input cursor-pointer appearance-none px-3 text-center', error && 'input-error');
+  return (
+    <Field label={label} error={error} hint={hint} className={className}>
+      <div className="grid grid-cols-[1fr_auto_1fr_1fr] items-center gap-1.5">
+        <select aria-label={`${label} hour`} className={sel} value={hour} onChange={(e) => emit({ hour: e.target.value })}>
+          {HOURS_12.map((h) => (
+            <option key={h} value={h}>
+              {pad2(h)}
+            </option>
+          ))}
+        </select>
+        <span className="font-bold muted">:</span>
+        <select aria-label={`${label} minute`} className={sel} value={minute} onChange={(e) => emit({ minute: e.target.value })}>
+          {minutes.map((mm) => (
+            <option key={mm} value={mm}>
+              {mm}
+            </option>
+          ))}
+        </select>
+        <select aria-label={`${label} AM or PM`} className={sel} value={ampm} onChange={(e) => emit({ ampm: e.target.value })}>
+          <option value="AM">AM</option>
+          <option value="PM">PM</option>
+        </select>
+      </div>
+    </Field>
+  );
+}
+
+/** Toggle chips over the fixed section list (A–H, J). Use with RHF <Controller>; value = string[]. */
+export function SectionMultiSelect({ label, value = [], onChange, error, hint }) {
+  const toggle = (s) => onChange(value.includes(s) ? value.filter((x) => x !== s) : [...value, s].sort());
+  return (
+    <Field label={label} error={error} hint={hint}>
+      <div className="flex flex-wrap gap-1.5">
+        {SECTIONS.map((s) => (
+          <button key={s} type="button" onClick={() => toggle(s)} className={cn('chip', value.includes(s) && 'chip-active')}>
+            {s}
+          </button>
+        ))}
+      </div>
+    </Field>
+  );
+}
 
 /** Chip-style multi value input (Enter or comma to add). Use with RHF <Controller>. */
 export function TagInput({ label, value = [], onChange, placeholder = 'Type and press Enter', error, hint, max = 25 }) {
@@ -184,7 +250,7 @@ export function AttachmentInput({ label, value = [], onChange, max = 5 }) {
   };
 
   return (
-    <Field label={label} hint="PDF or images · max 5 MB each">
+    <Field label={label} hint="PDF, DOC, DOCX, TXT or images · max 5 MB each">
       <div className="flex flex-wrap gap-2">
         {value.map((a) => (
           <span key={a.url} className="chip">
@@ -205,7 +271,7 @@ export function AttachmentInput({ label, value = [], onChange, max = 5 }) {
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf,image/*"
+        accept="application/pdf,.doc,.docx,.txt,image/*"
         className="hidden"
         onChange={(e) => {
           onFile(e.target.files?.[0]);

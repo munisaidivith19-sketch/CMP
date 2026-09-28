@@ -1,5 +1,8 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security'];
-export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security' };
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden'];
+export const ROLE_LABELS = {
+  student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security',
+  dean: 'Dean', ao: 'AO', chairman: 'Chairman', warden: 'Warden',
+};
 
 export const STUDENT_ROLES = ['student', 'club_admin'];
 /** Can act on academic data (mark attendance, moderate…). */
@@ -12,9 +15,61 @@ export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
 export const GATE_APPROVAL_ROLES = ['faculty', 'hod', 'principal'];
 export const STAY_TYPES = { hosteler: 'Hosteler', day_scholar: 'Day Scholar' };
 
-export const DEPARTMENTS = ['CSE', 'CSE (Cyber Security)', 'IT', 'AI & DS', 'ECE', 'EEE', 'Mechanical', 'Civil'];
+export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
+
+// Section letter skips "I" (easily confused with "1"), matching the college's
+// own section-naming convention. Every section entry field across the app
+// (user management, timetable, attendance) picks from this fixed list.
+export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'];
+
+export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+/** Roles that can add, edit and delete timetable periods (HOD: own department only). */
+export const TIMETABLE_EDITORS = ['admin', 'hod'];
 
 export const GATE_PASS_REGARDING = { outing: 'Outing', home: 'Home' };
+
+// ── Complaints ──────────────────────────────────────────────────────
+// Labels only — the authoritative escalation chain / routing rules live on
+// the server (server/src/constants.js) and are never re-derived here.
+export const COMPLAINT_CATEGORY_LABELS = {
+  academics: 'Academics',
+  ragging_harassment: 'Ragging & Harassment',
+  infrastructure: 'Infrastructure',
+  hostel: 'Hostel',
+};
+export const COMPLAINT_SUBCATEGORY_OPTIONS = {
+  academics: [
+    { value: 'subject', label: 'Subject' },
+    { value: 'faculty_conduct', label: 'Faculty Conduct' },
+    { value: 'attendance', label: 'Attendance' },
+    { value: 'exam_and_evaluation', label: 'Exam and Evaluation' },
+  ],
+  ragging_harassment: [],
+  infrastructure: [
+    { value: 'classroom', label: 'Classroom' },
+    { value: 'network', label: 'Network' },
+    { value: 'water', label: 'Water' },
+    { value: 'restroom', label: 'Restroom' },
+    { value: 'electronic_appliance', label: 'Electronic Appliance' },
+    { value: 'environment_and_pathway', label: 'Environment & Pathway' },
+  ],
+  hostel: [
+    { value: 'mess', label: 'Mess' },
+    { value: 'electricity', label: 'Electricity' },
+    { value: 'water', label: 'Water' },
+    { value: 'housekeeping', label: 'Housekeeping' },
+    { value: 'pest_control', label: 'Pest Control' },
+    { value: 'laundry', label: 'Laundry' },
+    { value: 'network', label: 'Network' },
+    { value: 'restroom', label: 'Restroom' },
+  ],
+};
+export const COMPLAINT_ESCALATE_TO_OPTIONS = {
+  academics: ['faculty', 'hod', 'principal', 'dean', 'ao', 'chairman'],
+  ragging_harassment: ['hod', 'principal', 'dean', 'ao', 'chairman'],
+  infrastructure: ['hod', 'principal', 'dean', 'ao', 'chairman'],
+  hostel: ['warden', 'ao', 'chairman'],
+};
 
 export const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',

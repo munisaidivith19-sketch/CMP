@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import AttendanceRecord from '../models/AttendanceRecord.js';
+import AttendanceSession from '../models/AttendanceSession.js';
 import AttendanceCorrectionRequest from '../models/AttendanceCorrectionRequest.js';
 import Notification from '../models/Notification.js';
 import Subject from '../models/Subject.js';
@@ -10,12 +11,10 @@ import { logActivity } from '../utils/activity.js';
 import { notifyUsers } from '../utils/notify.js';
 import { sameId } from '../utils/permissions.js';
 import { emitToUsers } from '../config/socket.js';
-import { addDays, dayFilter, dayKey, resolveRange, toDay, today, weekdayOf } from '../utils/dates.js';
+import { addDays, campusParts, dayFilter, dayKey, resolveRange, toDay, weekdayOf } from '../utils/dates.js';
+import { clock } from '../utils/clock.js';
 
 export const LOW_ATTENDANCE_THRESHOLD = 75;
-// Faculty may change a class's attendance for this many days; after that only
-// an admin can, or the student goes through a correction request.
-const EDIT_WINDOW_DAYS = 7;
 // Club admins are students with extra club permissions.
 export const STUDENT_ROLES = ['student', 'club_admin'];
 
@@ -65,6 +64,7 @@ function normaliseSection(subject, section) {
   return s || undefined;
 }
 
+/** Who may view a class roster at all (reading, not writing). */
 function assertCanMark(user, subject) {
   if (user.role === 'principal') throw new ApiError(403, 'Principal access is read-only');
   if (user.role === 'faculty' && !isAssigned(subject, user)) {
@@ -76,10 +76,113 @@ function assertCanMark(user, subject) {
   }
 }
 
-function assertEditable(user, day) {
-  if (day > today()) throw new ApiError(422, 'Attendance cannot be marked for a future date');
-  if (!['admin', 'hod'].includes(user.role) && day < addDays(today(), -EDIT_WINDOW_DAYS)) {
-    throw new ApiError(403, `Attendance older than ${EDIT_WINDOW_DAYS} days can only be changed by an admin/HOD or through a correction request`);
+// ── Time rules (server clock, campus timezone) ─────────────────────
+
+/** Today's campus date and time — never taken from the client. */
+function campusNow() {
+  const now = clock.now();
+  const parts = campusParts(now);
+  return { day: toDay(now), weekday: parts.weekday, time: parts.time };
+}
+
+/** UPCOMING before start, ACTIVE from start until (not including) end, COMPLETED after. */
+export function periodStatus({ startTime, endTime }, time) {
+  if (time < startTime) return 'UPCOMING';
+  if (time < endTime) return 'ACTIVE';
+  return 'COMPLETED';
+}
+
+/**
+ * Write rules for a class's attendance on `day`:
+ * - Faculty: only their own timetable period, today, while it is ACTIVE.
+ *   The window comes from the session snapshot once one exists, so a timetable
+ *   edit mid-period does not move an in-progress session's window.
+ * - HOD: their department, today only (any time of day).
+ * - Admin: any past or current date.
+ */
+function assertCanWrite(user, { subject, day, slot, session, viaSlot }) {
+  const now = campusNow();
+  if (day > now.day) throw new ApiError(422, 'Attendance cannot be marked for a future date');
+  if (user.role === 'principal') throw new ApiError(403, 'Principal access is read-only');
+  if (user.role === 'admin') return;
+  if (user.role === 'hod') {
+    if (subject.department !== user.department) throw new ApiError(403, 'You can only edit attendance for your own department');
+    if (day.getTime() !== now.day.getTime()) throw new ApiError(403, 'HOD can only edit attendance for today’s date');
+    return;
+  }
+  if (user.role === 'faculty') {
+    // Faculty pick the timetable period; they never type subject/date/period themselves.
+    if (!slot || !viaSlot) throw new ApiError(403, 'Take attendance from your timetable period');
+    if (!sameId(slot.faculty, user)) throw new ApiError(403, 'This period is assigned to another faculty member');
+    if (day.getTime() !== now.day.getTime() || slot.dayOfWeek !== now.weekday) {
+      throw new ApiError(403, 'Attendance can only be taken on the day of the class');
+    }
+    const window = session || slot;
+    const status = periodStatus(window, now.time);
+    if (status === 'UPCOMING') throw new ApiError(403, `Attendance opens at ${window.startTime}`);
+    if (status === 'COMPLETED') throw new ApiError(403, 'This period has ended — attendance is closed');
+    return;
+  }
+  throw new ApiError(403, 'You cannot mark attendance');
+}
+
+/**
+ * The class being marked. With `slotId` the timetable entry is the source of
+ * truth: subject, section, period and (for faculty) the date all come from the
+ * slot / server, and anything the client sent for them is ignored. Without it
+ * (HOD / admin editing by subject), the matching timetable entry is looked up.
+ */
+async function resolveClass(user, src) {
+  if (src.slotId) {
+    const slot = await TimetableSlot.findOne({ _id: oid(src.slotId, 'timetable period'), isActive: true, isBreak: { $ne: true } });
+    if (!slot) throw new ApiError(404, 'Timetable period not found');
+    const day = user.role === 'faculty' || !src.date ? campusNow().day : toDay(src.date);
+    const session = await AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean();
+    if (!session && weekdayOf(day) !== slot.dayOfWeek) throw new ApiError(422, `This period is not held on ${weekdayOf(day)}`);
+    // An existing session's snapshot wins over the (possibly edited) slot.
+    const subject = await Subject.findById(session?.subject || slot.subject);
+    if (!subject) throw new ApiError(404, 'Subject not found');
+    return { slot, session, subject, day, section: session?.section || slot.section, period: session?.period || slot.period, viaSlot: true };
+  }
+  const subject = await Subject.findById(oid(src.subjectId, 'subject'));
+  if (!subject || !subject.isActive) throw new ApiError(404, 'Subject not found');
+  const section = normaliseSection(subject, src.section);
+  const day = toDay(src.date);
+  const period = Number(src.period);
+  if (!Number.isInteger(period) || period < 1 || period > 12) throw new ApiError(422, 'Invalid period');
+  const slot = await TimetableSlot.findOne({ subject: subject._id, dayOfWeek: weekdayOf(day), period, isActive: true, ...(section ? { section } : {}) });
+  const session = slot ? await AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean() : null;
+  return { slot, session, subject, day, section, period };
+}
+
+/** Freeze the timetable entry as it is now, for this class meeting. */
+async function ensureSession({ slot, session, subject, day }, user) {
+  if (session || !slot) return session;
+  const faculty = slot.faculty ? await User.findById(slot.faculty).select('name').lean() : null;
+  try {
+    return (
+      await AttendanceSession.create({
+        timetableSlot: slot._id,
+        date: day,
+        period: slot.period,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        subject: subject._id,
+        subjectName: subject.name,
+        subjectCode: subject.code,
+        faculty: slot.faculty,
+        facultyName: faculty?.name,
+        department: slot.department,
+        section: slot.section,
+        semester: slot.semester,
+        year: slot.year,
+        room: slot.room,
+        createdBy: user._id,
+      })
+    ).toObject();
+  } catch (err) {
+    if (err.code === 11000) return AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean();
+    throw err;
   }
 }
 
@@ -111,21 +214,14 @@ async function warnLowAttendance(studentIds, subject) {
 // ── Class roster for marking ───────────────────────────────────────
 
 export const getRoster = asyncHandler(async (req, res) => {
-  const { subjectId, date, period } = req.query;
-  const subject = await Subject.findById(oid(subjectId, 'subject'));
-  if (!subject || !subject.isActive) throw new ApiError(404, 'Subject not found');
-  assertCanMark(req.user, subject);
-  const section = normaliseSection(subject, req.query.section);
-  const day = toDay(date);
-  const p = Number(period);
-  if (!Number.isInteger(p) || p < 1 || p > 12) throw new ApiError(422, 'Invalid period');
+  const cls = await resolveClass(req.user, req.query);
+  const { subject, section, day, period: p, slot, session } = cls;
+  if (!(req.user.role === 'faculty' && slot && sameId(slot.faculty, req.user))) assertCanMark(req.user, subject);
 
-  const [students, existing, slot] = await Promise.all([
+  const [students, existing, slotInfo] = await Promise.all([
     User.find(rosterFilter(subject, section)).select('name rollNo avatar section department year').sort({ rollNo: 1, name: 1 }).lean(),
     AttendanceRecord.find({ subject: subject._id, date: day, period: p, ...(section ? { section } : {}) }).populate('markedBy', 'name').lean(),
-    TimetableSlot.findOne({ subject: subject._id, dayOfWeek: weekdayOf(day), period: p, isActive: true, ...(section ? { section } : {}) })
-      .populate('faculty', 'name')
-      .lean(),
+    slot ? TimetableSlot.findById(slot._id).populate('faculty', 'name').lean() : null,
   ]);
   const byStudent = Object.fromEntries(existing.map((r) => [String(r.student), r]));
   const last = existing.sort((a, b) => new Date(b.markedAt) - new Date(a.markedAt))[0];
@@ -133,18 +229,23 @@ export const getRoster = asyncHandler(async (req, res) => {
   let editable = true;
   let lockedReason = null;
   try {
-    assertEditable(req.user, day);
+    assertCanWrite(req.user, cls);
   } catch (e) {
     editable = false;
     lockedReason = e.message;
   }
+  // What the class looked like when attendance was taken (or looks like now, if not yet taken).
+  const slotView = session
+    ? { ...slotInfo, period: session.period, startTime: session.startTime, endTime: session.endTime, room: session.room, faculty: { _id: session.faculty, name: session.facultyName }, snapshot: true }
+    : slotInfo;
 
   res.json({
     subject: { _id: subject._id, name: subject.name, code: subject.code, department: subject.department, semester: subject.semester, sections: subject.sections },
     section: section || null,
     date: dayKey(day),
     period: p,
-    slot,
+    slot: slotView,
+    sessionId: session?._id || null,
     alreadyMarked: existing.length > 0,
     markedBy: last?.markedBy || null,
     markedAt: last?.markedAt || null,
@@ -157,15 +258,14 @@ export const getRoster = asyncHandler(async (req, res) => {
 // ── Mark attendance (faculty / admin) ──────────────────────────────
 
 export const markAttendance = asyncHandler(async (req, res) => {
-  const { subjectId, date, period, records } = req.body;
+  const { records } = req.body;
   const user = req.user;
 
-  const subject = await Subject.findById(subjectId);
-  if (!subject || !subject.isActive) throw new ApiError(404, 'Subject not found');
-  assertCanMark(user, subject);
-  const section = normaliseSection(subject, req.body.section);
-  const day = toDay(date);
-  assertEditable(user, day);
+  const cls = await resolveClass(user, req.body);
+  const { subject, section, day, period } = cls;
+  assertCanWrite(user, cls);
+  const session = await ensureSession(cls, user);
+  const sessionCreated = Boolean(session && !cls.session);
 
   // One status per student; every id must be a student in this class.
   const statusById = new Map();
@@ -194,7 +294,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
         updateOne: {
           filter: { student: id, subject: subject._id, date: day, period },
           update: {
-            $setOnInsert: { student: id, subject: subject._id, date: day, period, department: subject.department, ...(section ? { section } : {}) },
+            $setOnInsert: { student: id, subject: subject._id, date: day, period, department: subject.department, ...(section ? { section } : {}), ...(session ? { session: session._id } : {}) },
             $set: { status, markedBy: user._id, markedAt: now },
           },
           upsert: true, // the unique index still rejects a concurrent duplicate
@@ -207,7 +307,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
           filter: { student: id, subject: subject._id, date: day, period },
           update: {
             $set: { status, markedBy: user._id, markedAt: now },
-            $push: { history: { from: prev[id], to: status, by: user._id, at: now, reason: 'Updated by staff' } },
+            $push: { history: { from: prev[id], to: status, by: user._id, at: now, reason: `Edited by ${user.role}` } },
           },
         },
       });
@@ -215,10 +315,21 @@ export const markAttendance = asyncHandler(async (req, res) => {
   });
   if (ops.length) await AttendanceRecord.bulkWrite(ops, { ordered: false });
 
-  logActivity(req, existing.length ? 'attendance.update' : 'attendance.mark', {
-    entityType: 'subject',
-    entityId: subject._id,
-    summary: `${subject.code}${section ? ` ${section}` : ''} ${dayKey(day)} P${period}: ${created} new, ${changed} changed`,
+  if (sessionCreated) {
+    logActivity(req, 'attendance.session_created', {
+      entityType: 'attendance_session',
+      entityId: session._id,
+      summary: `${subject.code} ${session.department}-${session.section} ${dayKey(day)} P${session.period} ${session.startTime}–${session.endTime}`,
+    });
+  }
+  // Every edit of existing marks is audited with actor role, date and before → after.
+  const edits = ids.filter((id) => id in prev && prev[id] !== statusById.get(id));
+  logActivity(req, existing.length ? 'attendance.edited' : 'attendance.mark', {
+    entityType: session ? 'attendance_session' : 'subject',
+    entityId: session?._id || subject._id,
+    summary: `[${user.role}] ${subject.code}${section ? ` ${section}` : ''} ${dayKey(day)} P${period}: ${created} new, ${changed} changed${
+      edits.length ? ` (${edits.slice(0, 4).map((id) => `${id.slice(-4)} ${prev[id]}→${statusById.get(id)}`).join(', ')}${edits.length > 4 ? '…' : ''})` : ''
+    }`,
   });
 
   const touched = ids.filter((id) => !(id in prev) || prev[id] !== statusById.get(id));
@@ -231,6 +342,51 @@ export const markAttendance = asyncHandler(async (req, res) => {
     created,
     modified: changed,
     unchanged: ids.length - created - changed,
+    sessionId: session?._id || null,
+  });
+});
+
+// ── Faculty: today's periods with their live status ────────────────
+
+/**
+ * Today's timetable periods for the signed-in faculty member, each with
+ * UPCOMING / ACTIVE / COMPLETED computed on the server clock, and whether
+ * attendance was already taken. Only ACTIVE periods can be marked.
+ */
+export const getMyPeriods = asyncHandler(async (req, res) => {
+  const now = campusNow();
+  const slots = await TimetableSlot.find({ faculty: req.user._id, dayOfWeek: now.weekday, isActive: true, isBreak: { $ne: true } })
+    .populate('subject', 'name code')
+    .sort({ startTime: 1 })
+    .lean();
+  const sessions = await AttendanceSession.find({ timetableSlot: { $in: slots.map((s) => s._id) }, date: now.day }).lean();
+  const bySlot = Object.fromEntries(sessions.map((s) => [String(s.timetableSlot), s]));
+  const marked = new Set(
+    (await AttendanceRecord.find({ session: { $in: sessions.map((s) => s._id) } }).distinct('session')).map(String)
+  );
+
+  res.json({
+    date: dayKey(now.day),
+    weekday: now.weekday,
+    time: now.time,
+    periods: slots.map((slot) => {
+      const session = bySlot[String(slot._id)];
+      const window = session || slot;
+      return {
+        slotId: slot._id,
+        period: window.period,
+        startTime: window.startTime,
+        endTime: window.endTime,
+        subject: session ? { _id: session.subject, name: session.subjectName, code: session.subjectCode } : slot.subject,
+        department: slot.department,
+        section: slot.section,
+        semester: slot.semester,
+        year: slot.year,
+        room: window.room,
+        status: periodStatus(window, now.time),
+        marked: Boolean(session && marked.has(String(session._id))),
+      };
+    }),
   });
 });
 
@@ -372,12 +528,23 @@ export const listSessions = asyncHandler(async (req, res) => {
         present: presentExpr,
         markedAt: { $max: '$markedAt' },
         edits: { $sum: { $size: { $ifNull: ['$history', []] } } },
+        department: { $first: '$department' },
+        session: { $max: '$session' },
       },
     },
     { $sort: { '_id.date': -1, '_id.period': -1 } },
     { $limit: 200 },
     { $lookup: { from: 'subjects', localField: '_id.subject', foreignField: '_id', as: 'subject', pipeline: [{ $project: { name: 1, code: 1 } }] } },
     { $unwind: '$subject' },
+    {
+      $lookup: {
+        from: 'attendancesessions',
+        localField: 'session',
+        foreignField: '_id',
+        as: 'snap',
+        pipeline: [{ $project: { startTime: 1, endTime: 1, timetableSlot: 1, subjectName: 1, subjectCode: 1, facultyName: 1 } }],
+      },
+    },
     {
       $project: {
         _id: 0,
@@ -391,10 +558,17 @@ export const listSessions = asyncHandler(async (req, res) => {
         percentage: pctExpr('$present', '$total'),
         markedAt: 1,
         edits: 1,
+        department: 1,
+        snapshot: { $first: '$snap' },
       },
     },
   ]);
-  res.json(sessions);
+  // The same rule the server enforces on save: admin any date, HOD today in
+  // their department, faculty only through their live timetable period.
+  const todayDay = campusNow().day.getTime();
+  const editable = (s) =>
+    req.user.role === 'admin' || (req.user.role === 'hod' && s.department === req.user.department && new Date(s.date).getTime() === todayDay);
+  res.json(sessions.map((s) => ({ ...s, editable: editable(s) })));
 });
 
 // ── Subject attendance stats (staff) ───────────────────────────────

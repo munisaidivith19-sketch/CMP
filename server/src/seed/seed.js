@@ -33,7 +33,7 @@ const days = (n, hour = 10) => {
 };
 const pickN = (arr, n) => [...arr].sort(() => Math.random() - 0.5).slice(0, n);
 
-const DEPARTMENTS = ['CSE', 'CSE (Cyber Security)', 'ECE', 'EEE', 'IT', 'AI & DS', 'Mechanical', 'Civil'];
+const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
 
 async function seed() {
   await connectDB();
@@ -96,6 +96,38 @@ async function seed() {
     designation: 'Chief Security Officer',
     phone: '9840099999',
   });
+  const dean = mk({
+    name: 'Dr. Kavitha Subramaniam',
+    email: 'dean@campus.edu',
+    role: 'dean',
+    employeeId: 'EMP-DEAN',
+    designation: 'Dean of Academics',
+    phone: '9840011223',
+  });
+  const ao = mk({
+    name: 'Mohan Krishnamurthy',
+    email: 'ao@campus.edu',
+    role: 'ao',
+    employeeId: 'EMP-AO',
+    designation: 'Administrative Officer',
+    phone: '9840033445',
+  });
+  const chairman = mk({
+    name: 'Dr. Venkatraman Iyer',
+    email: 'chairman@campus.edu',
+    role: 'chairman',
+    employeeId: 'EMP-CHAIRMAN',
+    designation: 'Chairman',
+    phone: '9840055667',
+  });
+  const warden = mk({
+    name: 'Geetha Balasubramanian',
+    email: 'warden@campus.edu',
+    role: 'warden',
+    employeeId: 'EMP-WARDEN',
+    designation: 'Hostel Warden',
+    phone: '9840077889',
+  });
   const clubAdmin = mk({
     name: 'Rahul Verma',
     email: 'clubadmin@campus.edu',
@@ -121,15 +153,15 @@ async function seed() {
 
   const studentSeed = [
     ['Divya Krishnan', 'student@campus.edu', 'CSE', 3, ['react', 'node.js', 'mongodb'], ['technical', 'hackathon', 'workshop']],
-    ['Arjun Nair', 'arjun@campus.edu', 'IT', 2, ['java', 'spring'], ['technical', 'sports']],
+    ['Arjun Nair', 'arjun@campus.edu', 'Robotics', 2, ['java', 'spring'], ['technical', 'sports']],
     ['Priya Sharma', 'priya@campus.edu', 'AI & DS', 3, ['python', 'pytorch', 'ml'], ['technical', 'ai', 'seminar']],
-    ['Karthik Reddy', 'karthik@campus.edu', 'Mechanical', 4, ['cad', 'solidworks'], ['sports', 'workshop']],
+    ['Karthik Reddy', 'karthik@campus.edu', 'VLSI', 4, ['cad', 'solidworks'], ['sports', 'workshop']],
     ['Fatima Sheikh', 'fatima@campus.edu', 'CSE (Cyber Security)', 2, ['networking', 'wireshark'], ['technical', 'security', 'hackathon']],
-    ['Vikram Singh', 'vikram@campus.edu', 'EEE', 3, ['embedded c', 'arduino'], ['technical', 'workshop']],
+    ['Vikram Singh', 'vikram@campus.edu', 'Bio Medical', 3, ['embedded c', 'arduino'], ['technical', 'workshop']],
     ['Ananya Das', 'ananya@campus.edu', 'ECE', 1, ['singing', 'photoshop'], ['cultural', 'arts']],
-    ['Rohan Mehta', 'rohan@campus.edu', 'Civil', 2, ['autocad'], ['sports', 'social']],
+    ['Rohan Mehta', 'rohan@campus.edu', 'Agri', 2, ['autocad'], ['sports', 'social']],
     ['Lakshmi Menon', 'lakshmi@campus.edu', 'CSE', 4, ['flutter', 'firebase'], ['technical', 'career']],
-    ['Aditya Joshi', 'aditya@campus.edu', 'IT', 1, ['c++', 'dsa'], ['technical', 'hackathon']],
+    ['Aditya Joshi', 'aditya@campus.edu', 'Robotics', 1, ['c++', 'dsa'], ['technical', 'hackathon']],
     ['Nisha Patel', 'nisha@campus.edu', 'AI & DS', 2, ['sql', 'tableau'], ['career', 'seminar']],
     ['Siddharth Rao', 'siddharth@campus.edu', 'CSE (Cyber Security)', 3, ['pentesting', 'bash'], ['security', 'technical']],
   ];
@@ -150,7 +182,7 @@ async function seed() {
     })
   );
 
-  const allUsers = [admin, faculty, faculty2, hod, principal, security, clubAdmin, clubAdmin2, ...students];
+  const allUsers = [admin, faculty, faculty2, hod, principal, security, dean, ao, chairman, warden, clubAdmin, clubAdmin2, ...students];
   for (const u of allUsers) await u.save();
   console.log(`[seed] ${allUsers.length} users`);
 
@@ -420,6 +452,12 @@ async function seed() {
   console.table([
     { role: 'admin', email: admin.email },
     { role: 'faculty', email: faculty.email },
+    { role: 'hod', email: hod.email },
+    { role: 'principal', email: principal.email },
+    { role: 'dean', email: dean.email },
+    { role: 'ao', email: ao.email },
+    { role: 'chairman', email: chairman.email },
+    { role: 'warden', email: warden.email },
     { role: 'club_admin', email: clubAdmin.email },
     { role: 'student', email: demoStudent.email },
   ]);

@@ -1,22 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { AlertTriangle, CalendarCheck2, Check, ClipboardCheck, ClipboardList, Lock, Save, Users, X } from 'lucide-react';
+import { AlertTriangle, CalendarCheck2, Check, ClipboardCheck, ClipboardList, Clock, Lock, Pencil, Save, Users, X } from 'lucide-react';
 import {
   useGetAttendanceSessionsQuery,
   useGetCorrectionsQuery,
   useGetLowAttendanceQuery,
+  useGetMyPeriodsQuery,
   useGetRosterQuery,
   useGetStudentAttendanceQuery,
   useGetSubjectAttendanceQuery,
   useGetSubjectsQuery,
-  useGetTimetableQuery,
   useMarkClassAttendanceMutation,
   useReviewCorrectionMutation,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { SUMMARY_VIEW } from '../../utils/constants';
+import { SECTIONS, SUMMARY_VIEW } from '../../utils/constants';
 import { DailySummary, FacultyMarking } from './DailySummary';
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
@@ -26,14 +26,81 @@ import { errMsg, fmtClassDay, fmtDateTime, todayKey } from '../../utils/format';
 /** Faculty pick from subjects they teach, an HOD from their department's, admin from all. */
 const subjectScope = (me) => (me.role === 'faculty' ? { mine: 'true' } : me.role === 'hod' ? { department: me.department } : undefined);
 
-const todayName = () => ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
+const to12h = (t) => {
+  const [h, m] = String(t).split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+const PERIOD_STATUS = {
+  UPCOMING: { color: 'info', label: 'Upcoming' },
+  ACTIVE: { color: 'success', label: 'In progress' },
+  COMPLETED: { color: 'neutral', label: 'Period completed' },
+};
+
+/**
+ * Faculty: today's timetable periods. Attendance can only be taken while a
+ * period is ACTIVE — the server computes the status on its own clock and
+ * rejects anything else, this list just mirrors it.
+ */
+function MyPeriods({ selected, onPick }) {
+  const { data, isLoading, error, refetch } = useGetMyPeriodsQuery(undefined, { pollingInterval: 30000 });
+  if (isLoading) return <Skeleton className="h-32" />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
+  return (
+    <Card>
+      <CardHeader title="My classes today" subtitle={`${fmtClassDay(data.date, 'EEEE, dd MMM')} · attendance opens only during the period`} />
+      {!data.periods.length ? (
+        <EmptyState icon={ClipboardList} title="No classes today" text="Periods assigned to you in the timetable appear here." />
+      ) : (
+        <ul className="grid gap-3 md:grid-cols-2">
+          {data.periods.map((p) => {
+            const st = PERIOD_STATUS[p.status];
+            return (
+              <li key={p.slotId} className={cn('rounded-2xl bg-white/60 p-3.5 dark:bg-white/5', selected === p.slotId && 'ring-2 ring-primary-400')}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-primary-600">
+                      Period {p.period} · {to12h(p.startTime)} – {to12h(p.endTime)}
+                    </p>
+                    <p className="truncate font-bold">{p.subject?.name}</p>
+                    <p className="text-xs muted">
+                      {p.subject?.code} · {p.department} · Section {p.section}
+                      {p.year ? ` · Year ${p.year}` : ''}
+                      {p.semester ? ` · Sem ${p.semester}` : ''}
+                    </p>
+                  </div>
+                  <Badge color={st.color}>{st.label}</Badge>
+                </div>
+                <div className="mt-3">
+                  {p.status === 'ACTIVE' ? (
+                    <Button size="sm" icon={ClipboardCheck} onClick={() => onPick(p.slotId)}>
+                      {p.marked ? 'Review / update attendance' : 'Take attendance'}
+                    </Button>
+                  ) : p.status === 'UPCOMING' ? (
+                    <span className="flex items-center gap-1.5 text-xs muted">
+                      <Clock className="h-3.5 w-3.5" /> Opens at {to12h(p.startTime)}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-xs font-semibold muted">
+                      <Lock className="h-3.5 w-3.5" /> Attendance closed{p.marked ? ' · taken' : ' · not taken'}
+                    </span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 /* ── Mark attendance ────────────────────────────────────────────── */
 function MarkAttendance({ preset, onPresetUsed }) {
   const me = useSelector(selectUser);
-  const { data: subjects = [], isLoading: loadingSubjects } = useGetSubjectsQuery(subjectScope(me));
-  const { data: tt } = useGetTimetableQuery(undefined, { skip: me.role !== 'faculty' });
-  const [form, setForm] = useState({ subjectId: '', section: '', date: todayKey(), period: '' });
+  const isFaculty = me.role === 'faculty';
+  const { data: subjects = [], isLoading: loadingSubjects } = useGetSubjectsQuery(subjectScope(me), { skip: isFaculty });
+  const [form, setForm] = useState({ slotId: '', subjectId: '', section: '', date: todayKey(), period: '' });
   const [marks, setMarks] = useState({});
   const [save, { isLoading: saving }] = useMarkClassAttendanceMutation();
 
@@ -45,33 +112,29 @@ function MarkAttendance({ preset, onPresetUsed }) {
   }, [preset, onPresetUsed]);
 
   const subject = subjects.find((s) => s._id === form.subjectId);
-  const ready = form.subjectId && form.date && form.period && (!subject?.sections?.length || form.section);
-  const { data: roster, isFetching, error } = useGetRosterQuery(
-    { subjectId: form.subjectId, date: form.date, period: form.period, section: form.section || undefined },
-    { skip: !ready, refetchOnMountOrArgChange: true }
-  );
+  const ready = Boolean(form.slotId) || Boolean(form.subjectId && form.date && form.period && (!subject?.sections?.length || form.section));
+  // Faculty identify the class by its timetable period; the server supplies the date.
+  const rosterArgs = form.slotId
+    ? { slotId: form.slotId, ...(isFaculty ? {} : { date: form.date }) }
+    : { subjectId: form.subjectId, date: form.date, period: form.period, section: form.section || undefined };
+  const { data: roster, isFetching, error } = useGetRosterQuery(rosterArgs, { skip: !ready, refetchOnMountOrArgChange: true });
 
   // Start from what is saved; unmarked students default to present.
   useEffect(() => {
     if (roster) setMarks(Object.fromEntries(roster.students.map((s) => [s._id, s.status || 'present'])));
   }, [roster]);
 
-  const todaysClasses = useMemo(
-    () => (tt?.slots || []).filter((s) => !s.isBreak && s.dayOfWeek === todayName()).sort((a, b) => a.startTime.localeCompare(b.startTime)),
-    [tt]
-  );
   const counts = Object.values(marks).reduce((a, v) => ({ ...a, [v]: (a[v] || 0) + 1 }), {});
-  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const set = (patch) => setForm((f) => ({ ...f, slotId: '', ...patch }));
 
   const submit = async () => {
+    const records = Object.entries(marks).map(([student, status]) => ({ student, status }));
     try {
-      const res = await save({
-        subjectId: form.subjectId,
-        date: form.date,
-        period: Number(form.period),
-        section: form.section || undefined,
-        records: Object.entries(marks).map(([student, status]) => ({ student, status })),
-      }).unwrap();
+      const res = await save(
+        form.slotId
+          ? { slotId: form.slotId, ...(isFaculty ? {} : { date: form.date }), records }
+          : { subjectId: form.subjectId, date: form.date, period: Number(form.period), section: form.section || undefined, records }
+      ).unwrap();
       toast.success(`${res.message} · ${res.created} new, ${res.modified} changed`);
     } catch (e) {
       toast.error(errMsg(e));
@@ -80,24 +143,16 @@ function MarkAttendance({ preset, onPresetUsed }) {
 
   return (
     <div className="space-y-5">
-      {todaysClasses.length > 0 && (
-        <Card>
-          <CardHeader title="Your classes today" subtitle="Pick one to load its roster" />
-          <div className="flex flex-wrap gap-2">
-            {todaysClasses.map((s) => (
-              <button
-                key={s._id}
-                onClick={() => set({ subjectId: s.subject._id, section: s.section, period: String(s.period), date: todayKey() })}
-                className={cn('chip', form.subjectId === s.subject._id && form.period === String(s.period) && 'chip-active')}
-              >
-                P{s.period} · {s.subject.code} · Sec {s.section} · {s.startTime}
-              </button>
-            ))}
-          </div>
-        </Card>
+      {isFaculty && <MyPeriods selected={form.slotId} onPick={(slotId) => setForm((f) => ({ ...f, slotId }))} />}
+
+      {!isFaculty && me.role === 'hod' && (
+        <div className="flex items-start gap-2 rounded-2xl bg-sky-500/10 p-3 text-sm text-sky-700 dark:text-sky-300">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          As HOD you can take or edit attendance for today only. Earlier dates are locked — ask an admin for older corrections.
+        </div>
       )}
 
-      <Card className="grid gap-3 md:grid-cols-4">
+      {!isFaculty && <Card className="grid gap-3 md:grid-cols-4">
         <div>
           <label className="label" htmlFor="m-subject">Subject</label>
           <select id="m-subject" className="input" value={form.subjectId} onChange={(e) => set({ subjectId: e.target.value, section: '' })} disabled={loadingSubjects}>
@@ -120,7 +175,15 @@ function MarkAttendance({ preset, onPresetUsed }) {
         </div>
         <div>
           <label className="label" htmlFor="m-date">Date</label>
-          <input id="m-date" type="date" className="input" max={todayKey()} value={form.date} onChange={(e) => set({ date: e.target.value })} />
+          <input
+            id="m-date"
+            type="date"
+            className="input"
+            max={todayKey()}
+            min={me.role === 'hod' ? todayKey() : undefined}
+            value={form.date}
+            onChange={(e) => set({ date: e.target.value })}
+          />
         </div>
         <div>
           <label className="label" htmlFor="m-period">Period</label>
@@ -133,12 +196,14 @@ function MarkAttendance({ preset, onPresetUsed }) {
             ))}
           </select>
         </div>
-      </Card>
+      </Card>}
 
       {!ready ? (
-        <Card>
-          <EmptyState icon={ClipboardList} title="Choose a class" text="Select the subject, section, date and period to load the class roster." />
-        </Card>
+        isFaculty ? null : (
+          <Card>
+            <EmptyState icon={ClipboardList} title="Choose a class" text="Select the subject, section, date and period to load the class roster." />
+          </Card>
+        )
       ) : isFetching && !roster ? (
         <Skeleton className="h-64" />
       ) : error ? (
@@ -157,7 +222,9 @@ function MarkAttendance({ preset, onPresetUsed }) {
               </p>
               <p className="text-xs muted">
                 {fmtClassDay(roster.date, 'EEEE, dd MMM yyyy')} · Period {roster.period}
-                {roster.slot ? ` · ${roster.slot.startTime}–${roster.slot.endTime}${roster.slot.room ? ` · ${roster.slot.room}` : ''}` : ' · not on the timetable'}
+                {roster.slot
+                  ? ` · ${to12h(roster.slot.startTime)} – ${to12h(roster.slot.endTime)}${roster.slot.room ? ` · ${roster.slot.room}` : ''}${roster.slot.faculty?.name ? ` · ${roster.slot.faculty.name}` : ''}${roster.slot.snapshot ? ' · as scheduled that day' : ''}`
+                  : ' · not on the timetable'}
               </p>
             </div>
             {roster.alreadyMarked && <Badge color="info">Marked by {roster.markedBy?.name} · {fmtDateTime(roster.markedAt)}</Badge>}
@@ -251,10 +318,16 @@ function Sessions({ onOpen }) {
                     {s.section ? ` · Sec ${s.section}` : ''}
                   </p>
                   <p className="text-xs muted">
-                    {fmtClassDay(s.date, 'EEE, dd MMM')} · P{s.period} · {s.present}/{s.total} present
+                    {fmtClassDay(s.date, 'EEE, dd MMM')} · P{s.period}
+                    {s.snapshot ? ` · ${to12h(s.snapshot.startTime)} – ${to12h(s.snapshot.endTime)}` : ''} · {s.present}/{s.total} present
                     {s.edits ? ` · ${s.edits} edit${s.edits > 1 ? 's' : ''}` : ''}
                   </p>
                 </div>
+                {s.editable ? (
+                  <Badge color="primary" icon={Pencil}>Edit</Badge>
+                ) : (
+                  <Badge color="neutral" icon={Lock}>Locked</Badge>
+                )}
                 <PercentBadge value={s.percentage} />
               </button>
             </li>
@@ -301,7 +374,12 @@ function LowAttendance() {
         subtitle="Overall attendance across the classes you can see"
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <input aria-label="Section" className="input w-24 rounded-xl py-1.5 text-xs uppercase" placeholder="Section" maxLength={10} value={section} onChange={(e) => setSection(e.target.value.toUpperCase())} />
+            <select aria-label="Section" className="input w-auto rounded-xl py-1.5 text-xs" value={section} onChange={(e) => setSection(e.target.value)}>
+              <option value="">All sections</option>
+              {SECTIONS.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
             <RangeFilter value={range} onChange={setRange} />
           </div>
         }

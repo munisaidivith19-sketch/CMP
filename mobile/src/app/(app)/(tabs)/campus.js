@@ -26,14 +26,18 @@ const ADMIN_ITEMS = [
 
 // Security only deals with gate passes and lost & found — the rest of campus life doesn't apply to them.
 const HIDDEN_FOR_SECURITY = ['/timetable', '/attendance', '/events', '/clubs', '/announcements', '/discussions', '/search'];
+// Warden/Security have zero timetable access anywhere in the app.
+const HIDDEN_FOR_NO_TIMETABLE = ['/timetable'];
+const NO_TIMETABLE_ROLES = ['warden', 'security'];
 
 export default function Campus() {
   const me = useSelector(selectUser);
   const staff = !STUDENT_ROLES.includes(me.role);
   const isSecurity = me.role === 'security';
+  const noTimetable = NO_TIMETABLE_ROLES.includes(me.role);
   const items = [
     ...(me.role === 'admin' ? ADMIN_ITEMS : []),
-    ...ITEMS.filter((i) => !isSecurity || !HIDDEN_FOR_SECURITY.includes(i.href)).map((i) =>
+    ...ITEMS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.href)) && (!noTimetable || !HIDDEN_FOR_NO_TIMETABLE.includes(i.href))).map((i) =>
       i.href === '/attendance' && staff ? { ...i, hint: me.role === 'principal' ? 'College summary' : 'Mark & review' } : i
     ),
   ];

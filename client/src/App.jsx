@@ -6,7 +6,13 @@ import AppLayout, { Backdrop } from './components/layout/AppLayout';
 import { PageLoader, Spinner } from './components/ui/primitives';
 import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
-import { STAFF_VIEW } from './utils/constants';
+import { ROLES, STAFF_VIEW, STUDENT_ROLES } from './utils/constants';
+
+// The People directory (browse/search) is off-limits to students — a single
+// profile fetched from elsewhere (chat, discussions, clubs) is unaffected.
+const PEOPLE_DIRECTORY_ROLES = ROLES.filter((r) => !STUDENT_ROLES.includes(r));
+// Warden/Security have zero timetable access anywhere in the app.
+const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
 
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -43,6 +49,9 @@ const GateVerify = lazy(() => import('./pages/gatepass/GateVerify'));
 const LostFound = lazy(() => import('./pages/lostfound/LostFound'));
 const LostFoundDetail = lazy(() => import('./pages/lostfound/LostFoundDetail'));
 const Insights = lazy(() => import('./pages/analytics/Insights'));
+const Complaints = lazy(() => import('./pages/complaints/Complaints'));
+const ComplaintDetail = lazy(() => import('./pages/complaints/ComplaintDetail'));
+const ComplaintDashboard = lazy(() => import('./pages/admin/ComplaintDashboard'));
 
 function RequireAuth({ children, roles }) {
   const user = useSelector((s) => s.auth.user);
@@ -119,7 +128,7 @@ export default function App() {
             <Route path="announcements" element={<Announcements />} />
             <Route path="discussions" element={<Discussions />} />
             <Route path="discussions/:id" element={<DiscussionDetail />} />
-            <Route path="people" element={<People />} />
+            <Route path="people" element={<RequireAuth roles={PEOPLE_DIRECTORY_ROLES}><People /></RequireAuth>} />
             <Route path="people/:id" element={<Profile />} />
             <Route path="profile" element={<Profile />} />
             <Route path="notifications" element={<Notifications />} />
@@ -129,13 +138,13 @@ export default function App() {
             <Route path="admin/users" element={<RequireAuth roles={['admin']}><AdminUsers /></RequireAuth>} />
             <Route path="admin/clubs" element={<RequireAuth roles={['admin']}><AdminClubs /></RequireAuth>} />
             <Route path="admin/activity" element={<RequireAuth roles={['admin']}><AdminActivity /></RequireAuth>} />
-            <Route path="admin/academics" element={<RequireAuth roles={['admin']}><AdminAcademics /></RequireAuth>} />
+            <Route path="admin/academics" element={<RequireAuth roles={['admin', 'hod']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
             <Route path="admin/chat-requests" element={<RequireAuth roles={['admin']}><AdminChatRequests /></RequireAuth>} />
             <Route path="settings/security" element={<Security />} />
             <Route path="chat" element={<Chat />} />
             <Route path="chat/:id" element={<Chat />} />
-            <Route path="timetable" element={<Timetable />} />
+            <Route path="timetable" element={<RequireAuth roles={TIMETABLE_ROLES}><Timetable /></RequireAuth>} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="gate-pass" element={<GatePass />} />
             <Route path="gate-pass/review" element={<Navigate to="/gate-pass?tab=review" replace />} />
@@ -146,6 +155,9 @@ export default function App() {
             <Route path="lost-found/:id" element={<LostFoundDetail />} />
             <Route path="attendance/corrections" element={<Navigate to="/attendance?tab=corrections" replace />} />
             <Route path="analytics" element={<Insights />} />
+            <Route path="complaints" element={<Complaints />} />
+            <Route path="complaints/:id" element={<ComplaintDetail />} />
+            <Route path="admin/complaints" element={<RequireAuth roles={['admin', 'chairman']}><ComplaintDashboard /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

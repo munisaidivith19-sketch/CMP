@@ -5,7 +5,7 @@ import { useCreateAdminUserMutation } from '../services/api';
 import { Button, cn } from './ui/primitives';
 import { Modal } from './ui/Modal';
 import { Input, Select } from './ui/form';
-import { DEPARTMENTS, ROLE_LABELS, STAY_TYPES } from '../utils/constants';
+import { DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES } from '../utils/constants';
 import { errMsg } from '../utils/format';
 
 /** Fields the admin fills in per role — mirrors the server's CREATE_FIELDS. */
@@ -15,6 +15,10 @@ const FORMS = {
   hod: ['name', 'employeeId', 'department', 'email', 'phone', 'password'],
   principal: ['name', 'employeeId', 'email', 'phone', 'password'],
   security: ['name', 'employeeId', 'email', 'phone', 'password'],
+  dean: ['name', 'employeeId', 'email', 'phone', 'password'],
+  ao: ['name', 'employeeId', 'email', 'phone', 'password'],
+  chairman: ['name', 'employeeId', 'email', 'phone', 'password'],
+  warden: ['name', 'employeeId', 'email', 'phone', 'password'],
 };
 const REQUIRED = new Set(['name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId']);
 const EMPTY = { name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '' };
@@ -78,7 +82,15 @@ export default function CreateUserModal({ open, onClose }) {
       case 'department':
         return <Select key={k} label="Department" placeholder="Select department" options={DEPARTMENTS.map((d) => ({ value: d, label: d }))} {...common} />;
       case 'section':
-        return <Input key={k} label={role === 'faculty' ? 'Section (class in charge)' : 'Section'} maxLength={10} placeholder="e.g. A" className="uppercase" {...common} />;
+        return (
+          <Select
+            key={k}
+            label={role === 'faculty' ? 'Section (class in charge)' : 'Section'}
+            placeholder="Select section"
+            options={SECTIONS.map((s) => ({ value: s, label: s }))}
+            {...common}
+          />
+        );
       case 'stayType':
         return <Select key={k} label="Stay" placeholder="Hosteler / Day Scholar" options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))} {...common} />;
       case 'email':

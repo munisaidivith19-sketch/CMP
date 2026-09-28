@@ -12,6 +12,9 @@ const attendanceRecordSchema = new Schema(
 
     section: { type: String, trim: true, maxlength: 10, index: true },
     department: { type: String, trim: true, maxlength: 80, index: true },
+    // The timetable snapshot this record was taken under (absent on records
+    // created before sessions existed).
+    session: { type: Schema.Types.ObjectId, ref: 'AttendanceSession', index: true },
 
     markedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     markedAt: { type: Date, default: Date.now },
@@ -48,5 +51,6 @@ attendanceRecordSchema.index(
 // For aggregation queries.
 attendanceRecordSchema.index({ subject: 1, date: 1, section: 1 });
 attendanceRecordSchema.index({ department: 1, date: 1 });
+attendanceRecordSchema.index({ markedBy: 1, date: -1 });
 
 export default mongoose.model('AttendanceRecord', attendanceRecordSchema);

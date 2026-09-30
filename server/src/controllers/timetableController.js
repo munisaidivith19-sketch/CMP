@@ -194,7 +194,16 @@ const TEACHING_ROLES = ['faculty', 'hod'];
 
 async function assertSubjectFaculty(slot) {
   if (slot.isBreak) return;
-  const subject = await Subject.findOne({ _id: slot.subject, isActive: true }).lean();
+  // The subject and faculty lookups are independent, so fetch them in one
+  // parallel round trip rather than two sequential ones (matters on Atlas).
+  const [subject, faculty] = await Promise.all([
+    Subject.findOne({ _id: slot.subject, isActive: true }).lean(),
+    // Cross-department teaching is allowed, and any active faculty/HOD account can
+    // be scheduled for any year/section college-wide — a faculty member's declared
+    // teachingYears/teachingSections (used elsewhere as a class-in-charge fallback)
+    // do not restrict who can be assigned a period here.
+    User.findOne({ _id: slot.faculty, role: { $in: TEACHING_ROLES }, isActive: true }).select('name').lean(),
+  ]);
   if (!subject) throw new ApiError(404, 'Subject not found');
   if (subject.department !== slot.department) throw new ApiError(422, `${subject.code} belongs to ${subject.department}, not ${slot.department}`);
   if (Number(subject.semester) !== Number(slot.semester)) {
@@ -203,13 +212,6 @@ async function assertSubjectFaculty(slot) {
   if (subject.sections?.length && !subject.sections.map((s) => s.toUpperCase()).includes(slot.section)) {
     throw new ApiError(422, `${subject.code} is not taught to section ${slot.section}`);
   }
-  // Cross-department teaching is allowed, and any active faculty/HOD account can
-  // be scheduled for any year/section college-wide — a faculty member's declared
-  // teachingYears/teachingSections (used elsewhere as a class-in-charge fallback)
-  // do not restrict who can be assigned a period here.
-  const faculty = await User.findOne({ _id: slot.faculty, role: { $in: TEACHING_ROLES }, isActive: true })
-    .select('name')
-    .lean();
   if (!faculty) throw new ApiError(422, 'Choose an active faculty member');
 }
 
@@ -244,10 +246,12 @@ export const createSlot = asyncHandler(async (req, res) => {
   await assertSubjectFaculty(data);
   await assertNoConflict(data);
   const slot = await TimetableSlot.create(data);
-  await linkFacultyToSubject(slot);
+  // The faculty→subject link write and the populated re-read don't depend on
+  // each other, so run them together instead of back to back.
+  const [, populated] = await Promise.all([linkFacultyToSubject(slot), populateSlot(TimetableSlot.findById(slot._id))]);
   logActivity(req, 'timetable.create', { entityType: 'timetable', entityId: slot._id, summary: `${slot.section} ${slot.dayOfWeek} P${slot.period}` });
   broadcastTimetable({ section: slot.section, department: slot.department });
-  res.status(201).json(await populateSlot(TimetableSlot.findById(slot._id)));
+  res.status(201).json(populated);
 });
 
 export const updateSlot = asyncHandler(async (req, res) => {
@@ -270,7 +274,7 @@ export const updateSlot = asyncHandler(async (req, res) => {
   await assertSubjectFaculty(slot);
   await assertNoConflict(slot, slot._id);
   await slot.save();
-  await linkFacultyToSubject(slot);
+  const linked = linkFacultyToSubject(slot);
   // Past attendance keeps its own session snapshot; only future sessions pick this up.
   const diff = AUDITED.filter((k) => prior[k] !== (slot[k] == null ? '' : String(slot[k]))).map((k) => `${k}: ${prior[k] || '—'}→${slot[k] ?? '—'}`);
   logActivity(req, 'timetable.changed', {
@@ -280,7 +284,8 @@ export const updateSlot = asyncHandler(async (req, res) => {
   });
   broadcastTimetable(before);
   if (before.section !== slot.section) broadcastTimetable({ section: slot.section, department: slot.department });
-  res.json(await populateSlot(TimetableSlot.findById(slot._id)));
+  const [, populated] = await Promise.all([linked, populateSlot(TimetableSlot.findById(slot._id))]);
+  res.json(populated);
 });
 
 export const deleteSlot = asyncHandler(async (req, res) => {

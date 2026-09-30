@@ -32,6 +32,7 @@ const LIVE_TAGS = {
   'gatepass:updated': ['GatePass'],
   'timetable:updated': ['Timetable'],
   'lostfound:updated': ['LostFound'],
+  'complaint:updated': ['Complaint'],
   'chat:message': ['Chat'],
   'chat:conversation': ['Chat'],
   'chat:read': ['Chat'],

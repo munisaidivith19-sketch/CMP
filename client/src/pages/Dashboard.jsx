@@ -295,53 +295,6 @@ export default function Dashboard() {
 
       <TodayStrip user={user} />
 
-      {/* Notice board first */}
-      <div className="grid gap-5 xl:grid-cols-3">
-        <Card className="xl:col-span-2">
-          <CardHeader
-            title="Notice board"
-            subtitle="Latest announcements for you"
-            action={
-              <Button to="/announcements" variant="soft" size="sm" icon={ArrowRight}>
-                View all
-              </Button>
-            }
-          />
-          <div className="space-y-3">
-            {data.announcements.length ? (
-              data.announcements.map((a) => <AnnouncementItem key={a._id} a={a} compact />)
-            ) : (
-              <EmptyState icon={Megaphone} title="No announcements yet" />
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader title="Trending discussions" action={<Flame className="h-5 w-5 text-orange-400" />} />
-          <div className="-mx-2 space-y-1">
-            {data.trending.map((d, i) => (
-              <Link key={d._id} to={`/discussions/${d._id}`} className="flex items-start gap-3 rounded-2xl p-2.5 transition-colors hover:bg-white/70 dark:hover:bg-white/5">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary-500/10 text-xs font-extrabold text-primary-600 dark:text-primary-300">
-                  {i + 1}
-                </span>
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-sm font-semibold leading-snug">{d.title}</p>
-                  <p className="mt-1 flex items-center gap-3 text-[11px] muted">
-                    <span className="flex items-center gap-1">
-                      <ThumbsUp className="h-3 w-3" /> {d.upvoteCount}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <MessageSquare className="h-3 w-3" /> {d.replyCount}
-                    </span>
-                  </p>
-                </div>
-              </Link>
-            ))}
-            {!data.trending.length && <p className="px-2 text-sm muted">Nothing trending yet.</p>}
-          </div>
-        </Card>
-      </div>
-
       {/* Small cards — tap for a quick preview */}
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <PopoverStat
@@ -396,6 +349,53 @@ export default function Dashboard() {
         <Link to="/notifications" className="block rounded-[28px]">
           <StatCard icon={Bell} label="Unread" value={stats.unreadNotifications} hint="New notifications" gradient="from-pink-400 to-rose-500" delay={180} />
         </Link>
+      </div>
+
+      {/* Notice board first */}
+      <div className="grid gap-5 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardHeader
+            title="Notice board"
+            subtitle="Latest announcements for you"
+            action={
+              <Button to="/announcements" variant="soft" size="sm" icon={ArrowRight}>
+                View all
+              </Button>
+            }
+          />
+          <div className="space-y-3">
+            {data.announcements.length ? (
+              data.announcements.map((a) => <AnnouncementItem key={a._id} a={a} compact />)
+            ) : (
+              <EmptyState icon={Megaphone} title="No announcements yet" />
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Trending discussions" action={<Flame className="h-5 w-5 text-orange-400" />} />
+          <div className="-mx-2 space-y-1">
+            {data.trending.map((d, i) => (
+              <Link key={d._id} to={`/discussions/${d._id}`} className="flex items-start gap-3 rounded-2xl p-2.5 transition-colors hover:bg-white/70 dark:hover:bg-white/5">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-primary-500/10 text-xs font-extrabold text-primary-600 dark:text-primary-300">
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="line-clamp-2 text-sm font-semibold leading-snug">{d.title}</p>
+                  <p className="mt-1 flex items-center gap-3 text-[11px] muted">
+                    <span className="flex items-center gap-1">
+                      <ThumbsUp className="h-3 w-3" /> {d.upvoteCount}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" /> {d.replyCount}
+                    </span>
+                  </p>
+                </div>
+              </Link>
+            ))}
+            {!data.trending.length && <p className="px-2 text-sm muted">Nothing trending yet.</p>}
+          </div>
+        </Card>
       </div>
 
       {/* Recommended */}

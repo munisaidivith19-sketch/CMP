@@ -53,7 +53,7 @@ export const api = createApi({
   baseQuery,
   refetchOnFocus: true,
   refetchOnReconnect: true,
-  tagTypes: ['Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat', 'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin', 'StudyMaterial'],
+  tagTypes: ['Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat', 'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin', 'StudyMaterial', 'Complaint'],
   endpoints: (b) => ({
     // ── Auth / account ────────────────────────────────
     login: b.mutation({ query: (body) => ({ url: '/auth/login', method: 'POST', body }) }),
@@ -161,6 +161,16 @@ export const api = createApi({
     getLostFoundMatches: b.query({ query: (id) => `/lost-found/${id}/matches`, providesTags: ['LostFound'] }),
     reportLostFound: b.mutation({ query: (body) => ({ url: '/lost-found', method: 'POST', body }), invalidatesTags: ['LostFound'] }),
     closeLostFound: b.mutation({ query: (id) => ({ url: `/lost-found/${id}/status`, method: 'PATCH', body: { status: 'closed' } }), invalidatesTags: ['LostFound'] }),
+
+    // ── Complaints (same endpoints as the web) ────────
+    getComplaints: b.query({ query: (params) => ({ url: '/complaints', params }), providesTags: ['Complaint'] }),
+    getComplaint: b.query({ query: (id) => `/complaints/${id}`, providesTags: ['Complaint'] }),
+    getComplaintDashboard: b.query({ query: (params) => ({ url: '/complaints/dashboard', params }), providesTags: ['Complaint'] }),
+    createComplaint: b.mutation({ query: (body) => ({ url: '/complaints', method: 'POST', body }), invalidatesTags: ['Complaint'] }),
+    authorityUpdateComplaint: b.mutation({ query: ({ id, ...body }) => ({ url: `/complaints/${id}/authority-update`, method: 'PATCH', body }), invalidatesTags: ['Complaint'] }),
+    markComplaintNotResolved: b.mutation({ query: (id) => ({ url: `/complaints/${id}/not-resolved`, method: 'PATCH' }), invalidatesTags: ['Complaint'] }),
+    markComplaintResolved: b.mutation({ query: (id) => ({ url: `/complaints/${id}/resolved`, method: 'PATCH' }), invalidatesTags: ['Complaint'] }),
+    cancelComplaint: b.mutation({ query: (id) => ({ url: `/complaints/${id}/cancel`, method: 'PATCH' }), invalidatesTags: ['Complaint'] }),
   }),
 });
 
@@ -242,6 +252,14 @@ export const {
   useGetLostFoundMatchesQuery,
   useReportLostFoundMutation,
   useCloseLostFoundMutation,
+  useGetComplaintsQuery,
+  useGetComplaintQuery,
+  useGetComplaintDashboardQuery,
+  useCreateComplaintMutation,
+  useAuthorityUpdateComplaintMutation,
+  useMarkComplaintNotResolvedMutation,
+  useMarkComplaintResolvedMutation,
+  useCancelComplaintMutation,
   useGetStudyMaterialsQuery,
   useAskStudyAssistantMutation,
   useLazyGetAssistantConversationQuery,

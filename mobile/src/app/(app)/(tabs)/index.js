@@ -272,32 +272,6 @@ function GeneralHome({ user }) {
         <ErrorState error={dash.error} onRetry={dash.refetch} />
       ) : (
         <>
-          {/* Notice board first */}
-          <SectionTitle title="Notice board" action="See all" onAction={() => router.push('/announcements')} />
-          {d.announcements.length ? (
-            d.announcements.slice(0, 3).map((a) => (
-              <Card key={a._id} onPress={() => router.push('/announcements')} style={{ gap: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Megaphone size={16} color={colors.primary} />
-                  <T v="strong" style={{ flex: 1 }} numberOfLines={1}>
-                    {a.title}
-                  </T>
-                  {a.priority !== 'normal' ? <Badge label={a.priority} color={a.priority === 'urgent' ? 'danger' : 'warning'} /> : null}
-                </View>
-                <T v="small" numberOfLines={2}>
-                  {a.content}
-                </T>
-                <T v="small" style={{ color: colors.muted }}>
-                  {a.author?.name} · {timeAgo(a.createdAt)}
-                </T>
-              </Card>
-            ))
-          ) : (
-            <Card>
-              <T v="small">No announcements yet.</T>
-            </Card>
-          )}
-
           {/* Small cards — tap for a quick preview */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
             <Tile icon={Shapes} gradient={gradients.violet} label="My clubs" value={`${d.stats.myClubs} club${d.stats.myClubs === 1 ? '' : 's'}`} hint="Tap to preview" onPress={() => setSheet('clubs')} />
@@ -323,6 +297,32 @@ function GeneralHome({ user }) {
               onPress={() => router.push('/gate-pass')}
             />
           </View>
+
+          {/* Notice board below the small cards */}
+          <SectionTitle title="Notice board" action="See all" onAction={() => router.push('/announcements')} />
+          {d.announcements.length ? (
+            d.announcements.slice(0, 3).map((a) => (
+              <Card key={a._id} onPress={() => router.push('/announcements')} style={{ gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Megaphone size={16} color={colors.primary} />
+                  <T v="strong" style={{ flex: 1 }} numberOfLines={1}>
+                    {a.title}
+                  </T>
+                  {a.priority !== 'normal' ? <Badge label={a.priority} color={a.priority === 'urgent' ? 'danger' : 'warning'} /> : null}
+                </View>
+                <T v="small" numberOfLines={2}>
+                  {a.content}
+                </T>
+                <T v="small" style={{ color: colors.muted }}>
+                  {a.author?.name} · {timeAgo(a.createdAt)}
+                </T>
+              </Card>
+            ))
+          ) : (
+            <Card>
+              <T v="small">No announcements yet.</T>
+            </Card>
+          )}
 
           {/* Recommended */}
           {d.recommended.length ? (

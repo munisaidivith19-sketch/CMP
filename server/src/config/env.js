@@ -5,6 +5,25 @@ dotenv.config({ quiet: true });
 const isProd = process.env.NODE_ENV === 'production';
 
 /**
+ * Two MongoDB targets can be configured side by side. DB_TARGET chooses which
+ * one the server connects to; "local" is the default so the local database is
+ * used unless you explicitly switch to "atlas". Both connection strings live in
+ * .env at once, so switching back and forth needs no code change.
+ */
+function resolveMongoUri() {
+  const target = (process.env.DB_TARGET || 'local').trim().toLowerCase();
+  const local = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/campusconnect';
+  const atlas = (process.env.MONGO_URI_ATLAS || '').trim();
+  if (target === 'atlas') {
+    if (!atlas) throw new Error('DB_TARGET=atlas but MONGO_URI_ATLAS is not set in .env');
+    return { uri: atlas, target };
+  }
+  return { uri: local, target };
+}
+
+const mongo = resolveMongoUri();
+
+/**
  * Secrets must be set in production. In development we fall back to a
  * clearly-labelled default so the project runs out of the box.
  */
@@ -20,7 +39,8 @@ export const env = {
   isProd,
   port: Number(process.env.PORT) || 5000,
   timezone: process.env.APP_TIMEZONE || 'Asia/Kolkata',
-  mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/campusconnect',
+  mongoUri: mongo.uri,
+  dbTarget: mongo.target,
   clientUrls: (process.env.CLIENT_URL || 'http://localhost:5173')
     .split(',')
     .map((s) => s.trim())

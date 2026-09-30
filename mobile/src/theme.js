@@ -59,7 +59,10 @@ export const shadow = {
   elevation: 3,
 };
 
-export const ROLE_LABELS = { student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security' };
+export const ROLE_LABELS = {
+  student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security',
+  dean: 'Dean', ao: 'AO', chairman: 'Chairman', warden: 'Warden',
+};
 export const STUDENT_ROLES = ['student', 'club_admin'];
 /** Can mark attendance / act on academic data. */
 export const STAFF = ['admin', 'faculty', 'hod'];
@@ -75,6 +78,48 @@ export const YEAR_LABELS = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4t
 export const semestersOfYear = (year) => (year ? [Number(year) * 2 - 1, Number(year) * 2] : []);
 
 export const GATE_PASS_REGARDING = { outing: 'Outing', home: 'Home' };
+
+// Complaints — labels only (same as the web); routing/escalation rules live on the server.
+export const COMPLAINT_CATEGORY_LABELS = {
+  academics: 'Academics',
+  ragging_harassment: 'Ragging & Harassment',
+  infrastructure: 'Infrastructure',
+  hostel: 'Hostel',
+};
+export const COMPLAINT_SUBCATEGORY_OPTIONS = {
+  academics: [
+    { value: 'subject', label: 'Subject' },
+    { value: 'faculty_conduct', label: 'Faculty Conduct' },
+    { value: 'attendance', label: 'Attendance' },
+    { value: 'exam_and_evaluation', label: 'Exam and Evaluation' },
+  ],
+  ragging_harassment: [],
+  infrastructure: [
+    { value: 'classroom', label: 'Classroom' },
+    { value: 'network', label: 'Network' },
+    { value: 'water', label: 'Water' },
+    { value: 'restroom', label: 'Restroom' },
+    { value: 'electronic_appliance', label: 'Electronic Appliance' },
+    { value: 'environment_and_pathway', label: 'Environment & Pathway' },
+  ],
+  hostel: [
+    { value: 'mess', label: 'Mess' },
+    { value: 'electricity', label: 'Electricity' },
+    { value: 'water', label: 'Water' },
+    { value: 'housekeeping', label: 'Housekeeping' },
+    { value: 'pest_control', label: 'Pest Control' },
+    { value: 'laundry', label: 'Laundry' },
+    { value: 'network', label: 'Network' },
+    { value: 'restroom', label: 'Restroom' },
+  ],
+};
+export const COMPLAINT_ESCALATE_TO_OPTIONS = {
+  academics: ['faculty', 'hod', 'principal', 'dean', 'ao', 'chairman'],
+  ragging_harassment: ['hod', 'principal', 'dean', 'ao', 'chairman'],
+  infrastructure: ['hod', 'principal', 'dean', 'ao', 'chairman'],
+  hostel: ['warden', 'ao', 'chairman'],
+};
+export const COMPLAINT_STATUSES = ['SUBMITTED', 'IN_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'NOT_RESOLVED', 'ESCALATED', 'CANCELLED', 'CLOSED'];
 export const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
   'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',

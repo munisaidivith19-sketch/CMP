@@ -4,7 +4,12 @@ services:
     runtime: node
     plan: free
     rootDir: server
-    buildCommand: npm install
+    # Build the backend AND the frontend. The client's Vite build needs its
+    # devDependencies, but Render sets NODE_ENV=production (which makes plain
+    # `npm install` skip devDeps), so the client install forces them in.
+    # Express then serves the built client/dist itself (see server/src/app.js),
+    # so the whole app runs from this one service — same origin, no CORS setup.
+    buildCommand: npm install && cd ../client && npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -20,12 +25,15 @@ services:
       # asks (never here — this file is pushed to GitHub, so secrets don't belong in it).
       - key: MONGO_URI
         sync: false
-      # Your web app's URL, if you deploy one (comma-separate more than one).
-      # Safe to leave as a placeholder if you're only using the mobile app.
+      # This service's own public URL. The frontend is served from here, so this
+      # must match the real Render URL for Socket.IO's origin check to accept the
+      # browser's realtime connection. If the service name "vexon-api" is taken,
+      # Render adds a suffix — then update both of these to the actual URL and
+      # redeploy. (comma-separate if you ever add more origins.)
       - key: CLIENT_URL
-        value: https://example.com
+        value: https://vexon-api.onrender.com
       - key: APP_URL
-        value: https://example.com
+        value: https://vexon-api.onrender.com
       # Auto-generated securely by Render — you never see or set these yourself.
       - key: JWT_ACCESS_SECRET
         generateValue: true
@@ -40,4 +48,8 @@ services:
       - key: CLOUDINARY_API_KEY
         sync: false
       - key: CLOUDINARY_API_SECRET
+        sync: false
+      # Optional: the Groq key for the AI Study Assistant. Leave unset and the
+      # rest of the app works; only the assistant is disabled.
+      - key: GROQ_API_KEY
         sync: false

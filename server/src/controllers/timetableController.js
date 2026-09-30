@@ -203,20 +203,14 @@ async function assertSubjectFaculty(slot) {
   if (subject.sections?.length && !subject.sections.map((s) => s.toUpperCase()).includes(slot.section)) {
     throw new ApiError(422, `${subject.code} is not taught to section ${slot.section}`);
   }
-  // Cross-department teaching is allowed: the faculty member only has to be an
-  // active teaching account, not someone from the class's own department.
+  // Cross-department teaching is allowed, and any active faculty/HOD account can
+  // be scheduled for any year/section college-wide — a faculty member's declared
+  // teachingYears/teachingSections (used elsewhere as a class-in-charge fallback)
+  // do not restrict who can be assigned a period here.
   const faculty = await User.findOne({ _id: slot.faculty, role: { $in: TEACHING_ROLES }, isActive: true })
-    .select('name teachingYears teachingSections')
+    .select('name')
     .lean();
   if (!faculty) throw new ApiError(422, 'Choose an active faculty member');
-  // Declared teaching scope from the faculty's account bounds what they can be scheduled for.
-  const year = slot.year ?? yearOfSemester(slot.semester);
-  if (faculty.teachingYears?.length && !faculty.teachingYears.includes(year)) {
-    throw new ApiError(422, `${faculty.name} does not handle year ${year} (handles ${faculty.teachingYears.join(', ')})`);
-  }
-  if (faculty.teachingSections?.length && !faculty.teachingSections.includes(slot.section)) {
-    throw new ApiError(422, `${faculty.name} does not handle section ${slot.section} (handles ${faculty.teachingSections.join(', ')})`);
-  }
 }
 
 /**

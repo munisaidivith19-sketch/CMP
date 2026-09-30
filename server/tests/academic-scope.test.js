@@ -150,13 +150,12 @@ test('faculty sees only their own teaching timetable', async () => {
   assert.ok(res.body.slots.every((s) => String(s.faculty._id) === String(fac3A.u._id)));
 });
 
-test('faculty cannot be scheduled outside their declared years/sections handled', async () => {
+test('faculty can be scheduled outside their declared years/sections handled — any active faculty teaches any class college-wide', async () => {
   const res = await ctx.request('POST', '/timetable', {
     token: admin.token,
     body: { subject: subj5._id, faculty: facScoped.u._id, department: 'CSE', section: 'A', semester: 5, dayOfWeek: 'wednesday', period: 2, startTime: '10:00', endTime: '10:50' },
   });
-  assert.equal(res.status, 422, 'Fac Scoped handles year 2 only');
-  assert.match(res.body.message, /does not handle year 3/);
+  assert.equal(res.status, 201, 'Fac Scoped declares year 2 only, but that no longer bounds scheduling');
 });
 
 // ── Attendance ─────────────────────────────────────────────────────

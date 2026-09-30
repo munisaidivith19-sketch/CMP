@@ -12,18 +12,6 @@ import { setCredentials } from '../../features/authSlice';
 import { errMsg } from '../../utils/format';
 
 const DEMO = [
-  { label: 'Student', email: 'vkrishnapatnam23@jnn.edu.in' },
-  { label: 'Chairman', email: 'vc@jnn.edu.in' },
-  { label: 'Faculty(navanithan)', email: 'nkrishnan10@jnn.edu.in' },
-  { label: 'Faculty(vijay)', email:'vijay20@jnn.edu.in' },
-  { label: 'Faculty(kolappan)', email:'kolappan05@jnn.edu.in' },
-  { label: 'Faculty(praveena)', email:'praveena05@jnn.edu.in'},
-  { label: 'Faculty(Asrin)', email:'arsin10@jnn.edu.in'},
-  { label: 'HOD(CSE)', email:'malliga01@jnn.edu.in'},
-  { label: 'HOD', email: 'vkumar01@jnn.edu.in' },
-  { label: 'Principal', email: 'principal@campus.edu' },
-  { label: 'Security', email: 'security@jnn.edu.in' },
-  { label: 'Admin', email: 'admin@campus.edu' },
 ];
 
 export default function Login() {

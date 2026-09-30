@@ -82,12 +82,7 @@ export default function Login() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm muted">
-        New here?{' '}
-        <Link to="/register" className="font-bold text-primary-600 hover:underline dark:text-primary-300">
-          Create a student account
-        </Link>
-      </p>
+     
 
       <div className="mt-8 rounded-3xl bg-primary-500/[0.06] p-4">
         <p className="text-xs font-bold uppercase tracking-wide muted">Demo accounts · password Password@123</p>

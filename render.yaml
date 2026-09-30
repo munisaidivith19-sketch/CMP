@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: vexon-api
+    name: jnn-api
     runtime: node
     plan: free
     rootDir: server
@@ -27,13 +27,13 @@ services:
         sync: false
       # This service's own public URL. The frontend is served from here, so this
       # must match the real Render URL for Socket.IO's origin check to accept the
-      # browser's realtime connection. If the service name "vexon-api" is taken,
+      # browser's realtime connection. If the service name "jnn-api" is taken,
       # Render adds a suffix — then update both of these to the actual URL and
       # redeploy. (comma-separate if you ever add more origins.)
       - key: CLIENT_URL
-        value: https://vexon-api.onrender.com
+        value: https://jnn-api.onrender.com
       - key: APP_URL
-        value: https://vexon-api.onrender.com
+        value: https://jnn-api.onrender.com
       # Auto-generated securely by Render — you never see or set these yourself.
       - key: JWT_ACCESS_SECRET
         generateValue: true

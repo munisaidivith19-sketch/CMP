@@ -605,7 +605,7 @@ export default function Chat() {
 
   return (
     <div>
-      <Card className="grid h-[calc(100vh-8.5rem)] min-h-[520px] overflow-hidden p-0 lg:grid-cols-[340px_1fr]">
+      <Card className="grid h-[calc(100dvh-8.5rem)] min-h-[360px] overflow-hidden p-0 lg:grid-cols-[340px_1fr]">
         <aside className={cn('min-h-0 border-white/60 dark:border-[#d8c9a8]/40 lg:border-r', id && 'hidden lg:block')}>
           <ConversationList activeId={id} me={me} presence={presence} typing={typing} onNew={() => setNewOpen(true)} />
         </aside>

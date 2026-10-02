@@ -7,7 +7,8 @@ import { Avatar, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../.
 import { StatusBadge } from '../../components/insights';
 import { fmtClassDay, fmtDateTime, titleCase } from '../../utils/format';
 import { GATE_PASS_REGARDING } from '../../utils/constants';
-import { PassQr, PassTimeline } from './GatePass';
+import { PassQr, PassTimeline, passStatusLabel } from './GatePass';
+import { AUTHORITY_LABELS, EmergencyBadge, EmergencyDetails, isEmergency } from './EmergencyGatePass';
 
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '—');
 
@@ -30,11 +31,16 @@ export default function GatePassDetail() {
         <>
           <PageHeader
             icon={DoorOpen}
-            title={`${GATE_PASS_REGARDING[pass.regarding] || titleCase(pass.regarding)} pass`}
+            title={isEmergency(pass) ? 'Emergency gate pass' : `${GATE_PASS_REGARDING[pass.regarding] || titleCase(pass.regarding)} pass`}
             subtitle={`Requested ${fmtDateTime(pass.createdAt)}`}
-            actions={<StatusBadge status={pass.status} label={pass.status.replace('pending_', 'Waiting on ')} />}
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                {isEmergency(pass) && <EmergencyBadge />}
+                <StatusBadge status={pass.status} label={passStatusLabel(pass.status, pass)} />
+              </div>
+            }
           />
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader title="Details" />
               {!mine && (
@@ -49,7 +55,13 @@ export default function GatePassDetail() {
                   </div>
                 </div>
               )}
-              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              {isEmergency(pass) && (
+                <div className="mb-4">
+                  <EmergencyDetails pass={pass} />
+                </div>
+              )}
+              {!isEmergency(pass) && (
+              <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="label">Details</dt>
                   <dd>{pass.description}</dd>
@@ -89,6 +101,14 @@ export default function GatePassDetail() {
                   </div>
                 )}
               </dl>
+              )}
+              {isEmergency(pass) && pass.emergencyReview?.by && (
+                <p className="text-sm">
+                  <span className="label">{pass.emergencyReview.action === 'rejected' ? 'Rejected by' : 'Approved by'}</span>
+                  {pass.emergencyReview.by.name} ({AUTHORITY_LABELS[pass.emergencyAuthority]})
+                  {pass.rejectedReason ? ` — “${pass.rejectedReason}”` : ''}
+                </p>
+              )}
               <div className="mt-6">
                 <PassTimeline pass={pass} />
               </div>

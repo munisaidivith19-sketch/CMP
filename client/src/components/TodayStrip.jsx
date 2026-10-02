@@ -31,7 +31,7 @@ export default function TodayStrip({ user }) {
   const { data: att } = useGetMyAttendanceQuery({ range: 'semester' }, { skip: !isStudent });
   const { data: passes } = useGetGatePassesQuery({ limit: 5 }, { skip: !isStudent });
   const { data: unread } = useGetChatUnreadQuery();
-  const open = passes?.passes?.find((p) => ['pending_faculty', 'pending_hod', 'pending_principal', 'approved', 'active'].includes(p.status));
+  const open = passes?.passes?.find((p) => ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active'].includes(p.status));
 
   const cls = now?.current || now?.next;
   return (

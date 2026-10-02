@@ -190,6 +190,8 @@ export function MiniStat({ label, value, hint, tone = 'text-primary-600 bg-prima
 /* ── Status badge helper (gate pass, lost & found, corrections) ─── */
 const STATUS_COLORS = {
   pending: 'warning',
+  parent_verified: 'primary',
+  pending_authority: 'warning',
   approved: 'success',
   active: 'info',
   completed: 'neutral',

@@ -34,6 +34,12 @@ services:
         value: https://jnn-api.onrender.com
       - key: APP_URL
         value: https://jnn-api.onrender.com
+      # TEMPORARY: no SMS provider is connected yet, so a parent OTP can't be sent.
+      # This shows the OTP to signed-in ADMINS only, at /dev/otp, so faculty can
+      # still complete parent verification. Delete this entry (and set
+      # OTP_PROVIDER=college_sms) once the college SMS API is connected.
+      - key: DEV_OTP_PORTAL
+        value: "true"
       # Auto-generated securely by Render — you never see or set these yourself.
       - key: JWT_ACCESS_SECRET
         generateValue: true

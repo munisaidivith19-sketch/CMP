@@ -1,13 +1,18 @@
 import QRCode from 'qrcode';
-import GatePass, { generateVerificationCode } from '../models/GatePass.js';
+import GatePass, { generateGatePassSecurityCode, normalizeGateCode } from '../models/GatePass.js';
 import User from '../models/User.js';
-import { GATE_PASS_PENDING_STATUSES } from '../constants.js';
+import Activity from '../models/Activity.js';
+import { EMERGENCY_AUTHORITIES, GATE_PASS_PENDING_STATUSES } from '../constants.js';
 import { ApiError, asyncHandler, paginate, pageMeta, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { notifyUsers } from '../utils/notify.js';
 import { sameId } from '../utils/permissions.js';
 import { emitToRoles, emitToUsers } from '../config/socket.js';
 import { timestampFilter, resolveRange, toDay } from '../utils/dates.js';
+import { facultyClasses, inClasses } from '../utils/academicScope.js';
+import * as otpService from '../services/otp/otpService.js';
+import * as returnSvc from '../services/gatePassReturn.js';
+import ReturnLocationCheck from '../models/ReturnLocationCheck.js';
 
 // Everyone whose queue a gate pass can sit in, for the live "updated" event.
 export const GATE_STAFF = ['admin', 'faculty', 'hod', 'principal', 'security'];
@@ -19,10 +24,39 @@ const EARLY_EXIT_MS = HOUR;
 const GRACE_AFTER_RETURN_MS = 2 * HOUR;
 const MAX_DURATION_MS = 30 * DAY;
 const QR_PREFIX = 'CCGP:';
-const STUDENT_FIELDS = 'name email rollNo avatar department year section phone';
+const STUDENT_FIELDS = 'name email rollNo avatar department year section semester phone';
 const REVIEWER_FIELDS = 'name role';
 
 const isAdmin = (user) => user.role === 'admin';
+// The faculty stage: waiting for the parent OTP, then ready to forward to the HOD.
+const FACULTY_STAGE = ['pending_faculty', 'parent_verified'];
+
+/**
+ * Admin, or a faculty member who teaches the student's class (department +
+ * year + section + semester from the timetable / class in-charge assignment).
+ * Read from the database only — nothing about the class comes from the request.
+ */
+async function isClassFaculty(pass, user) {
+  if (isAdmin(user)) return true;
+  if (user.role !== 'faculty') return false;
+  const student = await User.findById(pass.student?._id || pass.student).select('department year section semester').lean();
+  if (!student || student.department !== pass.department) return false;
+  return inClasses(await facultyClasses(user), student);
+}
+
+/**
+ * The parent's number is shown in full to those who handle the request. Faculty
+ * who are not assigned to the student's class (department + year + section +
+ * semester) get it masked; the other roles are unchanged.
+ */
+async function parentPhoneGuard(user) {
+  if (user.role !== 'faculty') return (pass) => pass;
+  const classes = await facultyClasses(user);
+  return (pass) =>
+    pass.student?.department === pass.department && inClasses(classes, pass.student)
+      ? pass
+      : { ...pass, parentPhone: otpService.maskMobile(pass.parentPhone) };
+}
 
 /** Live update to the student and to every role that can see gate passes. */
 function publish(pass, extra = {}) {
@@ -83,9 +117,11 @@ async function loadPass(id) {
 function populateAll(query) {
   return query
     .populate('student', STUDENT_FIELDS)
+    .populate('parentVerifiedBy', 'name')
     .populate('facultyReview.by', REVIEWER_FIELDS)
     .populate('hodReview.by', REVIEWER_FIELDS)
     .populate('principalReview.by', REVIEWER_FIELDS)
+    .populate('emergencyReview.by', REVIEWER_FIELDS)
     .populate('exitVerifiedBy', 'name')
     .populate('returnVerifiedBy', 'name')
     .populate('revokedBy', 'name');
@@ -158,11 +194,14 @@ export const listGatePasses = asyncHandler(async (req, res) => {
     // notification sent when a request has no in-charge to reach — they see every
     // pending request in their department instead of matching nothing at all.
     const scope = req.user.section ? { department: req.user.department, section: req.user.section } : { department: req.user.department };
-    filter = { $or: [{ 'facultyReview.by': req.user._id }, { status: 'pending_faculty', ...scope }] };
+    filter = { $or: [{ 'facultyReview.by': req.user._id }, { status: { $in: FACULTY_STAGE }, ...scope }] };
   } else if (role === 'hod') {
     filter = { $or: [{ 'hodReview.by': req.user._id }, { status: 'pending_hod', department: req.user.department }] };
   } else if (role === 'principal') {
-    filter = { $or: [{ 'principalReview.by': req.user._id }, { status: 'pending_principal' }] };
+    filter = { $or: [{ 'principalReview.by': req.user._id }, { status: 'pending_principal' }, { passType: 'emergency', emergencyAuthority: 'principal' }] };
+  } else if (EMERGENCY_AUTHORITIES.includes(role)) {
+    // AO / Dean / Chairman: only the emergency requests sent to them.
+    filter = { passType: 'emergency', emergencyAuthority: role };
   } else if (role === 'security') {
     filter.status = { $in: ['approved', 'active', 'completed'] };
   }
@@ -188,7 +227,9 @@ export const listGatePasses = asyncHandler(async (req, res) => {
     GatePass.countDocuments(filter),
   ]);
 
-  res.json({ passes: passes.map(withFlags), pagination: pageMeta(total, page, limit) });
+  const guard = await parentPhoneGuard(req.user);
+  await logEmergencyViewed(req, passes);
+  res.json({ passes: passes.map((p) => guard(withFlags(p))), pagination: pageMeta(total, page, limit) });
 });
 
 // ── Get single gate pass ───────────────────────────────────────────
@@ -196,9 +237,13 @@ export const listGatePasses = asyncHandler(async (req, res) => {
 function canView(pass, user) {
   if (sameId(pass.student, user)) return true;
   if (['admin', 'security'].includes(user.role)) return true;
+  // Emergency passes bypass faculty and HOD; they see one only once the student
+  // has actually left (for "outside now" and the return notice).
+  if (pass.passType === 'emergency' && ['faculty', 'hod'].includes(user.role) && !pass.actualExit) return false;
   if (user.role === 'faculty') return pass.department === user.department && (!user.section || pass.section === user.section);
   if (user.role === 'hod') return pass.department === user.department;
   if (user.role === 'principal') return true;
+  if (EMERGENCY_AUTHORITIES.includes(user.role)) return pass.passType === 'emergency' && pass.emergencyAuthority === user.role;
   return false;
 }
 
@@ -206,7 +251,8 @@ export const getGatePass = asyncHandler(async (req, res) => {
   const pass = await populateAll(GatePass.findById(req.params.id));
   if (!pass) throw new ApiError(404, 'Gate pass not found');
   if (!canView(pass, req.user)) throw new ApiError(403, 'Not authorized');
-  res.json(withFlags(pass));
+  await logEmergencyViewed(req, [pass]);
+  res.json((await parentPhoneGuard(req.user))(withFlags(pass)));
 });
 
 /**
@@ -232,20 +278,39 @@ export const getGatePassQr = asyncHandler(async (req, res) => {
 
 // ── Approval chain: faculty → HOD → principal ───────────────────────
 
-async function reviewStage(req, res, { stage, from, to, reviewField, canAct, forwardNotify, forwardTitle }) {
+/**
+ * Apply an approval update that issues the pass's one security code. The code
+ * is drawn once here and stored; it is never regenerated afterwards. A clash
+ * with another live pass's code (unique index) just draws again.
+ */
+async function approveWithSecurityCode(filter, set) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      return await GatePass.findOneAndUpdate(filter, { $set: { ...set, verificationCode: generateGatePassSecurityCode() } }, { new: true });
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+    }
+  }
+  throw new ApiError(503, 'Could not issue a gate code. Please try again.');
+}
+
+const AUTHORITY_LABELS = { principal: 'Principal', ao: 'AO', dean: 'Dean', chairman: 'Chairman' };
+
+async function reviewStage(req, res, { stage, from, forwardFrom = from, forwardBlocked, to, reviewField, canAct, forwardNotify, forwardTitle, approvedMessage, rejectedBy }) {
   const pass = await loadPass(req.params.id);
-  if (pass.status !== from) throw new ApiError(422, `This pass is no longer waiting on ${stage} review`);
-  if (!canAct(pass, req.user)) throw new ApiError(403, `You are not the assigned ${stage} reviewer for this pass`);
+  if (![].concat(from).includes(pass.status)) throw new ApiError(422, `This pass is no longer waiting on ${stage} review`);
+  if (!(await canAct(pass, req.user))) throw new ApiError(403, `You are not the assigned ${stage} reviewer for this pass`);
 
   const { action, reason } = req.body; // 'forward' | 'reject' (principal sends 'approve' | 'reject')
   const forwarding = action === 'forward' || action === 'approve';
+  if (forwarding && pass.status !== forwardFrom) throw new ApiError(422, forwardBlocked || 'This pass is not ready to forward');
   const review = { by: req.user._id, at: new Date(), action: forwarding ? (to === null ? 'approved' : 'forwarded') : 'rejected', reason: reason || '' };
 
   const set = { [reviewField]: review };
+  const approving = forwarding && to === null;
   if (forwarding) {
-    set.status = to === null ? 'approved' : to;
-    if (to === null) {
-      set.verificationCode = generateVerificationCode();
+    set.status = approving ? 'approved' : to;
+    if (approving) {
       // toDate is stored as the start (UTC midnight) of the return day, so the code
       // must stay valid through the END of that day, plus a grace period after.
       set.verificationExpiry = new Date(new Date(pass.toDate).getTime() + DAY + GRACE_AFTER_RETURN_MS);
@@ -256,16 +321,19 @@ async function reviewStage(req, res, { stage, from, to, reviewField, canAct, for
     set.rejectedReason = reason || '';
   }
 
-  const updated = await GatePass.findOneAndUpdate({ _id: pass._id, status: from }, { $set: set }, { new: true });
+  const filter = { _id: pass._id, status: pass.status };
+  const updated = approving ? await approveWithSecurityCode(filter, set) : await GatePass.findOneAndUpdate(filter, { $set: set }, { new: true });
   if (!updated) throw new ApiError(422, 'This pass was just reviewed by someone else');
 
-  logActivity(req, `gate_pass.${stage}_${forwarding ? (to === null ? 'approve' : 'forward') : 'reject'}`, { entityType: 'gate_pass', entityId: pass._id });
+  logActivity(req, `gate_pass.${stage}_${forwarding ? (approving ? 'approve' : 'forward') : 'reject'}`, { entityType: 'gate_pass', entityId: pass._id });
+  if (approving) logActivity(req, 'gate_pass.code_issued', { entityType: 'gate_pass', entityId: pass._id });
 
-  if (forwarding && to === null) {
+  if (approving) {
+    const code = (await GatePass.findById(updated._id).select('+verificationCode').lean()).verificationCode;
     await notifyUsers([pass.student], {
       type: 'gate_pass',
       title: 'Gate pass approved',
-      message: `Your gate pass was approved. Your code is ${set.verificationCode} — tell it to security at the gate.`,
+      message: approvedMessage || `Your gate pass was approved. Your code is ${code} — tell it to security at the gate.`,
       link: `/gate-pass/${pass._id}`,
     });
   } else if (forwarding) {
@@ -275,7 +343,7 @@ async function reviewStage(req, res, { stage, from, to, reviewField, canAct, for
     await notifyUsers([pass.student], {
       type: 'gate_pass',
       title: 'Gate pass rejected',
-      message: `Rejected by ${stage}${reason ? `: ${reason}` : ''}`,
+      message: `Rejected by ${rejectedBy || stage}${reason ? `: ${reason}` : ''}`,
       link: `/gate-pass/${pass._id}`,
     });
   }
@@ -286,10 +354,13 @@ async function reviewStage(req, res, { stage, from, to, reviewField, canAct, for
 export const facultyReview = asyncHandler((req, res) =>
   reviewStage(req, res, {
     stage: 'faculty',
-    from: 'pending_faculty',
+    from: FACULTY_STAGE,
+    // Forwarding needs a successful parent OTP check; rejecting does not.
+    forwardFrom: 'parent_verified',
+    forwardBlocked: "Verify the parent's OTP before forwarding to the HOD",
     to: 'pending_hod',
     reviewField: 'facultyReview',
-    canAct: (pass, user) => isAdmin(user) || (user.role === 'faculty' && pass.department === user.department && (!user.section || pass.section === user.section)),
+    canAct: isClassFaculty,
     forwardTitle: 'Gate pass forwarded to HOD',
     forwardNotify: (pass) => notifyStage(hodFilter(pass.department), { type: 'gate_pass', title: 'Gate pass needs your review', message: `Forwarded by class faculty · ${pass.department}`, link: '/gate-pass?tab=review' }),
   })
@@ -318,6 +389,145 @@ export const principalReview = asyncHandler((req, res) =>
     forwardNotify: async () => {},
   })
 );
+
+/**
+ * Emergency pass: only the authority the student chose may decide, and only
+ * while it waits on them. No faculty, HOD or parent-OTP stage is involved.
+ */
+export const emergencyReview = asyncHandler((req, res) =>
+  reviewStage(req, res, {
+    stage: 'authority',
+    from: 'pending_authority',
+    to: null,
+    reviewField: 'emergencyReview',
+    canAct: (pass, user) => pass.passType === 'emergency' && pass.emergencyAuthority === user.role,
+    forwardTitle: '',
+    forwardNotify: async () => {},
+    approvedMessage: 'Your emergency gate pass was approved. Show its code or QR to Security at the gate.',
+    rejectedBy: 'the authority',
+  })
+);
+
+// ── Emergency gate pass: straight to one chosen authority ───────────
+
+export const createEmergencyGatePass = asyncHandler(async (req, res) => {
+  const authority = req.body.authority;
+  const leaveAt = new Date(req.body.leaveAt);
+  const expectedReturnAt = new Date(req.body.expectedReturnAt);
+  if (leaveAt.getTime() < Date.now() - HOUR) throw new ApiError(422, 'Leaving time cannot be in the past');
+  if (expectedReturnAt <= leaveAt) throw new ApiError(422, 'Expected return must be after the leaving time');
+  if (expectedReturnAt - leaveAt > MAX_DURATION_MS) throw new ApiError(422, 'A gate pass can cover at most 30 days');
+  if (!req.user.department || !req.user.section) {
+    throw new ApiError(422, 'Your account has no department/section on file — ask an admin to set it');
+  }
+
+  const existing = await GatePass.exists({ student: req.user._id, status: { $in: [...GATE_PASS_PENDING_STATUSES, 'approved', 'active'] } });
+  if (existing) throw new ApiError(409, 'You already have a pending or active gate pass');
+
+  const authorityIds = await User.find({ role: authority, isActive: true }).distinct('_id');
+  if (!authorityIds.length) throw new ApiError(422, `No ${AUTHORITY_LABELS[authority]} account is available right now — choose another authority`);
+
+  const doc = pick(req.body.supportingDocument || {}, ['url', 'name', 'mimeType']);
+  // Student identity, class and parent number come from the signed-in account, never the request.
+  const pass = await GatePass.create({
+    passType: 'emergency',
+    status: 'pending_authority',
+    emergencyAuthority: authority,
+    student: req.user._id,
+    department: req.user.department,
+    section: req.user.section,
+    parentPhone: req.user.parentPhone || undefined,
+    description: req.body.reason,
+    destination: { area: req.body.destination },
+    leaveAt,
+    expectedReturnAt,
+    fromDate: toDay(leaveAt),
+    toDate: toDay(expectedReturnAt),
+    ...(doc.url ? { supportingDocument: doc } : {}),
+  });
+  logActivity(req, 'gate_pass.emergency_create', { entityType: 'gate_pass', entityId: pass._id, summary: `Sent to ${AUTHORITY_LABELS[authority]}` });
+
+  await notifyUsers(authorityIds, {
+    type: 'gate_pass',
+    title: 'Emergency gate pass request',
+    message: `${req.user.name}${req.user.rollNo ? ` (${req.user.rollNo})` : ''} · ${req.user.department} — needs your approval`,
+    link: `/gate-pass/${pass._id}`,
+  });
+  publish(pass);
+  res.status(201).json(withFlags(pass));
+});
+
+/** Audit that the chosen authority has seen a waiting emergency request — once per authority and pass. */
+async function logEmergencyViewed(req, passes) {
+  const waiting = passes.filter((p) => p.passType === 'emergency' && p.status === 'pending_authority' && p.emergencyAuthority === req.user.role);
+  if (!waiting.length) return;
+  const seen = new Set(
+    (await Activity.find({ user: req.user._id, action: 'gate_pass.emergency_viewed', entityId: { $in: waiting.map((p) => p._id) } }).distinct('entityId')).map(String)
+  );
+  waiting.filter((p) => !seen.has(String(p._id))).forEach((p) => logActivity(req, 'gate_pass.emergency_viewed', { entityType: 'gate_pass', entityId: p._id }));
+}
+
+// ── Parent OTP verification (faculty stage) ─────────────────────────
+
+async function loadForParentOtp(req) {
+  const pass = await GatePass.findById(req.params.id).populate('student', 'name');
+  if (!pass) throw new ApiError(404, 'Gate pass not found');
+  if (!(await isClassFaculty(pass, req.user))) throw new ApiError(403, "Only the student's class faculty can verify this request");
+  return pass;
+}
+
+const otpAudit = (req, pass, event, summary) =>
+  logActivity(req, `gate_pass.otp_${event}`, { entityType: 'gate_pass', entityId: pass._id, summary });
+
+export const getParentOtp = asyncHandler(async (req, res) => {
+  const pass = await loadForParentOtp(req);
+  res.set('Cache-Control', 'no-store');
+  res.json({ passStatus: pass.status, ...(await otpService.getOtpState(pass._id)), parentMobile: pass.parentPhone });
+});
+
+export const requestParentOtp = asyncHandler(async (req, res) => {
+  const pass = await loadForParentOtp(req);
+  if (pass.status !== 'pending_faculty') throw new ApiError(422, 'This request is not waiting for parent verification');
+  const state = await otpService.requestOtp({ pass, studentName: pass.student?.name || 'Your ward', faculty: req.user });
+  otpAudit(req, pass, state.resent ? 'resent' : 'requested', `OTP sent to ${state.maskedMobile}`);
+  res.set('Cache-Control', 'no-store');
+  res.json({ message: 'OTP sent to the registered parent mobile number', passStatus: pass.status, ...state, parentMobile: pass.parentPhone });
+});
+
+export const verifyParentOtp = asyncHandler(async (req, res) => {
+  const pass = await loadForParentOtp(req);
+  if (pass.status !== 'pending_faculty') throw new ApiError(422, 'This request is not waiting for parent verification');
+  try {
+    await otpService.verifyOtp({ gatePassId: pass._id, otp: req.body.otp });
+  } catch (err) {
+    if (err.otpEvent) otpAudit(req, pass, err.otpEvent === 'expired' ? 'expired' : 'verify_failed', err.otpEvent);
+    throw err;
+  }
+  otpAudit(req, pass, 'verified');
+
+  const updated = await GatePass.findOneAndUpdate(
+    { _id: pass._id, status: 'pending_faculty' },
+    { $set: { status: 'parent_verified', parentVerifiedAt: new Date(), parentVerifiedBy: req.user._id } },
+    { new: true }
+  );
+  if (!updated) throw new ApiError(409, 'This request changed while verifying — refresh and try again');
+  logActivity(req, 'gate_pass.parent_verified', { entityType: 'gate_pass', entityId: pass._id });
+  notifyUsers(
+    [pass.student._id],
+    { type: 'gate_pass', title: 'Parent verified', message: 'Your parent confirmed the request. Your class faculty can now forward it to the HOD.', link: `/gate-pass/${pass._id}` },
+    { push: false }
+  );
+  publish(updated);
+  res.json(withFlags(await populateAll(GatePass.findById(updated._id))));
+});
+
+// ── Development OTP portal (admin only; the route is absent in production) ──
+
+export const listDevOtps = asyncHandler(async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const provider = otpService.getOtpProvider();
+  res.json({ provider: provider.name, otps: await otpService.listDevOtps(), messages: provider.sentMessages?.() || [] });
+});
 
 // ── Student withdraws a request ────────────────────────────────────
 
@@ -349,8 +559,10 @@ function problemsFor(pass) {
     rejected: 'This pass was rejected',
     cancelled: 'This pass was cancelled by the student',
     pending_faculty: 'This pass has not been approved yet',
+    parent_verified: 'This pass has not been approved yet',
     pending_hod: 'This pass has not been approved yet',
     pending_principal: 'This pass has not been approved yet',
+    pending_authority: 'This pass has not been approved yet',
   };
   if (messages[pass.status]) problems.push(messages[pass.status]);
   if (pass.verificationExpiry && now > pass.verificationExpiry) problems.push('The verification window has closed');
@@ -361,8 +573,8 @@ function problemsFor(pass) {
 }
 
 export const verifyGatePass = asyncHandler(async (req, res) => {
-  const code = String(req.body.code).trim().toUpperCase().replace(QR_PREFIX, '').replace(/[\s-]/g, '');
-  if (!/^[A-Z]{2}[0-9]{2}$/.test(code)) throw new ApiError(422, 'Enter a valid 4-character code (2 letters + 2 numbers)');
+  const code = normalizeGateCode(req.body.code, QR_PREFIX);
+  if (!code) throw new ApiError(422, 'Enter a valid 4-character gate pass code (letters and numbers)');
 
   await expireGatePasses();
   const pass = await GatePass.findOne({ verificationCode: code }).populate('student', STUDENT_FIELDS);
@@ -377,58 +589,162 @@ export const verifyGatePass = asyncHandler(async (req, res) => {
   logActivity(req, 'gate_pass.verify', { entityType: 'gate_pass', entityId: pass._id });
 
   const problems = problemsFor(pass);
-  const nextAction = problems.length ? null : pass.status === 'approved' ? 'out' : pass.status === 'active' ? 'in' : null;
+  // The exit code only lets a student out. Coming back needs the return
+  // credential the student gets after the location check.
+  const nextAction = problems.length ? null : pass.status === 'approved' ? 'out' : null;
   const plain = withFlags(pass);
   delete plain.verificationCode;
-  res.json({ valid: problems.length === 0, pass: plain, problems, nextAction });
+  res.json({ valid: problems.length === 0, pass: plain, problems, nextAction, returnRequired: pass.status === 'active' });
 });
 
 // ── Security: record OUT / IN ───────────────────────────────────────
 
+/**
+ * Security's final exit action. Re-checks the code and consumes it in one
+ * atomic update, so it works exactly once — a second guard, a replayed
+ * request or a re-scan all fail.
+ */
 export const recordOut = asyncHandler(async (req, res) => {
+  const code = normalizeGateCode(req.body.code, QR_PREFIX);
+  if (!code) throw new ApiError(422, 'Enter the 4-character gate pass code');
   const pass = await GatePass.findById(req.params.id).select('+verificationCode');
   if (!pass) throw new ApiError(404, 'Gate pass not found');
-  if (pass.status !== 'approved') throw new ApiError(422, 'Only an approved, unused pass can be used to exit');
+  if (pass.status !== 'approved') throw new ApiError(pass.actualExit ? 409 : 422, pass.actualExit ? 'Exit has already been recorded' : 'Only an approved, unused pass can be used to exit');
+  if (pass.verificationCode !== code) throw new ApiError(422, 'This code does not belong to this gate pass');
   const problems = problemsFor(pass);
   if (problems.length) throw new ApiError(422, problems[0]);
 
   const updated = await GatePass.findOneAndUpdate(
-    { _id: pass._id, status: 'approved', actualExit: null },
-    { $set: { status: 'active', actualExit: new Date(), exitVerifiedBy: req.user._id } },
+    { _id: pass._id, status: 'approved', actualExit: null, verificationCode: code },
+    { $set: { status: 'active', actualExit: new Date(), exitVerifiedBy: req.user._id }, $unset: { verificationCode: 1 } },
     { new: true }
   ).populate('student', STUDENT_FIELDS);
   if (!updated) throw new ApiError(409, 'Exit has already been recorded');
 
   logActivity(req, 'gate_pass.out', { entityType: 'gate_pass', entityId: pass._id });
+  logActivity(req, 'gate_pass.code_consumed', { entityType: 'gate_pass', entityId: pass._id });
   notifyUsers([pass.student], { type: 'gate_pass', title: 'Exit recorded', message: 'Have a safe trip. Remember to check in when you return.', link: `/gate-pass/${pass._id}` }, { push: false });
   publish(updated);
   res.json(withFlags(updated));
 });
 
+/**
+ * Security: "Student is inside". Re-checks the return credential and completes
+ * the pass in one atomic update, so two guards (or a replayed request) can
+ * never complete it twice. Parent and faculty are told only after it commits.
+ */
 export const recordIn = asyncHandler(async (req, res) => {
+  const credential = returnSvc.parseReturnCredential(req.body.code);
+  const now = new Date();
   const updated = await GatePass.findOneAndUpdate(
-    { _id: req.params.id, status: 'active' },
-    // The code is consumed: it can never be verified again.
-    { $set: { status: 'completed', actualReturn: new Date(), returnVerifiedBy: req.user._id, verificationExpiry: new Date() }, $unset: { verificationCode: 1 } },
+    { _id: req.params.id, status: 'active', actualExit: { $ne: null }, ...credential, returnCredentialExpiresAt: { $gt: now } },
+    {
+      $set: { status: 'completed', actualReturn: now, returnVerifiedBy: req.user._id, verificationExpiry: now },
+      // Every credential is consumed: none of them can be verified again.
+      $unset: { verificationCode: 1, returnToken: 1, returnCode: 1 },
+    },
     { new: true }
   ).populate('student', STUDENT_FIELDS);
   if (!updated) {
-    await loadPass(req.params.id);
-    throw new ApiError(422, 'The student has not exited on this pass');
+    const pass = await loadPass(req.params.id);
+    if (pass.status === 'completed') throw new ApiError(409, 'This student’s return has already been recorded');
+    if (pass.status !== 'active') throw new ApiError(422, 'The student has not exited on this pass');
+    logActivity(req, 'gate_pass.return_failed', { entityType: 'gate_pass', entityId: pass._id, summary: 'Invalid or expired return credential' });
+    throw new ApiError(422, 'Invalid or expired return code — ask the student to verify their location again');
   }
 
   logActivity(req, 'gate_pass.in', { entityType: 'gate_pass', entityId: updated._id });
-  // Let the student's class faculty know they're back on campus.
-  if (updated.department && updated.section) {
-    await notifyStage(facultyFilter(updated.department, updated.section), {
-      type: 'gate_pass',
-      title: 'Student back on campus',
-      message: `${updated.student.name}${updated.student.rollNo ? ` (${updated.student.rollNo})` : ''} has entered the college.`,
-      link: `/gate-pass/${updated._id}`,
-    });
-  }
   publish(updated);
+  const notified = await returnSvc.notifyReturned({ pass: updated, student: updated.student, returnedAt: now });
+  logActivity(req, notified.parentSent ? 'gate_pass.parent_return_notified' : 'gate_pass.parent_return_notice_failed', { entityType: 'gate_pass', entityId: updated._id });
   res.json(withFlags(updated));
+});
+
+// ── Return to campus: student location check → return credential ────
+
+const NOT_OUTSIDE = {
+  approved: 'Security has not recorded your exit on this pass yet',
+  completed: 'Your return has already been recorded',
+};
+
+/**
+ * Student (mobile app) sends one GPS reading. The server checks ownership and
+ * state, then decides the reading itself; a pass gets a return credential only
+ * when the reading is fresh, accurate enough and inside the campus radius.
+ */
+export const verifyReturnLocation = asyncHandler(async (req, res) => {
+  const pass = await GatePass.findById(req.params.id).select('student status actualExit');
+  if (!pass || !sameId(pass.student, req.user)) throw new ApiError(404, 'Gate pass not found');
+  if (pass.status !== 'active' || !pass.actualExit) {
+    throw new ApiError(422, NOT_OUTSIDE[pass.status] || (pass.status.startsWith('pending') || pass.status === 'parent_verified' ? 'This gate pass has not been approved yet' : `This gate pass is ${pass.status}`));
+  }
+
+  const reading = pick(req.body, ['latitude', 'longitude', 'accuracy', 'timestamp']);
+  const { distance, reason } = returnSvc.evaluateLocation(reading);
+  const now = new Date();
+  await ReturnLocationCheck.create({
+    gatePass: pass._id,
+    student: req.user._id,
+    latitude: reading.latitude,
+    longitude: reading.longitude,
+    accuracy: reading.accuracy,
+    distanceMeters: Math.round(distance * 100) / 100,
+    locationTimestamp: new Date(reading.timestamp),
+    result: reason ? 'rejected' : 'verified',
+    rejectionReason: reason || undefined,
+    verifiedAt: reason ? undefined : now,
+  });
+
+  if (reason) {
+    logActivity(req, 'gate_pass.return_location_rejected', { entityType: 'gate_pass', entityId: pass._id, summary: reason });
+    throw new ApiError(422, returnSvc.LOCATION_MESSAGES[reason], [{ field: 'location', code: reason, message: returnSvc.LOCATION_MESSAGES[reason] }]);
+  }
+
+  const credential = await returnSvc.issueReturnCredential(pass._id, req.user._id, now);
+  logActivity(req, 'gate_pass.return_location_verified', { entityType: 'gate_pass', entityId: pass._id });
+  publish({ _id: pass._id, student: pass.student, status: pass.status }, { returnReady: true });
+  res.set('Cache-Control', 'no-store');
+  res.json({ verified: true, verifiedAt: now, ...(await returnCredentialBody(credential)) });
+});
+
+async function returnCredentialBody({ token, code, expiresAt }) {
+  const payload = `${returnSvc.RETURN_QR_PREFIX}${token}`;
+  const qr = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 1, width: 320 });
+  return { code, qr, payload, expiresAt };
+}
+
+/** The student's current return QR/code (owner only) — e.g. after reopening the app. */
+export const getReturnCredential = asyncHandler(async (req, res) => {
+  const pass = await GatePass.findById(req.params.id).select('+returnToken +returnCode');
+  if (!pass || !sameId(pass.student, req.user)) throw new ApiError(404, 'Gate pass not found');
+  if (pass.status !== 'active' || !pass.returnToken) throw new ApiError(404, 'No return code yet — verify your location first');
+  if (pass.returnCredentialExpiresAt <= new Date()) throw new ApiError(410, 'Your return code has expired. Verify your location again.');
+  res.set('Cache-Control', 'no-store');
+  res.json({ verifiedAt: pass.returnLocationVerifiedAt, ...(await returnCredentialBody({ token: pass.returnToken, code: pass.returnCode, expiresAt: pass.returnCredentialExpiresAt })) });
+});
+
+/** Security scans the Return QR or types the Return Code. Read-only: it never completes the pass. */
+export const verifyReturnCredential = asyncHandler(async (req, res) => {
+  const credential = returnSvc.parseReturnCredential(req.body.code);
+  const pass = await GatePass.findOne(credential).populate('student', STUDENT_FIELDS);
+  if (!pass) {
+    logActivity(req, 'gate_pass.return_verify_failed', { summary: 'Unknown return credential' });
+    throw new ApiError(404, 'Invalid or already-used return code');
+  }
+  if (pass.status !== 'active' || !pass.actualExit) throw new ApiError(422, 'This pass is not waiting for a return');
+  if (pass.returnCredentialExpiresAt <= new Date()) {
+    logActivity(req, 'gate_pass.return_verify_failed', { entityType: 'gate_pass', entityId: pass._id, summary: 'Expired return credential' });
+    throw new ApiError(410, 'This return code has expired — ask the student to verify their location again');
+  }
+  logActivity(req, 'gate_pass.return_verify', { entityType: 'gate_pass', entityId: pass._id });
+  res.json({
+    valid: true,
+    nextAction: 'inside',
+    status: 'return_verification_ready',
+    passRef: `GP-${String(pass._id).slice(-6).toUpperCase()}`,
+    expiresAt: pass.returnCredentialExpiresAt,
+    pass: withFlags(pass),
+  });
 });
 
 // ── Revoke ─────────────────────────────────────────────────────────
@@ -465,6 +781,7 @@ export const gateDashboard = asyncHandler(async (req, res) => {
   const day = toDay(new Date());
   const todayTs = timestampFilter({ from: day, to: day });
   const now = new Date();
+  const guard = await parentPhoneGuard(req.user);
 
   const [studentsOutside, overdue, todayExits, todayReturns, pending, approvedToday, rejectedToday, outsideStudents] = await Promise.all([
     GatePass.countDocuments({ status: 'active' }),
@@ -485,7 +802,7 @@ export const gateDashboard = asyncHandler(async (req, res) => {
     pending,
     approvedToday,
     rejectedToday,
-    outsideStudents: outsideStudents.map(withFlags),
+    outsideStudents: outsideStudents.map((p) => guard(withFlags(p))),
   });
 });
 

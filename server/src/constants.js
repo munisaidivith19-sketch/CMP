@@ -84,15 +84,20 @@ export const NOTIFICATION_TYPES = [
 ];
 
 // ── Gate Pass ───────────────────────────────────────────────────────
-// A request climbs pending_faculty → pending_hod → pending_principal before
-// it is usable; any stage can reject it instead.
+// A request climbs pending_faculty → parent_verified (parent OTP confirmed by
+// the class faculty) → pending_hod → pending_principal before it is usable;
+// any stage can reject it instead.
+// An emergency pass skips that chain: pending_authority → approved by the one
+// authority the student chose (no faculty, HOD or parent OTP).
 export const GATE_PASS_STATUSES = [
-  'pending_faculty', 'pending_hod', 'pending_principal',
+  'pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority',
   'approved', 'rejected', 'active', 'completed', 'expired', 'revoked', 'cancelled',
 ];
-export const GATE_PASS_PENDING_STATUSES = ['pending_faculty', 'pending_hod', 'pending_principal'];
+export const GATE_PASS_PENDING_STATUSES = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority'];
 export const GATE_PASS_REGARDING = ['outing', 'home'];
-export const GATE_PASS_STAGES = ['faculty', 'hod', 'principal'];
+export const GATE_PASS_STAGES = ['faculty', 'hod', 'principal', 'authority'];
+export const GATE_PASS_TYPES = ['normal', 'emergency'];
+export const EMERGENCY_AUTHORITIES = ['principal', 'ao', 'dean', 'chairman'];
 
 // ── Lost & Found ────────────────────────────────────────────────────
 export const LOST_FOUND_TYPES = ['lost', 'found'];

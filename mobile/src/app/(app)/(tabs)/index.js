@@ -151,7 +151,7 @@ function SecurityHome({ user }) {
               <LinearGradient colors={gradients.emerald} style={{ borderRadius: 24, padding: 20, alignItems: 'center', gap: 8 }}>
                 <LogIn size={30} color="#fff" />
                 <T v="h2" style={{ color: '#fff' }}>IN</T>
-                <T v="small" style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center' }}>Verify a student entering</T>
+                <T v="small" style={{ color: 'rgba(255,255,255,0.85)', textAlign: 'center' }}>Return verification · scan Return QR or code</T>
               </LinearGradient>
             </Pressable>
             <Pressable onPress={() => router.push('/gate-pass/out')} style={{ flex: 1 }}>
@@ -208,7 +208,7 @@ function GeneralHome({ user }) {
   const refreshing = dash.isFetching && !dash.isLoading;
   const onRefresh = () => [dash, now, att, summary, passes, unread].forEach((q) => !q.isUninitialized && q.refetch());
   const cls = now.data?.current || now.data?.next;
-  const open = passes.data?.passes?.find((p) => ['pending_faculty', 'pending_hod', 'pending_principal', 'approved', 'active'].includes(p.status));
+  const open = passes.data?.passes?.find((p) => ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active'].includes(p.status));
   const o = att.data?.overall;
   const low = o && o.totalPeriods > 0 && o.percentage < att.data.threshold;
   const s = summary.data?.students;

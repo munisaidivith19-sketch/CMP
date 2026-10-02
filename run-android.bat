@@ -33,7 +33,23 @@ REM stuck on a black screen, so they are re-created on every launch.
 adb reverse tcp:8081 tcp:8081 >nul
 adb reverse tcp:5000 tcp:5000 >nul
 
-echo Emulator ready. Starting Expo dev server...
+REM A dev build only contains the native modules it was built with. If a native
+REM package (e.g. expo-location) or app.config.js plugins changed since, the old
+REM app fails with "Cannot find native module ..." - so rebuild it first.
+echo Emulator ready. Checking the installed app build...
+pushd "%PROJECT_ROOT%mobile"
+call node scripts\native-build-check.js check
+if errorlevel 1 (
+    echo Native dependencies changed - rebuilding and installing the app. This takes a few minutes...
+    call npx expo prebuild -p android --no-install
+    if errorlevel 1 goto buildfail
+    call npx expo run:android --no-bundler
+    if errorlevel 1 goto buildfail
+    call node scripts\native-build-check.js record
+)
+popd
+
+echo Starting Expo dev server...
 start "Vexon Metro" cmd /k "cd /d "%PROJECT_ROOT%mobile" && npx expo start --dev-client"
 
 echo.
@@ -43,3 +59,11 @@ echo   - Vexon Emulator  (the phone screen)
 echo   - Vexon Metro     (press "a" here once it's ready to install/launch the app)
 echo.
 pause
+exit /b 0
+
+:buildfail
+popd
+echo.
+echo The Android app build failed - see the messages above. Metro was not started.
+pause
+exit /b 1

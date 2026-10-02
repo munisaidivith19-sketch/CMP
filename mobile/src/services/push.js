@@ -1,10 +1,14 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
+import { isExpoGo } from '../utils/native';
+
+// Expo Go (SDK 53+) throws as soon as expo-notifications is imported on
+// Android, which used to crash the root layout. Load it only in real builds.
+const Notifications = isExpoGo ? null : require('expo-notifications');
 
 // Show pushes as banners while the app is open too.
-Notifications.setNotificationHandler({
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({
     shouldPlaySound: true,
     shouldSetBadge: false,
@@ -15,10 +19,11 @@ Notifications.setNotificationHandler({
 
 /**
  * Ask for permission and return this device's Expo push token, or null when
- * pushes are unavailable (emulator, permission denied, no EAS project id).
+ * pushes are unavailable (Expo Go, emulator, permission denied, no EAS project id).
  * The backend's single notification service decides what to push.
  */
 export async function getPushToken() {
+  if (!Notifications) return null;
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'Vexon',
@@ -45,6 +50,13 @@ export async function getPushToken() {
     console.warn('[push] Could not get a push token:', err?.message);
     return null;
   }
+}
+
+/** Run `onTap(data)` when the user taps a push. Returns an unsubscribe function. */
+export function onNotificationTap(onTap) {
+  if (!Notifications) return () => {};
+  const sub = Notifications.addNotificationResponseReceivedListener((response) => onTap(response.notification.request.content.data));
+  return () => sub.remove();
 }
 
 /** Web-style links from notifications map 1:1 onto app routes. */

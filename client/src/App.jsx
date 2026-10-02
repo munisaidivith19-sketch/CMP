@@ -32,6 +32,7 @@ const Profile = lazy(() => import('./pages/people/Profile'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 const Search = lazy(() => import('./pages/Search'));
 const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
+const DevOtpPortal = lazy(() => import('./pages/dev/DevOtpPortal'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
 const AdminReports = lazy(() => import('./pages/admin/AdminReports'));
 const AdminClubs = lazy(() => import('./pages/admin/AdminClubs'));
@@ -144,6 +145,7 @@ export default function App() {
             <Route path="admin/academics" element={<RequireAuth roles={['admin', 'hod']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
             <Route path="admin/chat-requests" element={<RequireAuth roles={['admin']}><AdminChatRequests /></RequireAuth>} />
+            <Route path="dev/otp" element={<RequireAuth roles={['admin']}><DevOtpPortal /></RequireAuth>} />
             <Route path="settings/security" element={<Security />} />
             <Route path="chat" element={<Chat />} />
             <Route path="chat/:id" element={<Chat />} />

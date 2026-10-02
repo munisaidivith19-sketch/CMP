@@ -54,6 +54,27 @@ export const verifyLimiter = rateLimit({
   message: json('Too many verification attempts. Please wait a moment.'),
 });
 
+// Parent OTP send/verify, per signed-in user. The per-OTP attempt limit and
+// resend cooldown are enforced separately by the OTP service.
+export const otpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `otp:${req.user?._id || req.ip}`,
+  message: json('Too many OTP requests. Please wait a few minutes.'),
+});
+
+// Return-to-campus location checks, per student. Each check is one explicit tap.
+export const returnLocationLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `return:${req.user?._id || req.ip}`,
+  message: json('Too many location checks. Please wait a few minutes and try again.'),
+});
+
 // Submitting a new password with a reset token.
 export const passwordResetSubmitLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

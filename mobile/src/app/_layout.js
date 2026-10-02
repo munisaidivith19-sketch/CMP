@@ -3,7 +3,6 @@ import { Text, View } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import * as Notifications from 'expo-notifications';
 import { Provider, useDispatch, useSelector, useStore } from 'react-redux';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CloudOff, RefreshCw, WifiOff } from 'lucide-react-native';
@@ -13,7 +12,7 @@ import { loggedOut, sessionChecked, setCredentials } from '../store/authSlice';
 import { api, useRegisterPushTokenMutation } from '../services/api';
 import { refreshSession } from '../services/session';
 import { connectSocket, disconnectSocket } from '../services/socket';
-import { getPushToken, linkFromNotification } from '../services/push';
+import { getPushToken, linkFromNotification, onNotificationTap } from '../services/push';
 import { colors, fonts } from '../theme';
 import { getApiUrl, loadServerOverride } from '../config';
 import { useOnline } from '../services/connection';
@@ -176,13 +175,14 @@ function useRealtime() {
   }, [userId, dispatch, reduxStore, registerPush]);
 
   // Tapping a push opens the matching screen (links are shared with the web app).
-  useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const link = linkFromNotification(response.notification.request.content.data);
-      if (link) router.push(link);
-    });
-    return () => sub.remove();
-  }, []);
+  useEffect(
+    () =>
+      onNotificationTap((data) => {
+        const link = linkFromNotification(data);
+        if (link) router.push(link);
+      }),
+    []
+  );
 }
 
 function Root() {

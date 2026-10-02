@@ -17,6 +17,9 @@ const VARIANTS = {
   strong: { fontFamily: fonts.bold, fontSize: 14, color: colors.ink },
   small: { fontFamily: fonts.semibold, fontSize: 12, color: colors.soft },
   label: { fontFamily: fonts.bold, fontSize: 11, color: colors.soft, textTransform: 'uppercase', letterSpacing: 0.8 },
+  // Gate codes read aloud at the gate. Needs its own lineHeight: inheriting
+  // body's 20 clips 40px glyphs on Android.
+  code: { fontFamily: fonts.extrabold, fontSize: 40, lineHeight: 52, letterSpacing: 6, color: colors.ink, textAlign: 'center' },
 };
 export function T({ v = 'body', style, children, ...props }) {
   return (
@@ -210,7 +213,7 @@ export function Badge({ label, color = 'primary', style }) {
 }
 
 const STATUS_COLOR = {
-  pending: 'warning', approved: 'success', active: 'info', completed: 'neutral', rejected: 'danger', revoked: 'danger',
+  pending: 'warning', pending_authority: 'warning', parent_verified: 'primary', approved: 'success', active: 'info', completed: 'neutral', rejected: 'danger', revoked: 'danger',
   expired: 'neutral', cancelled: 'neutral', lost: 'danger', found: 'info', possible_match: 'warning',
   under_verification: 'primary', returned: 'success', closed: 'neutral', present: 'success', absent: 'danger',
   registered: 'success', waitlisted: 'warning', attended: 'primary',

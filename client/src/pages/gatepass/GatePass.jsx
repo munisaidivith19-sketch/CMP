@@ -21,6 +21,7 @@ import {
 import {
   useCancelGatePassMutation,
   useCreateGatePassMutation,
+  useEmergencyReviewGatePassMutation,
   useFacultyReviewGatePassMutation,
   useGetGateDashboardQuery,
   useGetGatePassesQuery,
@@ -28,7 +29,6 @@ import {
   useGetSecurityDashboardQuery,
   useHodReviewGatePassMutation,
   usePrincipalReviewGatePassMutation,
-  useRecordGateInMutation,
   useRecordGateOutMutation,
   useRevokeGatePassMutation,
   useVerifyGatePassMutation,
@@ -40,9 +40,17 @@ import { Input, Select, Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
 import { errMsg, fmtClassDay, timeAgo, titleCase, todayKey } from '../../utils/format';
 import { GATE_PASS_REGARDING, INDIAN_STATES, STUDENT_ROLES } from '../../utils/constants';
+import { ParentVerification } from './ParentVerification';
+import { ReturnStatus } from './ReturnStatus';
+import { AUTHORITY_LABELS, EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, EmergencyRequestForm, isEmergency } from './EmergencyGatePass';
 
-const OPEN = ['pending_faculty', 'pending_hod', 'pending_principal', 'approved', 'active'];
-const PENDING = ['pending_faculty', 'pending_hod', 'pending_principal'];
+const OPEN = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active'];
+const PENDING = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority'];
+export const passStatusLabel = (status, pass) => {
+  if (status === 'pending_authority') return `Pending — ${AUTHORITY_LABELS[pass?.emergencyAuthority] || 'authority'} approval`;
+  return status === 'parent_verified' ? 'Parent verified' : status.replace('pending_', 'Waiting on ');
+};
+const passTitle = (p) => (isEmergency(p) ? 'Emergency gate pass' : GATE_PASS_REGARDING[p.regarding] || titleCase(p.regarding || ''));
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '');
 
 /* ── Shared pieces ──────────────────────────────────────────────── */
@@ -54,12 +62,22 @@ export function PassTimeline({ pass }) {
     bad: review?.action === 'rejected',
     note: review?.action === 'rejected' ? review.reason : null,
   });
+  const approvalSteps = isEmergency(pass)
+    ? [stageStep(`${AUTHORITY_LABELS[pass.emergencyAuthority]} approval`, pass.emergencyReview)]
+    : [
+        // Passes forwarded before parent OTP verification existed have no such step.
+        ...(pass.parentVerifiedAt || ['pending_faculty', 'parent_verified'].includes(pass.status)
+          ? [{ label: 'Parent verified (OTP)', at: pass.parentVerifiedAt, done: Boolean(pass.parentVerifiedAt) }]
+          : []),
+        stageStep('Faculty review', pass.facultyReview),
+        stageStep('HOD review', pass.hodReview),
+        stageStep('Principal approval', pass.principalReview),
+      ];
   const steps = [
     { label: 'Requested', at: pass.createdAt, done: true },
-    stageStep('Faculty review', pass.facultyReview),
-    stageStep('HOD review', pass.hodReview),
-    stageStep('Principal approval', pass.principalReview),
+    ...approvalSteps,
     { label: 'Left campus', at: pass.actualExit, done: Boolean(pass.actualExit) },
+    ...(pass.actualExit ? [{ label: 'Return location verified', at: pass.returnLocationVerifiedAt, done: Boolean(pass.returnLocationVerifiedAt) }] : []),
     { label: 'Returned', at: pass.actualReturn, done: Boolean(pass.actualReturn) },
   ];
   if (['cancelled', 'revoked', 'expired'].includes(pass.status)) {
@@ -88,9 +106,15 @@ export function PassTimeline({ pass }) {
   );
 }
 
+/** Exit code before leaving; once outside, the return-to-campus status instead. */
 export function PassQr({ pass }) {
-  const { data, isLoading, error } = useGetGatePassQrQuery(pass._id, { skip: !['approved', 'active'].includes(pass.status) });
-  if (!['approved', 'active'].includes(pass.status)) return null;
+  if (pass.status === 'active') return <ReturnStatus pass={pass} />;
+  if (pass.status !== 'approved') return null;
+  return isEmergency(pass) ? <EmergencyApprovedCode pass={pass} /> : <ExitQr pass={pass} />;
+}
+
+function ExitQr({ pass }) {
+  const { data, isLoading, error } = useGetGatePassQrQuery(pass._id);
   if (isLoading) return <Skeleton className="mx-auto h-56 w-56" />;
   if (error) return <p className="text-center text-sm text-rose-600">{errMsg(error)}</p>;
   return (
@@ -106,6 +130,8 @@ export function PassQr({ pass }) {
 
 /* ── Student ────────────────────────────────────────────────────── */
 function RequestModal({ open, onClose }) {
+  const [type, setType] = useState('normal');
+  const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [create, { isLoading }] = useCreateGatePassMutation();
   const {
     register,
@@ -117,6 +143,7 @@ function RequestModal({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return;
+    setType('normal');
     reset({ regarding: 'outing', description: '', fromDate: todayKey(), toDate: todayKey(), parentPhone: '', state: '', district: '', area: '' });
   }, [open, reset]);
 
@@ -142,19 +169,49 @@ function RequestModal({ open, onClose }) {
       open={open}
       onClose={onClose}
       title="Request a gate pass"
-      subtitle="Goes to your class faculty, then HOD, then the principal for approval."
+      subtitle={
+        type === 'emergency'
+          ? 'Goes straight to the authority you choose — no faculty, HOD or parent OTP step.'
+          : 'Goes to your class faculty, then HOD, then the principal for approval.'
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={isLoading} onClick={handleSubmit(onSubmit)}>
-            Submit request
-          </Button>
+          {type === 'emergency' ? (
+            <Button type="submit" form="emergency-gate-pass" variant="danger" loading={emergencyBusy}>
+              Send emergency request
+            </Button>
+          ) : (
+            <Button loading={isLoading} onClick={handleSubmit(onSubmit)}>
+              Submit request
+            </Button>
+          )}
         </>
       }
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-3 sm:grid-cols-2" noValidate>
+      <div role="radiogroup" aria-label="Gate pass type" className="mb-4 grid grid-cols-2 gap-2">
+        {[
+          ['normal', 'Normal gate pass'],
+          ['emergency', 'Emergency gate pass'],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={type === value}
+            onClick={() => setType(value)}
+            className={cn('chip min-h-[44px] justify-center text-center', type === value && (value === 'emergency' ? 'bg-rose-500 text-white' : 'chip-active'))}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {type === 'emergency' ? (
+        <EmergencyRequestForm formId="emergency-gate-pass" onSubmitted={onClose} onBusy={setEmergencyBusy} />
+      ) : (
+      <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 gap-3 sm:grid-cols-2" noValidate>
         <Select
           label="Regarding"
           options={Object.entries(GATE_PASS_REGARDING).map(([value, label]) => ({ value, label }))}
@@ -192,6 +249,7 @@ function RequestModal({ open, onClose }) {
         <Input label="District" maxLength={80} error={errors.district} {...register('district', { required: 'Required' })} />
         <Input label="Village / area" className="sm:col-span-2" maxLength={120} error={errors.area} {...register('area', { required: 'Required' })} />
       </form>
+      )}
     </Modal>
   );
 }
@@ -209,7 +267,7 @@ function StudentGatePass() {
       <PageHeader
         icon={DoorOpen}
         title="Gate pass"
-        subtitle="Request permission to leave campus. Faculty → HOD → Principal review it in order."
+        subtitle="Request permission to leave campus — a normal pass (Faculty → HOD → Principal) or, in an emergency, straight to one authority."
         actions={!current && <Button icon={Plus} onClick={() => setOpen(true)}>Request gate pass</Button>}
       />
       {isLoading ? (
@@ -219,20 +277,27 @@ function StudentGatePass() {
       ) : (
         <>
           {current ? (
-            <Card className="grid gap-6 md:grid-cols-[1fr_auto]">
+            <Card className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_auto]">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-extrabold">{GATE_PASS_REGARDING[current.regarding] || titleCase(current.regarding)}</h2>
-                  <StatusBadge status={current.status} label={current.status.replace('pending_', 'Waiting on ')} />
+                  <h2 className="text-lg font-extrabold">{passTitle(current)}</h2>
+                  {isEmergency(current) && <EmergencyBadge />}
+                  <StatusBadge status={current.status} label={passStatusLabel(current.status, current)} />
                   {current.overdue && <StatusBadge status="rejected" label="overdue" />}
                 </div>
                 <p className="mt-1 text-sm">{current.description}</p>
                 <p className="mt-1 flex items-center gap-1 text-xs muted">
                   <MapPin className="h-3.5 w-3.5" /> {destinationLine(current.destination)}
                 </p>
-                <p className="mt-1 text-xs muted">
-                  {fmtClassDay(current.fromDate)} → {fmtClassDay(current.toDate)} · Parent: {current.parentPhone}
-                </p>
+                {isEmergency(current) ? (
+                  <div className="mt-3">
+                    <EmergencyDetails pass={current} compact />
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs muted">
+                    {fmtClassDay(current.fromDate)} → {fmtClassDay(current.toDate)} · Parent: {current.parentPhone}
+                  </p>
+                )}
                 <div className="mt-5">
                   <PassTimeline pass={current} />
                 </div>
@@ -274,13 +339,13 @@ function StudentGatePass() {
                         <DoorClosed className="h-5 w-5 shrink-0 text-primary-400" />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold">
-                            {GATE_PASS_REGARDING[p.regarding] || titleCase(p.regarding)} · {p.description}
+                            {passTitle(p)} · {p.description}
                           </p>
                           <p className="text-xs muted">
                             {fmtClassDay(p.fromDate)} → {fmtClassDay(p.toDate)}
                           </p>
                         </div>
-                        <StatusBadge status={p.status} />
+                        <StatusBadge status={p.status} label={passStatusLabel(p.status, p)} />
                       </Link>
                     </li>
                   ))}
@@ -332,21 +397,27 @@ function StudentLine({ student, extra }) {
 
 /** One stage's forward/approve + reject actions, chosen by the pass's current status. */
 const STAGE_BY_STATUS = {
-  pending_faculty: { hook: 'faculty', forwardLabel: 'Forward to HOD', forwardAction: 'forward', okVariant: 'primary' },
+  pending_faculty: { hook: 'faculty', needsParentOtp: true },
+  parent_verified: { hook: 'faculty', forwardLabel: 'Forward to HOD', forwardAction: 'forward', okVariant: 'primary' },
   pending_hod: { hook: 'hod', forwardLabel: 'Forward to Principal', forwardAction: 'forward', okVariant: 'primary' },
   pending_principal: { hook: 'principal', forwardLabel: 'Approve', forwardAction: 'approve', okVariant: 'success' },
+  pending_authority: { hook: 'authority', forwardLabel: 'Approve', forwardAction: 'approve', okVariant: 'success' },
 };
 
 function ReviewCard({ pass, onDone }) {
+  const me = useSelector(selectUser);
   const [reject, setReject] = useState(false);
   const [reason, setReason] = useState('');
   const [facultyReview, { isLoading: fLoading }] = useFacultyReviewGatePassMutation();
   const [hodReview, { isLoading: hLoading }] = useHodReviewGatePassMutation();
   const [principalReview, { isLoading: pLoading }] = usePrincipalReviewGatePassMutation();
-  const mutations = { faculty: facultyReview, hod: hodReview, principal: principalReview };
+  const [authorityReview, { isLoading: aLoading }] = useEmergencyReviewGatePassMutation();
+  const mutations = { faculty: facultyReview, hod: hodReview, principal: principalReview, authority: authorityReview };
   const stage = STAGE_BY_STATUS[pass.status];
-  const saving = fLoading || hLoading || pLoading;
+  const saving = fLoading || hLoading || pLoading || aLoading;
   if (!stage) return null;
+  // Only the authority the student chose may decide an emergency pass (the API enforces it too).
+  const canDecide = stage.hook !== 'authority' || me.role === pass.emergencyAuthority;
 
   const act = async (action, rejectReason) => {
     try {
@@ -360,27 +431,51 @@ function ReviewCard({ pass, onDone }) {
   };
 
   return (
-    <Card className="flex flex-col gap-3 md:flex-row md:items-center">
-      <div className="min-w-0 flex-1">
-        <StudentLine student={pass.student} extra={` · requested ${timeAgo(pass.createdAt)}`} />
-        <p className="mt-2 text-sm">
-          <span className="font-bold">{GATE_PASS_REGARDING[pass.regarding] || titleCase(pass.regarding)}:</span> {pass.description}
-        </p>
-        <p className="mt-0.5 flex items-center gap-1 text-xs muted">
-          <MapPin className="h-3.5 w-3.5" /> {destinationLine(pass.destination)}
-        </p>
-        <p className="mt-0.5 text-xs muted">
-          {fmtClassDay(pass.fromDate)} → {fmtClassDay(pass.toDate)} · Parent: {pass.parentPhone}
-        </p>
+    <Card className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="min-w-0 flex-1">
+          <StudentLine student={pass.student} extra={` · requested ${timeAgo(pass.createdAt)}`} />
+          {isEmergency(pass) ? (
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <EmergencyBadge />
+                <StatusBadge status={pass.status} label={passStatusLabel(pass.status, pass)} />
+              </div>
+              <EmergencyDetails pass={pass} />
+            </div>
+          ) : (
+            <>
+              <p className="mt-2 break-words text-sm">
+                <span className="font-bold">{GATE_PASS_REGARDING[pass.regarding] || titleCase(pass.regarding)}:</span> {pass.description}
+              </p>
+              <p className="mt-0.5 flex items-center gap-1 text-xs muted">
+                <MapPin className="h-3.5 w-3.5 shrink-0" /> {destinationLine(pass.destination)}
+              </p>
+              <p className="mt-0.5 text-xs muted">
+                {fmtClassDay(pass.fromDate)} → {fmtClassDay(pass.toDate)} · Parent: {pass.parentPhone}
+              </p>
+            </>
+          )}
+          {pass.status === 'parent_verified' && (
+            <p className="mt-1.5 flex items-center gap-1 text-xs font-bold text-emerald-600">
+              <ShieldCheck className="h-3.5 w-3.5" /> Parent verified by OTP{pass.parentVerifiedBy?.name ? ` · ${pass.parentVerifiedBy.name}` : ''}
+            </p>
+          )}
+        </div>
+        {canDecide && (
+        <div className="flex flex-wrap gap-2">
+          {!stage.needsParentOtp && (
+            <Button size="sm" variant={stage.okVariant} icon={stage.forwardAction === 'forward' ? ArrowRight : CheckCircle2} loading={saving} onClick={() => act(stage.forwardAction)}>
+              {stage.forwardLabel}
+            </Button>
+          )}
+          <Button size="sm" variant="danger" onClick={() => { setReject(true); setReason(''); }}>
+            Reject
+          </Button>
+        </div>
+        )}
       </div>
-      <div className="flex gap-2">
-        <Button size="sm" variant={stage.okVariant} icon={stage.forwardAction === 'forward' ? ArrowRight : CheckCircle2} loading={saving} onClick={() => act(stage.forwardAction)}>
-          {stage.forwardLabel}
-        </Button>
-        <Button size="sm" variant="danger" onClick={() => { setReject(true); setReason(''); }}>
-          Reject
-        </Button>
-      </div>
+      {stage.needsParentOtp && <ParentVerification pass={pass} onVerified={onDone} />}
       <Modal
         open={reject}
         onClose={() => setReject(false)}
@@ -404,14 +499,22 @@ function ReviewCard({ pass, onDone }) {
   );
 }
 
-const STAGE_STATUS = { faculty: 'pending_faculty', hod: 'pending_hod', principal: 'pending_principal' };
+const STAGE_STATUS = {
+  faculty: ['pending_faculty', 'parent_verified'],
+  hod: ['pending_hod'],
+  principal: ['pending_principal', 'pending_authority'],
+  ao: ['pending_authority'],
+  dean: ['pending_authority'],
+  chairman: ['pending_authority'],
+};
+const AUTHORITY_ONLY = ['ao', 'dean', 'chairman'];
 
 /** Faculty / HOD / principal each see only their own stage; admin sees every open stage. */
 function ReviewQueue({ role }) {
   const [page, setPage] = useState(1);
   const isAdmin = role === 'admin';
   const { data, isLoading, error, refetch } = useGetGatePassesQuery(isAdmin ? { status: PENDING.join(','), page } : { page });
-  const mine = isAdmin ? data?.passes : data?.passes.filter((p) => p.status === STAGE_STATUS[role]);
+  const mine = isAdmin ? data?.passes : data?.passes.filter((p) => STAGE_STATUS[role]?.includes(p.status));
 
   if (isLoading) return <Skeleton className="h-48" />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
@@ -459,9 +562,9 @@ function AllPasses() {
         action={
           <select aria-label="Status" className="input w-auto rounded-xl py-1.5 text-xs" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
             <option value="">Any status</option>
-            {['pending_faculty', 'pending_hod', 'pending_principal', 'approved', 'active', 'overdue', 'completed', 'rejected', 'revoked', 'cancelled', 'expired'].map((s) => (
+            {['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active', 'overdue', 'completed', 'rejected', 'revoked', 'cancelled', 'expired'].map((s) => (
               <option key={s} value={s}>
-                {titleCase(s.replace('pending_', 'pending: '))}
+                {s === 'parent_verified' ? 'Parent verified' : s === 'pending_authority' ? 'Pending: emergency authority' : titleCase(s.replace('pending_', 'pending: '))}
               </option>
             ))}
           </select>
@@ -519,10 +622,12 @@ function StaffGatePass() {
   const me = useSelector(selectUser);
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') || 'review';
-  const { data: dash, isLoading, error, refetch } = useGetGateDashboardQuery();
+  // AO / Dean / Chairman only decide emergency requests sent to them — no campus dashboard.
+  const authorityOnly = AUTHORITY_ONLY.includes(me.role);
+  const { data: dash, isLoading, error, refetch } = useGetGateDashboardQuery(undefined, { skip: authorityOnly });
   const tabs = [
     { value: 'review', label: 'Review' },
-    { value: 'outside', label: 'Outside now', count: dash?.studentsOutside || undefined },
+    ...(authorityOnly ? [] : [{ value: 'outside', label: 'Outside now', count: dash?.studentsOutside || undefined }]),
     ...(me.role === 'admin' ? [{ value: 'all', label: 'All passes' }] : []),
   ];
   return (
@@ -536,16 +641,18 @@ function StaffGatePass() {
             : me.role === 'hod'
               ? 'Requests forwarded by faculty in your department.'
               : me.role === 'principal'
-                ? 'Final approval — security only lets a student out once you approve.'
-                : 'Review requests at any stage and see who is outside.'
+                ? 'Final approval, plus emergency requests students send to you directly.'
+                : authorityOnly
+                  ? 'Emergency gate pass requests students send to you directly.'
+                  : 'Review requests at any stage and see who is outside.'
         }
       />
-      {isLoading ? (
+      {authorityOnly ? null : isLoading ? (
         <Skeleton className="h-28" />
       ) : error ? (
         <ErrorState error={error} onRetry={refetch} />
       ) : (
-        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard icon={Clock} label="Pending" value={dash.pending} hint="Across all stages" gradient="from-amber-400 to-orange-500" />
           <StatCard icon={Users} label="Outside now" value={dash.studentsOutside} hint={dash.overdue ? `${dash.overdue} overdue` : 'None overdue'} gradient="from-sky-400 to-blue-500" delay={60} />
           <StatCard icon={LogOut} label="Exits today" value={dash.todayExits} gradient="from-violet-400 to-indigo-500" delay={120} />
@@ -567,13 +674,12 @@ function SecurityConsole() {
   const [result, setResult] = useState(null);
   const [verify, { isLoading: verifying }] = useVerifyGatePassMutation();
   const [out, { isLoading: outLoading }] = useRecordGateOutMutation();
-  const [in_, { isLoading: inLoading }] = useRecordGateInMutation();
 
   const check = async (e) => {
     e?.preventDefault();
     if (!code.trim()) return;
     try {
-      setResult(await verify(code.trim()).unwrap());
+      setResult({ ...(await verify(code.trim()).unwrap()), credential: code.trim() });
     } catch (err) {
       setResult({ valid: false, problems: [errMsg(err, 'Invalid code')] });
     }
@@ -581,7 +687,8 @@ function SecurityConsole() {
 
   const act = async (fn, msg) => {
     try {
-      const pass = await fn(result.pass._id).unwrap();
+      // The final action re-sends the verified code; the server consumes it.
+      const pass = await fn({ id: result.pass._id, code: result.credential }).unwrap();
       toast.success(msg);
       setResult({ ...result, pass: { ...result.pass, ...pass }, nextAction: null, done: true });
       setCode('');
@@ -599,20 +706,20 @@ function SecurityConsole() {
       ) : error ? (
         <ErrorState error={error} onRetry={refetch} />
       ) : (
-        <div className="grid gap-5 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
           <StatCard icon={Users} label="Inside campus" value={dash.inside} gradient="from-emerald-400 to-teal-500" />
           <StatCard icon={LogOut} label="Outside campus" value={dash.outside} gradient="from-amber-400 to-orange-500" delay={60} />
           <StatCard icon={DoorOpen} label="Left today" value={dash.leftToday} gradient="from-sky-400 to-blue-500" delay={120} />
         </div>
       )}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader title="Verify a code" subtitle="Ask the student for their 4-character code." />
           <form onSubmit={check} className="flex gap-2">
             <input
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
-              placeholder="DF45"
+              placeholder="A4G5"
               aria-label="Verification code"
               autoFocus
               autoComplete="off"
@@ -643,8 +750,8 @@ function SecurityConsole() {
                   <StudentLine student={result.pass.student} />
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-2xl bg-white/50 p-2.5 dark:bg-white/5">
-                      <p className="muted">Regarding</p>
-                      <p className="font-bold">{GATE_PASS_REGARDING[result.pass.regarding] || titleCase(result.pass.regarding)}</p>
+                      <p className="muted">Pass type</p>
+                      <p className={cn('font-bold', isEmergency(result.pass) && 'text-rose-600')}>{passTitle(result.pass)}</p>
                     </div>
                     <div className="rounded-2xl bg-white/50 p-2.5 dark:bg-white/5">
                       <p className="muted">Status</p>
@@ -664,10 +771,15 @@ function SecurityConsole() {
                       OUT — record exit
                     </Button>
                   )}
-                  {result.nextAction === 'in' && (
-                    <Button className="w-full" variant="success" icon={LogIn} loading={inLoading} onClick={() => act(in_, 'IN recorded — class faculty notified')}>
-                      IN — record return
-                    </Button>
+                  {result.returnRequired && (
+                    <>
+                      <p className="flex items-start gap-2 text-sm text-amber-600">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> This student is outside. To record their return, scan their Return QR or enter their Return Code.
+                      </p>
+                      <Button className="w-full" variant="success" icon={LogIn} to="/gate-pass/in">
+                        Return verification
+                      </Button>
+                    </>
                   )}
                 </>
               )}

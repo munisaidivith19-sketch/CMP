@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import { protect, authorize } from '../middleware/auth.js';
 import { idParam, validate } from '../middleware/validate.js';
-import { aiHourLimiter, aiMinuteLimiter, authLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { aiHourLimiter, aiMinuteLimiter, authLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { ApiError } from '../utils/http.js';
 import { realtimeChanges } from '../middleware/realtime.js';
 import { upload } from '../utils/storage.js';
 import {
@@ -16,6 +17,7 @@ import {
   REPORT_TARGETS,
   ROLES,
   GATE_PASS_REGARDING,
+  EMERGENCY_AUTHORITIES,
   LOST_FOUND_TYPES,
   LOST_FOUND_CATEGORIES,
   LOST_FOUND_STATUSES,
@@ -812,6 +814,22 @@ const gateReviewRules = (actions) => [
 ];
 
 router.post('/gate-pass', writeLimiter, authorize(...STUDENT_ROLES), ...gateDestinationRules, validate, gatePass.createGatePass);
+// Emergency: goes straight to the chosen authority. Student identity comes from the session.
+router.post(
+  '/gate-pass/emergency',
+  writeLimiter,
+  authorize(...STUDENT_ROLES),
+  body('authority').isIn(EMERGENCY_AUTHORITIES).withMessage('Choose who to send it to: Principal, AO, Dean or Chairman'),
+  body('reason').isString().trim().isLength({ min: 5, max: 500 }).withMessage('Please describe the emergency (5+ characters)'),
+  body('destination').isString().trim().isLength({ min: 2, max: 120 }).withMessage('Destination is required'),
+  body('leaveAt').isISO8601().withMessage('Date and leaving time are required'),
+  body('expectedReturnAt').isISO8601().withMessage('Expected return time is required'),
+  safeUrl('supportingDocument.url'),
+  body('supportingDocument.name').optional().isString().trim().isLength({ max: 200 }),
+  body('supportingDocument.mimeType').optional().isString().trim().isLength({ max: 100 }),
+  validate,
+  gatePass.createEmergencyGatePass
+);
 router.get('/gate-pass', ...rangeQuery, validate, gatePass.listGatePasses);
 router.get('/gate-pass/dashboard', authorize(...GATE_VIEW), gatePass.gateDashboard);
 router.get('/gate-pass/dashboard/security', authorize(...GATE_SECURITY), gatePass.securityDashboard);
@@ -823,14 +841,58 @@ router.post(
   validate,
   gatePass.verifyGatePass
 );
+// Return to campus: Security scans the return QR / types the return code (read-only).
+const returnCodeRule = body('code').isString().trim().isLength({ min: 4, max: 80 }).withMessage('Return code is required');
+router.post('/gate-pass/return/verify', verifyLimiter, authorize(...GATE_SECURITY), returnCodeRule, validate, gatePass.verifyReturnCredential);
 router.get('/gate-pass/:id', idParam('id'), gatePass.getGatePass);
 router.get('/gate-pass/:id/qr', idParam('id'), gatePass.getGatePassQr);
+router.get('/gate-pass/:id/parent-otp', idParam('id'), authorize(...GATE_FACULTY), gatePass.getParentOtp);
+router.post('/gate-pass/:id/parent-otp', otpLimiter, idParam('id'), authorize(...GATE_FACULTY), gatePass.requestParentOtp);
+router.post(
+  '/gate-pass/:id/parent-otp/verify',
+  otpLimiter,
+  idParam('id'),
+  authorize(...GATE_FACULTY),
+  body('otp')
+    .isString()
+    .trim()
+    .custom((v) => new RegExp(`^\\d{${env.otp.length}}$`).test(v))
+    .withMessage(`Enter the ${env.otp.length}-digit OTP`),
+  validate,
+  gatePass.verifyParentOtp
+);
 router.patch('/gate-pass/:id/faculty-review', authorize(...GATE_FACULTY), ...gateReviewRules(['forward', 'reject']), gatePass.facultyReview);
 router.patch('/gate-pass/:id/hod-review', authorize(...GATE_HOD), ...gateReviewRules(['forward', 'reject']), gatePass.hodReview);
 router.patch('/gate-pass/:id/principal-review', authorize(...GATE_PRINCIPAL), ...gateReviewRules(['approve', 'reject']), gatePass.principalReview);
 router.patch('/gate-pass/:id/cancel', idParam('id'), gatePass.cancelGatePass);
-router.patch('/gate-pass/:id/out', idParam('id'), authorize(...GATE_SECURITY), gatePass.recordOut);
-router.patch('/gate-pass/:id/in', idParam('id'), authorize(...GATE_SECURITY), gatePass.recordIn);
+// Only the authority the student chose may decide (checked in the controller).
+router.patch('/gate-pass/:id/emergency-review', authorize(...EMERGENCY_AUTHORITIES), ...gateReviewRules(['approve', 'reject']), gatePass.emergencyReview);
+router.patch(
+  '/gate-pass/:id/out',
+  verifyLimiter,
+  idParam('id'),
+  authorize(...GATE_SECURITY),
+  body('code').isString().trim().isLength({ min: 4, max: 20 }).withMessage('Gate pass code is required'),
+  validate,
+  gatePass.recordOut
+);
+router.patch('/gate-pass/:id/in', verifyLimiter, idParam('id'), authorize(...GATE_SECURITY), returnCodeRule, validate, gatePass.recordIn);
+// The student's one-shot location reading. Only raw readings are accepted; the server computes distance.
+router.post(
+  '/gate-pass/:id/return-location/verify',
+  returnLocationLimiter,
+  idParam('id'),
+  authorize(...STUDENT_ROLES),
+  body('latitude').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude').toFloat(),
+  body('longitude').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude').toFloat(),
+  body('accuracy').isFloat({ min: 0, max: 100000 }).withMessage('Location accuracy is required').toFloat(),
+  body('timestamp')
+    .custom((v) => (typeof v === 'number' || typeof v === 'string') && Number.isFinite(new Date(v).getTime()))
+    .withMessage('Location timestamp is required'),
+  validate,
+  gatePass.verifyReturnLocation
+);
+router.get('/gate-pass/:id/return-credential', idParam('id'), authorize(...STUDENT_ROLES), gatePass.getReturnCredential);
 router.patch(
   '/gate-pass/:id/revoke',
   idParam('id'),
@@ -839,6 +901,11 @@ router.patch(
   validate,
   gatePass.revokeGatePass
 );
+
+// ── Development OTP portal — stand-in for the college SMS vendor ───
+// Admins only. Not found in production unless DEV_OTP_PORTAL=true is set explicitly.
+const devOnly = (_req, _res, next) => (env.isProd && !env.otp.devPortalInProduction ? next(new ApiError(404, 'Not found')) : next());
+router.get('/dev/otp', devOnly, authorize('admin'), gatePass.listDevOtps);
 
 // ── Lost & Found ───────────────────────────────────────────────────
 router.post(

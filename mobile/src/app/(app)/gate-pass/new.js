@@ -6,8 +6,10 @@ import DateField from '../../../components/DateField';
 import PickerField from '../../../components/PickerField';
 import { errMsg, useCreateGatePassMutation } from '../../../services/api';
 import { GATE_PASS_REGARDING, INDIAN_STATES } from '../../../theme';
+import { EmergencyRequestForm } from '../../../components/EmergencyGatePass';
 
 export default function NewGatePass() {
+  const [type, setType] = useState('normal');
   const [create, { isLoading }] = useCreateGatePassMutation();
   const [regarding, setRegarding] = useState('outing');
   const [description, setDescription] = useState('');
@@ -47,7 +49,20 @@ export default function NewGatePass() {
 
   return (
     <Screen>
-      <Header back title="Request gate pass" subtitle="Goes to your class faculty, then HOD, then the principal." />
+      <Header
+        back
+        title="Request gate pass"
+        subtitle={type === 'emergency' ? 'Goes straight to the authority you choose — no faculty, HOD or parent OTP.' : 'Goes to your class faculty, then HOD, then the principal.'}
+      />
+      <View style={{ flexDirection: 'row', gap: 8 }} accessibilityRole="radiogroup">
+        <Chip label="Normal gate pass" active={type === 'normal'} onPress={() => setType('normal')} />
+        <Chip label="Emergency gate pass" active={type === 'emergency'} onPress={() => setType('emergency')} />
+      </View>
+      {type === 'emergency' ? (
+        <Card>
+          <EmergencyRequestForm onSubmitted={() => router.back()} />
+        </Card>
+      ) : (
       <Card style={{ gap: 14 }}>
         <View style={{ gap: 6 }}>
           <T v="label">Regarding</T>
@@ -66,6 +81,7 @@ export default function NewGatePass() {
         <Input label="Village / area" value={area} onChangeText={setArea} maxLength={120} error={errors.area} />
         <Button title="Submit request" onPress={submit} loading={isLoading} />
       </Card>
+      )}
     </Screen>
   );
 }

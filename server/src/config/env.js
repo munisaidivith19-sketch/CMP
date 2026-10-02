@@ -103,6 +103,50 @@ env.ai = {
   ragChunks: num('AI_RAG_CHUNKS', 6, { max: 20 }),
 };
 
+/**
+ * Parent OTP for gate passes. "test" keeps OTPs in server memory for the
+ * development OTP portal; "college_sms" is the future college SMS vendor.
+ */
+env.otp = {
+  provider: (process.env.OTP_PROVIDER || 'test').trim().toLowerCase(),
+  expiryMinutes: num('OTP_EXPIRY_MINUTES', 10, { max: 60 }),
+  length: num('OTP_LENGTH', 4, { min: 4, max: 8 }),
+  maxAttempts: num('OTP_MAX_ATTEMPTS', 5, { max: 10 }),
+  resendCooldownSeconds: num('OTP_RESEND_COOLDOWN_SECONDS', 60, { min: 0, max: 600 }),
+  // The admin-only development OTP portal is always on outside production. In
+  // production it stays off unless DEV_OTP_PORTAL=true — a deliberate, temporary
+  // opt-in for deployments that have no SMS provider yet.
+  devPortalInProduction: process.env.DEV_OTP_PORTAL === 'true',
+};
+if (isProd && env.otp.provider === 'test') {
+  console.warn(
+    env.otp.devPortalInProduction
+      ? '[env] OTP_PROVIDER=test + DEV_OTP_PORTAL=true in production: parent OTPs are shown to admins at /dev/otp instead of being sent by SMS. Turn this off once the college SMS provider is connected.'
+      : '[env] OTP_PROVIDER=test in production: parent OTPs are not delivered and the development OTP portal is disabled (set DEV_OTP_PORTAL=true to enable it for admins)'
+  );
+}
+env.sms = {
+  apiKey: (process.env.SMS_API_KEY || '').trim(),
+  senderId: (process.env.SMS_SENDER_ID || '').trim(),
+  otpTemplateId: (process.env.SMS_OTP_TEMPLATE_ID || '').trim(),
+};
+
+const decimal = (name, fallback, min, max) => {
+  const raw = process.env[name];
+  const n = raw === undefined || raw === '' ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
+};
+
+/** Gate pass return-to-campus check. The backend alone decides; these never come from the client. */
+env.location = {
+  collegeLatitude: decimal('COLLEGE_LATITUDE', 13.263803, -90, 90),
+  collegeLongitude: decimal('COLLEGE_LONGITUDE', 80.108414, -180, 180),
+  radiusMeters: num('LOCATION_GEOFENCE_RADIUS_METERS', 300, { max: 5000 }),
+  maxAccuracyMeters: num('LOCATION_MAX_ACCURACY_METERS', 50, { max: 1000 }),
+  maxAgeSeconds: num('LOCATION_MAX_AGE_SECONDS', 30, { max: 600 }),
+  returnCredentialMinutes: num('RETURN_CREDENTIAL_MINUTES', 15, { max: 120 }),
+};
+
 env.cloudinary.enabled = Boolean(
   env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret
 );

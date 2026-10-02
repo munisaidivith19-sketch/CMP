@@ -199,7 +199,7 @@ function SecurityDashboard() {
         <Link to="/gate-pass/in" className="group block overflow-hidden rounded-[28px] bg-gradient-to-br from-emerald-400 to-teal-600 p-8 text-center text-white shadow-glow transition-transform duration-300 hover:-translate-y-0.5">
           <LogIn className="mx-auto h-10 w-10" />
           <p className="mt-3 text-2xl font-extrabold">IN</p>
-          <p className="mt-1 text-sm text-white/85">Verify a student entering</p>
+          <p className="mt-1 text-sm text-white/85">Return verification · scan Return QR or code</p>
         </Link>
         <Link to="/gate-pass/out" className="group block overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 to-pink-600 p-8 text-center text-white shadow-glow transition-transform duration-300 hover:-translate-y-0.5">
           <LogOut className="mx-auto h-10 w-10" />

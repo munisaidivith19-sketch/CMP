@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer, nextEvent } from './helpers.js';
+import { testOtpProvider } from '../src/services/otp/providers/testOtpProvider.js';
 
 let ctx;
 let staff; // faculty, class in-charge of CSE-A
@@ -48,6 +49,16 @@ after(async () => {
 
 let passId;
 let code;
+/** The class faculty sends the parent OTP and enters it (read from the test provider, as the dev portal does). */
+async function verifyParent(id) {
+  const sent = await ctx.request('POST', `/gate-pass/${id}/parent-otp`, { token: staff.token });
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  const rec = await ctx.models.OutpassOtp.findOne({ gatePass: id }).sort({ createdAt: -1 });
+  const res = await ctx.request('POST', `/gate-pass/${id}/parent-otp/verify`, { token: staff.token, body: { otp: testOtpProvider.peek(rec._id) } });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.status, 'parent_verified');
+}
+
 const gateBody = () => ({
   regarding: 'outing',
   description: 'Visiting family for the weekend',
@@ -81,6 +92,7 @@ test('gate pass: student requests → class faculty sees it live; staff cannot r
 test('gate pass: faculty forwards to HOD, HOD forwards to principal, principal approves with a 4-char code', async () => {
   assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/faculty-review`, { token: outsiderFaculty.token, body: { action: 'forward' } })).status, 403);
 
+  await verifyParent(passId);
   const toHod = await ctx.request('PATCH', `/gate-pass/${passId}/faculty-review`, { token: staff.token, body: { action: 'forward' } });
   assert.equal(toHod.status, 200, JSON.stringify(toHod.body));
   assert.equal(toHod.body.status, 'pending_hod');
@@ -103,7 +115,7 @@ test('gate pass: faculty forwards to HOD, HOD forwards to principal, principal a
   const qr = await ctx.request('GET', `/gate-pass/${passId}/qr`, { token: student.token });
   assert.equal(qr.status, 200);
   code = qr.body.code;
-  assert.match(code, /^[A-Z]{2}[0-9]{2}$/, 'code is 2 letters + 2 digits');
+  assert.match(code, /^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{4}$/, 'code is 4 mixed letters and digits');
   assert.ok(qr.body.qr.startsWith('data:image/png;base64,'));
   assert.equal(qr.body.payload, `CCGP:${code}`);
 });
@@ -129,24 +141,32 @@ test('gate pass: security verifies the code and records OUT then IN; class facul
   assert.equal(v.body.pass.student.name, 'Gate Student');
 
   const out = nextEvent(studentSocket, 'gatepass:updated', (p) => p.status === 'active');
-  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/out`, { token: security.token })).status, 200);
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/out`, { token: security.token })).status, 422, 'OUT needs the code');
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/out`, { token: security.token, body: { code } })).status, 200);
   await out;
-  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/out`, { token: security.token })).status, 422, 'OUT is single-use');
-  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code } })).body.nextAction, 'in');
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/out`, { token: security.token, body: { code } })).status, 409, 'OUT is single-use');
+  assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code } })).status, 404, 'the exit code is consumed at OUT');
 
   const dash = await ctx.request('GET', '/gate-pass/dashboard/security', { token: security.token });
   assert.equal(dash.status, 200);
   assert.equal(dash.body.outside, 1);
   assert.ok(dash.body.inside >= 0);
 
-  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/in`, { token: security.token })).status, 200);
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/in`, { token: security.token, body: { code } })).status, 422, 'the exit code is not a return code');
+  // Back on campus: the student's location check issues the return code security uses.
+  const back = await ctx.request('POST', `/gate-pass/${passId}/return-location/verify`, {
+    token: student.token,
+    body: { latitude: 13.2639, longitude: 80.1083, accuracy: 12, timestamp: Date.now() },
+  });
+  assert.equal(back.status, 200, JSON.stringify(back.body));
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${passId}/in`, { token: security.token, body: { code: back.body.code } })).status, 200);
   assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code } })).status, 404, 'code consumed');
   const done = await ctx.request('GET', `/gate-pass/${passId}`, { token: student.token });
   assert.equal(done.body.status, 'completed');
   assert.ok(done.body.actualExit && done.body.actualReturn);
 
   const notified = await ctx.request('GET', '/notifications', { token: staff.token });
-  assert.ok(notified.body.items.some((n) => n.title === 'Student back on campus'));
+  assert.ok(notified.body.items.some((n) => n.title === '🔔 Student Returned to Campus'));
 });
 
 test('gate pass: student can cancel while pending; admin/principal can revoke; expired requests are swept', async () => {
@@ -156,6 +176,7 @@ test('gate pass: student can cancel while pending; admin/principal can revoke; e
   assert.equal((await ctx.request('PATCH', `/gate-pass/${p1.body._id}/cancel`, { token: student.token })).body.status, 'cancelled');
 
   const p2 = await ctx.request('POST', '/gate-pass', { token: student.token, body });
+  await verifyParent(p2.body._id);
   await ctx.request('PATCH', `/gate-pass/${p2.body._id}/faculty-review`, { token: staff.token, body: { action: 'forward' } });
   await ctx.request('PATCH', `/gate-pass/${p2.body._id}/hod-review`, { token: hod.token, body: { action: 'forward' } });
   await ctx.request('PATCH', `/gate-pass/${p2.body._id}/principal-review`, { token: principal.token, body: { action: 'approve' } });
@@ -167,6 +188,7 @@ test('gate pass: student can cancel while pending; admin/principal can revoke; e
 
   // An approved pass whose window closed becomes expired.
   const p3 = await ctx.request('POST', '/gate-pass', { token: student.token, body });
+  await verifyParent(p3.body._id);
   await ctx.request('PATCH', `/gate-pass/${p3.body._id}/faculty-review`, { token: staff.token, body: { action: 'forward' } });
   await ctx.request('PATCH', `/gate-pass/${p3.body._id}/hod-review`, { token: hod.token, body: { action: 'forward' } });
   await ctx.request('PATCH', `/gate-pass/${p3.body._id}/principal-review`, { token: principal.token, body: { action: 'approve' } });

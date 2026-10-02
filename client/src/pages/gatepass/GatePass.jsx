@@ -14,6 +14,7 @@ import {
   LogOut,
   MapPin,
   Plus,
+  ScanLine,
   ShieldCheck,
   Users,
   XCircle,
@@ -41,6 +42,8 @@ import { StatusBadge } from '../../components/insights';
 import { errMsg, fmtClassDay, timeAgo, titleCase, todayKey } from '../../utils/format';
 import { GATE_PASS_REGARDING, INDIAN_STATES, STUDENT_ROLES } from '../../utils/constants';
 import { ParentVerification } from './ParentVerification';
+import QrScannerModal from '../../components/QrScannerModal';
+import { scanProblem } from '../../utils/gateQr';
 import { ReturnStatus } from './ReturnStatus';
 import { AUTHORITY_LABELS, EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, EmergencyRequestForm, isEmergency } from './EmergencyGatePass';
 
@@ -671,15 +674,18 @@ function StaffGatePass() {
 function SecurityConsole() {
   const { data: dash, isLoading, error, refetch } = useGetSecurityDashboardQuery(undefined, { pollingInterval: 30000 });
   const [code, setCode] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
   const [result, setResult] = useState(null);
   const [verify, { isLoading: verifying }] = useVerifyGatePassMutation();
   const [out, { isLoading: outLoading }] = useRecordGateOutMutation();
 
-  const check = async (e) => {
-    e?.preventDefault();
-    if (!code.trim()) return;
+  // Accepts the typed code or a scanned QR value — same verification either way.
+  const check = async (e, scanned) => {
+    e?.preventDefault?.();
+    const value = (typeof scanned === 'string' ? scanned : code).trim();
+    if (!value) return;
     try {
-      setResult({ ...(await verify(code.trim()).unwrap()), credential: code.trim() });
+      setResult({ ...(await verify(value).unwrap()), credential: value });
     } catch (err) {
       setResult({ valid: false, problems: [errMsg(err, 'Invalid code')] });
     }
@@ -714,7 +720,11 @@ function SecurityConsole() {
       )}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Verify a code" subtitle="Ask the student for their 4-character code." />
+          <CardHeader title="Verify a gate pass" subtitle="Scan the student’s QR code, or enter their 4-character code." />
+          <Button type="button" icon={ScanLine} className="mb-3 w-full" onClick={() => setScanOpen(true)}>
+            Scan QR code
+          </Button>
+          <p className="mb-2 text-center text-xs muted">or enter code manually</p>
           <form onSubmit={check} className="flex gap-2">
             <input
               value={code}
@@ -787,6 +797,16 @@ function SecurityConsole() {
           )}
         </Card>
       </div>
+      <QrScannerModal
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onScanned={(value) => {
+          setScanOpen(false);
+          const problem = scanProblem(value, 'exit');
+          if (problem) setResult({ valid: false, problems: [problem] });
+          else check(null, value);
+        }}
+      />
     </div>
   );
 }

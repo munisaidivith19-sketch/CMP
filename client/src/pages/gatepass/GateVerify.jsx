@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { AlertTriangle, ArrowLeft, CheckCircle2, LogIn, LogOut, ShieldCheck, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, LogIn, LogOut, ScanLine, ShieldCheck, XCircle } from 'lucide-react';
 import { useRecordGateInMutation, useRecordGateOutMutation, useVerifyGatePassMutation, useVerifyReturnCredentialMutation } from '../../services/api';
 import { Avatar, Button, Card, PageHeader, cn } from '../../components/ui/primitives';
+import QrScannerModal from '../../components/QrScannerModal';
+import { scanProblem } from '../../utils/gateQr';
 import { StatusBadge } from '../../components/insights';
 import { errMsg, fmtClassDay, titleCase } from '../../utils/format';
 import { GATE_PASS_REGARDING, YEAR_LABELS } from '../../utils/constants';
@@ -36,6 +38,7 @@ export default function GateVerify({ direction }) {
   const copy = COPY[direction];
   const isReturn = direction === 'in';
   const [code, setCode] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
   const [result, setResult] = useState(null);
   const [verifyExit, { isLoading: exitChecking }] = useVerifyGatePassMutation();
   const [verifyReturn, { isLoading: returnChecking }] = useVerifyReturnCredentialMutation();
@@ -45,9 +48,10 @@ export default function GateVerify({ direction }) {
   const matches = isReturn ? result?.nextAction === 'inside' : result?.nextAction === 'out';
   const student = result?.pass?.student;
 
-  const check = async (e) => {
-    e?.preventDefault();
-    const value = code.trim();
+  // Accepts the typed code or a scanned QR value — same verification either way.
+  const check = async (e, scanned) => {
+    e?.preventDefault?.();
+    const value = (typeof scanned === 'string' ? scanned : code).trim();
     if (!value) return;
     try {
       setResult({ ...(await (isReturn ? verifyReturn(value) : verifyExit(value)).unwrap()), credential: value });
@@ -86,6 +90,10 @@ export default function GateVerify({ direction }) {
       <PageHeader icon={copy.icon} title={copy.title} subtitle={copy.subtitle} />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
+          <Button type="button" icon={ScanLine} className="mb-3 w-full" onClick={() => setScanOpen(true)}>
+            Scan QR code
+          </Button>
+          <p className="mb-2 text-center text-xs muted">or enter code manually</p>
           <form onSubmit={check} className="flex flex-col gap-2 sm:flex-row">
             <input
               value={code}
@@ -157,6 +165,17 @@ export default function GateVerify({ direction }) {
           )}
         </Card>
       </div>
+      <QrScannerModal
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        title={isReturn ? 'Scan return QR' : 'Scan gate pass QR'}
+        onScanned={(value) => {
+          setScanOpen(false);
+          const problem = scanProblem(value, isReturn ? 'return' : 'exit');
+          if (problem) setResult({ valid: false, problems: [problem] });
+          else check(null, value);
+        }}
+      />
     </div>
   );
 }

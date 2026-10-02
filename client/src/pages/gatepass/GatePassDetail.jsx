@@ -7,7 +7,7 @@ import { Avatar, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../.
 import { StatusBadge } from '../../components/insights';
 import { fmtClassDay, fmtDateTime, titleCase } from '../../utils/format';
 import { GATE_PASS_REGARDING } from '../../utils/constants';
-import { PassQr, PassTimeline, passStatusLabel } from './GatePass';
+import { PassQr, PassTimeline, ReviewCard, canReviewPass, passStatusLabel } from './GatePass';
 import { AUTHORITY_LABELS, EmergencyBadge, EmergencyDetails, isEmergency } from './EmergencyGatePass';
 
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '—');
@@ -40,6 +40,7 @@ export default function GatePassDetail() {
               </div>
             }
           />
+          {!mine && canReviewPass(me.role, pass) && <ReviewCard pass={pass} onDone={refetch} />}
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader title="Details" />

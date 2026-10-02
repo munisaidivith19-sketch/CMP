@@ -407,7 +407,7 @@ const STAGE_BY_STATUS = {
   pending_authority: { hook: 'authority', forwardLabel: 'Approve', forwardAction: 'approve', okVariant: 'success' },
 };
 
-function ReviewCard({ pass, onDone }) {
+export function ReviewCard({ pass, onDone }) {
   const me = useSelector(selectUser);
   const [reject, setReject] = useState(false);
   const [reason, setReason] = useState('');
@@ -511,6 +511,9 @@ const STAGE_STATUS = {
   chairman: ['pending_authority'],
 };
 const AUTHORITY_ONLY = ['ao', 'dean', 'chairman'];
+
+/** Whether this role has an approve/reject stage open on the pass (the API still enforces it). */
+export const canReviewPass = (role, pass) => role === 'admin' ? PENDING.includes(pass.status) : Boolean(STAGE_STATUS[role]?.includes(pass.status));
 
 /** Faculty / HOD / principal each see only their own stage; admin sees every open stage. */
 function ReviewQueue({ role }) {

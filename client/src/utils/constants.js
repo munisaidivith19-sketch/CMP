@@ -141,19 +141,19 @@ export const REPORT_REASONS = ['spam', 'harassment', 'inappropriate', 'misinform
 
 /** Accent colours per category — gradient + soft tint. */
 export const CATEGORY_STYLES = {
-  technical: { grad: 'from-violet-400 to-indigo-500', soft: 'bg-violet-500/10 text-violet-600 dark:text-violet-300', hex: '#7c6cf0' },
-  hackathon: { grad: 'from-fuchsia-400 to-purple-600', soft: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-300', hex: '#c05cf0' },
-  workshop: { grad: 'from-sky-400 to-blue-500', soft: 'bg-sky-500/10 text-sky-600 dark:text-sky-300', hex: '#38a9f0' },
-  seminar: { grad: 'from-cyan-400 to-teal-500', soft: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300', hex: '#22b8c9' },
-  cultural: { grad: 'from-pink-400 to-rose-500', soft: 'bg-pink-500/10 text-pink-600 dark:text-pink-300', hex: '#f0609e' },
-  arts: { grad: 'from-rose-400 to-orange-400', soft: 'bg-rose-500/10 text-rose-600 dark:text-rose-300', hex: '#f47a6a' },
-  sports: { grad: 'from-amber-400 to-orange-500', soft: 'bg-amber-500/10 text-amber-700 dark:text-amber-300', hex: '#f5a524' },
-  social: { grad: 'from-emerald-400 to-teal-500', soft: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', hex: '#22c38e' },
-  'social-service': { grad: 'from-emerald-400 to-green-500', soft: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', hex: '#22c38e' },
-  career: { grad: 'from-blue-400 to-indigo-600', soft: 'bg-blue-500/10 text-blue-600 dark:text-blue-300', hex: '#4f7bf0' },
-  literary: { grad: 'from-yellow-400 to-amber-500', soft: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300', hex: '#e7b416' },
-  entrepreneurship: { grad: 'from-lime-400 to-emerald-500', soft: 'bg-lime-500/10 text-lime-700 dark:text-lime-300', hex: '#7cc43a' },
-  other: { grad: 'from-slate-400 to-slate-500', soft: 'bg-slate-500/10 text-slate-600 dark:text-slate-300', hex: '#8b8fa8' },
+  technical: { grad: 'from-violet-600 to-indigo-700', soft: 'bg-violet-500/10 text-violet-700 dark:text-violet-300', hex: '#6d28d9' },
+  hackathon: { grad: 'from-fuchsia-600 to-purple-700', soft: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300', hex: '#a21caf' },
+  workshop: { grad: 'from-sky-600 to-blue-700', soft: 'bg-sky-500/10 text-sky-700 dark:text-sky-300', hex: '#0369a1' },
+  seminar: { grad: 'from-cyan-600 to-teal-700', soft: 'bg-cyan-500/10 text-cyan-800 dark:text-cyan-300', hex: '#0e7490' },
+  cultural: { grad: 'from-pink-600 to-rose-700', soft: 'bg-pink-500/10 text-pink-700 dark:text-pink-300', hex: '#be185d' },
+  arts: { grad: 'from-rose-600 to-orange-700', soft: 'bg-rose-500/10 text-rose-700 dark:text-rose-300', hex: '#be123c' },
+  sports: { grad: 'from-amber-600 to-orange-700', soft: 'bg-amber-500/10 text-amber-800 dark:text-amber-300', hex: '#b45309' },
+  social: { grad: 'from-emerald-600 to-teal-700', soft: 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300', hex: '#047857' },
+  'social-service': { grad: 'from-emerald-600 to-green-700', soft: 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300', hex: '#047857' },
+  career: { grad: 'from-blue-600 to-indigo-700', soft: 'bg-blue-500/10 text-blue-700 dark:text-blue-300', hex: '#1d4ed8' },
+  literary: { grad: 'from-yellow-600 to-amber-700', soft: 'bg-yellow-500/10 text-yellow-800 dark:text-yellow-300', hex: '#a16207' },
+  entrepreneurship: { grad: 'from-lime-600 to-emerald-700', soft: 'bg-lime-500/10 text-lime-800 dark:text-lime-300', hex: '#4d7c0f' },
+  other: { grad: 'from-slate-600 to-slate-700', soft: 'bg-slate-500/10 text-slate-700 dark:text-slate-300', hex: '#475569' },
 };
 
 export const catStyle = (c) => CATEGORY_STYLES[c] || CATEGORY_STYLES.other;

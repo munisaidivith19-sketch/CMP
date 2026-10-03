@@ -84,12 +84,12 @@ export function EventCard({ event, delay = 0 }) {
             <div className="absolute inset-0 opacity-30 [background:radial-gradient(circle_at_20%_20%,white_0,transparent_40%),radial-gradient(circle_at_80%_70%,white_0,transparent_35%)]" />
           )}
           <div className="glass-strong absolute left-3 top-3 flex h-14 w-14 flex-col items-center justify-center rounded-2xl text-center">
-            <span className="text-[10px] font-bold uppercase text-primary-600 dark:text-primary-300">{format(start, 'MMM')}</span>
+            <span className="text-[10px] font-bold uppercase text-primary-700 dark:text-primary-300">{format(start, 'MMM')}</span>
             <span className="text-xl font-extrabold leading-none">{format(start, 'dd')}</span>
           </div>
           {event.isFeatured && (
-            <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-amber-600 shadow">
-              <Star className="h-3 w-3 fill-amber-400 text-amber-400" /> Featured
+            <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold text-amber-800 shadow dark:bg-slate-900/90 dark:text-amber-300">
+              <Star className="h-3 w-3 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" /> Featured
             </span>
           )}
         </div>

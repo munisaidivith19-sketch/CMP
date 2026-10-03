@@ -187,9 +187,9 @@ function AttendanceHeroDashboard({ onQuickMark }) {
 
       {/* Faculty Compliance Alert (For HOD/Admin) */}
       {(isHod || isAdmin) && unmarkedFaculty.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 text-sm text-amber-700 dark:text-amber-300">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 text-sm text-amber-800 dark:text-amber-300">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-800 dark:text-amber-400">
               <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
@@ -197,7 +197,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
               <p className="text-xs text-ink-muted">
                 {unmarkedFaculty.length} faculty member{unmarkedFaculty.length > 1 ? 's' : ''} in {me.department || 'the college'} haven't been marked today:
                 {' '}
-                <span className="font-medium text-amber-700 dark:text-amber-400">
+                <span className="font-bold text-amber-800 dark:text-amber-400">
                   {unmarkedFaculty.slice(0, 3).map((f) => f.name).join(', ')}
                   {unmarkedFaculty.length > 3 ? ` +${unmarkedFaculty.length - 3} more` : ''}
                 </span>

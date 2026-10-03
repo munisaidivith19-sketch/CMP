@@ -257,9 +257,9 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-primary-400 via-primary-500 to-fuchsia-500 p-6 text-white shadow-glow sm:p-8">
-        <div className="absolute -right-16 -top-24 h-72 w-72 rounded-full bg-white/20 blur-3xl" />
-        <div className="absolute -bottom-24 right-40 h-56 w-56 rounded-full bg-sky-300/30 blur-3xl" />
+      <section className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-primary-700 via-primary-800 to-indigo-950 p-6 text-white shadow-glow sm:p-8">
+        <div className="absolute -right-16 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+        <div className="absolute -bottom-24 right-40 h-56 w-56 rounded-full bg-sky-300/20 blur-3xl" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-xl">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white backdrop-blur">
@@ -270,16 +270,16 @@ export default function Dashboard() {
                 ? `You have ${stats.upcomingRegistrations} upcoming event${stats.upcomingRegistrations > 1 ? 's' : ''}`
                 : 'Discover what’s happening on campus'}
             </h2>
-            <p className="mt-2 text-sm text-white/80">
+            <p className="mt-2 text-sm text-white/95">
               {data.recommended.length
                 ? `${data.recommended.length} events match your interests. Don’t miss out!`
                 : 'Add interests to your profile to get personalised event picks.'}
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
-              <Button to="/events" variant="plain" className="bg-white text-primary-600 shadow-lg hover:bg-white hover:-translate-y-0.5" icon={CalendarDays}>
+              <Button to="/events" variant="plain" className="bg-white text-primary-700 shadow-lg hover:bg-white hover:-translate-y-0.5 font-bold" icon={CalendarDays}>
                 Browse events
               </Button>
-              <Button to="/clubs" variant="plain" className="border border-white/30 bg-white/15 text-white backdrop-blur hover:bg-white/25" icon={Shapes}>
+              <Button to="/clubs" variant="plain" className="border border-white/30 bg-white/15 text-white backdrop-blur hover:bg-white/25 font-bold" icon={Shapes}>
                 Explore clubs
               </Button>
             </div>
@@ -292,7 +292,7 @@ export default function Dashboard() {
             ].map(([label, v]) => (
               <div key={label} className="rounded-3xl border border-white/25 bg-white/15 px-4 py-4 text-center backdrop-blur-md">
                 <p className="text-2xl font-extrabold">{v}</p>
-                <p className="text-[11px] font-semibold text-white/80">{label}</p>
+                <p className="text-[11px] font-bold text-white/95">{label}</p>
               </div>
             ))}
           </div>

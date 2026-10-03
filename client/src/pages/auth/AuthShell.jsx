@@ -17,9 +17,9 @@ export default function AuthShell({ title, subtitle, children }) {
     <div className="relative flex min-h-screen items-center justify-center p-4">
       <Backdrop />
       <div className="grid w-full max-w-5xl overflow-hidden rounded-[36px] lg:grid-cols-2 glass-strong animate-scale-in">
-        <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-primary-400 via-primary-500 to-fuchsia-500 p-10 text-white lg:flex">
-          <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/20 blur-3xl" />
-          <div className="absolute -bottom-24 -left-10 h-72 w-72 rounded-full bg-sky-300/30 blur-3xl" />
+        <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-primary-700 via-primary-800 to-indigo-950 p-10 text-white lg:flex">
+          <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute -bottom-24 -left-10 h-72 w-72 rounded-full bg-sky-300/20 blur-3xl" />
           <div className="relative flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/20 backdrop-blur overflow-hidden">
               <img src="/logo.jpeg" alt="Logo" className="h-full w-full object-cover" />
@@ -32,7 +32,7 @@ export default function AuthShell({ title, subtitle, children }) {
               <br />
               in one place.
             </h2>
-            <p className="mt-3 max-w-sm text-sm text-white/90">
+            <p className="mt-3 max-w-sm text-sm text-white/95">
               Announcements, clubs, events and conversations — connected for every student, club and faculty member.
             </p>
             <div className="mt-8 space-y-3">
@@ -42,14 +42,14 @@ export default function AuthShell({ title, subtitle, children }) {
                     <Icon className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold">{t}</p>
-                    <p className="text-xs text-white/80">{text}</p>
+                    <p className="text-sm font-bold text-white">{t}</p>
+                    <p className="text-xs text-white/95">{text}</p>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-          <p className="relative text-xs text-white/70">© {new Date().getFullYear()} CampusConnect</p>
+          <p className="relative text-xs text-white/85">© {new Date().getFullYear()} CampusConnect</p>
         </div>
 
         <div className="relative p-7 sm:p-10">

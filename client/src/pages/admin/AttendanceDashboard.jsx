@@ -106,7 +106,7 @@ function FacultyOverview({ params }) {
           <CardHeader title="Overall rate" className="w-full" />
           <PercentRing value={o.percentage} threshold={data.threshold} sub={`${o.presentPeriods}/${o.totalPeriods}`} />
           <div className="mt-4 grid w-full grid-cols-2 gap-2">
-            <MiniStat label="Present" value={o.presentPeriods} icon={CheckCircle2} tone="text-emerald-600 bg-emerald-500/10" />
+            <MiniStat label="Present" value={o.presentPeriods} icon={CheckCircle2} tone="text-emerald-700 dark:text-emerald-400 bg-emerald-500/10" />
             <MiniStat label="Absent" value={o.totalPeriods - o.presentPeriods} icon={XCircle} tone="text-rose-600 bg-rose-500/10" />
           </div>
         </Card>
@@ -135,7 +135,7 @@ function FacultyOverview({ params }) {
                     </td>
                     <td className="px-3 py-2.5 text-right font-bold">{s.studentCount}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <span className="font-bold text-emerald-600">{s.presentPeriods}</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400">{s.presentPeriods}</span>
                       <span className="muted"> / {s.totalPeriods}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right">
@@ -157,7 +157,7 @@ function FacultyOverview({ params }) {
           title="Students needing attention"
           subtitle={`Attendance below ${data.threshold}% in at least one subject`}
           action={
-            <Link to="/attendance?tab=low" className="text-xs font-bold text-primary-600 hover:underline">
+            <Link to="/attendance?tab=low" className="text-xs font-bold text-primary-600 dark:text-primary-400 hover:underline">
               View in attendance
             </Link>
           }
@@ -286,7 +286,7 @@ function DepartmentOverview({ params, canPickDepartment }) {
               <MiniStat label="Total students" value={data.totalStudents} icon={Users} tone="text-violet-600 bg-violet-500/10" />
               <MiniStat label="In clubs" value={data.studentsInClubs} icon={Layers} tone="text-pink-600 bg-pink-500/10" />
               <MiniStat label="Event registrations" value={data.participation.registrations} icon={CalendarCheck2} tone="text-sky-600 bg-sky-500/10" />
-              <MiniStat label="Events attended" value={data.participation.attended} icon={CheckCircle2} tone="text-emerald-600 bg-emerald-500/10" />
+              <MiniStat label="Events attended" value={data.participation.attended} icon={CheckCircle2} tone="text-emerald-700 dark:text-emerald-400 bg-emerald-500/10" />
             </div>
           </Card>
         </>
@@ -355,7 +355,7 @@ function LowAttendanceList({ params }) {
                     <td className="px-3 py-2.5 muted">{r.student.department || '—'}</td>
                     <td className="px-3 py-2.5 muted">{r.student.section || '—'}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <span className="font-bold text-emerald-600">{r.present}</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-400">{r.present}</span>
                       <span className="muted"> / {r.total}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right">

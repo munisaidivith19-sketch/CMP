@@ -158,7 +158,7 @@ export default function Discussions() {
                         {d.isHidden && <Badge color="danger" icon={EyeOff}>hidden</Badge>}
                         <Badge color="neutral">{d.category}</Badge>
                         {d.tags?.slice(0, 3).map((t) => (
-                          <span key={t} className="text-[11px] font-semibold text-primary-500">
+                          <span key={t} className="text-[11px] font-bold text-primary-700 dark:text-primary-300">
                             #{t}
                           </span>
                         ))}

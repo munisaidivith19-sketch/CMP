@@ -95,12 +95,12 @@ export function CategoryBadge({ category, className }) {
 /* ── Avatar ─────────────────────────────────────────────────────── */
 const AVATAR_SIZES = { xs: 'h-7 w-7 text-[10px]', sm: 'h-9 w-9 text-xs', md: 'h-11 w-11 text-sm', lg: 'h-16 w-16 text-lg', xl: 'h-24 w-24 text-2xl' };
 const GRADS = [
-  'from-violet-600 to-indigo-700',
-  'from-pink-600 to-rose-700',
-  'from-sky-600 to-blue-700',
-  'from-amber-600 to-orange-700',
-  'from-emerald-600 to-teal-700',
-  'from-purple-600 to-fuchsia-700',
+  'from-violet-700 to-indigo-800',
+  'from-rose-700 to-pink-800',
+  'from-sky-700 to-blue-800',
+  'from-amber-700 to-orange-800',
+  'from-emerald-700 to-teal-800',
+  'from-purple-700 to-fuchsia-800',
 ];
 
 export function Avatar({ user, src, name, size = 'md', className, ring }) {

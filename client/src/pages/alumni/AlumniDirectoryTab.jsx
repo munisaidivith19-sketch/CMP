@@ -318,16 +318,16 @@ export default function AlumniDirectoryTab() {
                       {item.isVerified && (
                         <span
                           title="Verified Campus Alumni"
-                          className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
+                          className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300"
                         >
                           <ShieldCheck className="h-3 w-3" /> Verified
                         </span>
                       )}
                       {item.ratingAvg > 0 && (
-                        <span className="flex items-center gap-1 text-xs font-extrabold text-amber-500">
-                          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                        <span className="flex items-center gap-1 text-xs font-extrabold text-amber-700 dark:text-amber-400">
+                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" />
                           {item.ratingAvg.toFixed(1)}
-                          <span className="text-[10px] font-normal text-slate-400">
+                          <span className="text-[10px] font-normal text-slate-600 dark:text-slate-400">
                             ({item.ratingCount})
                           </span>
                         </span>
@@ -395,8 +395,8 @@ export default function AlumniDirectoryTab() {
                       <span
                         className={`text-[11px] font-bold ${
                           isFull
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-emerald-600 dark:text-emerald-400'
+                            ? 'text-amber-700 dark:text-amber-400'
+                            : 'text-emerald-700 dark:text-emerald-400'
                         }`}
                       >
                         {isFull
@@ -404,7 +404,7 @@ export default function AlumniDirectoryTab() {
                           : `${item.activeMenteeCount || 0}/${item.maxActiveMentees || 2} Mentees`}
                       </span>
                     ) : (
-                      <span className="text-[11px] font-medium text-slate-400">
+                      <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
                         Mentorship closed
                       </span>
                     )}

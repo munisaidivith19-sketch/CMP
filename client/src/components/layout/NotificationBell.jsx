@@ -54,7 +54,7 @@ export default function NotificationBell() {
       <button onClick={() => setOpen((o) => !o)} className="btn-icon btn-outline relative" aria-label="Notifications">
         <Bell className="h-[18px] w-[18px]" />
         {unread > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-pink-500 px-1 text-[10px] font-bold text-white shadow-lg ring-2 ring-white dark:ring-[#0c0d1d]">
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-rose-600 to-rose-700 px-1 text-[10px] font-extrabold text-white shadow-lg ring-2 ring-white dark:ring-surface">
             {unread > 9 ? '9+' : unread}
           </span>
         )}

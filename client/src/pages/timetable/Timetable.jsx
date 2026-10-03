@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { CalendarClock, Clock, Coffee, MapPin, Pencil, Plus, Search, Trash2, User } from 'lucide-react';
-import { useDeleteSlotMutation, useGetTimetableQuery } from '../../services/api';
+import { CalendarClock, Clock, Coffee, MapPin, Pencil, Plus, Search, ShieldCheck, Trash2, User } from 'lucide-react';
+import { useDeleteSlotMutation, useGetMyScheduleQuery, useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
+import MySchedule from './MySchedule';
 import { errMsg } from '../../utils/format';
 import SlotModal from './SlotModal';
 
@@ -126,7 +127,18 @@ export default function Timetable() {
   const [view, setView] = useState('today');
   const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   const isHod = me.role === 'hod';
+  const isFaculty = me.role === 'faculty';
   const isEditor = TIMETABLE_EDITORS.includes(me.role);
+  // Faculty and HOD accounts get a "My Schedule" view of their own teaching
+  // periods. A faculty member has no department / year / section selector at
+  // all: that scope comes from their teaching assignments, which the server
+  // enforces whatever the client sends.
+  const hasMySchedule = isFaculty || isHod;
+  // Faculty have two scopes: "Our Class" — the complete timetable of the class
+  // they are Class In-Charge of — and "Handling Class" — only the periods they
+  // teach. The server derives both from the account.
+  const [facultyScope, setFacultyScope] = useState('class');
+  const scopeChosen = useRef(false);
   const [lookup, setLookup] = useState({ department: me.department || '', year: '', section: '', semester: '' });
   const [applied, setApplied] = useState(null);
   const [edit, setEdit] = useState(undefined); // undefined = closed, null = new period, object = existing
@@ -134,18 +146,43 @@ export default function Timetable() {
   const [del, setDel] = useState(null);
   const [removeSlot, { isLoading: removing }] = useDeleteSlotMutation();
 
-  const params = applied?.section
-    ? { department: applied.department || undefined, year: applied.year, section: applied.section, semester: applied.semester || undefined }
-    : undefined;
-  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params);
+  // A faculty account sends nothing but the semester; an HOD sends year,
+  // section and semester, never a department (it is their own by definition).
+  const params = isFaculty
+    ? facultyScope === 'class'
+      ? { scope: 'class' }
+      : { scope: 'handling', semester: lookup.semester || undefined }
+    : applied?.section
+      ? { department: isHod ? undefined : applied.department || undefined, year: applied.year, section: applied.section, semester: applied.semester || undefined }
+      : undefined;
+  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params, { skip: view === 'mine' });
+  // The semesters a faculty member actually teaches, so the one dropdown they
+  // have never offers a semester they are not assigned to. Taken from the
+  // unfiltered schedule, so choosing one does not shrink the list.
+  const { data: mySchedule } = useGetMyScheduleQuery(undefined, { skip: !isFaculty });
   const slots = useMemo(() => data?.slots || [], [data]);
+  const ourClass = isFaculty && facultyScope === 'class' ? data?.classInCharge : null;
+  const noOurClass = isFaculty && facultyScope === 'class' && data && !data.classInCharge;
+  // A faculty member who is not Class In-Charge of any class lands on their
+  // Handling Class instead of an empty Our Class — once, so their own choice
+  // afterwards is respected.
+  useEffect(() => {
+    if (!isFaculty || scopeChosen.current || !data || facultyScope !== 'class') return;
+    scopeChosen.current = true;
+    if (!data.classInCharge) setFacultyScope('handling');
+  }, [isFaculty, data, facultyScope]);
+  const pickScope = (value) => {
+    scopeChosen.current = true;
+    setFacultyScope(value);
+  };
 
   // Editing needs one concrete class: department + year + section + semester. If no
   // semester was picked, fall back to the one semester every loaded period shares.
   const semesters = [...new Set(slots.map((s) => s.semester))];
+  const department = isHod ? me.department : applied?.department;
   const klass =
-    applied?.section && applied.department
-      ? { ...applied, semester: applied.semester || (semesters.length === 1 ? semesters[0] : '') }
+    applied?.section && department
+      ? { ...applied, department, semester: applied.semester || (semesters.length === 1 ? semesters[0] : '') }
       : null;
   const canEditClass = isEditor && klass?.semester && (!isHod || klass.department === me.department);
   const openNew = (p = null) => {
@@ -170,6 +207,8 @@ export default function Timetable() {
     return [...rows.values()].sort((a, b) => a.startTime.localeCompare(b.startTime));
   }, [slots]);
   const showSection = !isStudent && !applied?.section;
+  // Our Class is one class taught by many faculty: always name the faculty.
+  const compactCells = !(isFaculty && facultyScope === 'class');
 
   const header = (
     <PageHeader
@@ -180,10 +219,16 @@ export default function Timetable() {
           ? me.section
             ? `${me.department} · ${YEAR_LABELS[me.year] || ''} · Section ${me.section}${me.semester ? ` · Semester ${me.semester}` : ''}`
             : 'Your class schedule'
-          : applied?.section
-            ? [applied.department, YEAR_LABELS[applied.year], `Section ${applied.section}`, applied.semester && `Semester ${applied.semester}`].filter(Boolean).join(' · ')
-            : me.role === 'faculty'
-              ? 'Your teaching schedule'
+          : isFaculty
+            ? ourClass
+              ? `Our Class · ${ourClass.department} · ${YEAR_LABELS[ourClass.year]} · Section ${ourClass.section} · Semester ${ourClass.semester}`
+              : facultyScope === 'class'
+                ? 'Our Class'
+                : 'Handling Class · the periods you teach'
+            : applied?.section
+              ? [isHod ? me.department : applied.department, YEAR_LABELS[applied.year], `Section ${applied.section}`, applied.semester && `Semester ${applied.semester}`]
+                  .filter(Boolean)
+                  .join(' · ')
               : 'Class schedules'
       }
       actions={
@@ -193,7 +238,15 @@ export default function Timetable() {
               Add period
             </Button>
           )}
-          <Tabs tabs={[{ value: 'today', label: 'Today' }, { value: 'week', label: 'Week' }]} value={view} onChange={setView} />
+          <Tabs
+            tabs={[
+              { value: 'today', label: 'Today' },
+              { value: 'week', label: 'Week' },
+              ...(hasMySchedule ? [{ value: 'mine', label: 'My Schedule' }] : []),
+            ]}
+            value={view}
+            onChange={setView}
+          />
         </>
       }
     />
@@ -222,6 +275,14 @@ export default function Timetable() {
     </>
   );
 
+  if (view === 'mine') {
+    return (
+      <div className="space-y-5">
+        {header}
+        <MySchedule />
+      </div>
+    );
+  }
   if (isLoading) {
     return (
       <div>
@@ -246,18 +307,61 @@ export default function Timetable() {
     <div className="space-y-5">
       {header}
 
-      {!isStudent && (
-        <Card className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <label className="label" htmlFor="tt-dept">Department</label>
-            <select id="tt-dept" className="input" value={lookup.department} disabled={isHod} onChange={(e) => setLookup((l) => ({ ...l, department: e.target.value }))}>
-              {!isHod && <option value="">Any</option>}
-              {(isHod ? [me.department] : [...new Set([me.department, ...DEPARTMENTS].filter(Boolean))]).map((d) => (
-                <option key={d}>{d}</option>
-              ))}
-            </select>
+      {isFaculty && (
+        <Card className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="w-full sm:w-auto">
+            <p className="label">Scope</p>
+            <Tabs
+              tabs={[
+                { value: 'class', label: 'Our Class' },
+                { value: 'handling', label: 'Handling Class' },
+              ]}
+              value={facultyScope}
+              onChange={pickScope}
+              className="max-w-full"
+            />
           </div>
-          <div className="sm:w-32">
+          {facultyScope === 'handling' && (
+            <div className="w-full sm:w-44">
+              <label className="label" htmlFor="tt-sem">Semester</label>
+              <select
+                id="tt-sem"
+                className="input"
+                value={lookup.semester}
+                onChange={(e) => setLookup((l) => ({ ...l, semester: e.target.value ? Number(e.target.value) : '' }))}
+              >
+                <option value="">All semesters</option>
+                {(mySchedule?.semesters || []).map((s) => (
+                  <option key={s} value={s}>
+                    Semester {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <p className="flex flex-1 items-center gap-2 text-xs muted sm:pb-2.5">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary-500" />
+            {facultyScope === 'class'
+              ? 'The complete timetable of the class you are Class In-Charge of — every subject and faculty.'
+              : 'Only the periods you teach. Your department, year and sections come from your teaching assignments.'}
+          </p>
+        </Card>
+      )}
+
+      {!isStudent && !isFaculty && (
+        <Card className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          {!isHod && (
+            <div className="w-full sm:min-w-[12rem] sm:flex-1">
+              <label className="label" htmlFor="tt-dept">Department</label>
+              <select id="tt-dept" className="input" value={lookup.department} onChange={(e) => setLookup((l) => ({ ...l, department: e.target.value }))}>
+                <option value="">Any</option>
+                {[...new Set([me.department, ...DEPARTMENTS].filter(Boolean))].map((d) => (
+                  <option key={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="w-full sm:w-32">
             <label className="label" htmlFor="tt-year">Year</label>
             <select
               id="tt-year"
@@ -276,7 +380,7 @@ export default function Timetable() {
               ))}
             </select>
           </div>
-          <div className="sm:w-32">
+          <div className="w-full sm:w-32">
             <label className="label" htmlFor="tt-sec">Section</label>
             <select id="tt-sec" className="input" value={lookup.section} onChange={(e) => setLookup((l) => ({ ...l, section: e.target.value }))}>
               <option value="">Choose section</option>
@@ -285,7 +389,7 @@ export default function Timetable() {
               ))}
             </select>
           </div>
-          <div className="sm:w-32">
+          <div className="w-full sm:w-32">
             <label className="label" htmlFor="tt-sem">Semester</label>
             <select id="tt-sem" className="input" value={lookup.semester} disabled={!lookup.year} onChange={(e) => setLookup((l) => ({ ...l, semester: e.target.value ? Number(e.target.value) : '' }))}>
               <option value="">{lookup.year ? 'Any' : 'Year first'}</option>
@@ -296,13 +400,13 @@ export default function Timetable() {
               ))}
             </select>
           </div>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 sm:w-auto">
             <Button icon={Search} loading={isFetching} disabled={!lookup.section || !lookup.year} onClick={() => setApplied({ ...lookup })}>
               View class
             </Button>
             {applied && (
               <Button variant="ghost" onClick={() => setApplied(null)}>
-                {me.role === 'faculty' ? 'My schedule' : 'Clear'}
+                Clear
               </Button>
             )}
           </div>
@@ -320,7 +424,16 @@ export default function Timetable() {
         </Card>
       )}
 
-      {data?.needsSection ? (
+      {noOurClass ? (
+        <Card>
+          <EmptyState
+            icon={CalendarClock}
+            title="No class is currently assigned to you as Class In-Charge."
+            text="Your administrator sets your Class In-Charge section, year and semester. Your own teaching periods are under Handling Class."
+            action={<Button variant="soft" onClick={() => pickScope('handling')}>Show Handling Class</Button>}
+          />
+        </Card>
+      ) : data?.needsSection ? (
         <Card>
           <EmptyState
             icon={CalendarClock}
@@ -338,7 +451,10 @@ export default function Timetable() {
           />
         </Card>
       ) : view === 'today' ? (
-        <div className="grid gap-5 xl:grid-cols-3">
+        // min-w-0 on the grid items: without it a long subject name in a
+        // truncated line sets the column's minimum width and pushes the page
+        // wider than a phone screen instead of ellipsizing.
+        <div className="grid gap-5 xl:grid-cols-3 [&>*]:min-w-0">
           <Card className="xl:col-span-2">
             <CardHeader title={`Today · ${today.charAt(0).toUpperCase()}${today.slice(1)}`} subtitle={`${todaySlots.filter((s) => !s.isBreak).length} classes`} />
             {!todaySlots.length ? (
@@ -424,7 +540,7 @@ export default function Timetable() {
                           {cell.length ? (
                             <div className="space-y-1.5">
                               {cell.map((s) => (
-                                <SlotCard key={s._id} slot={s} state={slotState(s, d, now)} compact showSection={showSection} {...editProps} />
+                                <SlotCard key={s._id} slot={s} state={slotState(s, d, now)} compact={compactCells} showSection={showSection} {...editProps} />
                               ))}
                             </div>
                           ) : canEditClass ? (

@@ -32,6 +32,9 @@ import {
   COMPLAINT_ESCALATE_TO,
   TIMETABLE_VIEW_ROLES,
   TIMETABLE_WRITE_ROLES,
+  ATTENDANCE_VIEW_ROLES,
+  ATTENDANCE_SUMMARY_ROLES,
+  PEOPLE_DIRECTORY_ROLES,
   STUDY_MATERIAL_VIEW_ROLES,
   STUDY_MATERIAL_WRITE_ROLES,
   STUDY_MATERIAL_CATEGORIES,
@@ -53,6 +56,7 @@ import * as notes from '../controllers/notificationController.js';
 import * as admin from '../controllers/adminController.js';
 import * as chat from '../controllers/chatController.js';
 import * as attendance from '../controllers/attendanceController.js';
+import { REPORT_SCOPES, REPORT_TYPES } from '../services/attendanceReport.js';
 import * as staffAttendance from '../controllers/staffAttendanceController.js';
 import * as timetable from '../controllers/timetableController.js';
 import * as gatePass from '../controllers/gatePassController.js';
@@ -111,6 +115,34 @@ const teachingScopeRules = (required) => {
     list('teachingSections', SECTIONS, (s) => String(s).trim().toUpperCase(), 'Select the section(s) handled'),
   ];
 };
+
+/**
+ * Faculty Class In-Charge year + semester ("Our Class"). Optional on the API so
+ * existing clients keep working, but when sent they must name a real year, a
+ * real semester of that year, and belong to a faculty account. The model
+ * re-checks the pair and the section on every save.
+ */
+const inChargeRules = ({ create }) => [
+  body('inChargeYear')
+    .optional({ values: 'falsy' })
+    .custom((_v, { req }) => !create || req.body.role === 'faculty')
+    .withMessage('In-charge year and semester apply to faculty accounts only')
+    .bail()
+    .isIn(ACADEMIC_YEARS)
+    .withMessage('In-charge year must be 1–4')
+    .toInt(),
+  body('inChargeSemester')
+    .optional({ values: 'falsy' })
+    .custom((_v, { req }) => !create || req.body.role === 'faculty')
+    .withMessage('In-charge year and semester apply to faculty accounts only')
+    .bail()
+    .isIn(SEMESTERS)
+    .withMessage('In-charge semester must be 1–8')
+    .bail()
+    .custom((sem, { req }) => !req.body.inChargeYear || yearOfSemester(sem) === Number(req.body.inChargeYear))
+    .withMessage('That in-charge semester does not belong to the in-charge year')
+    .toInt(),
+];
 
 /** Optional `year` that must be 1–4 and, when a semester is sent too, the year that semester belongs to. */
 const yearMatchesSemester = () =>
@@ -204,6 +236,9 @@ router.post('/uploads', uploadLimiter, upload.single('file'), uploadFile);
 
 // ── Users / profiles ───────────────────────────────────────────────
 router.get('/users', query('context').optional().isIn(['picker']), validate, users.listUsers);
+// The People filter dropdowns this account may use, derived from its own role
+// and department — so the UI can never offer an out-of-scope option.
+router.get('/users/people-filters', authorize(...PEOPLE_DIRECTORY_ROLES), users.peopleFilters);
 router.put(
   '/users/me',
   writeLimiter,
@@ -444,6 +479,7 @@ router.post(
   // Faculty: the year(s) and section(s) they handle — both multi-select.
   body('department').if(isFacultyRole).isIn(DEPARTMENTS).withMessage('Choose a valid department'),
   ...teachingScopeRules(true),
+  ...inChargeRules({ create: true }),
   body('stayType')
     .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
     .isIn(STAY_TYPES)
@@ -482,6 +518,7 @@ router.patch(
   body('section').optional({ values: 'falsy' }).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
   body('semester').optional({ values: 'falsy' }).isIn(SEMESTERS).withMessage('Semester must be 1–8').toInt(),
   ...teachingScopeRules(false),
+  ...inChargeRules({ create: false }),
   body('rollNo').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('employeeId').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('stayType').optional({ values: 'null' }).isIn(STAY_TYPES),
@@ -611,14 +648,71 @@ router.post(
 router.get('/attendance/my', ...rangeQuery, query('semester').optional().isInt({ min: 1, max: 12 }), validate, attendance.getMyAttendance);
 router.get('/attendance/records', ...rangeQuery, validate, attendance.getAttendanceRecords);
 router.get('/attendance/trends', ...rangeQuery, validate, attendance.getAttendanceTrends);
-router.get('/attendance/sessions', authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.listSessions);
-router.get('/attendance/low', authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getLowAttendance);
-router.get('/attendance/student/:id', idParam('id'), authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getStudentAttendance);
-router.get('/attendance/subject/:subjectId', idParam('subjectId'), authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getSubjectAttendance);
-router.get('/attendance/section', authorize(...STAFF_VIEW), ...rangeQuery, validate, attendance.getSectionAttendance);
+router.get('/attendance/sessions', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.listSessions);
+router.get('/attendance/low', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getLowAttendance);
+router.get('/attendance/student/:id', idParam('id'), authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getStudentAttendance);
+router.get('/attendance/subject/:subjectId', idParam('subjectId'), authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getSubjectAttendance);
+router.get('/attendance/section', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getSectionAttendance);
 
-// Daily headcount for the admin (college) / HOD (own department) dashboard.
-const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
+// "My Classes": attendance for a class the signed-in faculty member actually
+// handles. The subject/section lists come from their teaching assignments and
+// the backend re-checks the pair on every read.
+router.get('/attendance/my-classes/options', authorize('faculty'), attendance.getMyClassOptions);
+// "Our Class": the complete attendance of the faculty member's Class In-Charge
+// class — no subject chosen; the class comes from the account.
+router.get('/attendance/our-class', authorize('faculty'), ...rangeQuery, validate, attendance.getOurClassAttendance);
+router.get(
+  '/attendance/my-classes',
+  authorize('faculty'),
+  query('subjectId').isMongoId().withMessage('Subject is required'),
+  query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  ...rangeQuery,
+  validate,
+  attendance.getMyClassAttendance
+);
+
+// Attendance reports. Faculty are limited to their teaching assignments and an
+// HOD to their own department; a period report is refused until the period has
+// finished on the server clock. Everything is enforced in the report service.
+router.get('/attendance/reports/options', authorize(...ATTENDANCE_VIEW_ROLES), attendance.getReportOptions);
+// Registered before /reports/:type so "periods" is never read as a report type.
+router.get(
+  '/attendance/reports/periods',
+  authorize(...ATTENDANCE_VIEW_ROLES),
+  query('scope').optional({ values: 'falsy' }).isIn(REPORT_SCOPES),
+  query('subjectId').optional({ values: 'falsy' }).isMongoId(),
+  query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
+  query('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
+  dateField('date', query).optional({ values: 'falsy' }),
+  validate,
+  attendance.getReportPeriods
+);
+router.get(
+  '/attendance/reports/:type',
+  authorize(...ATTENDANCE_VIEW_ROLES),
+  param('type').isIn(REPORT_TYPES).withMessage('Unknown report type'),
+  query('format').optional({ values: 'falsy' }).isIn(['json', 'pdf']),
+  query('subjectId').optional({ values: 'falsy' }).isMongoId(),
+  query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
+  query('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
+  // A period number, or "all" for every finished period of the date.
+  query('period')
+    .optional({ values: 'falsy' })
+    .custom((v) => v === 'all' || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 12))
+    .withMessage('Period must be 1–12 or all'),
+  // Faculty: "class" = Our Class (Class In-Charge), "handling" = Handling Class.
+  query('scope').optional({ values: 'falsy' }).isIn(REPORT_SCOPES).withMessage('Scope must be class or handling'),
+  dateField('date', query).optional({ values: 'falsy' }),
+  query('from').optional({ values: 'falsy' }).isISO8601(),
+  query('to').optional({ values: 'falsy' }).isISO8601(),
+  validate,
+  attendance.getAttendanceReport
+);
+
+// Daily headcount for the college-wide roles / HOD (own department) dashboard.
+const SUMMARY_VIEW = ATTENDANCE_SUMMARY_ROLES;
 const summaryQuery = [
   query('date').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Date must be YYYY-MM-DD'),
   query('department').optional({ values: 'falsy' }).trim().isLength({ max: 80 }),
@@ -714,10 +808,21 @@ router.get(
   authorize(...TIMETABLE_VIEW_ROLES),
   query('year').optional().isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4'),
   query('semester').optional().isIn(SEMESTERS).withMessage('Semester must be 1–8'),
+  // Faculty: `class` = their Class In-Charge class, `handling` = their own periods.
+  query('scope').optional({ values: 'falsy' }).isIn(['class', 'handling']).withMessage('Scope must be class or handling'),
   validate,
   timetable.getMyTimetable
 );
 router.get('/timetable/current', authorize(...TIMETABLE_VIEW_ROLES), timetable.getCurrentClass);
+// "My Schedule": the authenticated user's own weekly teaching periods. There
+// is no faculty parameter — it is always the caller's own assignments.
+router.get(
+  '/timetable/my-schedule',
+  authorize(...TIMETABLE_VIEW_ROLES),
+  query('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
+  validate,
+  timetable.getMySchedule
+);
 router.get('/timetable/faculty-options', authorize(...TIMETABLE_WRITE_ROLES), timetable.listFacultyOptions);
 router.get('/timetable/section/:section', authorize(...TIMETABLE_VIEW_ROLES), param('section').trim().isLength({ min: 1, max: 10 }), validate, timetable.getSectionTimetable);
 router.get('/timetable/faculty/:id', authorize(...TIMETABLE_VIEW_ROLES), idParam('id'), timetable.getFacultyTimetable);

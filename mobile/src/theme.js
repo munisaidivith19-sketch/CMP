@@ -66,8 +66,12 @@ export const ROLE_LABELS = {
 export const STUDENT_ROLES = ['student', 'club_admin'];
 /** Can mark attendance / act on academic data. */
 export const STAFF = ['admin', 'faculty', 'hod'];
-/** Sees today's college (admin, principal) or department (HOD) attendance summary. */
-export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
+/** College-wide academic visibility (mirrors server COLLEGE_WIDE_ROLES); all but admin read-only. */
+export const COLLEGE_WIDE = ['admin', 'principal', 'chairman', 'dean', 'ao'];
+/** Read attendance but never mark it. */
+export const ATTENDANCE_READ_ONLY = ['principal', 'chairman', 'dean', 'ao'];
+/** Sees today's college (college-wide roles) or department (HOD) attendance summary. */
+export const SUMMARY_VIEW = ['hod', ...COLLEGE_WIDE];
 /** May start a group chat; faculty groups wait for admin approval. */
 export const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
 export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];

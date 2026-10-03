@@ -16,7 +16,9 @@ import {
   useMarkFacultyAttendanceMutation,
 } from '../services/api';
 import { selectUser } from '../store/authSlice';
-import { SUMMARY_VIEW, colors, fonts } from '../theme';
+import { ATTENDANCE_READ_ONLY, COLLEGE_WIDE, SUMMARY_VIEW, colors, fonts } from '../theme';
+import OurClassAttendance from './OurClassAttendance';
+import AttendanceReports from './AttendanceReports';
 import { fmtClassDay, to12h } from '../utils/format';
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -397,13 +399,19 @@ function FacultyMarking() {
   );
 }
 
-/** Attendance for staff: faculty mark their classes, HOD/admin also see the day and mark faculty; principal views. */
+/**
+ * Attendance for staff: faculty mark their classes and see Our Class (their
+ * Class In-Charge class, view only); HOD/admin also see the day and mark
+ * faculty; principal, chairman, dean and AO view without marking.
+ */
 export default function StaffAttendance() {
   const me = useSelector(selectUser);
   const tabs = [
-    ...(me.role !== 'principal' ? [{ value: 'mark', label: 'Mark class' }] : []),
+    ...(!ATTENDANCE_READ_ONLY.includes(me.role) ? [{ value: 'mark', label: 'Mark class' }] : []),
+    ...(me.role === 'faculty' ? [{ value: 'our', label: 'Our Class' }] : []),
     ...(SUMMARY_VIEW.includes(me.role) ? [{ value: 'today', label: 'Daily summary' }] : []),
     ...(['admin', 'hod'].includes(me.role) ? [{ value: 'faculty', label: 'Faculty' }] : []),
+    ...(['faculty', 'hod', ...COLLEGE_WIDE].includes(me.role) ? [{ value: 'reports', label: 'Reports' }] : []),
   ];
   const [tab, setTab] = useState(tabs[0]?.value);
 
@@ -414,6 +422,8 @@ export default function StaffAttendance() {
       {tab === 'mark' && <MarkClass />}
       {tab === 'today' && <DailySummary />}
       {tab === 'faculty' && <FacultyMarking />}
+      {tab === 'our' && <OurClassAttendance />}
+      {tab === 'reports' && <AttendanceReports />}
     </Screen>
   );
 }

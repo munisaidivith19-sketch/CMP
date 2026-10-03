@@ -7,13 +7,16 @@ import { asyncHandler, escapeRegex } from '../utils/http.js';
 import { announcementVisibility } from '../utils/visibility.js';
 import { isModerator } from '../utils/permissions.js';
 import { peopleScopeFilter } from '../utils/peopleScope.js';
-
-const NO_DIRECTORY_ROLES = ['student', 'club_admin'];
+import { PEOPLE_DIRECTORY_ROLES } from '../constants.js';
 
 /** People results are scoped the same as the directory — never abusable to
- * enumerate students/faculty outside the viewer's authorization. */
+ * enumerate students/faculty outside the viewer's authorization.
+ *
+ * A viewer with no directory access (students, Security, Warden) gets an empty
+ * people list rather than an error, so global search keeps working for them
+ * across clubs, events and the rest. */
 async function searchUsersScoped(viewer, q, limit) {
-  if (NO_DIRECTORY_ROLES.includes(viewer.role)) return [];
+  if (!PEOPLE_DIRECTORY_ROLES.includes(viewer.role)) return [];
   const scope = await peopleScopeFilter(viewer);
   return searchCollection(User, q, {
     filter: { isActive: true, ...scope },

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useSelector } from 'react-redux';
-import { CalendarClock, Clock, Coffee, MapPin, User } from 'lucide-react-native';
-import { Badge, Card, EmptyState, ErrorState, Header, Loading, Screen, Segmented, T } from '../../components/ui';
+import { CalendarClock, Clock, Coffee, GraduationCap, MapPin, User } from 'lucide-react-native';
+import { Badge, Button, Card, EmptyState, ErrorState, Header, Loading, Screen, Segmented, T } from '../../components/ui';
 import { useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../store/authSlice';
 import { STUDENT_ROLES, YEAR_LABELS, colors } from '../../theme';
@@ -17,7 +17,24 @@ const hhmm = () => {
 
 export default function Timetable() {
   const me = useSelector(selectUser);
-  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery();
+  const isFaculty = me.role === 'faculty';
+  // Faculty: "Our Class" = the complete timetable of their Class In-Charge
+  // class; "Handling Class" = only the periods they teach. Same server scope
+  // as the web app — the client only names which one it wants.
+  const [scope, setScope] = useState('class');
+  const chosen = useRef(false);
+  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(isFaculty ? { scope } : undefined);
+  useEffect(() => {
+    if (!isFaculty || chosen.current || !data || scope !== 'class') return;
+    chosen.current = true;
+    if (!data.classInCharge) setScope('handling');
+  }, [isFaculty, data, scope]);
+  const pickScope = (v) => {
+    chosen.current = true;
+    setScope(v);
+  };
+  const ourClass = isFaculty && scope === 'class' ? data?.classInCharge : null;
+  const noOurClass = isFaculty && scope === 'class' && data && !data.classInCharge;
   const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   const [now, setNow] = useState(hhmm());
   useEffect(() => {
@@ -34,13 +51,42 @@ export default function Timetable() {
       <Header
         back
         title="Timetable"
-        subtitle={STUDENT_ROLES.includes(me.role) ? (me.section ? `${me.department} · ${YEAR_LABELS[me.year] || ''} · Section ${me.section}${me.semester ? ` · Sem ${me.semester}` : ''}` : 'Your class schedule') : 'Your teaching schedule'}
+        subtitle={
+          STUDENT_ROLES.includes(me.role)
+            ? me.section
+              ? `${me.department} · ${YEAR_LABELS[me.year] || ''} · Section ${me.section}${me.semester ? ` · Sem ${me.semester}` : ''}`
+              : 'Your class schedule'
+            : ourClass
+              ? `Our Class · ${YEAR_LABELS[ourClass.year]} · Sec ${ourClass.section} · Sem ${ourClass.semester}`
+              : isFaculty && scope === 'handling'
+                ? 'Handling Class · the periods you teach'
+                : 'Your teaching schedule'
+        }
       />
+      {isFaculty ? (
+        <Segmented
+          value={scope}
+          onChange={pickScope}
+          options={[
+            { value: 'class', label: 'Our Class' },
+            { value: 'handling', label: 'Handling Class' },
+          ]}
+        />
+      ) : null}
       <Segmented value={day} onChange={setDay} options={DAYS.map((d) => ({ value: d, label: d === todayName() ? 'Today' : d.slice(0, 3).replace(/^./, (c) => c.toUpperCase()) }))} />
       {isLoading ? (
         <Loading />
       ) : error ? (
         <ErrorState error={error} onRetry={refetch} />
+      ) : noOurClass ? (
+        <Card>
+          <EmptyState
+            icon={GraduationCap}
+            title="No class is currently assigned to you as Class In-Charge."
+            text="Your own teaching periods are under Handling Class."
+            action={<Button title="Show Handling Class" variant="soft" small onPress={() => pickScope('handling')} />}
+          />
+        </Card>
       ) : data.needsSection ? (
         <Card>
           <EmptyState icon={CalendarClock} title="Your section isn’t set yet" text="An administrator assigns your department, section and semester. Your timetable appears here automatically after that." />
@@ -77,7 +123,8 @@ export default function Timetable() {
                 {[
                   [Clock, `${to12h(s.startTime)} – ${to12h(s.endTime)}`],
                   s.room ? [MapPin, s.room] : null,
-                  STUDENT_ROLES.includes(me.role) ? [User, s.faculty?.name] : [User, `${YEAR_LABELS[s.year] || `Year ${s.year}`} · Sec ${s.section} · Sem ${s.semester} · ${s.department}`],
+                  STUDENT_ROLES.includes(me.role) || ourClass ? [User, s.faculty?.name] : null,
+                  STUDENT_ROLES.includes(me.role) ? null : [GraduationCap, `${YEAR_LABELS[s.year] || `Year ${s.year}`} · Sec ${s.section} · Sem ${s.semester} · ${s.department}`],
                 ]
                   .filter(Boolean)
                   .map(([Icon, label]) => (

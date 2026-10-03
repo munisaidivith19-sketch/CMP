@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { ApiError } from './http.js';
+import { clock } from './clock.js';
 
 const DAY_MS = 86400000;
 const WEEKDAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -45,7 +46,10 @@ export function toDay(value) {
   return d;
 }
 
-export const today = () => toDay(new Date());
+// "Today" on the server clock — the same clock every attendance time rule
+// uses, so a "today" / "this week" range can never disagree with which
+// periods the server considers finished.
+export const today = () => toDay(clock.now());
 export const addDays = (day, n) => new Date(day.getTime() + n * DAY_MS);
 export const weekdayOf = (day) => WEEKDAY_NAMES[day.getUTCDay()];
 export const dayKey = (day) => day.toISOString().slice(0, 10);

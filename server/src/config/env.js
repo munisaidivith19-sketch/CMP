@@ -137,6 +137,9 @@ const decimal = (name, fallback, min, max) => {
   return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 };
 
+/** Heading printed on generated reports (PDF). */
+env.collegeName = (process.env.COLLEGE_NAME || 'VEXON').trim().slice(0, 90);
+
 /** Gate pass return-to-campus check. The backend alone decides; these never come from the client. */
 env.location = {
   collegeLatitude: decimal('COLLEGE_LATITUDE', 13.263803, -90, 90),

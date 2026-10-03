@@ -6,11 +6,13 @@ import AppLayout, { Backdrop } from './components/layout/AppLayout';
 import { PageLoader, Spinner } from './components/ui/primitives';
 import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
-import { ROLES, STAFF_VIEW, STUDENT_ROLES } from './utils/constants';
+import { PEOPLE_DIRECTORY, ROLES, STAFF_VIEW } from './utils/constants';
 
 // The People directory (browse/search) is off-limits to students — a single
 // profile fetched from elsewhere (chat, discussions, clubs) is unaffected.
-const PEOPLE_DIRECTORY_ROLES = ROLES.filter((r) => !STUDENT_ROLES.includes(r));
+// Security and Warden have no academic directory; students get single
+// profiles only, which /people/:id still serves.
+const PEOPLE_DIRECTORY_ROLES = PEOPLE_DIRECTORY;
 // Warden/Security have zero timetable access anywhere in the app.
 const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
 // Warden/Security have zero Study Materials access either.

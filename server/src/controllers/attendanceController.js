@@ -13,7 +13,21 @@ import { sameId } from '../utils/permissions.js';
 import { emitToUsers } from '../config/socket.js';
 import { addDays, campusParts, dayFilter, dayKey, resolveRange, toDay, weekdayOf } from '../utils/dates.js';
 import { clock } from '../utils/clock.js';
-import { yearOfSemester } from '../constants.js';
+import {
+  assertAssigned,
+  assignmentsBySubject,
+  classInChargeFilter,
+  classInChargeRecordFilter,
+  facultyAssignments,
+  facultyClassInChargeScope,
+  facultyClasses,
+  inClasses,
+  ownDepartment,
+} from '../utils/academicScope.js';
+import { buildReport, byRollNo, reportFilename, reportPeriods } from '../services/attendanceReport.js';
+import { renderReportPdf } from '../services/attendanceReportPdf.js';
+import { safeFilename } from '../utils/pdf.js';
+import { ACADEMIC_READ_ONLY_ROLES, COLLEGE_WIDE_ROLES, yearOfSemester } from '../constants.js';
 
 export const LOW_ATTENDANCE_THRESHOLD = 75;
 // Club admins are students with extra club permissions.
@@ -36,17 +50,81 @@ function oid(value, name = 'id') {
 const isAssigned = (subject, user) => subject.faculty?.some((f) => sameId(f, user));
 
 /**
- * Records a staff member may see. Admin: everything. Faculty: subjects they
- * teach plus their own department (class mentor / HOD view).
+ * The attendance records a staff account may read, derived from the
+ * authenticated account alone.
+ *
+ * - Admin, Principal, Chairman, Dean, AO (COLLEGE_WIDE_ROLES): every
+ *   department. All but admin are read-only.
+ * - Faculty: ONLY their actual teaching assignments — subject + department +
+ *   section. Their own department is deliberately NOT a grant: a faculty
+ *   member assigned 3rd-year Section A must never see Section B, another year
+ *   or another faculty member's class. Where the timetable schedules them for
+ *   a subject, those exact sections are the scope; a subject they are listed
+ *   on but have no timetable row for falls back to that subject's own declared
+ *   sections, which is still an explicit assignment, never a department.
+ * - HOD: their own department, from the account.
+ *
+ * A faculty member's READ scope is the union of their two legitimate scopes:
+ * Handling Class (above) and Our Class — the complete attendance of the one
+ * class they are Class In-Charge of (classInChargeRecordFilter, exact by
+ * year and semester). This is reading only: marking and editing are decided
+ * by assertCanMark / assertCanWrite, which look at the subject-handling
+ * assignment and are untouched by Class In-Charge.
  */
 async function staffScope(user) {
-  // Admin and Principal see every department; Principal is otherwise read-only.
-  if (['admin', 'principal'].includes(user.role)) return {};
-  const subjects = await Subject.find({ faculty: user._id }).distinct('_id');
-  const or = [{ subject: { $in: subjects } }];
-  // HOD has no personal subjects, so this becomes a plain department filter for them.
-  if (user.department) or.push({ department: user.department });
-  return { $or: or };
+  if (COLLEGE_WIDE_ROLES.includes(user.role)) return {};
+  if (user.role === 'hod') return { department: ownDepartment(user) };
+
+  if (user.role === 'faculty') {
+    const [assignments, listed, ourClass] = await Promise.all([
+      facultyAssignments(user),
+      Subject.find({ faculty: user._id, isActive: true }).select('department sections').lean(),
+      facultyClassInChargeScope(user),
+    ]);
+    const scheduled = new Set(assignments.map((a) => String(a.subject)));
+    const clauses = assignments.map((a) => ({ subject: a.subject, department: a.department, section: a.section }));
+    for (const subject of listed) {
+      if (scheduled.has(String(subject._id))) continue; // the timetable is more precise
+      const sections = (subject.sections || []).map((x) => String(x).toUpperCase()).filter(Boolean);
+      clauses.push(
+        sections.length
+          ? { subject: subject._id, department: subject.department, section: { $in: sections } }
+          : { subject: subject._id, department: subject.department }
+      );
+    }
+    if (ourClass.length) {
+      const classRecords = await classInChargeRecordFilter(ourClass);
+      if (classRecords.$or) clauses.push(...classRecords.$or);
+    }
+    return clauses.length ? { $or: clauses } : { _id: null };
+  }
+
+  // Any other role (Security, Warden) has no academic scope at all. The
+  // routes already refuse them; this keeps the filter safe if that changes.
+  return { _id: null };
+}
+
+/**
+ * Combine a role's authorization scope with the narrowing filters a client
+ * sent. They are `$and`-ed, never merged, so a request can only ever
+ * intersect the authorized scope — a sent department or section can never
+ * overwrite the scope's own constraint on the same field.
+ */
+function scopedMatch(scope, narrow = {}) {
+  const keys = Object.keys(narrow).filter((k) => narrow[k] !== undefined);
+  if (!keys.length) return scope;
+  const clean = Object.fromEntries(keys.map((k) => [k, narrow[k]]));
+  if (!Object.keys(scope).length) return clean;
+  return { $and: [scope, clean] };
+}
+
+/** The narrowing filters every staff attendance read accepts, normalised. */
+function narrowFromQuery(query = {}) {
+  return {
+    section: query.section ? String(query.section).toUpperCase() : undefined,
+    department: query.department ? String(query.department) : undefined,
+    subject: query.subject ? oid(query.subject, 'subject') : undefined,
+  };
 }
 
 /**
@@ -75,7 +153,7 @@ function normaliseSection(subject, section) {
 
 /** Who may view a class roster at all (reading, not writing). */
 function assertCanMark(user, subject) {
-  if (user.role === 'principal') throw new ApiError(403, 'Principal access is read-only');
+  if (ACADEMIC_READ_ONLY_ROLES.includes(user.role)) throw new ApiError(403, 'Your access to attendance is read-only');
   if (user.role === 'faculty' && !isAssigned(subject, user)) {
     throw new ApiError(403, 'You are not assigned to this subject');
   }
@@ -112,7 +190,7 @@ export function periodStatus({ startTime, endTime }, time) {
 function assertCanWrite(user, { subject, day, slot, session, viaSlot }) {
   const now = campusNow();
   if (day > now.day) throw new ApiError(422, 'Attendance cannot be marked for a future date');
-  if (user.role === 'principal') throw new ApiError(403, 'Principal access is read-only');
+  if (ACADEMIC_READ_ONLY_ROLES.includes(user.role)) throw new ApiError(403, 'Your access to attendance is read-only');
   if (user.role === 'admin') return;
   if (user.role === 'hod') {
     if (subject.department !== user.department) throw new ApiError(403, 'You can only edit attendance for your own department');
@@ -455,51 +533,282 @@ export const getMyAttendance = asyncHandler(async (req, res) => {
   res.json(await studentSummary(req.user._id, req.query));
 });
 
-/** Staff view of one student's attendance (faculty: own department or own subjects). */
+/**
+ * Staff view of one student's attendance. An HOD is confined to their own
+ * department; a faculty member to the students of the classes they actually
+ * teach, and then to their own subjects within that student's record — their
+ * department alone authorizes nothing.
+ */
 export const getStudentAttendance = asyncHandler(async (req, res) => {
   const student = await User.findById(req.params.id).select('name rollNo avatar department section semester year role').lean();
   if (!student || !STUDENT_ROLES.includes(student.role)) throw new ApiError(404, 'Student not found');
   const query = { ...req.query };
-  const outsideDept = student.department !== req.user.department;
-  // HOD (and Principal, who never reaches here — see assertCanMark) is department-only: no subject fallback.
-  if (req.user.role === 'hod' && outsideDept) {
+
+  if (req.user.role === 'hod' && student.department !== ownDepartment(req.user)) {
     throw new ApiError(403, 'This student is outside your department');
   }
-  if (req.user.role === 'faculty' && outsideDept) {
+
+  if (req.user.role === 'faculty') {
+    // Our Class: the Class In-Charge sees the complete record of their own
+    // class's students, across every subject.
+    if (inClasses(await facultyClassInChargeScope(req.user), student)) {
+      return res.json({ student, ...(await studentSummary(student._id, query)) });
+    }
+    // The same class scope People and Chat use, so the three modules never
+    // disagree about which students a faculty account may see.
+    if (!inClasses(await facultyClasses(req.user), student)) {
+      throw new ApiError(403, 'This student is not in one of your classes');
+    }
     const mine = await Subject.find({ faculty: req.user._id }).distinct('_id');
-    if (!mine.length) throw new ApiError(403, 'This student is outside your department and subjects');
-    // Restrict to the subjects this faculty teaches.
     const summary = await studentSummary(student._id, query);
     summary.subjects = summary.subjects.filter((s) => mine.some((m) => sameId(m, s._id)));
-    if (!summary.subjects.length) throw new ApiError(403, 'This student is outside your department and subjects');
     const present = summary.subjects.reduce((a, s) => a + s.presentPeriods, 0);
     const total = summary.subjects.reduce((a, s) => a + s.totalPeriods, 0);
     summary.overall = { presentPeriods: present, totalPeriods: total, absentPeriods: total - present, percentage: percentage(present, total) };
     summary.belowThreshold = summary.subjects.filter((s) => s.percentage < LOW_ATTENDANCE_THRESHOLD);
     return res.json({ student, ...summary });
   }
+
   res.json({ student, ...(await studentSummary(student._id, query)) });
+});
+
+// ── Our Class (faculty Class In-Charge) ────────────────────────────
+
+/** A session counts once it has finished on the server clock (earlier days always have). */
+function isFinished(session, now) {
+  const day = new Date(session.date).getTime();
+  return day < now.day.getTime() || (day === now.day.getTime() && now.time >= session.endTime);
+}
+
+/**
+ * "Our Class": the complete attendance of the class the signed-in faculty
+ * member is Class In-Charge of, for today / a week / a month / a semester / a
+ * custom range. No subject is chosen — the class comes from the account
+ * (facultyClassInChargeScope), and nothing the client sends can change it.
+ *
+ * AttendanceSession is the class-level bridge: the class's sessions are found
+ * by department + year + section + semester, and the records by those session
+ * ids, so a same-letter section of another year can never leak in. Only
+ * periods that have finished on the server clock are counted; a running
+ * period's partly-marked attendance is not.
+ */
+export const getOurClassAttendance = asyncHandler(async (req, res) => {
+  const [ourClass] = await facultyClassInChargeScope(req.user);
+  if (!ourClass) return res.json({ class: null });
+
+  const now = campusNow();
+  const window = resolveRange(req.query, 'day');
+  const df = dayFilter(window);
+  const sessions = await AttendanceSession.find({ ...classInChargeFilter([ourClass]), ...(df ? { date: df } : {}) })
+    .sort({ date: 1, period: 1 })
+    .lean();
+  const finished = sessions.filter((sess) => isFinished(sess, now));
+
+  const [records, roster] = await Promise.all([
+    finished.length ? AttendanceRecord.find({ session: { $in: finished.map((sess) => sess._id) } }).select('student status session').lean() : [],
+    User.find({
+      role: { $in: STUDENT_ROLES },
+      isActive: true,
+      department: ourClass.department,
+      section: ourClass.section,
+      year: ourClass.year,
+      semester: { $in: [ourClass.semester, null] },
+    })
+      .select('name rollNo avatar department year section semester')
+      .lean(),
+  ]);
+  roster.sort(byRollNo);
+
+  const perStudent = new Map();
+  const perSession = new Map();
+  for (const r of records) {
+    const st = perStudent.get(String(r.student)) || { presentPeriods: 0, totalPeriods: 0 };
+    st.totalPeriods += 1;
+    if (r.status === 'present') st.presentPeriods += 1;
+    perStudent.set(String(r.student), st);
+
+    const ss = perSession.get(String(r.session)) || { present: 0, total: 0 };
+    ss.total += 1;
+    if (r.status === 'present') ss.present += 1;
+    perSession.set(String(r.session), ss);
+  }
+
+  const students = roster.map((st) => {
+    const r = perStudent.get(String(st._id)) || { presentPeriods: 0, totalPeriods: 0 };
+    return {
+      _id: st._id,
+      name: st.name,
+      rollNo: st.rollNo || null,
+      avatar: st.avatar,
+      department: st.department,
+      program: st.department,
+      year: st.year,
+      section: st.section,
+      semester: st.semester ?? ourClass.semester,
+      totalPeriods: r.totalPeriods,
+      presentPeriods: r.presentPeriods,
+      absentPeriods: r.totalPeriods - r.presentPeriods,
+      percentage: percentage(r.presentPeriods, r.totalPeriods),
+    };
+  });
+  const present = students.reduce((a, st) => a + st.presentPeriods, 0);
+  const total = students.reduce((a, st) => a + st.totalPeriods, 0);
+
+  res.json({
+    class: { ...ourClass, classInCharge: req.user.name },
+    range: { range: window.range || 'all', from: window.from ? dayKey(window.from) : null, to: window.to ? dayKey(window.to) : null },
+    overall: {
+      totalStudents: students.length,
+      classesConducted: finished.length,
+      presentPeriods: present,
+      absentPeriods: total - present,
+      totalPeriods: total,
+      percentage: percentage(present, total),
+    },
+    // Period-level detail: what was held, by whom, and how many attended.
+    sessions: finished.map((sess) => {
+      const c = perSession.get(String(sess._id)) || { present: 0, total: 0 };
+      return {
+        _id: sess._id,
+        date: dayKey(sess.date),
+        period: sess.period,
+        startTime: sess.startTime,
+        endTime: sess.endTime,
+        subject: sess.subjectName,
+        subjectCode: sess.subjectCode,
+        facultyName: sess.facultyName,
+        present: c.present,
+        absent: c.total - c.present,
+        total: c.total,
+      };
+    }),
+    students,
+    belowThreshold: students.filter((st) => st.totalPeriods > 0 && st.percentage < LOW_ATTENDANCE_THRESHOLD),
+  });
+});
+
+// ── My Classes (faculty) ───────────────────────────────────────────
+
+/**
+ * The Subject and Section dropdowns of "My Classes", built from the
+ * authenticated faculty member's real teaching assignments. Section lists are
+ * per subject, so a subject taught to A and C never offers B. Nothing here is
+ * derived from anything the client sent.
+ */
+export const getMyClassOptions = asyncHandler(async (req, res) => {
+  const assignments = await facultyAssignments(req.user);
+  res.json({ subjects: assignmentsBySubject(assignments) });
+});
+
+/**
+ * Attendance for one exact class the authenticated faculty member handles:
+ * subject + section, validated against their teaching assignments before any
+ * attendance is read. A subjectId or section they are not assigned to is a
+ * 403, never a different class's data.
+ */
+export const getMyClassAttendance = asyncHandler(async (req, res) => {
+  const assignments = await facultyAssignments(req.user);
+  const subjectId = oid(req.query.subjectId, 'subject');
+  const section = req.query.section ? String(req.query.section).toUpperCase() : undefined;
+  const matches = assertAssigned(assignments, { subject: subjectId, section });
+  const cls = matches[0];
+
+  const subject = await Subject.findById(subjectId).lean();
+  if (!subject) throw new ApiError(404, 'Subject not found');
+
+  const sections = section ? [section] : [...new Set(matches.map((m) => m.section))];
+  const match = { subject: subject._id, section: { $in: sections } };
+  const df = dayFilter(resolveRange(req.query, 'all'));
+  if (df) match.date = df;
+
+  const [stats, conducted, roster] = await Promise.all([
+    AttendanceRecord.aggregate([
+      { $match: match },
+      { $group: { _id: '$student', totalPeriods: { $sum: 1 }, presentPeriods: presentExpr } },
+    ]),
+    AttendanceRecord.aggregate([
+      { $match: match },
+      { $group: { _id: { date: '$date', period: '$period', section: '$section' } } },
+      { $count: 'n' },
+    ]),
+    User.find({
+      role: { $in: STUDENT_ROLES },
+      isActive: true,
+      department: cls.department,
+      section: { $in: sections },
+      ...(cls.year !== undefined ? { year: cls.year } : {}),
+      ...(cls.semester !== undefined ? { semester: { $in: [cls.semester, null] } } : {}),
+    })
+      .select('name rollNo avatar department year section semester')
+      .lean(),
+  ]);
+  // Roll numbers sort naturally ("9" before "10"), the same ordering the
+  // reports use, so the screen and the PDF never disagree.
+  roster.sort(byRollNo);
+
+  const byStudent = Object.fromEntries(stats.map((r) => [String(r._id), r]));
+  const students = roster.map((st) => {
+    const r = byStudent[String(st._id)] || { totalPeriods: 0, presentPeriods: 0 };
+    return {
+      _id: st._id,
+      name: st.name,
+      rollNo: st.rollNo || null,
+      avatar: st.avatar,
+      department: st.department,
+      year: st.year,
+      section: st.section,
+      semester: st.semester,
+      totalPeriods: r.totalPeriods,
+      presentPeriods: r.presentPeriods,
+      absentPeriods: r.totalPeriods - r.presentPeriods,
+      percentage: percentage(r.presentPeriods, r.totalPeriods),
+    };
+  });
+  const present = students.reduce((a, st) => a + st.presentPeriods, 0);
+  const total = students.reduce((a, st) => a + st.totalPeriods, 0);
+
+  res.json({
+    class: {
+      department: cls.department,
+      year: cls.year,
+      section: section || null,
+      sections,
+      semester: cls.semester,
+      subject: { _id: subject._id, name: subject.name, code: subject.code },
+    },
+    overall: {
+      totalStudents: students.length,
+      classesConducted: conducted[0]?.n || 0,
+      presentPeriods: present,
+      totalPeriods: total,
+      absentPeriods: total - present,
+      percentage: percentage(present, total),
+    },
+    students,
+    belowThreshold: students.filter((st) => st.totalPeriods > 0 && st.percentage < LOW_ATTENDANCE_THRESHOLD),
+  });
 });
 
 // ── Day-by-day records ─────────────────────────────────────────────
 
 export const getAttendanceRecords = asyncHandler(async (req, res) => {
-  const filter = {};
+  const narrow = {};
+  let scope = {};
   if (STUDENT_ROLES.includes(req.user.role)) {
-    filter.student = req.user._id; // students only ever see their own
+    scope = { student: req.user._id }; // students only ever see their own
   } else {
-    Object.assign(filter, await staffScope(req.user));
-    if (req.query.student) filter.student = oid(req.query.student, 'student');
+    scope = await staffScope(req.user);
+    Object.assign(narrow, narrowFromQuery(req.query));
+    if (req.query.student) narrow.student = oid(req.query.student, 'student');
   }
-  if (req.query.subject) filter.subject = oid(req.query.subject, 'subject');
-  if (req.query.section) filter.section = String(req.query.section).toUpperCase();
-  if (req.query.department && !STUDENT_ROLES.includes(req.user.role)) filter.department = String(req.query.department);
-  if (req.query.status === 'present' || req.query.status === 'absent') filter.status = req.query.status;
-  if (req.query.date) filter.date = toDay(req.query.date);
+  if (req.query.subject) narrow.subject = oid(req.query.subject, 'subject');
+  if (req.query.status === 'present' || req.query.status === 'absent') narrow.status = req.query.status;
+  if (req.query.date) narrow.date = toDay(req.query.date);
   else {
     const df = dayFilter(resolveRange(req.query, 'all'));
-    if (df) filter.date = df;
+    if (df) narrow.date = df;
   }
+  const filter = scopedMatch(scope, narrow);
 
   const { page, limit, skip } = paginate(req, 50, 200);
   const [records, total] = await Promise.all([
@@ -519,14 +828,15 @@ export const getAttendanceRecords = asyncHandler(async (req, res) => {
 
 /** Class sessions a staff member has marked (history view). */
 export const listSessions = asyncHandler(async (req, res) => {
-  const match = await staffScope(req.user);
-  if (req.user.role === 'faculty' && req.query.mine !== 'false') {
-    delete match.$or;
-    match.markedBy = req.user._id;
-  }
-  if (req.query.subject) match.subject = oid(req.query.subject, 'subject');
+  const scope = await staffScope(req.user);
+  const narrow = {};
+  // "Only mine" narrows the authorized scope to what this account marked; it
+  // never replaces the scope, so it cannot be used to widen the view.
+  if (req.user.role === 'faculty' && req.query.mine !== 'false') narrow.markedBy = req.user._id;
+  if (req.query.subject) narrow.subject = oid(req.query.subject, 'subject');
   const df = dayFilter(resolveRange(req.query, 'month'));
-  if (df) match.date = df;
+  if (df) narrow.date = df;
+  const match = scopedMatch(scope, narrow);
 
   const sessions = await AttendanceRecord.aggregate([
     { $match: match },
@@ -585,14 +895,20 @@ export const listSessions = asyncHandler(async (req, res) => {
 export const getSubjectAttendance = asyncHandler(async (req, res) => {
   const subject = await Subject.findById(req.params.subjectId);
   if (!subject) throw new ApiError(404, 'Subject not found');
-  if (req.user.role === 'faculty' && !isAssigned(subject, req.user) && subject.department !== req.user.department) {
+  // Department is never a grant for faculty: they must actually be assigned
+  // this subject, and staffScope then limits them to their own sections of it.
+  if (req.user.role === 'faculty' && !isAssigned(subject, req.user)) {
     throw new ApiError(403, 'Not authorized for this subject');
   }
+  if (req.user.role === 'hod' && subject.department !== ownDepartment(req.user)) {
+    throw new ApiError(403, 'This subject is outside your department');
+  }
 
-  const match = { subject: subject._id };
-  if (req.query.section) match.section = String(req.query.section).toUpperCase();
+  const narrow = { subject: subject._id };
+  if (req.query.section) narrow.section = String(req.query.section).toUpperCase();
   const df = dayFilter(resolveRange(req.query, 'all'));
-  if (df) match.date = df;
+  if (df) narrow.date = df;
+  const match = scopedMatch(await staffScope(req.user), narrow);
 
   const [studentStats, conducted] = await Promise.all([
     AttendanceRecord.aggregate([
@@ -632,11 +948,10 @@ export const getSubjectAttendance = asyncHandler(async (req, res) => {
 // ── Section / department attendance (staff) ────────────────────────
 
 export const getSectionAttendance = asyncHandler(async (req, res) => {
-  const match = await staffScope(req.user);
-  if (req.query.section) match.section = String(req.query.section).toUpperCase();
-  if (req.query.department) match.department = String(req.query.department);
+  const narrow = narrowFromQuery(req.query);
   const df = dayFilter(resolveRange(req.query, 'all'));
-  if (df) match.date = df;
+  if (df) narrow.date = df;
+  const match = scopedMatch(await staffScope(req.user), narrow);
 
   const stats = await AttendanceRecord.aggregate([
     { $match: match },
@@ -672,12 +987,14 @@ export const getSectionAttendance = asyncHandler(async (req, res) => {
 
 /** Students below the attendance threshold (overall across subjects in scope). */
 export const getLowAttendance = asyncHandler(async (req, res) => {
-  const match = await staffScope(req.user);
-  if (req.query.section) match.section = String(req.query.section).toUpperCase();
-  if (req.query.department) match.department = String(req.query.department);
-  if (req.query.subject) match.subject = oid(req.query.subject, 'subject');
+  // Faculty get no section selector at all: their scope is their teaching
+  // assignments. An HOD may narrow by section inside their own department.
+  // Either way the filters only ever intersect the authorized scope.
+  const narrow = narrowFromQuery(req.query);
+  if (req.user.role === 'faculty') narrow.department = undefined;
   const df = dayFilter(resolveRange(req.query, 'all'));
-  if (df) match.date = df;
+  if (df) narrow.date = df;
+  const match = scopedMatch(await staffScope(req.user), narrow);
   const threshold = Math.min(100, Math.max(1, Number(req.query.threshold) || LOW_ATTENDANCE_THRESHOLD));
 
   const rows = await AttendanceRecord.aggregate([
@@ -704,18 +1021,19 @@ export const getLowAttendance = asyncHandler(async (req, res) => {
 // ── Trends (daily / weekly / monthly) ──────────────────────────────
 
 export const getAttendanceTrends = asyncHandler(async (req, res) => {
-  const match = {};
+  let scope = {};
+  const narrow = {};
   if (STUDENT_ROLES.includes(req.user.role)) {
-    match.student = req.user._id;
+    scope = { student: req.user._id };
   } else {
-    Object.assign(match, await staffScope(req.user));
-    if (req.query.student) match.student = oid(req.query.student, 'student');
-    if (req.query.section) match.section = String(req.query.section).toUpperCase();
-    if (req.query.department) match.department = String(req.query.department);
+    scope = await staffScope(req.user);
+    Object.assign(narrow, narrowFromQuery(req.query));
+    if (req.query.student) narrow.student = oid(req.query.student, 'student');
   }
-  if (req.query.subject) match.subject = oid(req.query.subject, 'subject');
+  if (req.query.subject) narrow.subject = oid(req.query.subject, 'subject');
   const df = dayFilter(resolveRange(req.query, 'month'));
-  if (df) match.date = df;
+  if (df) narrow.date = df;
+  const match = scopedMatch(scope, narrow);
 
   const groupBy = ['day', 'week', 'month'].includes(req.query.groupBy) ? req.query.groupBy : 'day';
   // Class days are stored as UTC-midnight markers, so grouping in UTC is exact.
@@ -733,6 +1051,68 @@ export const getAttendanceTrends = asyncHandler(async (req, res) => {
     { $sort: { _id: 1 } },
   ]);
   res.json(trends);
+});
+
+// ── Reports (period / date / weekly / monthly / semester) ──────────
+
+/**
+ * Generate an attendance report. Authorization, the academic scope and every
+ * student row are resolved on the server by the report service; `format=pdf`
+ * streams the document straight to the response, so no report file is ever
+ * written to disk and no user-supplied value reaches a filesystem path.
+ */
+export const getAttendanceReport = asyncHandler(async (req, res) => {
+  const report = await buildReport(req.user, req.query, req.params.type);
+  if (req.query.format !== 'pdf') return res.json(report);
+
+  const pdf = renderReportPdf(report);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeFilename(reportFilename(report))}"`);
+  res.setHeader('Content-Length', pdf.length);
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(pdf);
+});
+
+/**
+ * The Period dropdown for a report: "All Periods" plus the real periods of the
+ * authorized class on that date, from its own timetable and held sessions.
+ */
+export const getReportPeriods = asyncHandler(async (req, res) => {
+  res.json(await reportPeriods(req.user, req.query));
+});
+
+/**
+ * What the report controls may offer this account: for a faculty member their
+ * own subjects and the sections of each; for an HOD the years, sections and
+ * semesters that actually exist in their own department. Derived from the
+ * account, so the UI can never present an out-of-scope option.
+ */
+export const getReportOptions = asyncHandler(async (req, res) => {
+  if (req.user.role === 'faculty') {
+    const [assignments, ourClass] = await Promise.all([facultyAssignments(req.user), facultyClassInChargeScope(req.user)]);
+    return res.json({
+      scope: 'faculty',
+      department: req.user.department || null,
+      subjects: assignmentsBySubject(assignments),
+      ourClass: ourClass[0] ? { ...ourClass[0], classInCharge: req.user.name } : null,
+    });
+  }
+  const department = req.user.role === 'hod' ? ownDepartment(req.user) : req.query.department ? String(req.query.department) : undefined;
+  const filter = { isActive: true, isBreak: { $ne: true }, ...(department ? { department } : {}) };
+  const [years, sections, semesters, subjects] = await Promise.all([
+    TimetableSlot.find(filter).distinct('year'),
+    TimetableSlot.find(filter).distinct('section'),
+    TimetableSlot.find(filter).distinct('semester'),
+    Subject.find({ isActive: true, ...(department ? { department } : {}) }).select('name code semester year sections').sort('code').lean(),
+  ]);
+  res.json({
+    scope: req.user.role === 'hod' ? 'department' : 'college',
+    department: department || null,
+    years: years.filter(Boolean).sort((a, b) => a - b),
+    sections: sections.filter(Boolean).sort(),
+    semesters: semesters.filter(Boolean).sort((a, b) => a - b),
+    subjects,
+  });
 });
 
 // ── Attendance corrections ─────────────────────────────────────────

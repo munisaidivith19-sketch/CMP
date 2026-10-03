@@ -18,8 +18,9 @@ export const rangeParams = ({ range, from, to }) =>
 
 export function RangeFilter({ value, onChange, ranges = RANGES, className }) {
   return (
-    <div className={cn('flex flex-wrap items-center gap-2', className)}>
-      <div className="glass inline-flex gap-1 rounded-2xl p-1" role="tablist" aria-label="Reporting period">
+    <div className={cn('flex max-w-full flex-wrap items-center gap-2', className)}>
+      {/* Scrolls inside itself on a narrow phone, like the page tab strips. */}
+      <div className="glass inline-flex max-w-full gap-1 overflow-x-auto rounded-2xl p-1 scrollbar-none" role="tablist" aria-label="Reporting period">
         {ranges.map((r) => (
           <button
             key={r.value}
@@ -27,7 +28,7 @@ export function RangeFilter({ value, onChange, ranges = RANGES, className }) {
             aria-selected={value.range === r.value}
             onClick={() => onChange({ ...value, range: r.value })}
             className={cn(
-              'rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all duration-300 ease-smooth',
+              'shrink-0 whitespace-nowrap rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all duration-300 ease-smooth',
               value.range === r.value ? 'bg-white text-primary-600 shadow-soft dark:bg-white/10 dark:text-white' : 'text-ink-soft hover:text-ink'
             )}
           >
@@ -36,7 +37,7 @@ export function RangeFilter({ value, onChange, ranges = RANGES, className }) {
         ))}
       </div>
       {value.range === 'custom' && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input type="date" aria-label="From date" value={value.from || ''} max={value.to || undefined} onChange={(e) => onChange({ ...value, from: e.target.value })} className="input w-auto rounded-xl py-1.5 text-xs" />
           <span className="text-xs muted">to</span>
           <input type="date" aria-label="To date" value={value.to || ''} min={value.from || undefined} onChange={(e) => onChange({ ...value, to: e.target.value })} className="input w-auto rounded-xl py-1.5 text-xs" />

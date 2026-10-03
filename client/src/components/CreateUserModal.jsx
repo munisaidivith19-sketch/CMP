@@ -5,13 +5,14 @@ import { useCreateAdminUserMutation } from '../services/api';
 import { Button, cn } from './ui/primitives';
 import { Modal } from './ui/Modal';
 import { ChipMultiSelect, Input, Select } from './ui/form';
-import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES, YEAR_LABELS } from '../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../utils/constants';
 import { errMsg } from '../utils/format';
 
 /** Fields the admin fills in per role — mirrors the server's CREATE_FIELDS. */
 const FORMS = {
   student: ['name', 'rollNo', 'department', 'year', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
-  faculty: ['name', 'employeeId', 'department', 'teachingYears', 'section', 'email', 'phone', 'password'],
+  // Class In Charge = section + in-charge year + in-charge semester ("Our Class").
+  faculty: ['name', 'employeeId', 'department', 'teachingYears', 'section', 'inChargeYear', 'inChargeSemester', 'email', 'phone', 'password'],
   hod: ['name', 'employeeId', 'department', 'email', 'phone', 'password'],
   principal: ['name', 'employeeId', 'email', 'phone', 'password'],
   security: ['name', 'employeeId', 'email', 'phone', 'password'],
@@ -20,13 +21,16 @@ const FORMS = {
   chairman: ['name', 'employeeId', 'email', 'phone', 'password'],
   warden: ['name', 'employeeId', 'email', 'phone', 'password'],
 };
-const REQUIRED = new Set(['name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears', 'section']);
+const REQUIRED = new Set([
+  'name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears', 'section',
+  'inChargeYear', 'inChargeSemester',
+]);
 const isRequired = (k, role) => REQUIRED.has(k);
 const EMPTY = {
   name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '',
-  teachingYears: [],
+  teachingYears: [], inChargeYear: '', inChargeSemester: '',
 };
-const NUMERIC = new Set(['year']);
+const NUMERIC = new Set(['year', 'inChargeYear', 'inChargeSemester']);
 
 function suggestPassword() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
@@ -50,7 +54,13 @@ export default function CreateUserModal({ open, onClose }) {
   }, [open]);
 
   const fields = FORMS[role];
-  const set = (k) => (e) => setV((s) => ({ ...s, [k]: e.target.value }));
+  const set = (k) => (e) =>
+    setV((s) => {
+      const next = { ...s, [k]: e.target.value };
+      // The in-charge semester must belong to the in-charge year (year 3 → 5 or 6).
+      if (k === 'inChargeYear' && !semestersOfYear(Number(next.inChargeYear)).includes(Number(next.inChargeSemester))) next.inChargeSemester = '';
+      return next;
+    });
   const setList = (k) => (list) => setV((s) => ({ ...s, [k]: list }));
   const missing = fields.filter((k) => isRequired(k, role) && (Array.isArray(v[k]) ? !v[k].length : !String(v[k]).trim()));
 
@@ -112,6 +122,28 @@ export default function CreateUserModal({ open, onClose }) {
             label={role === 'faculty' ? 'Class in charge' : 'Section'}
             placeholder="Select section"
             options={SECTIONS.map((s) => ({ value: s, label: s }))}
+            {...common}
+          />
+        );
+      case 'inChargeYear':
+        return (
+          <Select
+            key={k}
+            label="In-charge year"
+            placeholder="Select year"
+            hint="The year of the class this faculty is in charge of — not the years handled."
+            options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))}
+            {...common}
+          />
+        );
+      case 'inChargeSemester':
+        return (
+          <Select
+            key={k}
+            label="In-charge semester"
+            placeholder={v.inChargeYear ? 'Select semester' : 'Choose the in-charge year first'}
+            disabled={!v.inChargeYear}
+            options={(v.inChargeYear ? semestersOfYear(Number(v.inChargeYear)) : []).map((sem) => ({ value: String(sem), label: `Semester ${sem}` }))}
             {...common}
           />
         );

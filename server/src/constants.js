@@ -3,6 +3,25 @@ export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'a
 export const MODERATOR_ROLES = ['admin', 'faculty', 'hod', 'principal'];
 // Department-scoped management: sees/acts on their own department only.
 export const HOD_ROLES = ['hod'];
+
+// ── Academic visibility ─────────────────────────────────────────────
+// The ONLY roles with college-wide academic visibility: People, Timetable,
+// Attendance and attendance reports across every department. Every other role
+// is scoped to its own department (HOD) or its own teaching assignment
+// (faculty); Security and Warden get no academic directory at all.
+// This single list is what People, Timetable, Attendance and the report
+// service all consult — there is no second definition anywhere.
+export const COLLEGE_WIDE_ROLES = ['admin', 'principal', 'chairman', 'dean', 'ao'];
+// College-wide authority is read-only: marking attendance and timetable writes
+// stay with admin / HOD / faculty.
+export const ACADEMIC_READ_ONLY_ROLES = COLLEGE_WIDE_ROLES.filter((r) => r !== 'admin');
+// Who may READ attendance: the people who mark it, plus the college-wide roles.
+export const ATTENDANCE_VIEW_ROLES = ['faculty', 'hod', ...COLLEGE_WIDE_ROLES];
+// Who sees the daily college/department headcount summary.
+export const ATTENDANCE_SUMMARY_ROLES = ['hod', ...COLLEGE_WIDE_ROLES];
+// Who can browse the People directory at all (students: no directory, only
+// single-profile lookups).
+export const PEOPLE_DIRECTORY_ROLES = ['faculty', 'hod', ...COLLEGE_WIDE_ROLES];
 // Every role an admin can hand out credentials for from the admin panel.
 export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden'];
 // Roles with no department of their own (skip the "department required" rule).
@@ -14,6 +33,8 @@ export const STAY_TYPES = ['hosteler', 'day_scholar'];
 // already carries the program (e.g. 'CSE (Cyber Security)').
 export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
 export const ACADEMIC_YEARS = [1, 2, 3, 4];
+// Human label for a year, used in generated reports.
+export const YEAR_LABEL = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' };
 export const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
 export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'];
 // Year 1 → semesters 1/2, year 2 → 3/4, year 3 → 5/6, year 4 → 7/8.

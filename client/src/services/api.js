@@ -82,6 +82,10 @@ export const api = createApi({
 
     // ── Users ─────────────────────────────────────────
     getUsers: b.query({ query: (params) => ({ url: '/users', params }), providesTags: ['User'] }),
+    // Which People filters this account may use, and their options — the
+    // server derives them from the role, so the UI never offers a filter that
+    // could only be refused.
+    getPeopleFilters: b.query({ query: () => '/users/people-filters', providesTags: ['User'] }),
     getUser: b.query({ query: (id) => `/users/${id}`, providesTags: (_r, _e, id) => [{ type: 'User', id }] }),
     updateMe: b.mutation({
       query: (body) => ({ url: '/users/me', method: 'PUT', body }),
@@ -281,6 +285,19 @@ export const api = createApi({
     }),
     getAttendanceSessions: b.query({ query: (params) => ({ url: '/attendance/sessions', params }), providesTags: ['Attendance'] }),
     getLowAttendance: b.query({ query: (params) => ({ url: '/attendance/low', params }), providesTags: ['Attendance'] }),
+    // "My Classes": the signed-in faculty member's own subject/section list and
+    // the attendance of one of those exact classes.
+    getMyClassOptions: b.query({ query: () => '/attendance/my-classes/options', providesTags: ['Attendance', 'Timetable'] }),
+    getMyClassAttendance: b.query({ query: (params) => ({ url: '/attendance/my-classes', params }), providesTags: ['Attendance'] }),
+    getReportOptions: b.query({ query: () => '/attendance/reports/options', providesTags: ['Attendance', 'Timetable'] }),
+    // "Our Class": the complete attendance of the faculty member's Class In-Charge class.
+    getOurClassAttendance: b.query({ query: (params) => ({ url: '/attendance/our-class', params }), providesTags: ['Attendance'] }),
+    // The report Period dropdown, derived from the authorized class's timetable for a date.
+    getReportPeriods: b.query({ query: (params) => ({ url: '/attendance/reports/periods', params }), providesTags: ['Attendance', 'Timetable'] }),
+    getAttendanceReport: b.query({
+      query: ({ type, ...params }) => ({ url: `/attendance/reports/${type}`, params }),
+      providesTags: ['Attendance'],
+    }),
     getStudentAttendance: b.query({ query: ({ id, ...params }) => ({ url: `/attendance/student/${id}`, params }), providesTags: ['Attendance'] }),
     getSubjectAttendance: b.query({ query: ({ id, ...params }) => ({ url: `/attendance/subject/${id}`, params }), providesTags: ['Attendance'] }),
     getCorrections: b.query({ query: (params) => ({ url: '/attendance/corrections', params }), providesTags: ['Correction'] }),
@@ -302,6 +319,8 @@ export const api = createApi({
     getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
     getCurrentClass: b.query({ query: () => '/timetable/current', providesTags: ['Timetable'] }),
     getTimetableFacultyOptions: b.query({ query: () => '/timetable/faculty-options', providesTags: ['User'] }),
+    // "My Schedule": always the authenticated user's own teaching periods.
+    getMySchedule: b.query({ query: (params) => ({ url: '/timetable/my-schedule', params }), providesTags: ['Timetable'] }),
 
     // ── Study materials ────────────────────────────────
     getStudyMaterials: b.query({ query: (params) => ({ url: '/study-materials', params }), providesTags: ['StudyMaterial'] }),
@@ -551,4 +570,12 @@ export const {
   useGetCollegeAnalyticsQuery,
   useGetGateAnalyticsQuery,
   useGetClubAnalyticsQuery,
+  useGetPeopleFiltersQuery,
+  useGetMyScheduleQuery,
+  useGetMyClassOptionsQuery,
+  useGetMyClassAttendanceQuery,
+  useGetReportOptionsQuery,
+  useGetAttendanceReportQuery,
+  useGetOurClassAttendanceQuery,
+  useGetReportPeriodsQuery,
 } = api;

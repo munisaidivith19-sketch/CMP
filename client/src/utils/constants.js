@@ -7,10 +7,22 @@ export const ROLE_LABELS = {
 export const STUDENT_ROLES = ['student', 'club_admin'];
 /** Can act on academic data (mark attendance, moderate…). */
 export const STAFF = ['admin', 'faculty', 'hod'];
-/** Staff plus the read-only principal. */
+/** Staff plus the read-only principal. Used across clubs/events/discussions. */
 export const STAFF_VIEW = [...STAFF, 'principal'];
+
+// ── Academic visibility ─────────────────────────────────────────────
+// Mirrors server/src/constants.js — the server is the authority; these only
+// decide what the UI offers.
+/** The only roles with college-wide academic visibility (read-only bar admin). */
+export const COLLEGE_WIDE = ['admin', 'principal', 'chairman', 'dean', 'ao'];
+/** Sees the staff Attendance console. */
+export const ATTENDANCE_VIEW = ['faculty', 'hod', ...COLLEGE_WIDE];
+/** In Attendance, these roles read but never mark or review. */
+export const ATTENDANCE_READ_ONLY = COLLEGE_WIDE.filter((r) => r !== 'admin');
+/** Can browse the People directory (students get single profiles only). */
+export const PEOPLE_DIRECTORY = ['faculty', 'hod', ...COLLEGE_WIDE];
 /** Sees the daily college / department attendance summary. */
-export const SUMMARY_VIEW = ['admin', 'hod', 'principal'];
+export const SUMMARY_VIEW = ['hod', ...COLLEGE_WIDE];
 /** The gate pass approval chain, in order. */
 export const GATE_APPROVAL_ROLES = ['faculty', 'hod', 'principal'];
 export const STAY_TYPES = { hosteler: 'Hosteler', day_scholar: 'Day Scholar' };

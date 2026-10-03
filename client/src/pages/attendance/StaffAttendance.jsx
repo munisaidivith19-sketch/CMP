@@ -7,6 +7,7 @@ import {
   useGetAttendanceSessionsQuery,
   useGetCorrectionsQuery,
   useGetLowAttendanceQuery,
+  useGetReportOptionsQuery,
   useGetMyPeriodsQuery,
   useGetRosterQuery,
   useGetStudentAttendanceQuery,
@@ -16,8 +17,11 @@ import {
   useReviewCorrectionMutation,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, SUMMARY_VIEW, YEAR_LABELS, semestersOfYear, yearOfSemester } from '../../utils/constants';
+import { ACADEMIC_YEARS, ATTENDANCE_READ_ONLY, COLLEGE_WIDE, DEPARTMENTS, SECTIONS, SUMMARY_VIEW, YEAR_LABELS, semestersOfYear, yearOfSemester } from '../../utils/constants';
 import { DailySummary, FacultyMarking } from './DailySummary';
+import MyClasses from './MyClasses';
+import OurClass from './OurClass';
+import AttendanceReports from './AttendanceReports';
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { MiniStat, PercentBadge, PercentBars, RangeFilter, StatusBadge, rangeParams } from '../../components/insights';
@@ -409,24 +413,39 @@ function StudentModal({ id, onClose }) {
 }
 
 /* ── Low attendance ─────────────────────────────────────────────── */
+/**
+ * Low attendance.
+ *
+ * A faculty account gets no section selector: the scope is their own teaching
+ * assignments, which the server derives from the timetable. An HOD keeps a
+ * section filter, but only over the sections of their own department.
+ */
 function LowAttendance() {
+  const me = useSelector(selectUser);
+  const isFaculty = me.role === 'faculty';
   const [range, setRange] = useState({ range: 'semester' });
   const [section, setSection] = useState('');
   const [student, setStudent] = useState(null);
-  const { data, isLoading, error, refetch } = useGetLowAttendanceQuery({ ...rangeParams(range), section: section || undefined });
+  const { data: options } = useGetReportOptionsQuery(undefined, { skip: isFaculty });
+  const { data, isLoading, error, refetch } = useGetLowAttendanceQuery({
+    ...rangeParams(range),
+    section: isFaculty ? undefined : section || undefined,
+  });
   return (
     <Card>
       <CardHeader
         title="Students below the minimum"
-        subtitle="Overall attendance across the classes you can see"
+        subtitle={isFaculty ? 'Students of the classes you are assigned to' : 'Overall attendance across the classes you can see'}
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <select aria-label="Section" className="input w-auto rounded-xl py-1.5 text-xs" value={section} onChange={(e) => setSection(e.target.value)}>
-              <option value="">All sections</option>
-              {SECTIONS.map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
+            {!isFaculty && (
+              <select aria-label="Section" className="input w-auto rounded-xl py-1.5 text-xs" value={section} onChange={(e) => setSection(e.target.value)}>
+                <option value="">All sections</option>
+                {(options?.sections?.length ? options.sections : SECTIONS).map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            )}
             <RangeFilter value={range} onChange={setRange} />
           </div>
         }
@@ -545,6 +564,7 @@ function Corrections() {
 }
 
 /* ── Class overview (per subject) ───────────────────────────────── */
+/** HOD / admin / college-wide view; a faculty member gets Our Class instead. */
 function ClassOverview() {
   const me = useSelector(selectUser);
   const { data: subjects = [] } = useGetSubjectsQuery(subjectScope(me));
@@ -553,6 +573,7 @@ function ClassOverview() {
   const [range, setRange] = useState({ range: 'semester' });
   const { data, isFetching, error } = useGetSubjectAttendanceQuery({ id: subjectId, section: section || undefined, ...rangeParams(range) }, { skip: !subjectId });
   const subject = subjects.find((s) => s._id === subjectId);
+  const sectionOptions = subject?.sections || [];
 
   return (
     <Card>
@@ -569,10 +590,10 @@ function ClassOverview() {
                 </option>
               ))}
             </select>
-            {subject?.sections?.length > 0 && (
+            {sectionOptions.length > 0 && (
               <select aria-label="Section" className="input w-auto rounded-xl py-1.5 text-xs" value={section} onChange={(e) => setSection(e.target.value)}>
                 <option value="">All sections</option>
-                {subject.sections.map((s) => (
+                {sectionOptions.map((s) => (
                   <option key={s}>{s}</option>
                 ))}
               </select>
@@ -633,7 +654,8 @@ function ClassOverview() {
 export default function StaffAttendance() {
   const me = useSelector(selectUser);
   const [params, setParams] = useSearchParams();
-  const canMark = me.role !== 'principal';
+  // Principal, chairman, dean and AO read attendance but never mark it.
+  const canMark = !ATTENDANCE_READ_ONLY.includes(me.role);
   const seesSummary = SUMMARY_VIEW.includes(me.role);
   const tabs = [
     ...(canMark ? [{ value: 'mark', label: 'Mark attendance' }] : []),
@@ -642,6 +664,9 @@ export default function StaffAttendance() {
     { value: 'sessions', label: 'History' },
     { value: 'overview', label: 'Class overview' },
     { value: 'low', label: 'Low attendance' },
+    // "My Classes" is specifically the signed-in faculty member's own subjects.
+    ...(me.role === 'faculty' ? [{ value: 'my-classes', label: 'My Classes' }] : []),
+    ...(['faculty', 'hod', ...COLLEGE_WIDE].includes(me.role) ? [{ value: 'reports', label: 'Reports' }] : []),
     { value: 'corrections', label: 'Corrections' },
   ];
   const requested = params.get('tab');
@@ -674,8 +699,12 @@ export default function StaffAttendance() {
           }}
         />
       )}
-      {tab === 'overview' && <ClassOverview />}
+      {/* For a faculty member, Class overview is "Our Class": their Class
+          In-Charge class, complete and with no subject to choose. */}
+      {tab === 'overview' && (me.role === 'faculty' ? <OurClass /> : <ClassOverview />)}
       {tab === 'low' && <LowAttendance />}
+      {tab === 'my-classes' && <MyClasses />}
+      {tab === 'reports' && <AttendanceReports />}
       {tab === 'corrections' && <Corrections />}
       <p className="flex items-center gap-1.5 text-xs muted">
         <AlertTriangle className="h-3.5 w-3.5" /> Attendance % is always total present periods ÷ total conducted periods — never an average of subject percentages.

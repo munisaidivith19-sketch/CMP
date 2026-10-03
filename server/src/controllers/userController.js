@@ -5,6 +5,8 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '.
 import { persistFile } from '../utils/storage.js';
 import { logActivity } from '../utils/activity.js';
 import { canViewProfile, peopleScopeFilter } from '../utils/peopleScope.js';
+import { ownDepartment, STUDENT_ROLES } from '../utils/academicScope.js';
+import { ACADEMIC_YEARS, COLLEGE_WIDE_ROLES, DEPARTMENTS } from '../constants.js';
 
 const DIRECTORY_FIELDS = 'name role department year section semester avatar designation employeeId skills interests bio';
 
@@ -42,6 +44,56 @@ export const listUsers = asyncHandler(async (req, res) => {
     User.countDocuments(filter),
   ]);
   res.json({ items, ...pageMeta(total, page, limit) });
+});
+
+/**
+ * Which People filters this account may use, and with which options — derived
+ * from the authenticated role and department, never from the request.
+ *
+ * - Faculty: search only. Their academic scope is their teaching assignment,
+ *   so a department or role selector could only ever narrow a roster they are
+ *   already limited to; the UI shows neither.
+ * - HOD: year, section and role (Faculty / Student only) inside their own
+ *   department. The department is fixed and not offered as a filter, and the
+ *   sections are the ones that actually exist in their department.
+ * - Admin, Principal, Chairman, Dean and AO (COLLEGE_WIDE_ROLES): department
+ *   and role, college-wide.
+ *
+ * This only decides what the UI offers. It is not the security boundary —
+ * peopleScopeFilter enforces the same scope on every query regardless.
+ */
+export const peopleFilters = asyncHandler(async (req, res) => {
+  const { role } = req.user;
+
+  if (role === 'faculty') {
+    return res.json({ scope: 'assignment', department: req.user.department || null, filters: ['search'] });
+  }
+
+  if (role === 'hod') {
+    const department = ownDepartment(req.user);
+    const [sections, years] = await Promise.all([
+      User.find({ department, isActive: true, section: { $nin: [null, ''] } }).distinct('section'),
+      User.find({ department, isActive: true, role: { $in: STUDENT_ROLES } }).distinct('year'),
+    ]);
+    return res.json({
+      scope: 'department',
+      department,
+      filters: ['search', 'year', 'section', 'role'],
+      years: (years.filter(Boolean).length ? years.filter(Boolean) : ACADEMIC_YEARS).sort((a, b) => a - b),
+      sections: sections.filter(Boolean).sort(),
+      roles: ['faculty', 'student'],
+    });
+  }
+
+  if (!COLLEGE_WIDE_ROLES.includes(role)) {
+    throw new ApiError(403, 'Your role is not authorized to browse the People directory');
+  }
+  res.json({
+    scope: 'college',
+    department: req.user.department || null,
+    filters: ['search', 'department', 'role'],
+    departments: DEPARTMENTS,
+  });
 });
 
 export const getUser = asyncHandler(async (req, res) => {

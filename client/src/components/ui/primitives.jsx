@@ -53,8 +53,10 @@ export function Card({ className, hover, children, as: Tag = 'div', ...props }) 
 
 export function CardHeader({ title, subtitle, action, className }) {
   return (
-    <div className={cn('mb-4 flex items-start justify-between gap-3', className)}>
-      <div>
+    // Wraps instead of overflowing: a wide action (filters, range pickers)
+    // drops below the title on narrow screens rather than off the edge.
+    <div className={cn('mb-4 flex flex-wrap items-start justify-between gap-3', className)}>
+      <div className="min-w-0">
         <h3 className="section-title">{title}</h3>
         {subtitle && <p className="mt-0.5 text-xs muted">{subtitle}</p>}
       </div>

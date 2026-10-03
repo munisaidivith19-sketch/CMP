@@ -5,7 +5,8 @@ import { ApiError, asyncHandler, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { emitToRoles } from '../config/socket.js';
 import { campusParts } from '../utils/dates.js';
-import { TIMETABLE_VIEW_ROLES, yearOfSemester } from '../constants.js';
+import { COLLEGE_WIDE_ROLES, TIMETABLE_VIEW_ROLES, yearOfSemester } from '../constants.js';
+import { STUDENT_ROLES, classInChargeFilter, facultyClassInChargeScope, ownDepartment } from '../utils/academicScope.js';
 
 // Warden/Security must never receive a timetable event, even a bare
 // department/section identifier — emit only to the roles that can see timetables.
@@ -16,6 +17,77 @@ function assertOwnDepartment(user, department) {
   if (user.role === 'hod' && department !== user.department) {
     throw new ApiError(403, 'You can only manage your own department’s timetable');
   }
+}
+
+/**
+ * The Mongo filter a role's timetable *reads* are confined to. The academic
+ * scope is derived from the authenticated account and its teaching
+ * assignments; a client may only narrow it (semester, and for an HOD year /
+ * section), never widen it.
+ *
+ * - Student: their own class, from the account.
+ * - Faculty, `scope=handling` (default): their own periods only. Department,
+ *   year and section come from their teaching assignments, so a sent
+ *   department/year/section/faculty is ignored outright rather than trusted.
+ * - Faculty, `scope=class`: the COMPLETE timetable of their Class In-Charge
+ *   class (every subject and faculty), from facultyClassInChargeScope — the
+ *   exact department + year + section + semester on their account. Not
+ *   filtered by faculty. No in-charge class → nothing.
+ * - HOD: their own department, optionally narrowed to a year/section/faculty.
+ *   `view=mine` narrows it further to the HOD's own teaching periods.
+ * - Admin, Principal, Chairman, Dean, AO (COLLEGE_WIDE_ROLES): any class in
+ *   any department; `view=mine` narrows to their own periods.
+ * - Anything else (Security, Warden): no timetable scope at all.
+ */
+async function timetableReadScope(user, query = {}) {
+  const filter = { isActive: true };
+  const semester = query.semester ? Number(query.semester) : undefined;
+
+  if (STUDENT_ROLES.includes(user.role)) {
+    // Class identity comes only from the account, never from the query string.
+    if (!user.section || !user.department || !user.year) return null;
+    filter.section = user.section;
+    filter.department = user.department;
+    filter.year = user.year;
+    if (user.semester) filter.semester = user.semester;
+    return filter;
+  }
+
+  if (user.role === 'faculty') {
+    if (query.scope === 'class') {
+      const ourClass = await facultyClassInChargeScope(user);
+      if (!ourClass.length) return { _id: null };
+      // The class decides department/year/section/semester; a sent semester
+      // can only narrow it, and one that differs simply matches nothing.
+      Object.assign(filter, classInChargeFilter(ourClass));
+      if (semester && !ourClass.some((c) => c.semester === semester)) return { _id: null };
+      return filter;
+    }
+    filter.faculty = user._id;
+    if (semester) filter.semester = semester;
+    return filter;
+  }
+
+  if (user.role === 'hod') {
+    filter.department = ownDepartment(user);
+    if (query.view === 'mine') filter.faculty = user._id;
+    else if (query.faculty) filter.faculty = query.faculty;
+    if (query.section) filter.section = String(query.section).toUpperCase();
+    if (query.year) filter.year = Number(query.year);
+    if (semester) filter.semester = semester;
+    return filter;
+  }
+
+  if (!COLLEGE_WIDE_ROLES.includes(user.role)) return { _id: null };
+
+  // College-wide authorities: a free lookup across every department.
+  if (query.view === 'mine') filter.faculty = user._id;
+  else if (query.faculty) filter.faculty = query.faculty;
+  if (query.section) filter.section = String(query.section).toUpperCase();
+  if (query.department) filter.department = String(query.department);
+  if (query.year) filter.year = Number(query.year);
+  if (semester) filter.semester = semester;
+  return filter;
 }
 
 const SLOT_FIELDS = [
@@ -39,6 +111,18 @@ export const listSubjects = asyncHandler(async (req, res) => {
   if (req.query.faculty) filter.faculty = req.query.faculty;
   // Faculty picking a class to mark: only subjects they teach.
   if (req.query.mine === 'true') filter.faculty = req.user._id;
+  // Scope the catalogue to the account, after the query filters so a sent
+  // department or faculty id can only narrow the result, never widen it. A
+  // faculty member's own subjects are the ones they are listed on plus the
+  // ones the timetable actually schedules them for (the authoritative source).
+  if (req.user.role === 'faculty') {
+    const scheduled = await TimetableSlot.find({ faculty: req.user._id, isActive: true, isBreak: { $ne: true } }).distinct('subject');
+    filter.$and = [{ $or: [{ faculty: req.user._id }, { _id: { $in: scheduled } }] }];
+  } else if (req.user.role === 'hod') {
+    filter.department = ownDepartment(req.user);
+  } else if (!COLLEGE_WIDE_ROLES.includes(req.user.role)) {
+    return res.json([]);
+  }
 
   const subjects = await Subject.find(filter)
     .populate('faculty', 'name email avatar department')
@@ -98,45 +182,61 @@ export const deleteSubject = asyncHandler(async (req, res) => {
 
 // ── Timetable reads ────────────────────────────────────────────────
 
-/** Timetable for the current user: student → their section, faculty → their classes. */
+/**
+ * Timetable for the current user. Every academic-scope decision is made by
+ * timetableReadScope from the authenticated account — a faculty account can
+ * never reach another department, year or section by sending parameters.
+ */
 export const getMyTimetable = asyncHandler(async (req, res) => {
-  const user = req.user;
-  const filter = { isActive: true };
-
-  if (['student', 'club_admin'].includes(user.role)) {
-    // Class identity comes only from the account, never from the query string.
-    if (!user.section || !user.department || !user.year) {
-      return res.json({ slots: [], needsSection: true });
-    }
-    filter.section = user.section;
-    filter.department = user.department;
-    filter.year = user.year;
-    if (user.semester) filter.semester = user.semester;
-  } else {
-    if (user.role === 'faculty' && !req.query.section) filter.faculty = user._id;
-    // Staff can look up any class's timetable.
-    if (req.query.section) filter.section = String(req.query.section).toUpperCase();
-    if (req.query.department) filter.department = String(req.query.department);
-    if (req.query.year) filter.year = Number(req.query.year);
-    if (req.query.semester) filter.semester = Number(req.query.semester);
-    if (req.query.faculty) filter.faculty = req.query.faculty;
-  }
-
+  const filter = await timetableReadScope(req.user, req.query);
+  if (!filter) return res.json({ slots: [], needsSection: true });
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
-  res.json({ slots: sortSlots(slots), needsSection: false });
+  const body = { slots: sortSlots(slots), needsSection: false };
+  // Our Class view: say which class it is (or that there is none), so the UI
+  // never has to work it out — or guess — on its own.
+  if (req.user.role === 'faculty' && req.query.scope === 'class') {
+    body.classInCharge = (await facultyClassInChargeScope(req.user))[0] || null;
+  }
+  res.json(body);
+});
+
+/**
+ * "My Schedule": the classes the authenticated user personally teaches,
+ * across the week, with their full academic context. Always the caller's own
+ * assignments — there is no way to ask for another faculty member's.
+ */
+export const getMySchedule = asyncHandler(async (req, res) => {
+  const filter = { faculty: req.user._id, isActive: true, isBreak: { $ne: true } };
+  if (req.query.semester) filter.semester = Number(req.query.semester);
+  const slots = await populateSlot(TimetableSlot.find(filter)).lean();
+  const semesters = await TimetableSlot.find({ faculty: req.user._id, isActive: true, isBreak: { $ne: true } }).distinct('semester');
+  res.json({ slots: sortSlots(slots), semesters: semesters.sort((a, b) => a - b) });
 });
 
 export const getSectionTimetable = asyncHandler(async (req, res) => {
-  const filter = { section: String(req.params.section).toUpperCase(), isActive: true };
-  if (req.query.department) filter.department = String(req.query.department);
-  if (req.query.year) filter.year = Number(req.query.year);
-  if (req.query.semester) filter.semester = Number(req.query.semester);
+  // The role's scope is applied first, then the requested section — so a
+  // section outside the caller's authorization simply matches nothing.
+  const scope = await timetableReadScope(req.user, req.query);
+  if (!scope) return res.json([]);
+  const section = String(req.params.section).toUpperCase();
+  // A student's scope is their own class, and a sibling section of the same
+  // year is still somebody else's timetable.
+  if (STUDENT_ROLES.includes(req.user.role) && scope.section !== section) return res.json([]);
+  const filter = { ...scope, section };
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
   res.json(sortSlots(slots));
 });
 
 export const getFacultyTimetable = asyncHandler(async (req, res) => {
+  const { user } = req;
+  const self = String(req.params.id) === String(user._id);
+  // Faculty (and students) may only ever read their own schedule; an HOD may
+  // read one of their own department's, within that department.
+  if (!self && (STUDENT_ROLES.includes(user.role) || user.role === 'faculty')) {
+    throw new ApiError(403, 'You can only view your own teaching schedule');
+  }
   const filter = { faculty: req.params.id, isActive: true };
+  if (!self && user.role === 'hod') filter.department = ownDepartment(user);
   if (req.query.semester) filter.semester = Number(req.query.semester);
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
   res.json(sortSlots(slots));

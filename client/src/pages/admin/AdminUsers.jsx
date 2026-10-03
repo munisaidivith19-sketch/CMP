@@ -21,6 +21,7 @@ function ClassModal({ user, onClose }) {
       setV({
         department: user.department || '', year: user.year || '', section: user.section || '', semester: user.semester || '', rollNo: user.rollNo || '',
         teachingYears: user.teachingYears || [], teachingSections: user.teachingSections || [],
+        inChargeYear: user.inChargeYear || '', inChargeSemester: user.inChargeSemester || '',
       });
     }
   }, [user]);
@@ -30,6 +31,8 @@ function ClassModal({ user, onClose }) {
     setV((s) => {
       const next = { ...s, [k]: e.target.value };
       if (k === 'year' && s.semester && !semestersOfYear(e.target.value).includes(Number(s.semester))) next.semester = '';
+      // The in-charge semester must belong to the in-charge year.
+      if (k === 'inChargeYear' && !semestersOfYear(Number(e.target.value)).includes(Number(s.inChargeSemester))) next.inChargeSemester = '';
       return next;
     });
   const save = async () => {
@@ -40,7 +43,14 @@ function ClassModal({ user, onClose }) {
         section: v.section ? v.section.toUpperCase() : null,
         // A faculty's class in charge is also their (sole) section handled.
         ...(isFaculty
-          ? { teachingYears: v.teachingYears, teachingSections: v.section ? [v.section.toUpperCase()] : [] }
+          ? {
+              teachingYears: v.teachingYears,
+              teachingSections: v.section ? [v.section.toUpperCase()] : [],
+              // "Our Class": section + in-charge year + in-charge semester. Clearing
+              // the section clears the in-charge class with it.
+              inChargeYear: v.section && v.inChargeYear ? Number(v.inChargeYear) : null,
+              inChargeSemester: v.section && v.inChargeSemester ? Number(v.inChargeSemester) : null,
+            }
           : { year: v.year ? Number(v.year) : undefined, semester: v.semester ? Number(v.semester) : undefined, rollNo: v.rollNo || null }),
       }).unwrap();
       toast.success('Class details saved');
@@ -60,7 +70,11 @@ function ClassModal({ user, onClose }) {
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={isLoading} onClick={save} disabled={isFaculty && (!v.teachingYears?.length || !v.section)}>
+          <Button
+            loading={isLoading}
+            onClick={save}
+            disabled={isFaculty && (!v.teachingYears?.length || !v.section || !v.inChargeYear !== !v.inChargeSemester)}
+          >
             Save
           </Button>
         </>
@@ -71,6 +85,22 @@ function ClassModal({ user, onClose }) {
         {isFaculty ? (
           <>
             <Select label="Class in charge" placeholder="Select section" options={SECTIONS} value={v.section} onChange={set('section')} />
+            <Select
+              label="In-charge year"
+              placeholder="—"
+              disabled={!v.section}
+              options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))}
+              value={String(v.inChargeYear || '')}
+              onChange={set('inChargeYear')}
+            />
+            <Select
+              label="In-charge semester"
+              placeholder={v.inChargeYear ? '—' : 'Select in-charge year first'}
+              disabled={!v.section || !v.inChargeYear}
+              options={(v.inChargeYear ? semestersOfYear(Number(v.inChargeYear)) : []).map((sem) => ({ value: String(sem), label: `Semester ${sem}` }))}
+              value={String(v.inChargeSemester || '')}
+              onChange={set('inChargeSemester')}
+            />
             <ChipMultiSelect
               className="sm:col-span-2"
               label="Year(s) handling"
@@ -208,6 +238,8 @@ export default function AdminUsers() {
                               {u.teachingYears?.length ? ` · Y${u.teachingYears.join('/')}` : ''}
                               {u.teachingSections?.length ? ` · Sec ${u.teachingSections.join('/')}` : ''}
                               {!u.teachingYears?.length && <span className="ml-1 font-semibold text-amber-600">· scope not set</span>}
+                              {u.section && u.inChargeYear ? ` · In-charge Y${u.inChargeYear} ${u.section} Sem ${u.inChargeSemester}` : ''}
+                              {u.section && !u.inChargeYear && <span className="ml-1 font-semibold text-amber-600">· in-charge year/semester not set</span>}
                             </>
                           ) : (
                             <>

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { ROLES, STAY_TYPES } from '../constants.js';
+import { ROLES, STAY_TYPES, yearOfSemester } from '../constants.js';
 
 const { Schema } = mongoose;
 
@@ -44,6 +44,13 @@ const userSchema = new Schema(
     // on timetable assignment — actual permissions come from TimetableSlot rows.
     teachingYears: { type: [{ type: Number, min: 1, max: 4 }], default: undefined },
     teachingSections: { type: [{ type: String, trim: true, uppercase: true, maxlength: 10 }], default: undefined },
+    // Faculty only: the exact class they are Class In-Charge of ("Our Class").
+    // `department` + `section` above already name it — Gate Pass routes
+    // approvals on those two and they stay the single source — and these two
+    // complete the identity, so the class is exact rather than inferred.
+    // Distinct from teachingYears, which is the general years handled.
+    inChargeYear: { type: Number, min: 1, max: 4 },
+    inChargeSemester: { type: Number, min: 1, max: 8 },
     rollNo: { type: String, trim: true, maxlength: 30 },
     // Staff (faculty / HOD / principal) identifier, assigned by an administrator.
     employeeId: { type: String, trim: true, maxlength: 30 },
@@ -94,6 +101,31 @@ userSchema.index(
   { name: 'text', department: 'text', skills: 'text', interests: 'text' },
   { weights: { name: 5, skills: 3, interests: 2, department: 1 }, name: 'user_text' }
 );
+
+/**
+ * Class In-Charge integrity: the in-charge year and semester are a faculty-only
+ * pair, must come together, need a section to complete the class, and the
+ * semester must belong to the year (year 3 → semester 5 or 6). Enforced on the
+ * model so every write path — create, admin edit, seed — obeys the same rule.
+ */
+userSchema.pre('validate', function checkClassInCharge(next) {
+  const hasYear = this.inChargeYear != null;
+  const hasSemester = this.inChargeSemester != null;
+  if (!hasYear && !hasSemester) return next();
+  if (this.role !== 'faculty') {
+    this.invalidate('inChargeYear', 'In-charge year and semester apply to faculty accounts only');
+  } else if (hasYear !== hasSemester) {
+    this.invalidate(hasYear ? 'inChargeSemester' : 'inChargeYear', 'Set both the in-charge year and the in-charge semester');
+  } else if (!this.section) {
+    this.invalidate('section', 'Choose the Class In Charge section for this in-charge year and semester');
+  } else if (yearOfSemester(this.inChargeSemester) !== this.inChargeYear) {
+    this.invalidate(
+      'inChargeSemester',
+      `Semester ${this.inChargeSemester} belongs to year ${yearOfSemester(this.inChargeSemester)}, not year ${this.inChargeYear}`
+    );
+  }
+  next();
+});
 
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();

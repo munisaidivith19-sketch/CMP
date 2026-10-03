@@ -123,7 +123,13 @@ export const api = createApi({
     reviewGroupRequest: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/requests/${id}`, method: 'PATCH', body }), invalidatesTags: ['ChatRequest', 'Chat', 'Notification'] }),
 
     // ── Timetable / attendance ────────────────────────
-    getTimetable: b.query({ query: () => '/timetable', providesTags: ['Timetable'] }),
+    // Faculty may pass { scope: 'class' } (Our Class) or { scope: 'handling' };
+    // the server derives both scopes from the account.
+    getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
+    getOurClassAttendance: b.query({ query: (params) => ({ url: '/attendance/our-class', params }), providesTags: ['Attendance'] }),
+    getReportOptions: b.query({ query: () => '/attendance/reports/options', providesTags: ['Attendance', 'Timetable'] }),
+    getReportPeriods: b.query({ query: (params) => ({ url: '/attendance/reports/periods', params }), providesTags: ['Attendance', 'Timetable'] }),
+    getAttendanceReport: b.query({ query: ({ type, ...params }) => ({ url: `/attendance/reports/${type}`, params }), providesTags: ['Attendance'] }),
     getCurrentClass: b.query({ query: () => '/timetable/current', providesTags: ['Timetable'] }),
     getMyAttendance: b.query({ query: (params) => ({ url: '/attendance/my', params }), providesTags: ['Attendance'] }),
     getAttendanceRecords: b.query({ query: (params) => ({ url: '/attendance/records', params }), providesTags: ['Attendance'] }),
@@ -280,6 +286,10 @@ export const {
   useAskStudyAssistantMutation,
   useLazyGetAssistantConversationQuery,
   useDeleteAssistantConversationMutation,
+  useGetOurClassAttendanceQuery,
+  useGetReportOptionsQuery,
+  useGetReportPeriodsQuery,
+  useGetAttendanceReportQuery,
 } = api;
 
 export const errMsg = (err, fallback = 'Something went wrong') =>

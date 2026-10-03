@@ -5,25 +5,31 @@ import { UserPlus } from 'lucide-react-native';
 import { Button, Card, Chip, EmptyState, Header, Input, Screen, T } from '../../../components/ui';
 import { errMsg, useCreateAdminUserMutation } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
-import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, YEAR_LABELS } from '../../../theme';
+import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, YEAR_LABELS, semestersOfYear } from '../../../theme';
 
 /** Fields per account type — mirrors the server's CREATE_FIELDS and the web form. */
 const FORMS = {
   student: ['name', 'rollNo', 'department', 'year', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
-  faculty: ['name', 'employeeId', 'department', 'teachingYears', 'section', 'email', 'phone', 'password'],
+  // Class In Charge = section + in-charge year + in-charge semester ("Our Class").
+  faculty: ['name', 'employeeId', 'department', 'teachingYears', 'section', 'inChargeYear', 'inChargeSemester', 'email', 'phone', 'password'],
   hod: ['name', 'employeeId', 'department', 'email', 'phone', 'password'],
   principal: ['name', 'employeeId', 'email', 'phone', 'password'],
   security: ['name', 'employeeId', 'email', 'phone', 'password'],
 };
-const REQUIRED = new Set(['name', 'email', 'password', 'rollNo', 'year', 'section', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears']);
+const REQUIRED = new Set([
+  'name', 'email', 'password', 'rollNo', 'year', 'section', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears',
+  'inChargeYear', 'inChargeSemester',
+]);
 const isRequired = (k) => REQUIRED.has(k);
 const EMPTY = {
   name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '',
-  teachingYears: [],
+  teachingYears: [], inChargeYear: '', inChargeSemester: '',
 };
 const LABELS = {
   department: 'Department', year: 'Year', stayType: 'Stay',
   teachingYears: 'Year(s) handling',
+  inChargeYear: 'In-charge year',
+  inChargeSemester: 'In-charge semester',
 };
 const TEXT = {
   name: { label: 'Full name', autoCapitalize: 'words' },
@@ -41,7 +47,13 @@ export default function CreateUser() {
   const [v, setV] = useState(EMPTY);
   const [errors, setErrors] = useState({});
   const [create, { isLoading }] = useCreateAdminUserMutation();
-  const set = (k) => (val) => setV((s) => ({ ...s, [k]: val }));
+  const set = (k) => (val) =>
+    setV((s) => {
+      const next = { ...s, [k]: val };
+      // The in-charge semester must belong to the in-charge year (year 3 → 5 or 6).
+      if (k === 'inChargeYear' && !semestersOfYear(next.inChargeYear).includes(Number(next.inChargeSemester))) next.inChargeSemester = '';
+      return next;
+    });
   const toggle = (k, val, order) =>
     setV((s) => {
       const list = s[k].includes(val) ? s[k].filter((x) => x !== val) : [...s[k], val];
@@ -69,7 +81,7 @@ export default function CreateUser() {
         return;
       }
       const val = String(v[k]).trim();
-      if (val) body[k] = k === 'year' ? Number(val) : ['section', 'rollNo', 'employeeId'].includes(k) ? val.toUpperCase() : val;
+      if (val) body[k] = ['year', 'inChargeYear', 'inChargeSemester'].includes(k) ? Number(val) : ['section', 'rollNo', 'employeeId'].includes(k) ? val.toUpperCase() : val;
     });
     // Faculty's class in charge is also their (sole) section handled.
     if (role === 'faculty' && body.section) body.teachingSections = [body.section];
@@ -118,6 +130,8 @@ export default function CreateUser() {
     if (k === 'year') return chips(k, ACADEMIC_YEARS.map((y) => [String(y), YEAR_LABELS[y]]));
     if (k === 'section') return chips(k, SECTIONS.map((s) => [s, s]), role === 'faculty' ? 'Class in charge' : 'Section');
     if (k === 'teachingYears') return chips(k, ACADEMIC_YEARS.map((y) => [y, YEAR_LABELS[y]]));
+    if (k === 'inChargeYear') return chips(k, ACADEMIC_YEARS.map((y) => [String(y), YEAR_LABELS[y]]));
+    if (k === 'inChargeSemester') return chips(k, semestersOfYear(v.inChargeYear).map((sem) => [String(sem), `Semester ${sem}`]));
     if (k === 'department') return chips(k, DEPARTMENTS.map((d) => [d, d]));
     if (k === 'stayType') return chips(k, [['hosteler', 'Hosteler'], ['day_scholar', 'Day Scholar']]);
     const { label, ...props } = TEXT[k];

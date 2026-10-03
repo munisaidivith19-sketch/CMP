@@ -32,7 +32,7 @@ import { loggedOut, selectUser } from '../../features/authSlice';
 import { api, useGetChatUnreadQuery, useGetGroupRequestsQuery, useLogoutMutation } from '../../services/api';
 import { disconnectSocket } from '../../services/socket';
 import { Avatar, cn } from '../ui/primitives';
-import { ROLE_LABELS, STAFF_VIEW } from '../../utils/constants';
+import { PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF_VIEW } from '../../utils/constants';
 
 const MAIN = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -40,7 +40,7 @@ const MAIN = [
   { to: '/events', label: 'Events', icon: CalendarDays },
   { to: '/clubs', label: 'Clubs', icon: Shapes },
   { to: '/discussions', label: 'Discussions', icon: MessagesSquare },
-  { to: '/people', label: 'People', icon: GraduationCap, excludeRoles: ['student', 'club_admin'] },
+  { to: '/people', label: 'People', icon: GraduationCap, excludeRoles: ROLES.filter((r) => !PEOPLE_DIRECTORY.includes(r)) },
   { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 

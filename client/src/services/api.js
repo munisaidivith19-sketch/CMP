@@ -1,12 +1,20 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { loggedOut, setCredentials } from '../features/authSlice';
 
+function getCsrfCookie() {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(^|;\s*)cc_csrf=([^;]*)/);
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: '/api',
   credentials: 'include',
   prepareHeaders: (headers, { getState }) => {
     const token = getState().auth.accessToken;
     if (token) headers.set('authorization', `Bearer ${token}`);
+    const csrf = getCsrfCookie();
+    if (csrf) headers.set('x-csrf-token', csrf);
     return headers;
   },
 });
@@ -15,7 +23,9 @@ const rawBaseQuery = fetchBaseQuery({
 let refreshPromise = null;
 export function refreshSession() {
   if (!refreshPromise) {
-    refreshPromise = fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
+    const csrf = getCsrfCookie();
+    const headers = csrf ? { 'x-csrf-token': csrf } : undefined;
+    refreshPromise = fetch('/api/auth/refresh', { method: 'POST', credentials: 'include', headers })
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null)
       .finally(() => {
@@ -49,6 +59,7 @@ const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
   'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation',
+  'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics',
 ];
 
 export const api = createApi({
@@ -303,6 +314,9 @@ export const api = createApi({
       query: ({ type, ...params }) => ({ url: `/attendance/reports/${type}`, params }),
       providesTags: ['Attendance'],
     }),
+    notifyLowAttendanceStudent: b.mutation({
+      query: ({ id, message }) => ({ url: `/attendance/notify/${id}`, method: 'POST', body: { message } }),
+    }),
     getStudentAttendance: b.query({ query: ({ id, ...params }) => ({ url: `/attendance/student/${id}`, params }), providesTags: ['Attendance'] }),
     getSubjectAttendance: b.query({ query: ({ id, ...params }) => ({ url: `/attendance/subject/${id}`, params }), providesTags: ['Attendance'] }),
     getCorrections: b.query({ query: (params) => ({ url: '/attendance/corrections', params }), providesTags: ['Correction'] }),
@@ -409,6 +423,323 @@ export const api = createApi({
     getCollegeAnalytics: b.query({ query: (params) => ({ url: '/analytics/college', params }), providesTags: ['Analytics'] }),
     getGateAnalytics: b.query({ query: (params) => ({ url: '/analytics/gate', params }), providesTags: ['Analytics'] }),
     getClubAnalytics: b.query({ query: ({ id, ...params }) => ({ url: `/analytics/club/${id}`, params }), providesTags: ['Analytics'] }),
+
+    // ── Alumni Network ────────────────────────────────
+    getAlumni: b.query({
+      query: (params) => ({ url: '/alumni', params }),
+      providesTags: ['AlumniProfile'],
+    }),
+    getAlumniFilters: b.query({
+      query: () => '/alumni/filters',
+      providesTags: ['AlumniProfile'],
+    }),
+    getAlumniProfile: b.query({
+      query: (userId) => `/alumni/${userId}`,
+      providesTags: (r, e, id) => [{ type: 'AlumniProfile', id }],
+    }),
+    getMyAlumniProfile: b.query({
+      query: () => '/alumni/me',
+      providesTags: ['AlumniProfile', 'Me'],
+    }),
+    upsertAlumniProfile: b.mutation({
+      query: (body) => ({ url: '/alumni/me', method: 'PUT', body }),
+      invalidatesTags: ['AlumniProfile', 'Me'],
+    }),
+    verifyAlumniProfile: b.mutation({
+      query: (id) => ({ url: `/alumni/${id}/verify`, method: 'PATCH' }),
+      invalidatesTags: ['AlumniProfile', 'AlumniAnalytics'],
+    }),
+    rejectAlumniProfile: b.mutation({
+      query: ({ id, reason }) => ({ url: `/alumni/${id}/reject`, method: 'POST', body: { reason } }),
+      invalidatesTags: ['AlumniProfile', 'AlumniAnalytics'],
+    }),
+
+    // Mentorship
+    getMentorshipRequests: b.query({
+      query: (params) => ({ url: '/mentorship-requests', params }),
+      providesTags: ['MentorshipRequest'],
+    }),
+    getMentorshipRequest: b.query({
+      query: (id) => `/mentorship-requests/${id}`,
+      providesTags: (r, e, id) => [{ type: 'MentorshipRequest', id }],
+    }),
+    createMentorshipRequest: b.mutation({
+      query: (body) => ({ url: '/mentorship-requests', method: 'POST', body }),
+      invalidatesTags: ['MentorshipRequest', 'AlumniProfile'],
+    }),
+    respondMentorshipRequest: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/mentorship-requests/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['MentorshipRequest', 'AlumniProfile'],
+    }),
+    cancelMentorshipRequest: b.mutation({
+      query: ({ id, reason }) => ({ url: `/mentorship-requests/${id}/cancel`, method: 'PATCH', body: { reason } }),
+      invalidatesTags: ['MentorshipRequest', 'AlumniProfile'],
+    }),
+    completeMentorship: b.mutation({
+      query: (id) => ({ url: `/mentorship-requests/${id}/complete`, method: 'PATCH' }),
+      invalidatesTags: ['MentorshipRequest', 'AlumniProfile'],
+    }),
+    rateMentorship: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/mentorship-requests/${id}/rate`, method: 'PATCH', body }),
+      invalidatesTags: ['MentorshipRequest', 'AlumniProfile'],
+    }),
+    updateMentorshipGoals: b.mutation({
+      query: ({ id, goals }) => ({ url: `/mentorship-requests/${id}/goals`, method: 'PATCH', body: { goals } }),
+      invalidatesTags: ['MentorshipRequest'],
+    }),
+    getSlots: b.query({
+      query: (params) => ({ url: '/mentorship/slots', params }),
+      providesTags: ['MentorshipSlot'],
+    }),
+    createSlots: b.mutation({
+      query: (body) => ({ url: '/mentorship/slots', method: 'POST', body }),
+      invalidatesTags: ['MentorshipSlot'],
+    }),
+    deleteMentorshipSlot: b.mutation({
+      query: (id) => ({ url: `/mentorship/slots/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['MentorshipSlot'],
+    }),
+    bookSession: b.mutation({
+      query: (body) => ({ url: '/mentorship/sessions', method: 'POST', body }),
+      invalidatesTags: ['MentorshipSlot', 'MentorshipSession', 'MentorshipRequest'],
+    }),
+    getMentorshipSessions: b.query({
+      query: (params) => ({ url: '/mentorship/sessions', params }),
+      providesTags: ['MentorshipSession'],
+    }),
+    rescheduleSession: b.mutation({
+      query: ({ id, slot }) => ({ url: `/mentorship/sessions/${id}/reschedule`, method: 'PATCH', body: { slot } }),
+      invalidatesTags: ['MentorshipSlot', 'MentorshipSession'],
+    }),
+    cancelSession: b.mutation({
+      query: ({ id, reason }) => ({ url: `/mentorship/sessions/${id}/cancel`, method: 'PATCH', body: { reason } }),
+      invalidatesTags: ['MentorshipSlot', 'MentorshipSession'],
+    }),
+    completeSession: b.mutation({
+      query: ({ id, outcome }) => ({ url: `/mentorship/sessions/${id}/complete`, method: 'PATCH', body: { outcome } }),
+      invalidatesTags: ['MentorshipSession', 'MentorshipRequest'],
+    }),
+    updateSessionNotes: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/mentorship/sessions/${id}/notes`, method: 'PATCH', body }),
+      invalidatesTags: ['MentorshipSession'],
+    }),
+    messageMentor: b.mutation({
+      query: (id) => ({ url: `/mentorship/requests/${id}/message`, method: 'POST' }),
+      invalidatesTags: ['Chat'],
+    }),
+
+    // Jobs
+    getAlumniJobs: b.query({
+      query: (params) => ({ url: '/alumni/jobs', params }),
+      providesTags: ['AlumniJob'],
+    }),
+    getAlumniJob: b.query({
+      query: (id) => `/alumni/jobs/${id}`,
+      providesTags: (r, e, id) => [{ type: 'AlumniJob', id }],
+    }),
+    createAlumniJob: b.mutation({
+      query: (body) => ({ url: '/alumni/jobs', method: 'POST', body }),
+      invalidatesTags: ['AlumniJob', 'AlumniAnalytics'],
+    }),
+    updateAlumniJob: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/alumni/jobs/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['AlumniJob'],
+    }),
+    closeAlumniJob: b.mutation({
+      query: (id) => ({ url: `/alumni/jobs/${id}/close`, method: 'PATCH' }),
+      invalidatesTags: ['AlumniJob'],
+    }),
+    reopenAlumniJob: b.mutation({
+      query: (id) => ({ url: `/alumni/jobs/${id}/reopen`, method: 'PATCH' }),
+      invalidatesTags: ['AlumniJob'],
+    }),
+    removeAlumniJob: b.mutation({
+      query: ({ id, reason }) => ({ url: `/alumni/jobs/${id}`, method: 'DELETE', body: { reason } }),
+      invalidatesTags: ['AlumniJob', 'AlumniAnalytics'],
+    }),
+    applyToJob: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/alumni/jobs/${id}/apply`, method: 'POST', body }),
+      invalidatesTags: ['AlumniJob', 'JobApplication', 'AlumniAnalytics'],
+    }),
+    getJobApplications: b.query({
+      query: (id) => `/alumni/jobs/${id}/applications`,
+      providesTags: ['JobApplication'],
+    }),
+    getMyApplications: b.query({
+      query: () => '/alumni/job-applications/mine',
+      providesTags: ['JobApplication'],
+    }),
+    updateApplication: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/alumni/job-applications/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['JobApplication', 'AlumniJob', 'AlumniAnalytics'],
+    }),
+    withdrawApplication: b.mutation({
+      query: (id) => ({ url: `/alumni/job-applications/${id}/withdraw`, method: 'PATCH' }),
+      invalidatesTags: ['JobApplication', 'AlumniJob', 'AlumniAnalytics'],
+    }),
+
+    // Events
+    getAlumniEvents: b.query({
+      query: (params) => ({ url: '/alumni/events', params }),
+      providesTags: ['AlumniEvent'],
+    }),
+    getAlumniEvent: b.query({
+      query: (id) => `/alumni/events/${id}`,
+      providesTags: (r, e, id) => [{ type: 'AlumniEvent', id }],
+    }),
+    createAlumniEvent: b.mutation({
+      query: (body) => ({ url: '/alumni/events', method: 'POST', body }),
+      invalidatesTags: ['AlumniEvent', 'AlumniAnalytics'],
+    }),
+    updateAlumniEvent: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/alumni/events/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['AlumniEvent'],
+    }),
+    approveAlumniEvent: b.mutation({
+      query: (id) => ({ url: `/alumni/events/${id}/approve`, method: 'POST' }),
+      invalidatesTags: ['AlumniEvent', 'AlumniAnalytics'],
+    }),
+    rejectAlumniEvent: b.mutation({
+      query: ({ id, reason }) => ({ url: `/alumni/events/${id}/reject`, method: 'POST', body: { reason } }),
+      invalidatesTags: ['AlumniEvent', 'AlumniAnalytics'],
+    }),
+    cancelAlumniEvent: b.mutation({
+      query: ({ id, reason }) => ({ url: `/alumni/events/${id}/cancel`, method: 'POST', body: { reason } }),
+      invalidatesTags: ['AlumniEvent', 'AlumniAnalytics'],
+    }),
+    rsvpEvent: b.mutation({
+      query: (id) => ({ url: `/alumni/events/${id}/rsvp`, method: 'POST' }),
+      invalidatesTags: ['AlumniEvent', 'AlumniAnalytics'],
+    }),
+    cancelRsvp: b.mutation({
+      query: (id) => ({ url: `/alumni/events/${id}/rsvp`, method: 'DELETE' }),
+      invalidatesTags: ['AlumniEvent', 'AlumniAnalytics'],
+    }),
+    getAttendees: b.query({
+      query: (id) => `/alumni/events/${id}/attendees`,
+      providesTags: ['AlumniEvent'],
+    }),
+    checkInAttendee: b.mutation({
+      query: ({ id, userId }) => ({ url: `/alumni/events/${id}/checkin`, method: 'POST', body: { userId } }),
+      invalidatesTags: ['AlumniEvent', 'AlumniAnalytics'],
+    }),
+
+    // Chapters
+    getChapters: b.query({
+      query: (params) => ({ url: '/alumni/chapters', params }),
+      providesTags: ['Chapter'],
+    }),
+    getChapter: b.query({
+      query: (slug) => `/alumni/chapters/${slug}`,
+      providesTags: (r, e, slug) => [{ type: 'Chapter', id: slug }],
+    }),
+    createChapter: b.mutation({
+      query: (body) => ({ url: '/alumni/chapters', method: 'POST', body }),
+      invalidatesTags: ['Chapter', 'AlumniAnalytics'],
+    }),
+    updateChapter: b.mutation({
+      query: ({ slug, ...body }) => ({ url: `/alumni/chapters/${slug}`, method: 'PATCH', body }),
+      invalidatesTags: ['Chapter'],
+    }),
+    archiveChapter: b.mutation({
+      query: (slug) => ({ url: `/alumni/chapters/${slug}`, method: 'DELETE' }),
+      invalidatesTags: ['Chapter', 'AlumniAnalytics'],
+    }),
+    joinChapter: b.mutation({
+      query: (slug) => ({ url: `/alumni/chapters/${slug}/join`, method: 'POST' }),
+      invalidatesTags: ['Chapter', 'AlumniAnalytics'],
+    }),
+    leaveChapter: b.mutation({
+      query: (slug) => ({ url: `/alumni/chapters/${slug}/join`, method: 'DELETE' }),
+      invalidatesTags: ['Chapter', 'AlumniAnalytics'],
+    }),
+    approveChapterMember: b.mutation({
+      query: ({ slug, userId, status }) => ({ url: `/alumni/chapters/${slug}/members/${userId}`, method: 'PATCH', body: { status } }),
+      invalidatesTags: ['Chapter'],
+    }),
+    getChapterMembers: b.query({
+      query: (slug) => `/alumni/chapters/${slug}/members`,
+      providesTags: ['Chapter'],
+    }),
+    getChapterPosts: b.query({
+      query: ({ slug, ...params }) => ({ url: `/alumni/chapters/${slug}/posts`, params }),
+      providesTags: ['ChapterPost'],
+    }),
+    createChapterPost: b.mutation({
+      query: ({ slug, ...body }) => ({ url: `/alumni/chapters/${slug}/posts`, method: 'POST', body }),
+      invalidatesTags: ['ChapterPost', 'Chapter', 'AlumniAnalytics'],
+    }),
+    deletePost: b.mutation({
+      query: (id) => ({ url: `/alumni/chapters/posts/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['ChapterPost', 'Chapter'],
+    }),
+    pinPost: b.mutation({
+      query: (id) => ({ url: `/alumni/chapters/posts/${id}/pin`, method: 'PATCH' }),
+      invalidatesTags: ['ChapterPost'],
+    }),
+    likePost: b.mutation({
+      query: (id) => ({ url: `/alumni/chapters/posts/${id}/like`, method: 'POST' }),
+      invalidatesTags: ['ChapterPost'],
+    }),
+    getComments: b.query({
+      query: (postId) => `/alumni/chapters/posts/${postId}/comments`,
+      providesTags: ['ChapterPost'],
+    }),
+    addComment: b.mutation({
+      query: ({ postId, body }) => ({ url: `/alumni/chapters/posts/${postId}/comments`, method: 'POST', body: { body } }),
+      invalidatesTags: ['ChapterPost'],
+    }),
+    deleteComment: b.mutation({
+      query: (id) => ({ url: `/alumni/chapters/comments/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['ChapterPost'],
+    }),
+
+    // Import & Invites
+    previewImport: b.mutation({
+      query: (formData) => ({ url: '/alumni/import/preview', method: 'POST', body: formData }),
+      invalidatesTags: ['AlumniImport'],
+    }),
+    commitImport: b.mutation({
+      query: ({ batchId, sendEmails }) => ({ url: `/alumni/import/${batchId}/commit`, method: 'POST', body: { sendEmails } }),
+      invalidatesTags: ['AlumniImport', 'AlumniInvite', 'AlumniProfile', 'AlumniAnalytics'],
+    }),
+    getImports: b.query({
+      query: () => '/alumni/import',
+      providesTags: ['AlumniImport'],
+    }),
+    getImportBatch: b.query({
+      query: (id) => `/alumni/import/${id}`,
+      providesTags: ['AlumniImport'],
+    }),
+    getInvites: b.query({
+      query: (params) => ({ url: '/alumni/invites', params }),
+      providesTags: ['AlumniInvite'],
+    }),
+    resendInvite: b.mutation({
+      query: (id) => ({ url: `/alumni/invites/${id}/resend`, method: 'POST' }),
+      invalidatesTags: ['AlumniInvite'],
+    }),
+    revokeInvite: b.mutation({
+      query: (id) => ({ url: `/alumni/invites/${id}/revoke`, method: 'PATCH' }),
+      invalidatesTags: ['AlumniInvite'],
+    }),
+    getPublicClaim: b.query({
+      query: (token) => `/auth/alumni-claim/${token}`,
+    }),
+    submitPublicClaim: b.mutation({
+      query: ({ token, ...body }) => ({ url: `/auth/alumni-claim/${token}`, method: 'POST', body }),
+      invalidatesTags: ['Me', 'AlumniProfile'],
+    }),
+
+    // Analytics
+    getAlumniAnalytics: b.query({
+      query: (params) => ({ url: '/alumni/analytics', params }),
+      providesTags: ['AlumniAnalytics'],
+    }),
+    getAlumniDashboard: b.query({
+      query: () => '/alumni/dashboard',
+      providesTags: ['AlumniProfile', 'MentorshipRequest', 'MentorshipSession', 'AlumniJob', 'AlumniEvent', 'ChapterPost'],
+    }),
   }),
 });
 
@@ -508,6 +839,7 @@ export const {
   useMarkClassAttendanceMutation,
   useGetAttendanceSessionsQuery,
   useGetLowAttendanceQuery,
+  useNotifyLowAttendanceStudentMutation,
   useGetStudentAttendanceQuery,
   useGetSubjectAttendanceQuery,
   useGetCorrectionsQuery,
@@ -586,4 +918,82 @@ export const {
   useGetAttendanceReportQuery,
   useGetOurClassAttendanceQuery,
   useGetReportPeriodsQuery,
+
+  // ── Alumni Network ──────────────────────────────────
+  useGetAlumniQuery,
+  useGetAlumniFiltersQuery,
+  useGetAlumniProfileQuery,
+  useGetMyAlumniProfileQuery,
+  useUpsertAlumniProfileMutation,
+  useVerifyAlumniProfileMutation,
+  useRejectAlumniProfileMutation,
+  useGetMentorshipRequestsQuery,
+  useGetMentorshipRequestQuery,
+  useCreateMentorshipRequestMutation,
+  useRespondMentorshipRequestMutation,
+  useCancelMentorshipRequestMutation,
+  useCompleteMentorshipMutation,
+  useRateMentorshipMutation,
+  useUpdateMentorshipGoalsMutation,
+  useGetSlotsQuery,
+  useCreateSlotsMutation,
+  useDeleteMentorshipSlotMutation,
+  useBookSessionMutation,
+  useGetMentorshipSessionsQuery,
+  useRescheduleSessionMutation,
+  useCancelSessionMutation,
+  useCompleteSessionMutation,
+  useUpdateSessionNotesMutation,
+  useMessageMentorMutation,
+  useGetAlumniJobsQuery,
+  useGetAlumniJobQuery,
+  useCreateAlumniJobMutation,
+  useUpdateAlumniJobMutation,
+  useCloseAlumniJobMutation,
+  useReopenAlumniJobMutation,
+  useRemoveAlumniJobMutation,
+  useApplyToJobMutation,
+  useGetJobApplicationsQuery,
+  useGetMyApplicationsQuery,
+  useUpdateApplicationMutation,
+  useWithdrawApplicationMutation,
+  useGetAlumniEventsQuery,
+  useGetAlumniEventQuery,
+  useCreateAlumniEventMutation,
+  useUpdateAlumniEventMutation,
+  useApproveAlumniEventMutation,
+  useRejectAlumniEventMutation,
+  useCancelAlumniEventMutation,
+  useRsvpEventMutation,
+  useCancelRsvpMutation,
+  useGetAttendeesQuery,
+  useCheckInAttendeeMutation,
+  useGetChaptersQuery,
+  useGetChapterQuery,
+  useCreateChapterMutation,
+  useUpdateChapterMutation,
+  useArchiveChapterMutation,
+  useJoinChapterMutation,
+  useLeaveChapterMutation,
+  useApproveChapterMemberMutation,
+  useGetChapterMembersQuery,
+  useGetChapterPostsQuery,
+  useCreateChapterPostMutation,
+  useDeletePostMutation,
+  usePinPostMutation,
+  useLikePostMutation,
+  useGetCommentsQuery,
+  useAddCommentMutation,
+  useDeleteCommentMutation,
+  usePreviewImportMutation,
+  useCommitImportMutation,
+  useGetImportsQuery,
+  useGetImportBatchQuery,
+  useGetInvitesQuery,
+  useResendInviteMutation,
+  useRevokeInviteMutation,
+  useGetPublicClaimQuery,
+  useSubmitPublicClaimMutation,
+  useGetAlumniAnalyticsQuery,
+  useGetAlumniDashboardQuery,
 } = api;

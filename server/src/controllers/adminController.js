@@ -250,11 +250,22 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (String(req.params.id) === String(req.user._id)) {
     throw new ApiError(400, 'You cannot change your own role or status');
   }
-  const user = await User.findById(req.params.id).select('+tokenVersion');
+  const user = await User.findById(req.params.id).select('+tokenVersion +lockUntil +failedLogins +lastFailedLoginAt +lockoutCount');
   if (!user) throw new ApiError(404, 'User not found');
 
-  const { role, isActive } = req.body;
+  const { role, isActive, unlock, unlockAccount } = req.body;
   const changes = [];
+
+  // Manual admin unlock override
+  if (unlock || unlockAccount) {
+    user.lockUntil = undefined;
+    user.failedLogins = 0;
+    user.lastFailedLoginAt = undefined;
+    user.lockoutCount = 0;
+    changes.push('account_unlocked');
+    logActivity(req, 'admin.user_unlock', { entityType: 'user', entityId: user._id, summary: `Manual unlock for ${user.email}` });
+  }
+
   // Academic placement (drives timetable + attendance roster) — admin-assigned only.
   const academic = [];
   for (const key of ['department', 'year', 'section', 'semester', 'rollNo', 'employeeId', 'stayType', 'phone', 'parentPhone']) {
@@ -297,12 +308,15 @@ export const updateUser = asyncHandler(async (req, res) => {
     throw new ApiError(422, `Semester ${user.semester} belongs to year ${yearOfSemester(user.semester)}, not year ${user.year}`);
   }
   if (role !== undefined && role !== user.role) {
+    const oldRole = user.role;
     user.role = role;
     changes.push(`role → ${role}`);
+    logActivity(req, 'admin.role_change', { entityType: 'user', entityId: user._id, summary: `${user.email}: ${oldRole} → ${role}` });
   }
   if (isActive !== undefined && Boolean(isActive) !== user.isActive) {
     user.isActive = Boolean(isActive);
     changes.push(isActive ? 'reactivated' : 'suspended');
+    logActivity(req, isActive ? 'admin.user_reactivate' : 'admin.user_suspend', { entityType: 'user', entityId: user._id, summary: `${user.email}: ${isActive ? 'reactivated' : 'suspended'}` });
   }
   // Any privilege change forces re-authentication on every device, immediately.
   if (changes.length) user.tokenVersion = (user.tokenVersion || 0) + 1;

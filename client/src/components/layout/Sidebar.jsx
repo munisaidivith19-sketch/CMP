@@ -52,6 +52,7 @@ const CAMPUS = [
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
   { to: '/complaints', label: 'Complaints', icon: MessageSquareWarning },
+  { to: '/alumni', label: 'Alumni Network', icon: GraduationCap, excludeRoles: ['warden', 'security'] },
   { to: '/analytics', label: 'Insights', icon: LineChart },
 ];
 
@@ -83,8 +84,21 @@ function NavItem({ item, onClick, badge }) {
   );
 }
 
-// Gate guards only deal with entries/exits — the rest of campus life doesn't apply to them.
-const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/attendance', '/analytics', '/complaints'];
+const ALUMNI_MAIN = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/alumni', label: 'Alumni Network', icon: GraduationCap },
+  { to: '/announcements', label: 'Announcements', icon: Megaphone },
+  { to: '/events', label: 'Events', icon: CalendarDays },
+  { to: '/clubs', label: 'Clubs', icon: Shapes },
+  { to: '/discussions', label: 'Discussions', icon: MessagesSquare },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
+];
+
+const ALUMNI_CAMPUS = [
+  { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
+];
+
+const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/attendance', '/analytics', '/complaints', '/alumni'];
 
 export default function Sidebar() {
   const dispatch = useDispatch();
@@ -94,8 +108,16 @@ export default function Sidebar() {
   const [logout] = useLogoutMutation();
   const close = () => dispatch(setSidebar(false));
   const isSecurity = user?.role === 'security';
-  const mainItems = MAIN.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
-  const campusItems = CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
+  const isAlumni = user?.role === 'alumni';
+
+  const mainItems = isAlumni
+    ? ALUMNI_MAIN
+    : MAIN.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
+
+  const campusItems = isAlumni
+    ? ALUMNI_CAMPUS
+    : CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
+
   const adminItems = ADMIN.filter((i) => i.roles.includes(user?.role));
   const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user });
   const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: !['admin', 'principal'].includes(user?.role), pollingInterval: 60000 });
@@ -145,7 +167,7 @@ export default function Sidebar() {
           {mainItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} />
           ))}
-          <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">Campus</p>
+          <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">{isAlumni ? 'Connect' : 'Campus'}</p>
           {campusItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'chat' ? unread?.total : 0} />
           ))}

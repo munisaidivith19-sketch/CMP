@@ -5,6 +5,7 @@ import { initSocket } from './config/socket.js';
 import { createApp } from './app.js';
 import { expireGatePasses } from './controllers/gatePassController.js';
 import { syncSubjects } from './utils/syncSubjects.js';
+import { startAlumniSchedulers } from './utils/alumniSchedulers.js';
 
 async function start() {
   await connectDB();
@@ -19,6 +20,9 @@ async function start() {
   // Close gate passes whose validity window has passed (also runs lazily on verify).
   const sweep = setInterval(() => expireGatePasses().catch((err) => console.error('[gate-pass] sweep failed:', err.message)), 5 * 60 * 1000);
   sweep.unref();
+
+  // Start Alumni Network schedulers (reminders, housekeeping, capacity reconcile)
+  startAlumniSchedulers();
 
   server.listen(env.port, () => {
     console.log(`[api] CampusConnect API listening on http://localhost:${env.port}`);

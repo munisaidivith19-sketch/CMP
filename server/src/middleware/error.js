@@ -35,5 +35,11 @@ export const errorHandler = (err, req, res, _next) => {
     if (env.isProd) message = 'Internal server error';
   }
 
-  res.status(status).json({ message, ...(errors && Array.isArray(errors) ? { errors } : {}) });
+  const extra = err.data || (errors && !Array.isArray(errors) ? errors : null);
+
+  res.status(status).json({
+    message,
+    ...(errors && Array.isArray(errors) ? { errors } : {}),
+    ...(extra && typeof extra === 'object' ? extra : {}),
+  });
 };

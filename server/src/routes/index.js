@@ -71,6 +71,11 @@ import * as analytics from '../controllers/analyticsController.js';
 import { globalSearch } from '../controllers/searchController.js';
 import { getDashboard } from '../controllers/dashboardController.js';
 import { uploadFile } from '../controllers/uploadController.js';
+import alumniRouter, {
+  alumniPublicRouter,
+  mentorshipRequestsRouter,
+  mentorshipRouter,
+} from './alumniRoutes.js';
 
 const router = Router();
 
@@ -201,6 +206,9 @@ router.post(
   validate,
   auth.resetPassword
 );
+
+// Alumni public claim
+router.use('/auth/alumni-claim', alumniPublicRouter);
 
 // Everything below requires a signed-in user.
 router.use(protect);
@@ -676,6 +684,7 @@ router.get('/attendance/records', ...rangeQuery, validate, attendance.getAttenda
 router.get('/attendance/trends', ...rangeQuery, validate, attendance.getAttendanceTrends);
 router.get('/attendance/sessions', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.listSessions);
 router.get('/attendance/low', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getLowAttendance);
+router.post('/attendance/notify/:id', idParam('id'), authorize('admin', 'hod', 'faculty'), attendance.notifyStudentLowAttendance);
 router.get('/attendance/student/:id', idParam('id'), authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getStudentAttendance);
 router.get('/attendance/subject/:subjectId', idParam('subjectId'), authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getSubjectAttendance);
 router.get('/attendance/section', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getSectionAttendance);
@@ -1133,5 +1142,10 @@ router.get('/analytics/department', authorize(...STAFF_VIEW), ...rangeQuery, val
 router.get('/analytics/college', authorize('admin', 'principal'), ...rangeQuery, validate, analytics.collegeAnalytics);
 router.get('/analytics/gate', authorize(...STAFF_VIEW), ...rangeQuery, validate, analytics.gateAnalytics);
 router.get('/analytics/club/:id', param('id').isString().isLength({ min: 1, max: 80 }), ...rangeQuery, validate, analytics.clubAnalytics);
+
+// ── Alumni Network ──────────────────────────────────────────────────
+router.use('/alumni', alumniRouter);
+router.use('/mentorship-requests', mentorshipRequestsRouter);
+router.use('/mentorship', mentorshipRouter);
 
 export default router;

@@ -58,6 +58,8 @@ const Insights = lazy(() => import('./pages/analytics/Insights'));
 const Complaints = lazy(() => import('./pages/complaints/Complaints'));
 const ComplaintDetail = lazy(() => import('./pages/complaints/ComplaintDetail'));
 const ComplaintDashboard = lazy(() => import('./pages/admin/ComplaintDashboard'));
+const Alumni = lazy(() => import('./pages/alumni/Alumni'));
+const AlumniClaim = lazy(() => import('./pages/alumni/AlumniClaim'));
 
 function RequireAuth({ children, roles }) {
   const user = useSelector((s) => s.auth.user);
@@ -125,6 +127,7 @@ export default function App() {
           <Route path="/forgot-password" element={<GuestOnly><ForgotPassword /></GuestOnly>} />
           {/* Reachable while signed in too: the emailed link must always work. */}
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/alumni/claim" element={<AlumniClaim />} />
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route index element={<Dashboard />} />
             <Route path="events" element={<Events />} />
@@ -166,6 +169,7 @@ export default function App() {
             <Route path="complaints" element={<Complaints />} />
             <Route path="complaints/:id" element={<ComplaintDetail />} />
             <Route path="admin/complaints" element={<RequireAuth roles={['admin', 'chairman']}><ComplaintDashboard /></RequireAuth>} />
+            <Route path="alumni" element={<Alumni />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

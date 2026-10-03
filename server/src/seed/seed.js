@@ -23,6 +23,7 @@ import Message from '../models/Message.js';
 import Session from '../models/Session.js';
 import LoginHistory from '../models/LoginHistory.js';
 import { seedAcademic } from './academic.js';
+import { seedAlumniNetwork } from './alumniSeed.js';
 
 const PASSWORD = 'Password@123';
 const DAY = 86400000;
@@ -447,6 +448,9 @@ async function seed() {
 
   // Development-only academic data (sections, subjects, timetable, attendance).
   await seedAcademic();
+
+  // Alumni Network seed data (profiles, mentorship, jobs, events, chapters, invites).
+  await seedAlumniNetwork();
 
   console.log('\n✅ Seed complete. Demo accounts (password: %s)', PASSWORD);
   console.table([

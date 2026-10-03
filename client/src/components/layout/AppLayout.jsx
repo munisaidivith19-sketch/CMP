@@ -34,6 +34,13 @@ const LIVE_TAGS = {
   'chat:conversation': ['Chat'],
   'chat:read': ['Chat'],
   'chat:messageDeleted': ['Chat'],
+  'alumni:request': ['MentorshipRequest'],
+  'alumni:request_updated': ['MentorshipRequest', 'AlumniProfile'],
+  'alumni:session': ['MentorshipSession', 'MentorshipSlot'],
+  'alumni:job': ['AlumniJob'],
+  'alumni:job_application': ['JobApplication', 'AlumniJob'],
+  'alumni:event': ['AlumniEvent'],
+  'alumni:chapter_post': ['ChapterPost'],
 };
 
 /** Live notifications over Socket.io → toast + refresh cached data. */
@@ -111,6 +118,7 @@ function useRealtime() {
       if (n.type === 'gate_pass') tags.push('GatePass');
       if (n.type === 'lost_found') tags.push('LostFound');
       if (n.type === 'system') tags.push('Session', 'Me');
+      if (n.type === 'alumni') tags.push('AlumniProfile', 'MentorshipRequest', 'AlumniJob', 'AlumniEvent', 'Chapter');
       dispatch(api.util.invalidateTags(tags));
     };
     socket.on('notification', onNotification);

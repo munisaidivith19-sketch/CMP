@@ -13,6 +13,7 @@ import routes from './routes/index.js';
 import { apiLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFound } from './middleware/error.js';
 import { UPLOAD_ROOT } from './utils/storage.js';
+import { inputHygieneGuard, csrfAndOriginGuard } from './middleware/security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.resolve(__dirname, '../../client/dist');
@@ -22,9 +23,13 @@ export function createApp() {
   app.disable('x-powered-by');
   if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
 
+  // Enterprise Security Headers
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'same-site' },
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      dnsPrefetchControl: { allow: false },
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
@@ -36,12 +41,21 @@ export function createApp() {
       },
     })
   );
+
+  // Modern Permissions-Policy header
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(self)');
+    next();
+  });
+
   app.use(cors({ origin: env.clientUrls, credentials: true }));
   app.use(compression());
   app.use(express.json({ limit: '200kb' }));
   app.use(express.urlencoded({ extended: false, limit: '50kb' }));
   app.use(cookieParser());
   app.use(mongoSanitize()); // strips $ and . keys → blocks NoSQL operator injection
+  app.use(inputHygieneGuard); // HPP defense + null-byte stripping + pagination hard-cap
+
   if (!env.isProd && process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
   // Uploaded files
@@ -57,7 +71,7 @@ export function createApp() {
   );
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
-  app.use('/api', apiLimiter, routes);
+  app.use('/api', apiLimiter, csrfAndOriginGuard, routes);
   app.use('/api', notFound);
 
   // RENDER 

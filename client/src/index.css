@@ -133,6 +133,15 @@
   .text-gradient {
     @apply bg-gradient-to-r from-primary-500 via-fuchsia-500 to-sky-500 bg-clip-text text-transparent;
   }
+  .dark .text-ink {
+    color: #f8fafc;
+  }
+  .dark .text-ink-soft {
+    color: #cbd5e1;
+  }
+  .dark .text-ink-muted {
+    color: #94a3b8;
+  }
 }
 
 /* Recharts polish */

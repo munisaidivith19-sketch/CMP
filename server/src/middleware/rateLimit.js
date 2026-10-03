@@ -13,11 +13,11 @@ export const apiLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 30,
+  limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  message: json('Too many sign-in attempts. Try again in a few minutes.'),
+  message: json('Too many failed sign-in attempts from this network. Try again later.'),
 });
 
 export const writeLimiter = rateLimit({

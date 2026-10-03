@@ -10,6 +10,7 @@
     "start": "node src/server.js",
     "seed": "node src/seed/seed.js",
     "seed:academic": "node src/seed/academic.js",
+    "seed:alumni": "node src/seed/alumniUsers.js",
     "migrate:academic": "node scripts/migrate-academic-year.mjs",
     "test": "node --test --test-concurrency=1 \"tests/*.test.js\""
   },

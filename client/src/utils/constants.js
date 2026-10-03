@@ -1,7 +1,7 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden'];
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni'];
 export const ROLE_LABELS = {
   student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security',
-  dean: 'Dean', ao: 'AO', chairman: 'Chairman', warden: 'Warden',
+  dean: 'Dean', ao: 'AO', chairman: 'Chairman', warden: 'Warden', alumni: 'Alumni',
 };
 
 export const STUDENT_ROLES = ['student', 'club_admin'];
@@ -155,3 +155,63 @@ export const CATEGORY_STYLES = {
 };
 
 export const catStyle = (c) => CATEGORY_STYLES[c] || CATEGORY_STYLES.other;
+
+// ── Alumni Network ──────────────────────────────────────────────────
+export const MENTORSHIP_DOMAINS = [
+  'software_engineering', 'cybersecurity', 'data_science', 'core_engineering',
+  'higher_studies', 'government_exams', 'entrepreneurship', 'other',
+];
+export const MENTORSHIP_DOMAIN_LABELS = {
+  software_engineering: 'Software Engineering',
+  cybersecurity: 'Cybersecurity',
+  data_science: 'Data Science & AI',
+  core_engineering: 'Core Engineering',
+  higher_studies: 'Higher Studies (MS/M.Tech)',
+  government_exams: 'Government / Civil Exams',
+  entrepreneurship: 'Startups & Business',
+  other: 'Other',
+};
+export const MENTORSHIP_STATUSES = ['pending', 'accepted', 'declined', 'completed', 'cancelled', 'expired'];
+
+export const PRIVACY_LEVELS = ['public', 'mentees', 'staff', 'hidden'];
+export const PRIVACY_FIELDS = ['email', 'phone', 'linkedin', 'company', 'designation', 'location'];
+export const DEFAULT_PRIVACY = {
+  email: 'mentees',
+  phone: 'hidden',
+  linkedin: 'public',
+  company: 'public',
+  designation: 'public',
+  location: 'public',
+};
+
+export const JOB_TYPES = ['full_time', 'internship', 'part_time', 'contract'];
+export const JOB_TYPE_LABELS = {
+  full_time: 'Full Time',
+  internship: 'Internship',
+  part_time: 'Part Time',
+  contract: 'Contract',
+};
+export const JOB_WORK_MODES = ['onsite', 'remote', 'hybrid'];
+export const JOB_STATUSES = ['pending_review', 'open', 'closed', 'expired', 'removed'];
+export const JOB_APPLY_MODES = ['referral', 'external_link'];
+export const JOB_APPLICATION_STATUSES = ['applied', 'referred', 'shortlisted', 'rejected', 'withdrawn'];
+
+export const ALUMNI_EVENT_TYPES = ['reunion', 'webinar', 'guest_talk', 'networking', 'workshop', 'other'];
+export const ALUMNI_EVENT_MODES = ['in_person', 'online', 'hybrid'];
+export const ALUMNI_EVENT_STATUSES = ['pending_approval', 'scheduled', 'cancelled', 'completed', 'rejected'];
+export const RSVP_STATUSES = ['going', 'waitlisted', 'cancelled'];
+
+export const SLOT_STATUSES = ['open', 'booked', 'cancelled'];
+export const SESSION_MODES = ['video', 'phone', 'in_person', 'chat'];
+export const SESSION_STATUSES = ['confirmed', 'completed', 'cancelled', 'no_show'];
+
+export const CHAPTER_TYPES = ['batch', 'department', 'interest', 'city'];
+export const CHAPTER_ROLES = ['member', 'moderator'];
+export const CHAPTER_POST_KINDS = ['post', 'announcement'];
+
+export const INVITE_STATUSES = ['pending', 'claimed', 'expired', 'revoked'];
+export const IMPORT_STATUSES = ['validated', 'processing', 'done', 'failed'];
+
+export const STAFF_ALUMNI = ['admin', 'hod'];
+export const VIEW_ALUMNI_ANALYTICS = ['admin', 'hod', 'principal', 'chairman', 'dean'];
+

@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { BookOpen, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, Megaphone, MessageSquareWarning, MessagesSquare, PackageSearch, Search, Shapes, ShieldCheck, UserPlus, UsersRound } from 'lucide-react-native';
+import { BookOpen, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, GraduationCap, Megaphone, MessageSquareWarning, MessagesSquare, PackageSearch, Search, Shapes, ShieldCheck, UserPlus, UsersRound } from 'lucide-react-native';
 import { Card, Header, IconTile, Screen, T } from '../../../components/ui';
 import { STUDENT_ROLES, gradients } from '../../../theme';
 import { selectUser } from '../../../store/authSlice';
@@ -10,6 +10,7 @@ const ITEMS = [
   { href: '/timetable', label: 'Timetable', hint: 'Today & this week', icon: CalendarClock, g: gradients.violet },
   { href: '/attendance', label: 'Attendance', hint: 'Subject-wise %', icon: ClipboardCheck, g: gradients.emerald },
   { href: '/study-materials', label: 'Study Materials', hint: 'Notes & AI assistant', icon: BookOpen, g: gradients.sky },
+  { href: '/alumni', label: 'Alumni Network', hint: 'Mentors, jobs & chapters', icon: GraduationCap, g: gradients.primary },
   { href: '/gate-pass', label: 'Gate pass', hint: 'Request & QR', icon: DoorOpen, g: gradients.cyan },
   { href: '/lost-found', label: 'Lost & found', hint: 'Report or search', icon: PackageSearch, g: gradients.amber },
   { href: '/complaints', label: 'Complaints', hint: 'Register & track', icon: MessageSquareWarning, g: gradients.rose },
@@ -27,22 +28,38 @@ const ADMIN_ITEMS = [
 ];
 
 // Security only deals with gate passes and lost & found — the rest of campus life doesn't apply to them.
-const HIDDEN_FOR_SECURITY = ['/timetable', '/study-materials', '/attendance', '/events', '/clubs', '/announcements', '/discussions', '/search', '/complaints'];
+const HIDDEN_FOR_SECURITY = ['/timetable', '/study-materials', '/attendance', '/events', '/clubs', '/announcements', '/discussions', '/search', '/complaints', '/alumni'];
 // Warden/Security have zero timetable or study-materials access anywhere in the app.
 const HIDDEN_FOR_NO_TIMETABLE = ['/timetable', '/study-materials'];
 const NO_TIMETABLE_ROLES = ['warden', 'security'];
+// Alumni only access alumni network, events, clubs, announcements, discussions, search, and security
+const HIDDEN_FOR_ALUMNI = ['/timetable', '/attendance', '/study-materials', '/gate-pass', '/lost-found', '/complaints'];
 
 export default function Campus() {
   const me = useSelector(selectUser);
   const staff = !STUDENT_ROLES.includes(me.role);
   const isSecurity = me.role === 'security';
+  const isAlumni = me.role === 'alumni';
   const noTimetable = NO_TIMETABLE_ROLES.includes(me.role);
-  const items = [
+
+  let items = [
     ...(me.role === 'admin' ? ADMIN_ITEMS : []),
-    ...ITEMS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.href)) && (!noTimetable || !HIDDEN_FOR_NO_TIMETABLE.includes(i.href))).map((i) =>
+    ...ITEMS.filter(
+      (i) =>
+        (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.href)) &&
+        (!noTimetable || !HIDDEN_FOR_NO_TIMETABLE.includes(i.href)) &&
+        (!isAlumni || !HIDDEN_FOR_ALUMNI.includes(i.href))
+    ).map((i) =>
       i.href === '/attendance' && staff ? { ...i, hint: me.role === 'principal' ? 'College summary' : 'Mark & review' } : i
     ),
   ];
+
+  if (isAlumni) {
+    const alumniItem = items.find((i) => i.href === '/alumni');
+    if (alumniItem) {
+      items = [alumniItem, ...items.filter((i) => i.href !== '/alumni')];
+    }
+  }
   return (
     <Screen>
       <Header title="Campus" subtitle="Everything on Vexon, in one place." />

@@ -1241,3 +1241,27 @@ export const reviewCorrection = asyncHandler(async (req, res) => {
 
   res.json(claimed);
 });
+
+export const notifyStudentLowAttendance = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const student = await User.findOne({ _id: id, role: { $in: STUDENT_ROLES } });
+  if (!student) throw new ApiError(404, 'Student not found');
+
+  if (req.user.role === 'hod' && student.department !== req.user.department) {
+    throw new ApiError(403, 'You can only notify students in your own department');
+  }
+
+  const title = 'Low Attendance Warning';
+  const message = req.body?.message || `Notice: Your attendance is currently below the mandatory ${LOW_ATTENDANCE_THRESHOLD}% threshold. Please meet your HOD / mentor immediately.`;
+
+  await notifyUsers([student._id], {
+    type: 'attendance',
+    title,
+    message,
+    link: '/attendance',
+  });
+
+  logActivity(req, 'attendance.warn_student', { entityType: 'user', entityId: student._id });
+  res.json({ ok: true, message: `Notification sent to ${student.name}` });
+});
+

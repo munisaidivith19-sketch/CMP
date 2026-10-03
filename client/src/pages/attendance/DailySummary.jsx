@@ -1,7 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Check, Lock, Phone, Save, UserCheck, Users, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Calendar,
+  Check,
+  CheckCircle2,
+  Clock,
+  GraduationCap,
+  Lock,
+  Phone,
+  Save,
+  Search,
+  Sparkles,
+  UserCheck,
+  Users,
+  X,
+  XCircle,
+} from 'lucide-react';
 import {
   useGetAttendanceSummaryQuery,
   useGetFacultyRosterQuery,
@@ -10,26 +26,86 @@ import {
   useMarkFacultyAttendanceMutation,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { Avatar, Badge, Button, Card, EmptyState, ErrorState, Skeleton, cn } from '../../components/ui/primitives';
-import { MiniStat, StatusBadge } from '../../components/insights';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorState,
+  Skeleton,
+  StatCard,
+  cn,
+} from '../../components/ui/primitives';
+import { StatusBadge } from '../../components/insights';
 import { DEPARTMENTS } from '../../utils/constants';
 import { errMsg, fmtClassDay, todayKey } from '../../utils/format';
 
 /** Date + (admin/principal only) department filter shared by both tabs. */
 function Filters({ value, onChange, canPickDepartment }) {
+  const isToday = value.date === todayKey();
+
+  const setYesterday = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    onChange({ ...value, date: d.toISOString().slice(0, 10) });
+  };
+
   return (
-    <Card className="grid gap-3 sm:grid-cols-3">
-      <div>
-        <label className="label" htmlFor="ds-date">Date</label>
-        <input id="ds-date" type="date" className="input" max={todayKey()} value={value.date} onChange={(e) => onChange({ ...value, date: e.target.value })} />
+    <Card className="flex flex-wrap items-center justify-between gap-4 p-4 border border-white/10 shadow-sm backdrop-blur-md">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-primary-500" />
+          <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">Date:</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            id="ds-date"
+            type="date"
+            className="input w-auto py-1.5 px-3 text-sm rounded-xl font-medium"
+            max={todayKey()}
+            value={value.date}
+            onChange={(e) => onChange({ ...value, date: e.target.value })}
+          />
+          <button
+            type="button"
+            onClick={() => onChange({ ...value, date: todayKey() })}
+            className={cn(
+              'rounded-xl px-2.5 py-1 text-xs font-bold transition-all',
+              isToday
+                ? 'bg-primary-500 text-white shadow-glow'
+                : 'bg-white/10 hover:bg-white/20 text-ink-soft'
+            )}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={setYesterday}
+            className="rounded-xl bg-white/10 hover:bg-white/20 px-2.5 py-1 text-xs font-bold text-ink-soft transition-all"
+          >
+            Yesterday
+          </button>
+        </div>
       </div>
+
       {canPickDepartment && (
-        <div>
-          <label className="label" htmlFor="ds-dept">Department</label>
-          <select id="ds-dept" className="input" value={value.department} onChange={(e) => onChange({ ...value, department: e.target.value })}>
+        <div className="flex items-center gap-2">
+          <label htmlFor="ds-dept" className="text-xs font-bold uppercase tracking-wider text-ink-muted">
+            Dept:
+          </label>
+          <select
+            id="ds-dept"
+            className="input w-auto min-w-[200px] py-1.5 px-3 text-sm rounded-xl font-medium"
+            value={value.department}
+            onChange={(e) => onChange({ ...value, department: e.target.value })}
+          >
             <option value="">All departments</option>
             {DEPARTMENTS.map((d) => (
-              <option key={d}>{d}</option>
+              <option key={d} value={d}>
+                {d}
+              </option>
             ))}
           </select>
         </div>
@@ -41,10 +117,10 @@ function Filters({ value, onChange, canPickDepartment }) {
 const clean = (f) => ({ date: f.date, ...(f.department ? { department: f.department } : {}) });
 
 const STATUS_CHIPS = [
-  { value: '', label: 'All' },
-  { value: 'present', label: 'Present' },
-  { value: 'absent', label: 'Absent' },
-  { value: 'unmarked', label: 'Not marked' },
+  { value: '', label: 'All', icon: Sparkles },
+  { value: 'present', label: 'Present', icon: CheckCircle2, color: 'text-emerald-500' },
+  { value: 'absent', label: 'Absent', icon: XCircle, color: 'text-rose-500' },
+  { value: 'unmarked', label: 'Not marked', icon: Clock, color: 'text-amber-500' },
 ];
 
 /* ── Today: counts + full student / faculty lists ─────────────────── */
@@ -54,128 +130,306 @@ export function DailySummary() {
   const [filters, setFilters] = useState({ date: todayKey(), department: '' });
   const [who, setWho] = useState('students');
   const [status, setStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const params = clean(filters);
 
   const { data: summary, isLoading, error } = useGetAttendanceSummaryQuery(params);
   const students = useGetSummaryStudentsQuery({ ...params, ...(status ? { status } : {}) }, { skip: who !== 'students' });
   const faculty = useGetSummaryFacultyQuery({ ...params, ...(status ? { status } : {}) }, { skip: who !== 'faculty' });
   const list = who === 'students' ? students : faculty;
-  const rows = (who === 'students' ? students.data?.students : faculty.data?.faculty) || [];
+  const rawRows = (who === 'students' ? students.data?.students : faculty.data?.faculty) || [];
+
+  // Client-side quick filter for instant search responsiveness
+  const rows = useMemo(() => {
+    if (!searchQuery.trim()) return rawRows;
+    const q = searchQuery.toLowerCase().trim();
+    return rawRows.filter((r) => {
+      const name = r.name?.toLowerCase() || '';
+      const roll = (r.rollNo || r.employeeId || '').toLowerCase();
+      const sec = (r.section || '').toLowerCase();
+      const dept = (r.department || '').toLowerCase();
+      return name.includes(q) || roll.includes(q) || sec.includes(q) || dept.includes(q);
+    });
+  }, [rawRows, searchQuery]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-fade-in">
       <Filters value={filters} onChange={setFilters} canPickDepartment={canPick} />
 
       {isLoading ? (
-        <Skeleton className="h-28" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-3xl" />
+          ))}
+        </div>
       ) : error ? (
         <ErrorState error={error} />
       ) : summary ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <MiniStat label="Students" value={summary.students.total} hint={summary.department} />
-          <MiniStat label="Students present" value={summary.students.present} hint={`${summary.students.percentage}% of marked`} />
-          <MiniStat label="Students absent" value={summary.students.absent} hint={`${summary.students.unmarked} not marked`} />
-          <MiniStat
-            label="Faculty present"
-            value={`${summary.faculty.present}/${summary.faculty.total}`}
-            hint={`${summary.faculty.absent} absent · ${summary.faculty.leave} on leave`}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            icon={GraduationCap}
+            label="Total Students"
+            value={summary.students.total}
+            hint={summary.department || 'All Departments'}
+            gradient="from-violet-500 to-indigo-600"
+          />
+          <StatCard
+            icon={CheckCircle2}
+            label="Students Present"
+            value={summary.students.present}
+            hint={`${summary.students.percentage}% marked present`}
+            gradient="from-emerald-400 to-teal-600"
+          />
+          <StatCard
+            icon={XCircle}
+            label="Students Absent"
+            value={summary.students.absent}
+            hint={`${summary.students.unmarked} not yet marked`}
+            gradient="from-rose-500 to-pink-600"
+          />
+          <StatCard
+            icon={UserCheck}
+            label="Faculty Present"
+            value={`${summary.faculty.present} / ${summary.faculty.total}`}
+            hint={`${summary.faculty.absent} absent · ${summary.faculty.leave} leave`}
+            gradient="from-sky-400 to-blue-600"
           />
         </div>
       ) : null}
 
-      <Card className="p-0">
-        <div className="flex flex-wrap items-center gap-2 border-b border-white/60 p-4 dark:border-white/10">
-          <div className="glass inline-flex rounded-xl p-0.5">
-            {['students', 'faculty'].map((w) => (
-              <button
-                key={w}
-                onClick={() => setWho(w)}
-                className={cn('rounded-lg px-3 py-1.5 text-xs font-bold capitalize', who === w ? 'bg-primary-500 text-white' : 'text-ink-soft hover:text-ink')}
-              >
-                {w}
-              </button>
-            ))}
+      <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+        {/* Controls Bar */}
+        <div className="flex flex-col gap-3 border-b border-white/10 p-4 md:flex-row md:items-center md:justify-between bg-white/[0.02]">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Students / Faculty Pill Toggle */}
+            <div className="glass inline-flex rounded-2xl p-1 shadow-inner">
+              {[
+                { key: 'students', label: 'Students', icon: GraduationCap, count: summary?.students?.total },
+                { key: 'faculty', label: 'Faculty', icon: Users, count: summary?.faculty?.total },
+              ].map(({ key, label, icon: Icon, count }) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setWho(key);
+                    setStatus('');
+                  }}
+                  className={cn(
+                    'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all duration-200',
+                    who === key
+                      ? 'bg-primary-500 text-white shadow-glow'
+                      : 'text-ink-soft hover:text-ink hover:bg-white/5'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{label}</span>
+                  {count !== undefined && (
+                    <span className={cn('rounded-full px-1.5 py-0.2 text-[10px]', who === key ? 'bg-white/20' : 'bg-white/10')}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Status Filter Chips */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                ...STATUS_CHIPS,
+                ...(who === 'faculty' ? [{ value: 'leave', label: 'On Leave', icon: Clock, color: 'text-purple-400' }] : []),
+              ].map((c) => {
+                const Icon = c.icon;
+                const active = status === c.value;
+                return (
+                  <button
+                    key={c.value}
+                    onClick={() => setStatus(c.value)}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all',
+                      active
+                        ? 'bg-white/20 text-white font-bold ring-1 ring-white/30 shadow-sm'
+                        : 'bg-white/5 text-ink-soft hover:bg-white/10 hover:text-ink'
+                    )}
+                  >
+                    <Icon className={cn('h-3.5 w-3.5', c.color || 'text-primary-400')} />
+                    <span>{c.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="ml-auto flex flex-wrap gap-1.5">
-            {[...STATUS_CHIPS, ...(who === 'faculty' ? [{ value: 'leave', label: 'Leave' }] : [])].map((c) => (
-              <button key={c.value} onClick={() => setStatus(c.value)} className={cn('chip', status === c.value && 'chip-active')}>
-                {c.label}
-              </button>
-            ))}
+
+          {/* Quick Search */}
+          <div className="relative min-w-[220px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-muted" />
+            <input
+              type="text"
+              placeholder={`Search ${who}...`}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input pl-9 pr-3 py-1.5 text-xs rounded-xl w-full"
+            />
           </div>
         </div>
 
+        {/* Content Table / Empty States */}
         {list.isFetching && !list.data ? (
-          <Skeleton className="m-4 h-40" />
+          <div className="p-6 space-y-3">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-14 rounded-2xl" />
+            ))}
+          </div>
         ) : list.error ? (
-          <div className="p-4">
+          <div className="p-6">
             <ErrorState error={list.error} />
           </div>
         ) : !rows.length ? (
-          <EmptyState icon={Users} title="Nobody here" text="No one matches this filter for the selected day." />
+          <EmptyState
+            icon={Users}
+            title={searchQuery ? 'No results found' : 'Nobody in this view'}
+            text={
+              searchQuery
+                ? `No ${who} matched "${searchQuery}". Try clearing search.`
+                : 'No records match this status filter for the selected day.'
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[620px] text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide muted">
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-4 py-2">{who === 'students' ? 'Roll no' : 'Employee ID'}</th>
-                  <th className="px-4 py-2">{who === 'students' ? 'Section' : 'Department'}</th>
-                  <th className="px-4 py-2">Mobile</th>
-                  <th className="px-4 py-2">Status</th>
+                <tr className="border-b border-white/10 bg-white/[0.02] text-left text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                  <th className="px-5 py-3">Member</th>
+                  <th className="px-4 py-3">{who === 'students' ? 'Roll No' : 'Employee ID'}</th>
+                  <th className="px-4 py-3">{who === 'students' ? 'Class / Section' : 'Department'}</th>
+                  <th className="px-4 py-3">Contact</th>
+                  <th className="px-4 py-3">Status Today</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/60 dark:divide-white/5">
-                {rows.map((r) => (
-                  <tr key={r._id}>
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar user={r} size="xs" />
-                        <span className="font-semibold">{r.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">{(who === 'students' ? r.rollNo : r.employeeId) || '—'}</td>
-                    <td className="px-4 py-2">{(who === 'students' ? [r.department, r.section].filter(Boolean).join(' · ') : r.department) || '—'}</td>
-                    <td className="px-4 py-2">
-                      {r.phone ? (
-                        <a href={`tel:${r.phone}`} className="inline-flex items-center gap-1 hover:text-primary-600">
-                          <Phone className="h-3.5 w-3.5" /> {r.phone}
-                        </a>
-                      ) : (
-                        '—'
+              <tbody className="divide-y divide-white/5">
+                {rows.map((r) => {
+                  const isPresent = r.status === 'present';
+                  const isAbsent = r.status === 'absent';
+                  const isLeave = r.status === 'leave';
+
+                  return (
+                    <tr
+                      key={r._id}
+                      className={cn(
+                        'transition-colors hover:bg-white/[0.04]',
+                        isPresent && 'border-l-4 border-l-emerald-500',
+                        isAbsent && 'border-l-4 border-l-rose-500 bg-rose-500/[0.02]',
+                        isLeave && 'border-l-4 border-l-amber-500',
+                        !isPresent && !isAbsent && !isLeave && 'border-l-4 border-l-slate-500/30'
                       )}
-                      {who === 'students' && r.parentPhone && <p className="text-[11px] muted">Parent: {r.parentPhone}</p>}
-                    </td>
-                    <td className="px-4 py-2">
-                      {r.status === 'unmarked' ? <Badge color="neutral">Not marked</Badge> : <StatusBadge status={r.status} />}
-                      {who === 'students' && r.totalPeriods > 0 && (
-                        <span className="ml-1.5 text-[11px] muted">
-                          {r.presentPeriods}/{r.totalPeriods} periods
+                    >
+                      {/* Name & Avatar */}
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <Avatar user={r} size="sm" />
+                          <div className="min-w-0">
+                            <p className="font-bold text-ink truncate">{r.name}</p>
+                            <p className="text-[11px] text-ink-muted truncate">{r.email}</p>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Roll / Emp ID */}
+                      <td className="px-4 py-3.5">
+                        <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-lg bg-white/5 border border-white/10">
+                          {(who === 'students' ? r.rollNo : r.employeeId) || '—'}
                         </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+
+                      {/* Section / Dept */}
+                      <td className="px-4 py-3.5">
+                        {who === 'students' ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded-lg bg-primary-500/10 px-2 py-0.5 text-xs font-bold text-primary-400">
+                              {r.department}
+                            </span>
+                            {r.section && (
+                              <span className="rounded-lg bg-white/10 px-2 py-0.5 text-xs font-bold">
+                                Sec {r.section}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="rounded-lg bg-sky-500/10 px-2 py-0.5 text-xs font-bold text-sky-400">
+                            {r.department || '—'}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Mobile phone */}
+                      <td className="px-4 py-3.5">
+                        {r.phone ? (
+                          <a
+                            href={`tel:${r.phone}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-ink-soft hover:bg-primary-500/10 hover:text-primary-400 transition-colors"
+                          >
+                            <Phone className="h-3.5 w-3.5 text-primary-400" />
+                            <span>{r.phone}</span>
+                          </a>
+                        ) : (
+                          <span className="text-xs text-ink-muted">—</span>
+                        )}
+                        {who === 'students' && r.parentPhone && (
+                          <p className="text-[11px] text-ink-muted mt-0.5 flex items-center gap-1">
+                            <span className="text-[10px] uppercase font-bold text-ink-soft/70">Parent:</span> {r.parentPhone}
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3.5">
+                        <div className="flex flex-col gap-1 items-start">
+                          {r.status === 'unmarked' ? (
+                            <Badge color="neutral" icon={Clock}>
+                              Not marked
+                            </Badge>
+                          ) : (
+                            <StatusBadge status={r.status} />
+                          )}
+                          {who === 'students' && r.totalPeriods > 0 && (
+                            <span className="text-[11px] font-medium text-ink-muted">
+                              {r.presentPeriods} of {r.totalPeriods} periods attended
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
+
+        <div className="p-4 border-t border-white/10 bg-white/[0.01] flex items-center justify-between text-xs text-ink-muted">
+          <span>
+            Showing {rows.length} of {rawRows.length} {who}
+          </span>
+          {summary && (
+            <span>
+              Recorded for {fmtClassDay(summary.date, 'EEEE, dd MMMM yyyy')}
+            </span>
+          )}
+        </div>
       </Card>
-      {summary && <p className="text-xs muted">Showing {fmtClassDay(summary.date, 'EEEE, dd MMM yyyy')}. A student counts as present if they attended at least one period that day.</p>}
     </div>
   );
 }
 
 /* ── HOD / admin: mark faculty attendance ─────────────────────────── */
 const FAC_STATES = [
-  { value: 'present', icon: Check, on: 'bg-emerald-500 text-white' },
-  { value: 'absent', icon: X, on: 'bg-rose-500 text-white' },
-  { value: 'leave', icon: Lock, on: 'bg-amber-500 text-white' },
+  { value: 'present', label: 'Present', icon: Check, activeClass: 'bg-emerald-500 text-white shadow-glow' },
+  { value: 'absent', label: 'Absent', icon: X, activeClass: 'bg-rose-500 text-white shadow-glow' },
+  { value: 'leave', label: 'Leave', icon: Lock, activeClass: 'bg-amber-500 text-white shadow-glow' },
 ];
 
 export function FacultyMarking() {
   const me = useSelector(selectUser);
   const [filters, setFilters] = useState({ date: todayKey(), department: '' });
+  const [search, setSearch] = useState('');
   const { data, isFetching, error } = useGetFacultyRosterQuery(clean(filters), { refetchOnMountOrArgChange: true });
   const [marks, setMarks] = useState({});
   const [save, { isLoading: saving }] = useMarkFacultyAttendanceMutation();
@@ -186,79 +440,176 @@ export function FacultyMarking() {
 
   const submit = async () => {
     try {
-      const res = await save({ date: filters.date, records: Object.entries(marks).map(([faculty, status]) => ({ faculty, status })) }).unwrap();
+      const res = await save({
+        date: filters.date,
+        records: Object.entries(marks).map(([faculty, status]) => ({ faculty, status })),
+      }).unwrap();
       toast.success(res.message);
     } catch (e) {
       toast.error(errMsg(e));
     }
   };
+
   const counts = Object.values(marks).reduce((a, v) => ({ ...a, [v]: (a[v] || 0) + 1 }), {});
 
+  const filteredFaculty = useMemo(() => {
+    if (!data?.faculty) return [];
+    if (!search.trim()) return data.faculty;
+    const q = search.toLowerCase();
+    return data.faculty.filter(
+      (f) =>
+        f.name?.toLowerCase().includes(q) ||
+        f.employeeId?.toLowerCase().includes(q) ||
+        f.designation?.toLowerCase().includes(q)
+    );
+  }, [data, search]);
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 animate-fade-in">
       <Filters value={filters} onChange={setFilters} canPickDepartment={me.role === 'admin'} />
+
       {isFetching && !data ? (
-        <Skeleton className="h-64" />
+        <Skeleton className="h-72 rounded-3xl" />
       ) : error ? (
         <ErrorState error={error} />
       ) : !data?.faculty.length ? (
-        <Card>
-          <EmptyState icon={UserCheck} title="No faculty to mark" text="Faculty appear here once an admin creates their logins in this department." />
+        <Card className="border border-white/10 shadow-lg">
+          <EmptyState
+            icon={UserCheck}
+            title="No faculty to mark"
+            text="Faculty members appear here once their accounts are set up under this department."
+          />
         </Card>
       ) : (
-        <Card className="p-0">
-          <div className="flex flex-wrap items-center gap-3 border-b border-white/60 p-4 dark:border-white/10">
-            <div className="min-w-0 flex-1">
-              <p className="font-bold">Faculty · {data.department}</p>
-              <p className="text-xs muted">{fmtClassDay(data.date, 'EEEE, dd MMM yyyy')}</p>
+        <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 p-5 bg-white/[0.02]">
+            <div>
+              <div className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-primary-400" />
+                <h3 className="text-base font-extrabold tracking-tight">
+                  Faculty Attendance · {data.department || 'Department'}
+                </h3>
+              </div>
+              <p className="text-xs text-ink-muted mt-0.5">
+                {fmtClassDay(data.date, 'EEEE, dd MMMM yyyy')} · Tap any status to mark
+              </p>
             </div>
-            <Button size="sm" variant="success" disabled={!data.editable} onClick={() => setMarks(Object.fromEntries(data.faculty.map((f) => [f._id, 'present'])))}>
-              All present
-            </Button>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Quick search */}
+              <div className="relative w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-muted" />
+                <input
+                  type="text"
+                  placeholder="Filter faculty..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="input pl-9 pr-3 py-1 text-xs rounded-xl w-full"
+                />
+              </div>
+
+              <Button
+                size="sm"
+                variant="success"
+                disabled={!data.editable}
+                icon={Check}
+                onClick={() => setMarks(Object.fromEntries(data.faculty.map((f) => [f._id, 'present'])))}
+              >
+                All Present
+              </Button>
+            </div>
           </div>
+
           {!data.editable && (
-            <div className="m-4 flex items-start gap-2 rounded-2xl bg-amber-500/10 p-3 text-sm text-amber-700">
-              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-              {data.lockedReason}
+            <div className="m-4 flex items-center gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-3.5 text-sm text-amber-700 dark:text-amber-300">
+              <Lock className="h-4 w-4 shrink-0 text-amber-500" />
+              <span>{data.lockedReason || 'This date is locked for editing.'}</span>
             </div>
           )}
-          <ul className="divide-y divide-white/60 dark:divide-white/5">
-            {data.faculty.map((f) => (
-              <li key={f._id} className="flex items-center gap-3 px-4 py-2.5">
-                <Avatar user={f} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{f.name}</p>
-                  <p className="truncate text-xs muted">
-                    {[f.employeeId, f.designation || (f.role === 'hod' ? 'HOD' : null), f.department].filter(Boolean).join(' · ')}
-                  </p>
+
+          {/* List */}
+          <div className="divide-y divide-white/5">
+            {filteredFaculty.map((f) => {
+              const currentStatus = marks[f._id] || 'present';
+              return (
+                <div
+                  key={f._id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 transition-colors hover:bg-white/[0.03]"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar user={f} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-ink">{f.name}</p>
+                      <p className="truncate text-xs text-ink-muted">
+                        {[f.employeeId, f.designation || (f.role === 'hod' ? 'HOD' : null), f.department]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Status Toggle Pills */}
+                  <div
+                    className="glass inline-flex rounded-xl p-1 shadow-inner"
+                    role="radiogroup"
+                    aria-label={`Attendance for ${f.name}`}
+                  >
+                    {FAC_STATES.map(({ value, label, icon: Icon, activeClass }) => {
+                      const active = currentStatus === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          disabled={!data.editable}
+                          onClick={() => setMarks((m) => ({ ...m, [f._id]: value }))}
+                          className={cn(
+                            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all',
+                            active ? activeClass : 'text-ink-soft hover:text-ink hover:bg-white/5',
+                            !data.editable && 'cursor-not-allowed opacity-60'
+                          )}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          <span>{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="glass inline-flex rounded-xl p-0.5" role="radiogroup" aria-label={`Attendance for ${f.name}`}>
-                  {FAC_STATES.map(({ value, icon: Icon, on }) => (
-                    <button
-                      key={value}
-                      role="radio"
-                      aria-checked={marks[f._id] === value}
-                      disabled={!data.editable}
-                      onClick={() => setMarks((m) => ({ ...m, [f._id]: value }))}
-                      className={cn(
-                        'flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold capitalize transition-all',
-                        marks[f._id] === value ? on : 'text-ink-soft hover:text-ink'
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">{value}</span>
-                    </button>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-wrap items-center gap-3 border-t border-white/60 p-4 dark:border-white/10">
-            <p className="flex-1 text-sm muted">
-              {counts.present || 0} present · {counts.absent || 0} absent · {counts.leave || 0} on leave
-            </p>
-            <Button onClick={submit} loading={saving} disabled={!data.editable}>
-              <Save className="h-4 w-4" /> Save
+              );
+            })}
+          </div>
+
+          {/* Footer action bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 p-4 bg-white/[0.02]">
+            <div className="flex items-center gap-3 text-sm">
+              <span className="flex items-center gap-1.5 font-bold text-emerald-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block" />
+                {counts.present || 0} Present
+              </span>
+              <span className="text-ink-muted">·</span>
+              <span className="flex items-center gap-1.5 font-bold text-rose-400">
+                <span className="h-2 w-2 rounded-full bg-rose-400 inline-block" />
+                {counts.absent || 0} Absent
+              </span>
+              <span className="text-ink-muted">·</span>
+              <span className="flex items-center gap-1.5 font-bold text-amber-400">
+                <span className="h-2 w-2 rounded-full bg-amber-400 inline-block" />
+                {counts.leave || 0} On Leave
+              </span>
+              <span className="text-xs text-ink-muted">({data.faculty.length} total)</span>
+            </div>
+
+            <Button
+              onClick={submit}
+              loading={saving}
+              disabled={!data.editable}
+              icon={Save}
+              className="shadow-glow"
+            >
+              Save Faculty Attendance
             </Button>
           </div>
         </Card>

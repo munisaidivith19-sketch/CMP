@@ -5,10 +5,11 @@ import { useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, LogIn, LogOut, Megaphone, MessageCircle, Search, Shapes, Sparkles, Users } from 'lucide-react-native';
+import { ArrowRight, Briefcase, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, Clock, Compass, DoorOpen, LogIn, LogOut, Megaphone, MessageCircle, Radio, Search, Shapes, ShieldCheck, Sparkles, Star, Users } from 'lucide-react-native';
 import { Avatar, Badge, Card, EmptyState, ErrorState, IconButton, IconTile, Loading, Screen, SectionTitle, T } from '../../../components/ui';
 import { assetUrl } from '../../../config';
 import {
+  useGetAlumniDashboardQuery,
   useGetAttendanceSummaryQuery,
   useGetChatUnreadQuery,
   useGetCurrentClassQuery,
@@ -424,7 +425,252 @@ function GeneralHome({ user }) {
   );
 }
 
+function AlumniHome({ user }) {
+  const dash = useGetAlumniDashboardQuery();
+  const refreshing = dash.isFetching && !dash.isLoading;
+  const onRefresh = () => dash.refetch();
+
+  if (dash.isLoading) {
+    return (
+      <Screen>
+        <Loading label="Loading alumni dashboard..." />
+      </Screen>
+    );
+  }
+
+  if (dash.error) {
+    return (
+      <Screen refreshing={refreshing} onRefresh={onRefresh}>
+        <ErrorState error={dash.error} onRetry={dash.refetch} />
+      </Screen>
+    );
+  }
+
+  const {
+    profile = {},
+    attention = [],
+    stats = {},
+    pendingRequests = [],
+    upcomingSessions = [],
+  } = dash.data || {};
+
+  return (
+    <Screen refreshing={refreshing} onRefresh={onRefresh}>
+      {/* Header Greeting */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Avatar user={user} size={46} />
+        <View style={{ flex: 1 }}>
+          <T v="small">{greeting()},</T>
+          <T v="h2" numberOfLines={1}>
+            {firstName(user.name)} 🎓
+          </T>
+        </View>
+        <IconButton
+          icon={Compass}
+          label="Alumni Network"
+          onPress={() => router.push('/alumni')}
+        />
+        <IconButton
+          icon={Search}
+          label="Search"
+          onPress={() => router.push('/search')}
+        />
+      </View>
+
+      {/* Hero Welcome Card */}
+      <LinearGradient
+        colors={gradients.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ borderRadius: 28, padding: 18, gap: 10 }}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <T v="small" style={{ color: 'rgba(255,255,255,0.85)' }}>
+            {format(new Date(), 'EEEE, dd MMMM')}
+          </T>
+          <Badge
+            label={profile.isVerified ? 'Verified Alumnus' : 'Pending Review'}
+            color={profile.isVerified ? 'success' : 'warning'}
+          />
+        </View>
+
+        <T v="h2" style={{ color: '#fff' }}>
+          Alumni Career & Mentorship Portal
+        </T>
+
+        <T v="small" style={{ color: 'rgba(255,255,255,0.85)' }}>
+          Profile Strength: {profile.completeness || 0}% • Mentoring:{' '}
+          {profile.mentorshipAvailable ? 'Accepting Mentees' : 'Paused'}
+        </T>
+
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+          <Pressable
+            onPress={() => router.push('/alumni/sessions')}
+            style={({ pressed }) => ({
+              backgroundColor: pressed ? '#f1f0ff' : '#fff',
+              paddingHorizontal: 14,
+              paddingVertical: 9,
+              borderRadius: 14,
+            })}
+          >
+            <T v="strong" style={{ color: colors.primary600, fontSize: 13 }}>
+              Manage Sessions
+            </T>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/alumni')}
+            style={({ pressed }) => ({
+              backgroundColor: pressed ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.18)',
+              paddingHorizontal: 14,
+              paddingVertical: 9,
+              borderRadius: 14,
+            })}
+          >
+            <T v="strong" style={{ color: '#fff', fontSize: 13 }}>
+              Open Hub →
+            </T>
+          </Pressable>
+        </View>
+      </LinearGradient>
+
+      {/* Attention banner if any */}
+      {attention.length > 0 && (
+        <View style={{ gap: 8 }}>
+          {attention.map((att, i) => (
+            <Card
+              key={i}
+              onPress={() => router.push('/alumni')}
+              style={{
+                borderColor: att.level === 'danger' ? colors.danger : colors.warning,
+                borderWidth: 1,
+                gap: 4,
+              }}
+            >
+              <T v="label" style={{ color: att.level === 'danger' ? colors.danger : colors.warning }}>
+                Action Needed
+              </T>
+              <T v="small" style={{ color: colors.ink }}>
+                {att.message}
+              </T>
+            </Card>
+          ))}
+        </View>
+      )}
+
+      {/* 8 Stat Tiles */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14, justifyContent: 'space-between' }}>
+        <Tile
+          icon={ShieldCheck}
+          gradient={profile.isVerified ? gradients.tileTeal : gradients.tileAmber}
+          label="Status"
+          value={profile.isVerified ? 'Verified' : 'Pending'}
+          hint="Directory verification"
+          onPress={() => router.push('/alumni')}
+        />
+        <Tile
+          icon={Sparkles}
+          gradient={gradients.tileViolet}
+          label="Profile"
+          value={`${profile.completeness || 0}%`}
+          hint="Completeness"
+          onPress={() => router.push('/alumni')}
+        />
+        <Tile
+          icon={Users}
+          gradient={gradients.tileBlue}
+          label="Mentees"
+          value={`${stats.activeMentees || 0} / ${stats.menteeCapacity || 3}`}
+          hint="Active mentees"
+          onPress={() => router.push('/alumni')}
+        />
+        <Tile
+          icon={Clock}
+          gradient={gradients.tileRose}
+          label="Requests"
+          value={String(stats.pendingRequests || 0)}
+          hint="Awaiting response"
+          onPress={() => router.push('/alumni')}
+        />
+        <Tile
+          icon={CalendarDays}
+          gradient={gradients.tileViolet}
+          label="Sessions"
+          value={String(stats.upcomingSessions || 0)}
+          hint="Upcoming 1-on-1s"
+          onPress={() => router.push('/alumni/sessions')}
+        />
+        <Tile
+          icon={Star}
+          gradient={gradients.tileAmber}
+          label="Rating"
+          value={stats.ratingAvg > 0 ? `${stats.ratingAvg.toFixed(1)} ★` : '—'}
+          hint={`${stats.ratingCount || 0} reviews`}
+          onPress={() => router.push('/alumni')}
+        />
+        <Tile
+          icon={Briefcase}
+          gradient={gradients.tileTeal}
+          label="Jobs"
+          value={String(stats.jobsPosted || 0)}
+          hint={`${stats.applicants || 0} applicants`}
+          onPress={() => router.push('/alumni')}
+        />
+        <Tile
+          icon={Compass}
+          gradient={gradients.tileRose}
+          label="Chapters"
+          value={String(stats.chapters || 0)}
+          hint="Enrolled hubs"
+          onPress={() => router.push('/alumni')}
+        />
+      </View>
+
+      {/* Pending Requests Preview */}
+      {pendingRequests.length > 0 && (
+        <View style={{ gap: 8 }}>
+          <SectionTitle title={`Pending Requests (${pendingRequests.length})`} viewAll="/alumni" />
+          {pendingRequests.slice(0, 3).map((req) => (
+            <Card key={req._id} onPress={() => router.push('/alumni')} style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <T v="strong">{req.student?.name}</T>
+                <Badge label="Pending" color="warning" />
+              </View>
+              <T v="small" style={{ color: colors.muted }}>
+                {req.student?.department} • Year {req.student?.year || '—'}
+              </T>
+              <T v="small" numberOfLines={2} style={{ fontStyle: 'italic', color: colors.ink }}>
+                "{req.message}"
+              </T>
+            </Card>
+          ))}
+        </View>
+      )}
+
+      {/* Upcoming Sessions Preview */}
+      {upcomingSessions.length > 0 && (
+        <View style={{ gap: 8 }}>
+          <SectionTitle title={`Upcoming Sessions (${upcomingSessions.length})`} viewAll="/alumni/sessions" />
+          {upcomingSessions.slice(0, 3).map((sess) => (
+            <Card key={sess._id} onPress={() => router.push('/alumni/sessions')} style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <T v="strong">{sess.student?.name}</T>
+                <Badge label="Confirmed" color="success" />
+              </View>
+              <T v="small" style={{ color: colors.muted }}>
+                {format(new Date(sess.scheduledAt), 'EEE, MMM d · h:mm a')}
+              </T>
+            </Card>
+          ))}
+        </View>
+      )}
+    </Screen>
+  );
+}
+
 export default function Home() {
   const user = useSelector(selectUser);
-  return user.role === 'security' ? <SecurityHome user={user} /> : <GeneralHome user={user} />;
+  if (user?.role === 'security') return <SecurityHome user={user} />;
+  if (user?.role === 'alumni') return <AlumniHome user={user} />;
+  return <GeneralHome user={user} />;
 }

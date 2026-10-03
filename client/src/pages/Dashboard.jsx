@@ -30,6 +30,7 @@ import { CategoryDonut, EngagementChart } from '../components/charts';
 import TodayStrip from '../components/TodayStrip';
 import { STAFF_VIEW, SUMMARY_VIEW, catStyle } from '../utils/constants';
 import { friendlyDay, fmtTime } from '../utils/format';
+import AlumniDashboard from './alumni/AlumniDashboard';
 
 function DashboardSkeleton() {
   return (
@@ -235,8 +236,13 @@ function SecurityDashboard() {
 
 export default function Dashboard() {
   const user = useSelector(selectUser);
-  const isSecurity = user.role === 'security';
-  const { data, isLoading, error, refetch } = useGetDashboardQuery(undefined, { skip: isSecurity });
+  const isSecurity = user?.role === 'security';
+  const isAlumni = user?.role === 'alumni';
+
+  if (isSecurity) return <SecurityDashboard />;
+  if (isAlumni) return <AlumniDashboard />;
+
+  const { data, isLoading, error, refetch } = useGetDashboardQuery(undefined, { skip: isSecurity || isAlumni });
   const [popover, setPopover] = useState(null);
 
   if (isSecurity) return <SecurityDashboard />;

@@ -1,4 +1,4 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden'];
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni'];
 // Can mark attendance, moderate content and see beyond their own record.
 export const MODERATOR_ROLES = ['admin', 'faculty', 'hod', 'principal'];
 // Department-scoped management: sees/acts on their own department only.
@@ -101,7 +101,7 @@ export const REPORT_ACTIONS = ['dismiss', 'hide', 'delete', 'warn', 'suspend'];
 
 export const NOTIFICATION_TYPES = [
   'announcement', 'event', 'club', 'discussion', 'report', 'system',
-  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint',
+  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint', 'alumni',
 ];
 
 // ── Gate Pass ───────────────────────────────────────────────────────
@@ -178,3 +178,47 @@ export const COMPLAINT_OPEN_STATUSES = ['SUBMITTED', 'IN_REVIEW', 'IN_PROGRESS',
 export const COMPLAINT_CANCELLABLE_STATUSES = ['SUBMITTED', 'IN_REVIEW', 'IN_PROGRESS'];
 export const COMPLAINT_PRIORITIES = ['low', 'normal', 'high'];
 export const COMPLAINT_NOT_RESOLVED_WAIT_MS = 8 * 60 * 60 * 1000;
+
+// ── Alumni Network ──────────────────────────────────────────────────
+export const MENTORSHIP_DOMAINS = [
+  'software_engineering', 'cybersecurity', 'data_science', 'core_engineering',
+  'higher_studies', 'government_exams', 'entrepreneurship', 'other',
+];
+export const MENTORSHIP_STATUSES = ['pending', 'accepted', 'declined', 'completed', 'cancelled', 'expired'];
+
+export const PRIVACY_LEVELS = ['public', 'mentees', 'staff', 'hidden'];
+export const PRIVACY_FIELDS = ['email', 'phone', 'linkedin', 'company', 'designation', 'location'];
+export const DEFAULT_PRIVACY = {
+  email: 'mentees',
+  phone: 'hidden',
+  linkedin: 'public',
+  company: 'public',
+  designation: 'public',
+  location: 'public',
+};
+
+export const JOB_TYPES = ['full_time', 'internship', 'part_time', 'contract'];
+export const JOB_WORK_MODES = ['onsite', 'remote', 'hybrid'];
+export const JOB_STATUSES = ['pending_review', 'open', 'closed', 'expired', 'removed'];
+export const JOB_APPLY_MODES = ['referral', 'external_link'];
+export const JOB_APPLICATION_STATUSES = ['applied', 'referred', 'shortlisted', 'rejected', 'withdrawn'];
+
+export const ALUMNI_EVENT_TYPES = ['reunion', 'webinar', 'guest_talk', 'networking', 'workshop', 'other'];
+export const ALUMNI_EVENT_MODES = ['in_person', 'online', 'hybrid'];
+export const ALUMNI_EVENT_STATUSES = ['pending_approval', 'scheduled', 'cancelled', 'completed', 'rejected'];
+export const RSVP_STATUSES = ['going', 'waitlisted', 'cancelled'];
+
+export const SLOT_STATUSES = ['open', 'booked', 'cancelled'];
+export const SESSION_MODES = ['video', 'phone', 'in_person', 'chat'];
+export const SESSION_STATUSES = ['confirmed', 'completed', 'cancelled', 'no_show'];
+
+export const CHAPTER_TYPES = ['batch', 'department', 'interest', 'city'];
+export const CHAPTER_ROLES = ['member', 'moderator'];
+export const CHAPTER_POST_KINDS = ['post', 'announcement'];
+
+export const INVITE_STATUSES = ['pending', 'claimed', 'expired', 'revoked'];
+export const IMPORT_STATUSES = ['validated', 'processing', 'done', 'failed'];
+
+export const STAFF_ALUMNI = ['admin', 'hod'];
+export const VIEW_ALUMNI_ANALYTICS = ['admin', 'hod', 'principal', 'chairman', 'dean'];
+

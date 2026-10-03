@@ -153,3 +153,16 @@ env.location = {
 env.cloudinary.enabled = Boolean(
   env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret
 );
+
+env.alumni = {
+  jobsRequireApproval: process.env.ALUMNI_JOBS_REQUIRE_APPROVAL === 'true',
+  eventsRequireApproval: process.env.ALUMNI_EVENTS_REQUIRE_APPROVAL !== 'false',
+  autoVerifyImported: process.env.ALUMNI_AUTO_VERIFY_IMPORTED !== 'false',
+  chapterAutojoin: process.env.ALUMNI_CHAPTER_AUTOJOIN !== 'false',
+  inviteExpiresDays: num('ALUMNI_INVITE_EXPIRES_DAYS', 14, { min: 1, max: 90 }),
+  mentorshipRequestExpiryDays: num('MENTORSHIP_REQUEST_EXPIRY_DAYS', 14, { min: 1, max: 90 }),
+  mentorshipMaxPendingPerStudent: num('MENTORSHIP_MAX_PENDING_PER_STUDENT', 3, { min: 1, max: 20 }),
+  importMaxRows: num('ALUMNI_IMPORT_MAX_ROWS', 2000, { min: 1, max: 10000 }),
+  jobsPerAlumniPerDay: num('ALUMNI_JOBS_PER_ALUMNI_PER_DAY', 5, { min: 1, max: 50 }),
+};
+

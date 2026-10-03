@@ -75,6 +75,8 @@ const userSchema = new Schema(
     tokenVersion: { type: Number, default: 0, select: false },
     failedLogins: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, select: false },
+    lastFailedLoginAt: { type: Date, select: false },
+    lockoutCount: { type: Number, default: 0, select: false },
     lastLogin: Date,
     lastSeenAt: Date, // last Socket.io disconnect (chat "last seen")
 

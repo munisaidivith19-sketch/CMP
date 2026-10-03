@@ -314,11 +314,11 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, grou
   return (
     <div id={`msg-${m._id}`} className={cn('group flex gap-2', mine ? 'justify-end' : 'justify-start')}>
       {!mine && group && (showAuthor ? <Avatar user={m.sender} size="xs" className="mt-auto" /> : <span className="w-7 shrink-0" />)}
-      <div className={cn('flex max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
+      <div className={cn('flex min-w-0 max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
         {showAuthor && !mine && group && <span className="mb-0.5 px-2 text-[11px] font-bold text-primary-600">{m.sender?.name}</span>}
         <div
           className={cn(
-            'relative rounded-3xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
+            'relative min-w-0 max-w-full rounded-3xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
             mine ? 'rounded-br-lg bg-gradient-to-br from-primary-400 to-primary-600 text-white' : 'rounded-bl-lg bg-white/85 text-ink dark:bg-white',
             deleted && 'italic opacity-70'
           )}
@@ -326,10 +326,11 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, grou
           {m.replyTo && !deleted && (
             <div className={cn('mb-1.5 rounded-xl border-l-4 px-2.5 py-1 text-xs', mine ? 'border-white/60 bg-white/15' : 'border-primary-400 bg-primary-500/10')}>
               <p className="font-bold">{m.replyTo.sender?.name || 'Message'}</p>
-              <p className="line-clamp-2 opacity-80">{m.replyTo.deletedAt ? 'This message was deleted' : m.replyTo.body}</p>
+              <p className="line-clamp-2 opacity-80 [overflow-wrap:anywhere]">{m.replyTo.deletedAt ? 'This message was deleted' : m.replyTo.body}</p>
             </div>
           )}
-          <p className="whitespace-pre-wrap break-words">{m.body}</p>
+          {/* overflow-wrap:anywhere also lowers the bubble's minimum width, so a long URL wraps instead of widening it. */}
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{m.body}</p>
           <span className={cn('mt-0.5 flex items-center justify-end gap-1 text-[10px]', mine ? 'text-white/75' : 'text-ink-muted')}>
             {fmtTime(m.createdAt)}
             {mine && !deleted && (readState === 'read' ? <CheckCheck className="h-3.5 w-3.5" aria-label="Read" /> : <Check className="h-3.5 w-3.5" aria-label="Sent" />)}
@@ -366,7 +367,12 @@ function Thread({ id, me, presence, typingUsers }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [q, setQ] = useState('');
-  const bottomRef = useRef(null);
+  // Scroll the message list itself — never scrollIntoView, which also scrolls
+  // every ancestor (the window, and the overflow-hidden chat card sideways).
+  const scrollToBottom = (behavior = 'auto') => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior });
+  };
   const scrollRef = useRef(null);
   const typingTimer = useRef(null);
   const typingSent = useRef(false);
@@ -377,7 +383,7 @@ function Thread({ id, me, presence, typingUsers }) {
     if (first) {
       setMessages(first.messages);
       setHasMore(first.pagination.total > first.messages.length);
-      requestAnimationFrame(() => bottomRef.current?.scrollIntoView());
+      requestAnimationFrame(() => scrollToBottom());
     }
   }, [first]);
 
@@ -391,7 +397,7 @@ function Thread({ id, me, presence, typingUsers }) {
     if (conversationId !== id) return;
     setMessages((prev) => (prev.some((x) => x._id === message._id) ? prev : [...prev, message]));
     const nearBottom = scrollRef.current && scrollRef.current.scrollHeight - scrollRef.current.scrollTop - scrollRef.current.clientHeight < 200;
-    if (nearBottom || sameId(message.sender, me)) requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }));
+    if (nearBottom || sameId(message.sender, me)) requestAnimationFrame(() => scrollToBottom('smooth'));
     if (!sameId(message.sender, me) && document.visibilityState === 'visible') markRead();
   });
   useSocketEvent('chat:messageDeleted', ({ conversationId, messageId }) => {
@@ -430,7 +436,7 @@ function Thread({ id, me, presence, typingUsers }) {
       setMessages((prev) => (prev.some((x) => x._id === msg._id) ? prev : [...prev, msg]));
       setText('');
       setReplyTo(null);
-      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }));
+      requestAnimationFrame(() => scrollToBottom('smooth'));
     } catch (err) {
       toast.error(errMsg(err, 'Message not sent'));
     }
@@ -475,9 +481,9 @@ function Thread({ id, me, presence, typingUsers }) {
   if (convError) return <ErrorState error={convError} onRetry={refetch} />;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-3 border-b border-white/60 p-3 dark:border-[#d8c9a8]/40 sm:p-4">
-        <button className="btn-icon btn-ghost lg:hidden" onClick={() => navigate('/chat')} aria-label="Back to conversations">
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <header className="flex min-w-0 items-center gap-2 border-b border-white/60 p-3 dark:border-[#d8c9a8]/40 sm:gap-3 sm:p-4">
+        <button className="btn-icon btn-ghost shrink-0 lg:hidden" onClick={() => navigate('/chat')} aria-label="Back to conversations">
           <ArrowLeft className="h-5 w-5" />
         </button>
         {convLoading ? (
@@ -485,11 +491,11 @@ function Thread({ id, me, presence, typingUsers }) {
         ) : (
           <>
             {d.group ? (
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-fuchsia-500 text-white">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-fuchsia-500 text-white">
                 <Users className="h-5 w-5" />
               </span>
             ) : (
-              <Link to={`/people/${d.other?._id}`}>
+              <Link to={`/people/${d.other?._id}`} className="shrink-0">
                 <PresenceAvatar user={d.other} online={otherOnline} />
               </Link>
             )}
@@ -507,8 +513,8 @@ function Thread({ id, me, presence, typingUsers }) {
                         : d.subtitle}
               </p>
             </div>
-            <IconButton icon={searchOpen ? X : Search} label={searchOpen ? 'Close search' : 'Search messages'} onClick={() => { setSearchOpen((o) => !o); setQ(''); }} />
-            {d.group && <IconButton icon={Info} label="Group info" onClick={() => setInfoOpen(true)} />}
+            <IconButton className="shrink-0" icon={searchOpen ? X : Search} label={searchOpen ? 'Close search' : 'Search messages'} onClick={() => { setSearchOpen((o) => !o); setQ(''); }} />
+            {d.group && <IconButton className="shrink-0" icon={Info} label="Group info" onClick={() => setInfoOpen(true)} />}
           </>
         )}
       </header>
@@ -520,7 +526,7 @@ function Thread({ id, me, presence, typingUsers }) {
         </div>
       )}
 
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-4 sm:px-5">
+      <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-4 sm:px-5">
         {hasMore && !q && (
           <div className="flex justify-center pb-2">
             <Button size="sm" variant="soft" loading={loadingOlder} onClick={older}>
@@ -558,7 +564,6 @@ function Thread({ id, me, presence, typingUsers }) {
             </div>
           );
         })}
-        <div ref={bottomRef} />
       </div>
 
       <form onSubmit={submit} className="border-t border-white/60 p-3 dark:border-[#d8c9a8]/40">
@@ -574,7 +579,7 @@ function Thread({ id, me, presence, typingUsers }) {
             </button>
           </div>
         )}
-        <div className="flex items-end gap-2">
+        <div className="flex min-w-0 items-end gap-2">
           <textarea
             value={text}
             onChange={(e) => onType(e.target.value)}
@@ -585,9 +590,9 @@ function Thread({ id, me, presence, typingUsers }) {
             maxLength={5000}
             placeholder="Type a message…"
             aria-label="Message"
-            className="input max-h-40 min-h-[46px] flex-1 resize-none rounded-3xl"
+            className="input max-h-40 min-h-[46px] min-w-0 flex-1 resize-none rounded-3xl"
           />
-          <Button type="submit" loading={sending} disabled={!text.trim()} className="h-[46px] w-[46px] rounded-full p-0" aria-label="Send">
+          <Button type="submit" loading={sending} disabled={!text.trim()} className="h-[46px] w-[46px] shrink-0 rounded-full p-0" aria-label="Send">
             {!sending && <Send className="h-4 w-4" />}
           </Button>
         </div>
@@ -626,11 +631,21 @@ export default function Chat() {
 
   return (
     <div>
-      <Card className="grid h-[calc(100dvh-8.5rem)] min-h-[360px] overflow-hidden p-0 lg:grid-cols-[340px_1fr]">
-        <aside className={cn('min-h-0 border-white/60 dark:border-[#d8c9a8]/40 lg:border-r', id && 'hidden lg:block')}>
+      {/*
+        minmax(0, …) tracks + min-w-0 children: a grid track sized `1fr` is
+        really minmax(auto, 1fr) and cannot shrink below its content, so a long
+        nowrap line (a group's member list) used to widen the conversation
+        column past the card — whose overflow-hidden then clipped the header's
+        search icon and the Send button. The minimum height is low enough to fit
+        a short viewport (e.g. 200% browser zoom on a 720p screen) with the
+        composer still on screen. With zero minimums the columns always fit
+        the card and long text truncates or wraps inside them instead.
+      */}
+      <Card className="grid h-[calc(100dvh-8.5rem)] min-h-[220px] grid-cols-[minmax(0,1fr)] overflow-hidden p-0 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+        <aside className={cn('min-h-0 min-w-0 border-white/60 dark:border-[#d8c9a8]/40 lg:border-r', id && 'hidden lg:block')}>
           <ConversationList activeId={id} me={me} presence={presence} typing={typing} onNew={() => setNewOpen(true)} />
         </aside>
-        <section className={cn('min-h-0', !id && 'hidden lg:block')}>
+        <section className={cn('min-h-0 min-w-0', !id && 'hidden lg:block')}>
           {id ? (
             <Thread key={id} id={id} me={me} presence={presence} typingUsers={typing[id]} />
           ) : (

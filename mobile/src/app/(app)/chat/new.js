@@ -21,10 +21,12 @@ const PRIVATE_SCOPE = {
   faculty: 'Students of your classes, and campus staff.',
   hod: 'Your department’s students, classes you handle, and campus staff.',
 };
+// CUSTOM: own-department students from several classes; ACADEMICS: one class;
+// FACULTY: faculty from anywhere on campus. The server enforces the same rules.
 const CATEGORIES = [
-  ['custom', 'Custom'],
-  ['academic', 'Academics'],
-  ['faculty', 'Faculty'],
+  ['custom', 'CUSTOM'],
+  ['academic', 'ACADEMICS'],
+  ['faculty', 'FACULTY'],
 ];
 const STAFF = ['faculty', 'hod'];
 
@@ -44,22 +46,28 @@ export default function NewChat() {
   const scope = group && me.role === 'faculty' && me.department ? { department: me.department } : {};
   // 'picker' is scoped by the server's chat rules: a student only ever finds
   // their classmates and the academic staff.
-  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 30, context: 'picker', ...scope });
   const hodBuilder = group && isHod;
+  // HOD builder: Custom searches students (own department, by the server's
+  // scope), Faculty searches faculty; Academics works from the class list only.
+  const role = hodBuilder && category === 'custom' ? { role: 'student' } : {};
+  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 30, context: 'picker', ...scope, ...role });
   const { data: filters } = useGetPeopleFiltersQuery(undefined, { skip: !hodBuilder });
   const { data: cls } = useGetGroupClassQuery({ year, section }, { skip: !hodBuilder || category === 'faculty' || !year || !section });
   const [create, { isLoading }] = useCreateConversationMutation();
 
+  const classList = cls?.students || [];
   const people = useMemo(() => {
     const all = (data?.items || []).filter((u) => !sameId(u, me));
     if (!hodBuilder) return all;
-    // HOD groups: faculty / HODs always; students only in a Custom group.
-    return all.filter((u) => STAFF.includes(u.role) || (category === 'custom' && STUDENT_ROLES.includes(u.role)));
-  }, [data, me, hodBuilder, category]);
+    if (category === 'faculty') return all.filter((u) => STAFF.includes(u.role));
+    if (category === 'academic') return classList;
+    // Custom: the chosen class's students, or a student search across the department.
+    return q.trim() ? all.filter((u) => STUDENT_ROLES.includes(u.role)) : classList;
+  }, [data, me, hodBuilder, category, classList, q]);
 
   const isPicked = (u) => picked.some((x) => sameId(x, u));
   const toggle = (u) => setPicked((p) => (p.some((x) => sameId(x, u)) ? p.filter((x) => !sameId(x, u)) : [...p, u]));
-  const classStudents = cls?.students || [];
+  const classStudents = classList;
   const allOfClass = classStudents.length > 0 && classStudents.every(isPicked);
   const toggleClass = () =>
     setPicked((p) => (allOfClass ? p.filter((u) => !classStudents.some((s) => sameId(s, u))) : [...p, ...classStudents.filter((s) => !p.some((x) => sameId(x, s)))]));
@@ -67,11 +75,14 @@ export default function NewChat() {
     setYear(y);
     setSection(s);
     // An academic group is one class: another class replaces the students.
-    if (category === 'academic') setPicked((p) => p.filter((u) => STAFF.includes(u.role)));
+    if (category === 'academic') setPicked([]);
   };
   const pickCategory = (c) => {
     setCategory(c);
-    if (c !== 'custom') setPicked((p) => p.filter((u) => STAFF.includes(u.role)));
+    setQ('');
+    if (c === 'faculty') setPicked((p) => p.filter((u) => STAFF.includes(u.role)));
+    else if (c === 'custom') setPicked((p) => p.filter((u) => STUDENT_ROLES.includes(u.role)));
+    else setPicked([]);
   };
 
   const start = async (u) => {
@@ -153,11 +164,11 @@ export default function NewChat() {
             ) : null}
             {picked.length ? (
               <T v="small" numberOfLines={2}>
-                {picked.length} selected: {picked.map((u) => u.name.split(' ')[0]).join(', ')}
+                {picked.length} selected member{picked.length === 1 ? '' : 's'}: {picked.map((u) => u.name.split(' ')[0]).join(', ')}
               </T>
             ) : null}
             <Button
-              title={isHod ? 'Send to principal' : me.role === 'faculty' ? 'Request group' : 'Create group'}
+              title={isHod ? 'Send request to Principal' : me.role === 'faculty' ? 'Request group' : 'Create group'}
               icon={isHod ? Send : Users}
               onPress={createGroup}
               loading={isLoading}
@@ -165,7 +176,14 @@ export default function NewChat() {
             />
           </>
         ) : null}
-        <Input placeholder={hodBuilder ? 'Search faculty to add' : 'Search by name, department or skill'} value={q} onChangeText={setQ} autoFocus={!group} />
+        {hodBuilder && category === 'academic' ? null : (
+          <Input
+            placeholder={hodBuilder ? (category === 'faculty' ? 'Search faculty on campus' : 'Search students of your department') : 'Search by name, department or skill'}
+            value={q}
+            onChangeText={setQ}
+            autoFocus={!group}
+          />
+        )}
       </View>
       {isFetching && !people.length ? (
         <Loading />

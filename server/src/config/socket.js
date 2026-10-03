@@ -88,14 +88,7 @@ export function initSocket(httpServer) {
     // ── Chat: a room is joined only after membership is checked in MongoDB ──
     socket.on('chat:join', async (conversationId, cb) => {
       if (!mongoose.isValidObjectId(conversationId)) return ack(cb, { ok: false, error: 'invalid' });
-      const conv = await Conversation.findOne({ _id: conversationId, participants: userId, isActive: true }).select('type participants').lean().catch(() => null);
-      if (!conv) return ack(cb, { ok: false, error: 'forbidden' });
-      // A private chat outside the chat scope (either direction) is closed live too.
-      if (conv.type === 'private') {
-        const other = conv.participants.find((p) => String(p) !== String(userId));
-        const me = await User.findById(userId).select('role department year section semester inChargeYear inChargeSemester').lean().catch(() => null);
-        if (!me || (other && !(await privateChatAllowed(me, other).catch(() => false)))) return ack(cb, { ok: false, error: 'forbidden' });
-      }
+      if (!(await canUseConversation(userId, conversationId))) return ack(cb, { ok: false, error: 'forbidden' });
       socket.join(`chat:${conversationId}`);
       return ack(cb, { ok: true });
     });
@@ -115,6 +108,7 @@ export function initSocket(httpServer) {
     socket.on('chat:read', async (data = {}, cb) => {
       const { conversationId } = data;
       if (!mongoose.isValidObjectId(conversationId)) return ack(cb, { ok: false });
+      if (!(await canUseConversation(userId, conversationId))) return ack(cb, { ok: false });
       const ok = await markConversationRead(userId, conversationId).catch(() => false);
       return ack(cb, { ok });
     });
@@ -125,6 +119,31 @@ export function initSocket(httpServer) {
 }
 
 export const getIO = () => io;
+
+/**
+ * Same rule as the REST API's loadMemberConversation: an active member, and
+ * for a private chat, one still inside the chat scope (either direction).
+ */
+async function canUseConversation(userId, conversationId) {
+  const conv = await Conversation.findOne({ _id: conversationId, participants: userId, isActive: true }).select('type participants').lean().catch(() => null);
+  if (!conv) return false;
+  if (conv.type !== 'private') return true;
+  const other = conv.participants.find((p) => String(p) !== String(userId));
+  if (!other) return true;
+  const me = await User.findById(userId).select('role department year section semester inChargeYear inChargeSemester').lean().catch(() => null);
+  return Boolean(me) && privateChatAllowed(me, other).catch(() => false);
+}
+
+/** Make every open socket of these users leave a room (e.g. removed from a group). */
+export function removeUsersFromRoom(userIds, room) {
+  if (!io) return;
+  userIds.forEach((id) => io.in(`user:${id}`).socketsLeave(room));
+}
+
+/** Empty a room entirely (e.g. a deleted group). */
+export function closeRoom(room) {
+  if (io) io.in(room).socketsLeave(room);
+}
 
 export function emitTo(room, event, payload) {
   if (io) io.to(room).emit(event, payload);

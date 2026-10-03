@@ -7,10 +7,15 @@ import { Avatar, AvatarStack, Badge, Button, Card, EmptyState, ErrorState, PageH
 import { Modal } from '../../components/ui/Modal';
 import { Textarea } from '../../components/ui/form';
 import { ROLE_LABELS, STUDENT_ROLES, YEAR_LABELS } from '../../utils/constants';
-import { errMsg, timeAgo } from '../../utils/format';
+import { errMsg, fmtDateTime, timeAgo } from '../../utils/format';
 import { selectUser } from '../../features/authSlice';
 
 const CATEGORY_LABEL = { custom: 'Custom', academic: 'Academics', faculty: 'Faculty' };
+/** What the reviewer needs to recognise a member — nothing more sensitive. */
+const memberDetails = (m) =>
+  STUDENT_ROLES.includes(m.role)
+    ? [m.rollNo, m.department, m.year && YEAR_LABELS[m.year], m.section && `Sec ${m.section}`]
+    : [ROLE_LABELS[m.role], m.employeeId, m.department];
 
 /**
  * Group requests waiting for approval. An admin reviews faculty class groups
@@ -43,7 +48,7 @@ export default function AdminChatRequests() {
     <div className="space-y-5">
       <PageHeader
         icon={UsersRound}
-        title="Group chat requests"
+        title={isPrincipal ? 'Group creation requests' : 'Group chat requests'}
         subtitle={
           isPrincipal
             ? 'HODs ask to create these groups. Open one to see who is in it and why, then approve or reject.'
@@ -88,7 +93,7 @@ export default function AdminChatRequests() {
                     <p className="truncate font-bold">{r.name}</p>
                     <p className="truncate text-xs muted">
                       by {r.createdBy?.name} · {ROLE_LABELS[r.createdBy?.role]}
-                      {r.createdBy?.department ? ` · ${r.createdBy.department}` : ''} · {timeAgo(r.createdAt)}
+                      {r.createdBy?.department ? ` · ${r.createdBy.department}` : ''} · {fmtDateTime(r.createdAt)}
                     </p>
                   </div>
                   <Badge color={r.status === 'pending' ? 'warning' : 'danger'}>{r.status}</Badge>
@@ -183,7 +188,10 @@ export default function AdminChatRequests() {
               <p className="whitespace-pre-wrap rounded-2xl bg-white/50 p-3 text-sm dark:bg-white/5">{viewing.reason || viewing.description || '—'}</p>
             </div>
             <div>
-              <p className="label">Members ({viewing.participants.length - 1})</p>
+              <p className="label">
+                Members ({viewing.participants.length - 1}) ·{' '}
+                {viewing.participants.filter((p) => STUDENT_ROLES.includes(p.role)).length} students
+              </p>
               <ul className="max-h-72 space-y-1 overflow-y-auto">
                 {viewing.participants
                   .filter((p) => String(p._id) !== String(viewing.createdBy?._id))
@@ -192,9 +200,7 @@ export default function AdminChatRequests() {
                       <Avatar user={m} size="sm" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-semibold">{m.name}</span>
-                        <span className="block truncate text-xs muted">
-                          {[ROLE_LABELS[m.role], m.department, m.rollNo, m.section && `Sec ${m.section}`].filter(Boolean).join(' · ')}
-                        </span>
+                        <span className="block truncate text-xs muted">{memberDetails(m).filter(Boolean).join(' · ')}</span>
                       </span>
                     </li>
                   ))}

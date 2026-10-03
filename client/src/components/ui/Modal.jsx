@@ -38,7 +38,9 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
           </button>
         </div>
         <div className="overflow-y-auto px-6 py-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-white/60 px-6 py-4 dark:border-white/10">{footer}</div>}
+        {/* Wraps instead of overflowing: long button labels on a narrow phone
+            drop to a second row rather than off the left edge. */}
+        {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-white/60 px-4 py-4 dark:border-white/10 sm:px-6">{footer}</div>}
       </div>
     </div>,
     document.body

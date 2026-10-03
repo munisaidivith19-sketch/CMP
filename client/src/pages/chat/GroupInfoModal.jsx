@@ -34,7 +34,13 @@ export default function GroupInfoModal({ open, onClose, conv, me }) {
   const [add, { isLoading: adding }] = useAddChatMembersMutation();
   const [removeMember] = useLeaveConversationMutation();
   const [del, { isLoading: deleting }] = useDeleteGroupMutation();
-  const { data: found, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 20, context: 'picker' }, { skip: !open || !isAdmin || q.trim().length < 2 });
+  // An HOD group adds only what its type allows: students for Custom /
+  // Academics, faculty for Faculty. (The server enforces it either way.)
+  const addRole = conv?.category === 'faculty' ? undefined : conv?.category ? 'student' : undefined;
+  const { data: found, isFetching } = useGetUsersQuery(
+    { q: q || undefined, limit: 20, context: 'picker', ...(addRole ? { role: addRole } : {}) },
+    { skip: !open || !isAdmin || q.trim().length < 2 }
+  );
 
   useEffect(() => {
     if (open) {
@@ -44,7 +50,16 @@ export default function GroupInfoModal({ open, onClose, conv, me }) {
   }, [open, conv?.name]);
 
   const members = conv?.participants || [];
-  const candidates = useMemo(() => (found?.items || []).filter((u) => !members.some((m) => sameId(m, u))), [found, members]);
+  const candidates = useMemo(
+    () =>
+      (found?.items || []).filter(
+        (u) =>
+          !members.some((m) => sameId(m, u)) &&
+          (conv?.category !== 'faculty' || ['faculty', 'hod'].includes(u.role)) &&
+          (conv?.category !== 'academic' || (u.year === conv.linkedYear && u.section === conv.linkedSection))
+      ),
+    [found, members, conv]
+  );
 
   const run = async (fn, ok) => {
     try {

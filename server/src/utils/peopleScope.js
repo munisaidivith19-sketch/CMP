@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import { ApiError } from './http.js';
 import { STUDENT_ROLES, facultyClasses, inClasses, ownDepartment, studentsInClassesFilter } from './academicScope.js';
 import { COLLEGE_WIDE_ROLES } from '../constants.js';
+import { canContact } from './chatScope.js';
 
 // Students (and club admins, who are students too) have no People-directory
 // access at all — see peopleScopeFilter and canViewProfile below.
@@ -39,8 +40,13 @@ export async function peopleScopeFilter(user) {
 /** Field-level check for a single profile fetch (GET /users/:id). */
 export async function canViewProfile(viewer, targetId) {
   if (String(viewer._id) === String(targetId)) return true;
-  if (NO_DIRECTORY_ROLES.includes(viewer.role)) return true; // students: directory browsing is blocked, single lookups are not
   if (COLLEGE_WIDE_ROLES.includes(viewer.role)) return true; // college-wide authorities: unrestricted
+  // Students: only the people they may chat with — their own classmates and
+  // the academic staff. Another class's student profile is not visible.
+  if (NO_DIRECTORY_ROLES.includes(viewer.role)) {
+    if (!(await User.exists({ _id: targetId }))) return true; // missing user — let the 404 in getUser handle it
+    return canContact(viewer, targetId);
+  }
 
   if (!['faculty', 'hod'].includes(viewer.role)) return false; // security / warden: no academic profiles
 

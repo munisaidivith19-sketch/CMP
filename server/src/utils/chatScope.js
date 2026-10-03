@@ -11,8 +11,8 @@
  *    dean and AO. Never a student of another class.
  *  - Faculty: the students of the classes they handle (timetable) and of
  *    their Class In-Charge class ("Our Class"), plus the academic staff.
- *  - HOD: every student of their own department, the students of any class
- *    they handle in another department, plus the academic staff.
+ *  - HOD: every student of their own department — never another
+ *    department's — plus the academic staff.
  *  - Admin, principal, chairman, dean, AO: anyone (college-wide roles).
  *  - Security / Warden: unchanged — anyone (their existing behaviour).
  *
@@ -85,10 +85,7 @@ export async function chatContactFilter(user) {
   }
 
   if (user.role === 'hod') {
-    const or = [staff, { role: { $in: STUDENT_ROLES }, department: ownDepartment(user) }];
-    const handling = await handlingClasses(user);
-    if (handling.length) or.push(studentsInClassesFilter(handling));
-    return { $or: or };
+    return { $or: [staff, { role: { $in: STUDENT_ROLES }, department: ownDepartment(user) }] };
   }
 
   return { _id: null };

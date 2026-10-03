@@ -63,7 +63,7 @@ after(async () => {
 
 // ── Student: no directory access ───────────────────────────────────
 
-test('student cannot access the People directory API or search, but can still open an individual profile', async () => {
+test('student cannot browse the directory, and can open only the profiles of people they may chat with', async () => {
   const list = await ctx.request('GET', '/users', { token: stuC1.token });
   assert.equal(list.status, 403);
 
@@ -71,10 +71,14 @@ test('student cannot access the People directory API or search, but can still op
   assert.equal(search.status, 200);
   assert.deepEqual(search.body.users, []);
 
-  // Decision: single-profile lookups (used by chat/discussions/clubs links)
-  // stay open to students — only directory browsing/search is blocked.
-  const profile = await ctx.request('GET', `/users/${stuA1.u._id}`, { token: stuC1.token });
-  assert.equal(profile.status, 200);
+  // Profiles follow the chat scope: another class's student is not visible
+  // (another section, or the same section letter in another year)...
+  assert.equal((await ctx.request('GET', `/users/${stuA1.u._id}`, { token: stuC1.token })).status, 403);
+  assert.equal((await ctx.request('GET', `/users/${stuC2OtherYear.u._id}`, { token: stuC1.token })).status, 403);
+  // ...while academic staff and their own profile stay open.
+  assert.equal((await ctx.request('GET', `/users/${otherFacCse.u._id}`, { token: stuC1.token })).status, 200);
+  assert.equal((await ctx.request('GET', `/users/${hodCse.u._id}`, { token: stuC1.token })).status, 200);
+  assert.equal((await ctx.request('GET', `/users/${stuC1.u._id}`, { token: stuC1.token })).status, 200);
 
   // The chat "start a new conversation" picker uses the same endpoint with
   // context=picker and must keep working for students.

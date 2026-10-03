@@ -5,23 +5,30 @@ import { Check, UsersRound, X } from 'lucide-react-native';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, Header, Input, Loading, Screen, T } from '../../../components/ui';
 import { errMsg, useGetGroupRequestsQuery, useReviewGroupRequestMutation } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
-import { ROLE_LABELS, STUDENT_ROLES } from '../../../theme';
+import { ROLE_LABELS, STUDENT_ROLES, colors } from '../../../theme';
 import { sameId, timeAgo } from '../../../utils/format';
 
-/** Admin: approve or reject class groups requested by faculty (opened from the notification). */
+const CATEGORY_LABEL = { custom: 'Custom', academic: 'Academics', faculty: 'Faculty' };
+const REVIEWERS = ['admin', 'principal'];
+
+/**
+ * Approve or reject group requests: the admin reviews faculty class groups,
+ * the principal reviews the groups HODs ask to create (with their reason).
+ */
 export default function ChatRequests() {
   const me = useSelector(selectUser);
-  const { data = [], isLoading, isFetching, error, refetch } = useGetGroupRequestsQuery(undefined, { skip: me.role !== 'admin' });
+  const isPrincipal = me.role === 'principal';
+  const { data = [], isLoading, isFetching, error, refetch } = useGetGroupRequestsQuery(undefined, { skip: !REVIEWERS.includes(me.role) });
   const [review, { isLoading: saving }] = useReviewGroupRequestMutation();
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState('');
 
-  if (me.role !== 'admin') {
+  if (!REVIEWERS.includes(me.role)) {
     return (
       <Screen>
         <Header back title="Group requests" />
         <Card>
-          <EmptyState icon={UsersRound} title="Admins only" text="Your group requests are listed on the Messages tab." />
+          <EmptyState icon={UsersRound} title="For the admin and principal" text="Your group requests are listed on the Messages tab." />
         </Card>
       </Screen>
     );
@@ -32,7 +39,7 @@ export default function ChatRequests() {
       await review({ id, action, ...(why ? { reason: why } : {}) }).unwrap();
       setRejecting(null);
       setReason('');
-      Alert.alert(action === 'approve' ? 'Group approved' : 'Request rejected', action === 'approve' ? 'Members have been notified.' : 'The faculty member has been told.');
+      Alert.alert(action === 'approve' ? 'Group approved' : 'Request rejected', action === 'approve' ? 'Members have been notified.' : 'The requester has been told.');
     } catch (e) {
       Alert.alert('Could not update', errMsg(e));
     }
@@ -40,7 +47,7 @@ export default function ChatRequests() {
 
   return (
     <Screen refreshing={isFetching && !isLoading} onRefresh={refetch}>
-      <Header back title="Group requests" subtitle="Faculty class groups go live after you approve them." />
+      <Header back title="Group requests" subtitle={isPrincipal ? 'Groups HODs want to create — check who is in them and why.' : 'Faculty class groups go live after you approve them.'} />
       {isLoading ? (
         <Loading />
       ) : error ? (
@@ -68,13 +75,19 @@ export default function ChatRequests() {
                 </View>
                 <Badge label="pending" color="warning" />
               </View>
+              {r.category ? (
+                <T v="small" style={{ color: colors.primary }}>
+                  {CATEGORY_LABEL[r.category]} group{r.linkedYear ? ` · Year ${r.linkedYear} Sec ${r.linkedSection}` : ''}
+                </T>
+              ) : null}
+              {r.reason ? <T>Reason: {r.reason}</T> : null}
               <T v="small">
                 {members.length} member{members.length === 1 ? '' : 's'}
                 {students.length ? ` · ${students.length} students` : ''}
                 {sections.length ? ` · Sec ${sections.join(', ')}` : ''}
               </T>
-              <T v="small" numberOfLines={3}>
-                {members.map((m) => [m.name, m.rollNo].filter(Boolean).join(' ')).join(', ')}
+              <T v="small">
+                {members.map((m) => [m.name, ROLE_LABELS[m.role], m.rollNo, m.section && `Sec ${m.section}`].filter(Boolean).join(' · ')).join('\n')}
               </T>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <Button title="Reject" icon={X} variant="danger" small style={{ flex: 1 }} disabled={saving} onPress={() => setRejecting(r)} />

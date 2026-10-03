@@ -5,6 +5,7 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '.
 import { persistFile } from '../utils/storage.js';
 import { logActivity } from '../utils/activity.js';
 import { canViewProfile, peopleScopeFilter } from '../utils/peopleScope.js';
+import { chatContactFilter } from '../utils/chatScope.js';
 import { ownDepartment, STUDENT_ROLES } from '../utils/academicScope.js';
 import { ACADEMIC_YEARS, COLLEGE_WIDE_ROLES, DEPARTMENTS } from '../constants.js';
 
@@ -13,8 +14,11 @@ const DIRECTORY_FIELDS = 'name role department year section semester avatar desi
 /**
  * Student / faculty directory with search and filters.
  * `context=picker` is for choosing a specific person for another feature
- * (starting a chat, picking a club's faculty advisor) — that stays open to
- * everyone, unrestricted, exactly as before the People-directory lockdown.
+ * (starting a chat or group, picking a club's faculty advisor). It is scoped
+ * by the chat contact rules (utils/chatScope.js): a student only ever finds
+ * their own classmates and the academic staff, a faculty member the students
+ * of the classes they handle or are in charge of, an HOD their department.
+ * Picking a faculty advisor still works for everyone, as staff are in scope.
  * Without it, this IS the People directory and is scoped/blocked per role;
  * the scope is applied at the query level, before pagination, so counts and
  * results never include anything outside the caller's authorization.
@@ -34,9 +38,7 @@ export const listUsers = asyncHandler(async (req, res) => {
   if (section) clauses.push({ section: String(section).toUpperCase() });
   if (semester) clauses.push({ semester: Number(semester) });
   if (skill) clauses.push({ skills: String(skill).toLowerCase() });
-  if (context !== 'picker') {
-    clauses.push(await peopleScopeFilter(req.user));
-  }
+  clauses.push(context === 'picker' ? await chatContactFilter(req.user) : await peopleScopeFilter(req.user));
   const filter = clauses.length > 1 ? { $and: clauses } : clauses[0];
 
   const [items, total] = await Promise.all([

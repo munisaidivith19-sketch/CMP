@@ -8,6 +8,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  Info,
   Lock,
   CornerUpLeft,
   Loader2,
@@ -37,14 +38,24 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/form';
 import { ROLE_LABELS } from '../../utils/constants';
 import { errMsg, fmtTime, timeAgo } from '../../utils/format';
+import HodGroupModal from './HodGroupModal';
+import GroupInfoModal from './GroupInfoModal';
 
-/** Who may start a group chat. Faculty groups wait for admin approval. */
+/** Who may start a group chat. Faculty groups wait for an admin, HOD groups for the principal. */
 const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
 const GROUP_SCOPE = {
   admin: 'Add anyone on campus.',
-  hod: 'Groups can include students and staff of your department.',
   faculty: 'Class groups can include students of your sections. An admin approves the group before it goes live.',
 };
+/** Who a private chat can reach — the server enforces exactly this. */
+const PRIVATE_SCOPE = {
+  student: 'Your classmates, and faculty, HODs, the principal, chairman, dean and AO.',
+  club_admin: 'Your classmates, and faculty, HODs, the principal, chairman, dean and AO.',
+  faculty: 'Students of the classes you handle or are in charge of, and campus staff.',
+  hod: 'Students of your department and of classes you handle, and campus staff.',
+};
+/** Who approves a pending group request. */
+const APPROVER = { hod: 'the principal', faculty: 'an admin' };
 
 const sameId = (a, b) => String(a?._id || a) === String(b?._id || b);
 
@@ -83,18 +94,18 @@ function PresenceAvatar({ user, online, size = 'md' }) {
 }
 
 /* ── New conversation ───────────────────────────────────────────── */
-function NewChatModal({ open, onClose, me }) {
+function NewChatModal({ open, onClose, me, onHodGroup }) {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [group, setGroup] = useState(false);
   const [name, setName] = useState('');
   const [picked, setPicked] = useState([]);
   const canGroup = GROUP_CREATORS.includes(me.role);
-  // Group members must come from the creator's own department (admins: anyone).
-  const scope = group && me.role !== 'admin' && me.department ? { department: me.department } : {};
-  // 'picker' context: looking someone up to start a conversation with, not
-  // browsing the People directory — stays open to every role, unrestricted,
-  // same as before the People-directory lockdown.
+  // Faculty group members come from their own department (admins: anyone).
+  const scope = group && me.role === 'faculty' && me.department ? { department: me.department } : {};
+  // 'picker' context: looking someone up to start a conversation with. The
+  // server scopes it by the chat rules — a student only ever finds their
+  // classmates and the academic staff — so this list is already the limit.
   const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 20, context: 'picker', ...scope }, { skip: !open });
   const [create, { isLoading }] = useCreateConversationMutation();
   const people = (data?.items || []).filter((u) => !sameId(u, me));
@@ -115,7 +126,7 @@ function NewChatModal({ open, onClose, me }) {
       ).unwrap();
       onClose();
       if (conv.pending) {
-        toast.success('Group request sent — it goes live once an admin approves it');
+        toast.success(`Group request sent — it goes live once ${APPROVER[me.role] || 'an admin'} approves it`);
         return;
       }
       navigate(`/chat/${conv._id}`);
@@ -131,7 +142,7 @@ function NewChatModal({ open, onClose, me }) {
       open={open}
       onClose={onClose}
       title={group ? 'New group' : 'New message'}
-      subtitle={group ? GROUP_SCOPE[me.role] : 'Start a private conversation with anyone on campus.'}
+      subtitle={group ? GROUP_SCOPE[me.role] : PRIVATE_SCOPE[me.role] || 'Start a private conversation with anyone on campus.'}
       footer={
         group && (
           <>
@@ -150,7 +161,11 @@ function NewChatModal({ open, onClose, me }) {
           <button className={cn('chip', !group && 'chip-active')} onClick={() => setGroup(false)}>
             Private
           </button>
-          <button className={cn('chip', group && 'chip-active')} onClick={() => setGroup(true)}>
+          <button
+            className={cn('chip', group && 'chip-active')}
+            // An HOD builds a group with its own form (type, class, reason).
+            onClick={() => (me.role === 'hod' ? onHodGroup() : setGroup(true))}
+          >
             <Users className="h-3.5 w-3.5" /> Group
           </button>
         </div>
@@ -238,7 +253,9 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold">{r.name}</p>
                 <p className={cn('truncate text-xs', r.status === 'pending' ? 'text-amber-600' : 'text-rose-500')}>
-                  {r.status === 'pending' ? 'Waiting for admin approval' : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
+                  {r.status === 'pending'
+                    ? `Waiting for ${me.role === 'hod' ? 'principal' : 'admin'} approval`
+                    : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
                 </p>
               </div>
             </div>
@@ -347,6 +364,7 @@ function Thread({ id, me, presence, typingUsers }) {
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [q, setQ] = useState('');
   const bottomRef = useRef(null);
   const scrollRef = useRef(null);
@@ -490,9 +508,11 @@ function Thread({ id, me, presence, typingUsers }) {
               </p>
             </div>
             <IconButton icon={searchOpen ? X : Search} label={searchOpen ? 'Close search' : 'Search messages'} onClick={() => { setSearchOpen((o) => !o); setQ(''); }} />
+            {d.group && <IconButton icon={Info} label="Group info" onClick={() => setInfoOpen(true)} />}
           </>
         )}
       </header>
+      {d.group && <GroupInfoModal open={infoOpen} onClose={() => setInfoOpen(false)} conv={conv} me={me} />}
       {searchOpen && (
         <div className="border-b border-white/60 p-3 dark:border-[#d8c9a8]/40">
           <Input icon={Search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search in this conversation" autoFocus />
@@ -581,6 +601,7 @@ export default function Chat() {
   const { id } = useParams();
   const me = useSelector(selectUser);
   const [newOpen, setNewOpen] = useState(false);
+  const [hodGroupOpen, setHodGroupOpen] = useState(false);
   const [presence, setPresence] = useState({});
   const [typing, setTyping] = useState({}); // conversationId -> [userId]
   const timers = useRef({});
@@ -624,7 +645,16 @@ export default function Chat() {
           )}
         </section>
       </Card>
-      <NewChatModal open={newOpen} onClose={() => setNewOpen(false)} me={me} />
+      <NewChatModal
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        me={me}
+        onHodGroup={() => {
+          setNewOpen(false);
+          setHodGroupOpen(true);
+        }}
+      />
+      {me.role === 'hod' && <HodGroupModal open={hodGroupOpen} onClose={() => setHodGroupOpen(false)} />}
     </div>
   );
 }

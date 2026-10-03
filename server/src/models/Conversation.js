@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { GROUP_CATEGORIES } from '../constants.js';
 
 const { Schema } = mongoose;
 
@@ -33,11 +34,17 @@ const conversationSchema = new Schema(
     linkedClub: { type: Schema.Types.ObjectId, ref: 'Club' },
     linkedSection: { type: String, trim: true, maxlength: 20 },
     linkedDepartment: { type: String, trim: true, maxlength: 80 },
+    // An academic group is exactly one class: department + year + section.
+    linkedYear: { type: Number, min: 1, max: 6 },
+    category: { type: String, enum: GROUP_CATEGORIES },
+    // Why the group is needed — shown to the approver (principal for HOD groups).
+    reason: { type: String, trim: true, maxlength: 500 },
 
     pinnedMessages: [{ type: Schema.Types.ObjectId, ref: 'Message' }],
 
-    // Group/class channels created by faculty or HOD wait for an admin. A pending
-    // or rejected conversation stays inactive, so nobody can open or message it.
+    // Group/class channels created by faculty wait for an admin, and those
+    // created by an HOD for the principal. A pending or rejected conversation
+    // stays inactive, so nobody can open or message it.
     status: { type: String, enum: ['active', 'pending', 'rejected'], default: 'active', index: true },
     reviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     reviewedAt: Date,
@@ -52,5 +59,5 @@ conversationSchema.index({ participants: 1, updatedAt: -1 });
 // Fast private conversation lookup: find the one with exactly these 2 participants.
 conversationSchema.index({ type: 1, participants: 1 });
 
-export { CONVERSATION_TYPES };
+export { CONVERSATION_TYPES, GROUP_CATEGORIES };
 export default mongoose.model('Conversation', conversationSchema);

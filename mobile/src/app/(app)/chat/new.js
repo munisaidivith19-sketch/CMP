@@ -1,32 +1,78 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, FlatList, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { Check, Users } from 'lucide-react-native';
+import { Check, Send, Users } from 'lucide-react-native';
 import { Avatar, Button, Chip, EmptyState, Header, Input, Loading, Screen, T } from '../../../components/ui';
-import { errMsg, useCreateConversationMutation, useGetUsersQuery } from '../../../services/api';
+import { errMsg, useCreateConversationMutation, useGetGroupClassQuery, useGetPeopleFiltersQuery, useGetUsersQuery } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
-import { GROUP_CREATORS, ROLE_LABELS, colors } from '../../../theme';
+import { GROUP_CREATORS, ROLE_LABELS, STUDENT_ROLES, YEAR_LABELS, colors } from '../../../theme';
 import { sameId } from '../../../utils/format';
 
 const GROUP_SCOPE = {
   admin: 'Add anyone on campus.',
-  hod: 'Add students and staff of your department.',
+  hod: 'Sent to the principal for approval, with your reason.',
   faculty: 'Add students of your sections. An admin approves the group before it goes live.',
 };
+/** Who a private chat can reach — the server enforces exactly this. */
+const PRIVATE_SCOPE = {
+  student: 'Your classmates, and faculty, HODs, principal, chairman, dean and AO.',
+  club_admin: 'Your classmates, and faculty, HODs, principal, chairman, dean and AO.',
+  faculty: 'Students of your classes, and campus staff.',
+  hod: 'Your department’s students, classes you handle, and campus staff.',
+};
+const CATEGORIES = [
+  ['custom', 'Custom'],
+  ['academic', 'Academics'],
+  ['faculty', 'Faculty'],
+];
+const STAFF = ['faculty', 'hod'];
 
 export default function NewChat() {
   const me = useSelector(selectUser);
+  const isHod = me.role === 'hod';
   const canGroup = GROUP_CREATORS.includes(me.role);
   const [group, setGroup] = useState(false);
   const [name, setName] = useState('');
+  const [reason, setReason] = useState('');
+  const [category, setCategory] = useState('custom');
+  const [year, setYear] = useState('');
+  const [section, setSection] = useState('');
   const [picked, setPicked] = useState([]);
   const [q, setQ] = useState('');
-  // Group members must come from the creator's own department (admins: anyone).
-  const scope = group && me.role !== 'admin' && me.department ? { department: me.department } : {};
-  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 30, ...scope });
+  // Faculty group members come from their own department (admins: anyone).
+  const scope = group && me.role === 'faculty' && me.department ? { department: me.department } : {};
+  // 'picker' is scoped by the server's chat rules: a student only ever finds
+  // their classmates and the academic staff.
+  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 30, context: 'picker', ...scope });
+  const hodBuilder = group && isHod;
+  const { data: filters } = useGetPeopleFiltersQuery(undefined, { skip: !hodBuilder });
+  const { data: cls } = useGetGroupClassQuery({ year, section }, { skip: !hodBuilder || category === 'faculty' || !year || !section });
   const [create, { isLoading }] = useCreateConversationMutation();
-  const people = (data?.items || []).filter((u) => !sameId(u, me));
+
+  const people = useMemo(() => {
+    const all = (data?.items || []).filter((u) => !sameId(u, me));
+    if (!hodBuilder) return all;
+    // HOD groups: faculty / HODs always; students only in a Custom group.
+    return all.filter((u) => STAFF.includes(u.role) || (category === 'custom' && STUDENT_ROLES.includes(u.role)));
+  }, [data, me, hodBuilder, category]);
+
+  const isPicked = (u) => picked.some((x) => sameId(x, u));
+  const toggle = (u) => setPicked((p) => (p.some((x) => sameId(x, u)) ? p.filter((x) => !sameId(x, u)) : [...p, u]));
+  const classStudents = cls?.students || [];
+  const allOfClass = classStudents.length > 0 && classStudents.every(isPicked);
+  const toggleClass = () =>
+    setPicked((p) => (allOfClass ? p.filter((u) => !classStudents.some((s) => sameId(s, u))) : [...p, ...classStudents.filter((s) => !p.some((x) => sameId(x, s)))]));
+  const pickClass = (y, s) => {
+    setYear(y);
+    setSection(s);
+    // An academic group is one class: another class replaces the students.
+    if (category === 'academic') setPicked((p) => p.filter((u) => STAFF.includes(u.role)));
+  };
+  const pickCategory = (c) => {
+    setCategory(c);
+    if (c !== 'custom') setPicked((p) => p.filter((u) => STAFF.includes(u.role)));
+  };
 
   const start = async (u) => {
     try {
@@ -39,9 +85,14 @@ export default function NewChat() {
 
   const createGroup = async () => {
     try {
-      const conv = await create({ type: 'group', name: name.trim(), participantIds: picked.map((u) => u._id) }).unwrap();
+      const conv = await create({
+        type: 'group',
+        name: name.trim(),
+        participantIds: picked.map((u) => u._id),
+        ...(isHod ? { category, reason: reason.trim() } : {}),
+      }).unwrap();
       if (conv.pending) {
-        Alert.alert('Request sent', 'Your group goes live as soon as an admin approves it. You’ll get a notification.');
+        Alert.alert('Request sent', `Your group goes live as soon as ${isHod ? 'the principal' : 'an admin'} approves it. You’ll get a notification.`);
         router.back();
         return;
       }
@@ -51,12 +102,12 @@ export default function NewChat() {
     }
   };
 
-  const toggle = (u) => setPicked((p) => (p.some((x) => sameId(x, u)) ? p.filter((x) => !sameId(x, u)) : [...p, u]));
+  const ready = picked.length > 0 && name.trim().length >= 2 && (!isHod || reason.trim().length >= 5);
 
   return (
     <Screen scroll={false}>
-      <View style={{ padding: 16, gap: 12 }}>
-        <Header back title={group ? 'New group' : 'New message'} subtitle={group ? GROUP_SCOPE[me.role] : 'Start a private chat with anyone on campus.'} />
+      <View style={{ padding: 16, gap: 10 }}>
+        <Header back title={group ? 'New group' : 'New message'} subtitle={group ? GROUP_SCOPE[me.role] : PRIVATE_SCOPE[me.role] || 'Start a private chat with anyone on campus.'} />
         {canGroup ? (
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Chip label="Private" active={!group} onPress={() => setGroup(false)} />
@@ -65,22 +116,56 @@ export default function NewChat() {
         ) : null}
         {group ? (
           <>
-            <Input placeholder="Group name, e.g. CSE-A Mini project" value={name} onChangeText={setName} maxLength={100} />
+            <Input placeholder="Group name" value={name} onChangeText={setName} maxLength={100} />
+            {hodBuilder ? (
+              <>
+                <T v="label">Group type</T>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {CATEGORIES.map(([v, l]) => (
+                    <Chip key={v} label={l} active={category === v} onPress={() => pickCategory(v)} />
+                  ))}
+                </View>
+                <Input placeholder="Reason for the principal" value={reason} onChangeText={setReason} maxLength={500} multiline />
+                {category !== 'faculty' ? (
+                  <>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {(filters?.years || [1, 2, 3, 4]).map((y) => (
+                        <Chip key={y} label={YEAR_LABELS[y] || `Year ${y}`} active={String(year) === String(y)} onPress={() => pickClass(String(y), section)} />
+                      ))}
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {(filters?.sections || []).map((s) => (
+                        <Chip key={s} label={`Sec ${s}`} active={section === s} onPress={() => pickClass(year, s)} />
+                      ))}
+                    </View>
+                    {classStudents.length ? (
+                      <Button
+                        title={allOfClass ? 'Unselect this section' : `Select all ${classStudents.length} students`}
+                        variant="soft"
+                        small
+                        icon={Check}
+                        onPress={toggleClass}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            ) : null}
             {picked.length ? (
               <T v="small" numberOfLines={2}>
                 {picked.length} selected: {picked.map((u) => u.name.split(' ')[0]).join(', ')}
               </T>
             ) : null}
             <Button
-              title={me.role === 'faculty' ? 'Request group' : 'Create group'}
-              icon={Users}
+              title={isHod ? 'Send to principal' : me.role === 'faculty' ? 'Request group' : 'Create group'}
+              icon={isHod ? Send : Users}
               onPress={createGroup}
               loading={isLoading}
-              disabled={!picked.length || name.trim().length < 2}
+              disabled={!ready}
             />
           </>
         ) : null}
-        <Input placeholder="Search by name, department or skill" value={q} onChangeText={setQ} autoFocus={!group} />
+        <Input placeholder={hodBuilder ? 'Search faculty to add' : 'Search by name, department or skill'} value={q} onChangeText={setQ} autoFocus={!group} />
       </View>
       {isFetching && !people.length ? (
         <Loading />
@@ -92,7 +177,7 @@ export default function NewChat() {
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 30 }}
           ListEmptyComponent={<EmptyState title="No people found" />}
           renderItem={({ item: u }) => {
-            const on = picked.some((x) => sameId(x, u));
+            const on = isPicked(u);
             return (
               <Pressable
                 disabled={isLoading}

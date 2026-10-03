@@ -61,7 +61,8 @@ const ADMIN = [
   { to: '/admin/reports', label: 'Moderation', icon: ShieldAlert, roles: STAFF_VIEW },
   { to: '/admin/complaints', label: 'Complaints', icon: MessageSquareWarning, roles: ['admin', 'chairman'] },
   { to: '/admin/users', label: 'Users', icon: UserCog, roles: ['admin'] },
-  { to: '/admin/chat-requests', label: 'Group requests', icon: UsersRound, roles: ['admin'], badge: 'groups' },
+  // Admin approves faculty groups; the principal approves HOD groups.
+  { to: '/admin/chat-requests', label: 'Group requests', icon: UsersRound, roles: ['admin', 'principal'], badge: 'groups' },
   { to: '/admin/clubs', label: 'Club approvals', icon: BadgeCheck, roles: ['admin'] },
   { to: '/admin/academics', label: 'Academics', icon: BookOpenCheck, roles: ['admin', 'hod'] },
   { to: '/admin/activity', label: 'Activity log', icon: Activity, roles: ['admin'] },
@@ -97,7 +98,7 @@ export default function Sidebar() {
   const campusItems = CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
   const adminItems = ADMIN.filter((i) => i.roles.includes(user?.role));
   const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user });
-  const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: user?.role !== 'admin', pollingInterval: 60000 });
+  const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: !['admin', 'principal'].includes(user?.role), pollingInterval: 60000 });
 
   const onLogout = async () => {
     try {

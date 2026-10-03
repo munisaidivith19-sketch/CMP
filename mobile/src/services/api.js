@@ -121,6 +121,9 @@ export const api = createApi({
     deleteMessage: b.mutation({ query: ({ id, msgId }) => ({ url: `/chat/conversations/${id}/messages/${msgId}`, method: 'DELETE' }) }),
     getGroupRequests: b.query({ query: (params) => ({ url: '/chat/requests', params }), providesTags: ['ChatRequest'] }),
     reviewGroupRequest: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/requests/${id}`, method: 'PATCH', body }), invalidatesTags: ['ChatRequest', 'Chat', 'Notification'] }),
+    // HOD group builder: own-department years/sections, and every student of one class.
+    getPeopleFilters: b.query({ query: () => '/users/people-filters', providesTags: ['User'] }),
+    getGroupClass: b.query({ query: (params) => ({ url: '/chat/group-class', params }), providesTags: ['User'] }),
 
     // ── Timetable / attendance ────────────────────────
     // Faculty may pass { scope: 'class' } (Our Class) or { scope: 'handling' };
@@ -247,6 +250,8 @@ export const {
   useCreateAdminUserMutation,
   useGetGroupRequestsQuery,
   useReviewGroupRequestMutation,
+  useGetPeopleFiltersQuery,
+  useGetGroupClassQuery,
   useGetGatePassesQuery,
   useGetGatePassQuery,
   useGetGatePassQrQuery,

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { env } from './env.js';
 import { authenticateAccessToken } from '../middleware/auth.js';
 import Conversation from '../models/Conversation.js';
+import { privateChatAllowed } from '../utils/chatScope.js';
 import Discussion from '../models/Discussion.js';
 import User from '../models/User.js';
 import { markConversationRead } from '../services/chatService.js';
@@ -87,8 +88,14 @@ export function initSocket(httpServer) {
     // ── Chat: a room is joined only after membership is checked in MongoDB ──
     socket.on('chat:join', async (conversationId, cb) => {
       if (!mongoose.isValidObjectId(conversationId)) return ack(cb, { ok: false, error: 'invalid' });
-      const member = await Conversation.exists({ _id: conversationId, participants: userId, isActive: true }).catch(() => null);
-      if (!member) return ack(cb, { ok: false, error: 'forbidden' });
+      const conv = await Conversation.findOne({ _id: conversationId, participants: userId, isActive: true }).select('type participants').lean().catch(() => null);
+      if (!conv) return ack(cb, { ok: false, error: 'forbidden' });
+      // A private chat outside the chat scope (either direction) is closed live too.
+      if (conv.type === 'private') {
+        const other = conv.participants.find((p) => String(p) !== String(userId));
+        const me = await User.findById(userId).select('role department year section semester inChargeYear inChargeSemester').lean().catch(() => null);
+        if (!me || (other && !(await privateChatAllowed(me, other).catch(() => false)))) return ack(cb, { ok: false, error: 'forbidden' });
+      }
       socket.join(`chat:${conversationId}`);
       return ack(cb, { ok: true });
     });

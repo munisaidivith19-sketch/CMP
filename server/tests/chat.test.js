@@ -5,12 +5,19 @@ import { startServer, nextEvent, noEvent, emitAck } from './helpers.js';
 let ctx;
 let A; // student on the web
 let B; // student on Android (mobile protocol)
-let C; // unrelated student
+let C; // unrelated student (same class, but not in A and B's conversation)
 let convId;
 
 before(async () => {
   ctx = await startServer();
-  const [ua, ub, uc] = await Promise.all([ctx.createUser({ name: 'Alice' }), ctx.createUser({ name: 'Bala' }), ctx.createUser({ name: 'Chitra' })]);
+  // Students may only start chats with their own classmates, so the three
+  // share one class; "outsider" below means outside a conversation.
+  const cls = { department: 'CSE', section: 'A', year: 3, semester: 5 };
+  const [ua, ub, uc] = await Promise.all([
+    ctx.createUser({ name: 'Alice', ...cls }),
+    ctx.createUser({ name: 'Bala', ...cls }),
+    ctx.createUser({ name: 'Chitra', ...cls }),
+  ]);
   A = { user: ua, ...(await ctx.loginWeb(ua)) };
   B = { user: ub, ...(await ctx.loginMobile(ub)) };
   C = { user: uc, ...(await ctx.loginWeb(uc)) };
@@ -167,25 +174,29 @@ test('groups: students cannot create groups; admin groups start at once and memb
   await added;
 });
 
-test('groups: faculty class groups wait for admin approval; HOD/faculty are limited to their department/class', async () => {
-  const [admin, fac, hod, cseA, cseB, ece] = await Promise.all([
+test('groups: faculty groups wait for the admin, HOD groups for the principal; both limited to their scope', async () => {
+  const [admin, fac, hod, cseA, cseB, ece, principal] = await Promise.all([
     ctx.createUser({ role: 'admin', name: 'Admin Two' }),
     ctx.createUser({ role: 'faculty', name: 'Fac', department: 'CSE', section: 'A' }),
     ctx.createUser({ role: 'hod', name: 'Hod', department: 'CSE' }),
     ctx.createUser({ name: 'Cse A', department: 'CSE', section: 'A' }),
     ctx.createUser({ name: 'Cse B', department: 'CSE', section: 'B' }),
     ctx.createUser({ name: 'Ece', department: 'ECE', section: 'A' }),
+    ctx.createUser({ role: 'principal', name: 'Principal', employeeId: 'P-CHAT' }),
   ]);
-  const [a, f, h, s] = await Promise.all([ctx.loginWeb(admin), ctx.loginWeb(fac), ctx.loginWeb(hod), ctx.loginWeb(cseA)]);
+  const [a, f, h, s, p] = await Promise.all([ctx.loginWeb(admin), ctx.loginWeb(fac), ctx.loginWeb(hod), ctx.loginWeb(cseA), ctx.loginWeb(principal)]);
 
   // Faculty: only their own class.
   const wrongClass = await ctx.request('POST', '/chat/conversations', { token: f.token, body: { type: 'group', name: 'X', participantIds: [String(cseB._id)] } });
   assert.equal(wrongClass.status, 403);
   // HOD: only their department.
-  const wrongDept = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { type: 'group', name: 'Y', participantIds: [String(ece._id)] } });
+  const hodBody = { type: 'group', category: 'custom', reason: 'Department announcements' };
+  const wrongDept = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { ...hodBody, name: 'Y', participantIds: [String(ece._id)] } });
   assert.equal(wrongDept.status, 403);
-  const hodGroup = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { type: 'group', name: 'CSE all', participantIds: [String(cseA._id), String(cseB._id)] } });
-  assert.equal(hodGroup.status, 201, 'HOD groups start immediately');
+  const hodGroup = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { ...hodBody, name: 'CSE all', participantIds: [String(cseA._id), String(cseB._id)] } });
+  assert.equal(hodGroup.status, 202, 'HOD groups wait for the principal');
+  const approved = await ctx.request('PATCH', `/chat/requests/${hodGroup.body._id}`, { token: p.token, body: { action: 'approve' } });
+  assert.equal(approved.body.status, 'active');
 
   // Faculty class group → pending, invisible to members until approved.
   const req = await ctx.request('POST', '/chat/conversations', { token: f.token, body: { type: 'group', name: 'CSE-A class', participantIds: [String(cseA._id)] } });

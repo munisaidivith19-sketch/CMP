@@ -132,6 +132,9 @@ export const LOST_FOUND_STATUSES = [
 
 // ── Chat ────────────────────────────────────────────────────────────
 export const CONVERSATION_TYPES = ['private', 'group', 'class', 'club'];
+// HOD group kinds: custom (own-department students across years/sections +
+// faculty), academic (one class + faculty), faculty (staff only).
+export const GROUP_CATEGORIES = ['custom', 'academic', 'faculty'];
 
 // ── Attendance ──────────────────────────────────────────────────────
 export const ATTENDANCE_STATUSES = ['present', 'absent'];

@@ -17,8 +17,10 @@ export default function ChatList() {
   const [presence, setPresence] = useState({});
   const [typing, setTyping] = useState({});
   const { data, isLoading, isFetching, error, refetch } = useGetConversationsQuery(search ? { search } : undefined);
-  // Faculty / HOD see their own pending or rejected group requests; admins see what waits for approval.
-  const { data: requests = [] } = useGetGroupRequestsQuery(undefined, { skip: !['admin', 'hod', 'faculty'].includes(me.role) });
+  // Faculty / HOD see their own pending or rejected group requests; the admin
+  // and the principal see what waits for their approval.
+  const reviewer = ['admin', 'principal'].includes(me.role);
+  const { data: requests = [] } = useGetGroupRequestsQuery(undefined, { skip: !['admin', 'principal', 'hod', 'faculty'].includes(me.role) });
 
   useSocketEvent('presence:update', ({ userId, online }) => setPresence((p) => ({ ...p, [userId]: online })));
   useSocketEvent('chat:typing', ({ conversationId, isTyping }) => setTyping((t) => ({ ...t, [conversationId]: isTyping })));
@@ -44,7 +46,7 @@ export default function ChatList() {
           onRefresh={refetch}
           contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 30 }}
           ListHeaderComponent={
-            search || !requests.length ? null : me.role === 'admin' ? (
+            search || !requests.length ? null : reviewer ? (
               <Pressable onPress={() => router.push('/admin/chat-requests')} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, marginBottom: 6, borderRadius: 20, backgroundColor: colors.warningSoft }}>
                 <ShieldCheck size={22} color="#b45309" />
                 <T v="strong" style={{ flex: 1, color: '#b45309' }}>
@@ -63,7 +65,7 @@ export default function ChatList() {
                         {r.name}
                       </T>
                       <T v="small" numberOfLines={1} style={{ color: r.status === 'pending' ? '#b45309' : colors.danger }}>
-                        {r.status === 'pending' ? 'Waiting for admin approval' : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
+                        {r.status === 'pending' ? `Waiting for ${me.role === 'hod' ? 'principal' : 'admin'} approval` : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
                       </T>
                     </View>
                   </View>

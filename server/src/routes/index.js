@@ -24,6 +24,7 @@ import {
   WEEKDAYS,
   ATTENDANCE_STATUSES,
   CONVERSATION_TYPES,
+  GROUP_CATEGORIES,
   STAY_TYPES,
   STAFF_ROLES,
   NO_DEPARTMENT_ROLES,
@@ -546,10 +547,12 @@ router.get('/chat/unread', chat.getUnreadTotal);
 router.get('/chat/search', query('q').optional().isString().isLength({ max: 64 }), validate, chat.searchMessages);
 router.get('/chat/users/online', chat.getOnlineUsers);
 router.get('/chat/requests', query('status').optional().isIn(['pending', 'all']), validate, chat.listGroupRequests);
+// HOD group requests are approved by the principal; an admin reviews any
+// request (faculty requests included). The controller enforces which.
 router.patch(
   '/chat/requests/:id',
   idParam('id'),
-  authorize('admin'),
+  authorize('admin', 'principal'),
   body('action').isIn(['approve', 'reject']).withMessage('Choose approve or reject'),
   body('reason').optional().trim().isLength({ max: 300 }),
   validate,
@@ -563,10 +566,33 @@ router.post(
   body('participantIds.*').isMongoId(),
   body('name').optional().trim().isLength({ max: 100 }),
   body('description').optional().trim().isLength({ max: 300 }),
+  // HOD groups: Custom / Academics / Faculty, and why it is needed (for the principal).
+  body('category').optional({ values: 'falsy' }).isIn(GROUP_CATEGORIES).withMessage('Choose Custom, Academics or Faculty'),
+  body('reason').optional().trim().isLength({ max: 500 }),
   validate,
   chat.createConversation
 );
+// HOD group builder: every student of one class in the HOD's own department.
+router.get(
+  '/chat/group-class',
+  authorize('hod', 'admin'),
+  query('year').isIn(ACADEMIC_YEARS).withMessage('Choose a year'),
+  query('section').trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a section'),
+  query('department').optional().trim().isLength({ max: 80 }),
+  validate,
+  chat.groupClassStudents
+);
 router.get('/chat/conversations/:id', idParam('id'), chat.getConversation);
+// Rename / delete a group — its group admin (the creator) only.
+router.patch(
+  '/chat/conversations/:id',
+  idParam('id'),
+  body('name').optional().trim().isLength({ min: 2, max: 100 }),
+  body('description').optional().trim().isLength({ max: 300 }),
+  validate,
+  chat.updateGroup
+);
+router.delete('/chat/conversations/:id', idParam('id'), chat.deleteGroup);
 router.get(
   '/chat/conversations/:id/messages',
   idParam('id'),

@@ -146,7 +146,7 @@ export default function App() {
             <Route path="admin/activity" element={<RequireAuth roles={['admin']}><AdminActivity /></RequireAuth>} />
             <Route path="admin/academics" element={<RequireAuth roles={['admin', 'hod']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
-            <Route path="admin/chat-requests" element={<RequireAuth roles={['admin']}><AdminChatRequests /></RequireAuth>} />
+            <Route path="admin/chat-requests" element={<RequireAuth roles={['admin', 'principal']}><AdminChatRequests /></RequireAuth>} />
             <Route path="dev/otp" element={<RequireAuth roles={['admin']}><DevOtpPortal /></RequireAuth>} />
             <Route path="settings/security" element={<Security />} />
             <Route path="chat" element={<Chat />} />

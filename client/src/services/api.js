@@ -273,6 +273,11 @@ export const api = createApi({
       query: ({ id, userId }) => ({ url: `/chat/conversations/${id}/members/${userId}`, method: 'DELETE' }),
       invalidatesTags: ['Chat'],
     }),
+    // Group admin (the creator) only: rename / delete a group.
+    updateGroup: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/conversations/${id}`, method: 'PATCH', body }), invalidatesTags: ['Chat'] }),
+    deleteGroup: b.mutation({ query: (id) => ({ url: `/chat/conversations/${id}`, method: 'DELETE' }), invalidatesTags: ['Chat'] }),
+    // HOD group builder: every student of one class in the HOD's department.
+    getGroupClass: b.query({ query: (params) => ({ url: '/chat/group-class', params }), providesTags: ['User'] }),
 
     // ── Attendance ────────────────────────────────────
     getMyAttendance: b.query({ query: (params) => ({ url: '/attendance/my', params }), providesTags: ['Attendance'] }),
@@ -492,6 +497,9 @@ export const {
   useMarkConversationReadMutation,
   useSearchMessagesQuery,
   useAddChatMembersMutation,
+  useUpdateGroupMutation,
+  useDeleteGroupMutation,
+  useGetGroupClassQuery,
   useLeaveConversationMutation,
   useGetMyAttendanceQuery,
   useGetAttendanceRecordsQuery,

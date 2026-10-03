@@ -43,7 +43,8 @@ export const yearOfSemester = (semester) => Math.ceil(Number(semester) / 2);
 // ── Timetable ───────────────────────────────────────────────────────
 // Warden and Security have zero timetable access (view, write, sockets,
 // notifications) — every other role keeps its existing visibility.
-export const TIMETABLE_BLOCKED_ROLES = ['warden', 'security'];
+// Alumni are graduates outside the campus academic system: no timetable either.
+export const TIMETABLE_BLOCKED_ROLES = ['warden', 'security', 'alumni'];
 export const TIMETABLE_VIEW_ROLES = ROLES.filter((r) => !TIMETABLE_BLOCKED_ROLES.includes(r));
 // Admin manages the whole college; HOD is restricted to their own department
 // (enforced in the controller, never trusting a client-supplied department).
@@ -51,7 +52,8 @@ export const TIMETABLE_WRITE_ROLES = ['admin', 'hod'];
 
 // ── Study Materials ─────────────────────────────────────────────────
 // Same "no access at all" roles as the timetable.
-export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security'];
+// Alumni must not read current students' course material or run the Study Assistant on it.
+export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni'];
 export const STUDY_MATERIAL_VIEW_ROLES = ROLES.filter((r) => !STUDY_MATERIAL_BLOCKED_ROLES.includes(r));
 // Upload/edit/delete: faculty only for their own current timetable assignment,
 // HOD only within their own department, admin college-wide — enforced in the

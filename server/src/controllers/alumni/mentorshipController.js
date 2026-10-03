@@ -14,6 +14,14 @@ import { env } from '../../config/env.js';
 
 const PUBLIC_USER_FIELDS = 'name email role department year avatar phone designation employeeId rollNo';
 
+/** A session as `viewerId` may see it: the alumnus's private notes are theirs alone. */
+function sessionFor(session, viewerId) {
+  const s = session && typeof session.toObject === 'function' ? session.toObject() : { ...session };
+  const alumniId = s.alumni?._id || s.alumni;
+  if (!sameId(alumniId, viewerId)) delete s.alumniPrivateNotes;
+  return s;
+}
+
 // ── POST /api/mentorship-requests ──────────────────────────────────
 export const createRequest = asyncHandler(async (req, res) => {
   const { alumni: alumniId, domain, message } = req.body;
@@ -132,7 +140,7 @@ export const getRequestById = asyncHandler(async (req, res) => {
     .lean();
 
   const out = request.toObject();
-  out.sessions = sessions;
+  out.sessions = sessions.map((s) => sessionFor(s, user._id));
 
   res.json(out);
 });
@@ -370,15 +378,19 @@ export const messageMentor = asyncHandler(async (req, res) => {
 
   const otherId = sameId(reqDoc.student, user._id) ? reqDoc.alumni : reqDoc.student;
 
+  // Same shape Chat uses for a private conversation (it has no `isGroup`
+  // field), so the mentor chat is the one Chat opens and lists.
   let conv = await Conversation.findOne({
-    isGroup: false,
+    type: 'private',
+    isActive: true,
     participants: { $all: [user._id, otherId], $size: 2 },
   });
 
   if (!conv) {
     conv = await Conversation.create({
+      type: 'private',
       participants: [user._id, otherId],
-      isGroup: false,
+      createdBy: user._id,
     });
   }
 
@@ -402,7 +414,15 @@ export const listSlots = asyncHandler(async (req, res) => {
   }
 
   const slots = await MentorshipSlot.find(filter).sort({ startsAt: 1 }).lean();
-  res.json(slots);
+  // A slot's join link is for its mentor; the student receives it on the
+  // session they book. Listing open slots must not hand it to every user.
+  res.json(
+    slots.map((s) => {
+      if (sameId(s.alumni, req.user._id)) return s;
+      const { meetingLink: _link, bookedBy: _by, ...rest } = s;
+      return rest;
+    })
+  );
 });
 
 export const createSlots = asyncHandler(async (req, res) => {
@@ -596,8 +616,9 @@ export const rescheduleSession = asyncHandler(async (req, res) => {
     link: '/alumni?tab=mentorship',
   });
 
-  emitToUsers([session.student, session.alumni], 'alumni:session', session.toJSON());
-  res.json(session);
+  emitToUsers([session.student], 'alumni:session', sessionFor(session, session.student));
+  emitToUsers([session.alumni], 'alumni:session', sessionFor(session, session.alumni));
+  res.json(sessionFor(session, user._id));
 });
 
 export const cancelSession = asyncHandler(async (req, res) => {
@@ -638,8 +659,9 @@ export const cancelSession = asyncHandler(async (req, res) => {
     link: '/alumni?tab=mentorship',
   });
 
-  emitToUsers([session.student, session.alumni], 'alumni:session', session.toJSON());
-  res.json(session);
+  emitToUsers([session.student], 'alumni:session', sessionFor(session, session.student));
+  emitToUsers([session.alumni], 'alumni:session', sessionFor(session, session.alumni));
+  res.json(sessionFor(session, user._id));
 });
 
 export const completeSession = asyncHandler(async (req, res) => {
@@ -689,5 +711,5 @@ export const updateSessionNotes = asyncHandler(async (req, res) => {
   }
 
   await session.save();
-  res.json(session);
+  res.json(sessionFor(session, user._id));
 });

@@ -240,6 +240,11 @@ export const reopenJob = asyncHandler(async (req, res) => {
   if (!sameId(job.postedBy, user._id) && user.role !== 'admin') {
     throw new ApiError(403, 'Permission denied');
   }
+  // A poster reopens only what they closed (or what expired). A job removed by
+  // staff, or still awaiting review, is not theirs to put back online.
+  if (user.role !== 'admin' && !['closed', 'expired'].includes(job.status)) {
+    throw new ApiError(403, `A ${job.status.replace('_', ' ')} job cannot be reopened`);
+  }
 
   job.status = 'open';
   await job.save();

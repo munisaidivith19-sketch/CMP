@@ -222,6 +222,9 @@ alumniRouter.get('/dashboard', authorize('alumni'), alumniDashboard.getAlumniDas
 alumniRouter.get('/me', alumniProfile.getMyProfile);
 alumniRouter.put(
   '/me',
+  // Only alumni accounts have an alumni profile — a student must not be able
+  // to create one (and so pose as a graduate in the directory).
+  authorize('alumni'),
   writeLimiter,
   body('gradYear').optional({ values: 'null' }).isInt({ min: 1970, max: new Date().getFullYear() + 1 }),
   body('company').optional().trim().isLength({ max: 120 }),
@@ -287,7 +290,11 @@ alumniRouter.post(
   authorize('student'),
   writeLimiter,
   body('note').optional().trim().isLength({ max: 500 }),
-  body('resumeUrl').optional({ values: 'falsy' }).isString(),
+  // A web link only: javascript:/data: URLs would run in the poster's browser.
+  body('resumeUrl')
+    .optional({ values: 'falsy' })
+    .isURL({ protocols: ['http', 'https'], require_protocol: true })
+    .withMessage('Resume link must be an http(s) URL'),
   body('referralRequested').optional().isBoolean(),
   validate,
   alumniJobs.applyToJob

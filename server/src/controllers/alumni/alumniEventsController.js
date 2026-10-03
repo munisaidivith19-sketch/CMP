@@ -4,7 +4,7 @@ import AlumniProfile from '../../models/AlumniProfile.js';
 import User from '../../models/User.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../../utils/http.js';
 import { logActivity } from '../../utils/activity.js';
-import { notifyUsers } from '../../utils/notify.js';
+import { notifyRoles, notifyUsers } from '../../utils/notify.js';
 import { emitToUsers } from '../../config/socket.js';
 import { sameId } from '../../utils/permissions.js';
 import { env } from '../../config/env.js';
@@ -63,11 +63,19 @@ export const listEvents = asyncHandler(async (req, res) => {
 
   if (search && search.trim()) {
     const q = escapeRegex(search.trim());
-    filter.$or = [
+    const searchOr = [
       { title: new RegExp(q, 'i') },
       { description: new RegExp(q, 'i') },
       { venue: new RegExp(q, 'i') },
     ];
+    // AND the search with the visibility rule — assigning filter.$or here used
+    // to replace it, exposing other people's pending / rejected proposals.
+    if (filter.$or) {
+      filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
+      delete filter.$or;
+    } else {
+      filter.$or = searchOr;
+    }
   }
 
   const [items, total] = await Promise.all([
@@ -235,6 +243,8 @@ export const approveEvent = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const event = await AlumniEvent.findById(id);
   if (!event) throw new ApiError(404, 'Event not found');
+  // Only a proposal can be approved — not a cancelled or rejected event.
+  if (event.status !== 'pending_approval') throw new ApiError(409, 'Only pending event proposals can be approved');
 
   event.status = 'scheduled';
   event.reviewedBy = req.user._id;
@@ -256,6 +266,7 @@ export const rejectEvent = asyncHandler(async (req, res) => {
   const { reason } = req.body;
   const event = await AlumniEvent.findById(id);
   if (!event) throw new ApiError(404, 'Event not found');
+  if (event.status !== 'pending_approval') throw new ApiError(409, 'Only pending event proposals can be rejected');
 
   event.status = 'rejected';
   event.reviewedBy = req.user._id;

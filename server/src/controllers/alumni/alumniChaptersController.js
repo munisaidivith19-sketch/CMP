@@ -12,6 +12,26 @@ import { sameId } from '../../utils/permissions.js';
 
 const PUBLIC_USER_FIELDS = 'name email role department year avatar designation';
 
+const CHAPTER_STAFF = ['admin', 'hod', 'principal'];
+
+/**
+ * Who may read a chapter's content (posts, members, comments): anyone for a
+ * public chapter, but only active members and staff for a private one — the
+ * same rule getChapterBySlug already applies to the chapter itself.
+ */
+async function assertCanRead(chapter, user) {
+  if (!chapter.isPrivate || CHAPTER_STAFF.includes(user.role)) return;
+  const mem = await ChapterMember.findOne({ chapter: chapter._id, user: user._id, status: 'active' }).lean();
+  if (!mem) throw new ApiError(403, 'This is a private chapter');
+}
+
+/** Taking part (commenting, liking) is for active members — as posting is. */
+async function assertCanParticipate(chapterId, user) {
+  if (user.role === 'admin') return;
+  const mem = await ChapterMember.findOne({ chapter: chapterId, user: user._id, status: 'active' }).lean();
+  if (!mem) throw new ApiError(403, 'Join this chapter to take part');
+}
+
 function slugify(text) {
   return text
     .toString()
@@ -197,6 +217,9 @@ export const joinChapter = asyncHandler(async (req, res) => {
   if (membership && membership.status === 'active') {
     return res.json(membership);
   }
+  if (membership?.status === 'removed') {
+    throw new ApiError(403, 'You were removed from this chapter by a moderator');
+  }
 
   const assignedStatus = chapter.isPrivate ? 'pending' : 'active';
 
@@ -224,7 +247,7 @@ export const leaveChapter = asyncHandler(async (req, res) => {
   const chapter = await Chapter.findOne({ slug });
   if (!chapter) throw new ApiError(404, 'Chapter not found');
 
-  const membership = await ChapterMember.findOneAndDelete({ chapter: chapter._id, user: req.user._id });
+  const membership = await ChapterMember.findOneAndDelete({ chapter: chapter._id, user: req.user._id, status: { $ne: 'removed' } });
   if (membership && membership.status === 'active') {
     await Chapter.updateOne({ _id: chapter._id, memberCount: { $gt: 0 } }, { $inc: { memberCount: -1 } });
   }
@@ -248,9 +271,14 @@ export const approveMember = asyncHandler(async (req, res) => {
   if (!target) throw new ApiError(404, 'Membership request not found');
 
   const wasPending = target.status === 'pending';
+  const wasActive = target.status === 'active';
   if (status) target.status = status;
   if (role) target.role = role;
   await target.save();
+
+  if (wasActive && status === 'removed') {
+    await Chapter.updateOne({ _id: chapter._id, memberCount: { $gt: 0 } }, { $inc: { memberCount: -1 } });
+  }
 
   if (wasPending && status === 'active') {
     await Chapter.updateOne({ _id: chapter._id }, { $inc: { memberCount: 1 } });
@@ -271,6 +299,7 @@ export const listMembers = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const chapter = await Chapter.findOne({ slug });
   if (!chapter) throw new ApiError(404, 'Chapter not found');
+  await assertCanRead(chapter, req.user);
 
   const members = await ChapterMember.find({ chapter: chapter._id, status: 'active' })
     .populate('user', PUBLIC_USER_FIELDS)
@@ -287,6 +316,7 @@ export const listPosts = asyncHandler(async (req, res) => {
 
   const chapter = await Chapter.findOne({ slug, archived: false });
   if (!chapter) throw new ApiError(404, 'Chapter not found');
+  await assertCanRead(chapter, req.user);
 
   const filter = { chapter: chapter._id, deletedAt: null };
 
@@ -403,6 +433,7 @@ export const toggleLikePost = asyncHandler(async (req, res) => {
 
   const post = await ChapterPost.findById(id);
   if (!post || post.deletedAt) throw new ApiError(404, 'Post not found');
+  await assertCanParticipate(post.chapter, user);
 
   const hasLiked = post.likes.some((uid) => sameId(uid, user._id));
 
@@ -424,6 +455,12 @@ export const toggleLikePost = asyncHandler(async (req, res) => {
 // ── Comments ───────────────────────────────────────────────────────
 export const listComments = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const post = await ChapterPost.findById(id).select('chapter deletedAt').lean();
+  if (!post || post.deletedAt) throw new ApiError(404, 'Post not found');
+  const chapter = await Chapter.findById(post.chapter).select('isPrivate').lean();
+  if (!chapter) throw new ApiError(404, 'Chapter not found');
+  await assertCanRead(chapter, req.user);
+
   const comments = await ChapterComment.find({ post: id, deletedAt: null })
     .populate('author', PUBLIC_USER_FIELDS)
     .sort({ createdAt: 1 })
@@ -439,6 +476,7 @@ export const addComment = asyncHandler(async (req, res) => {
 
   const post = await ChapterPost.findById(id);
   if (!post || post.deletedAt) throw new ApiError(404, 'Post not found');
+  await assertCanParticipate(post.chapter, user);
 
   const comment = await ChapterComment.create({
     post: post._id,

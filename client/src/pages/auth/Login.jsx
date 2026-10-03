@@ -11,13 +11,6 @@ import { useLoginMutation } from '../../services/api';
 import { setCredentials } from '../../features/authSlice';
 import { errMsg } from '../../utils/format';
 
-const DEMO = [
-  { label: 'Student', email: 'aarav.sharma@jnn.edu.in' },
-  { label: 'Faculty', email: 'ananya.iyer@jnn.edu.in' },
-  { label: 'HOD', email: 'venkatesh.kumar@jnn.edu.in' },
-  { label: 'Alumni', email: 'karthik.alumni@campus.edu' },
-];
-
 function formatCountdown(totalSecs) {
   if (totalSecs <= 0) return '00:00';
   const m = Math.floor(totalSecs / 60);
@@ -54,7 +47,6 @@ export default function Login() {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm({ defaultValues: { email: '', password: '' } });
 
@@ -204,26 +196,6 @@ export default function Login() {
           {lockout.isLocked ? `Locked (${formatCountdown(lockout.secondsLeft)})` : 'Sign in'}
         </Button>
       </form>
-
-      <div className="mt-8 rounded-3xl bg-primary-500/[0.06] p-4">
-        <p className="text-xs font-bold uppercase tracking-wide muted">Demo accounts · password Password@123</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {DEMO.map((d) => (
-            <button
-              key={d.email}
-              type="button"
-              disabled={lockout.isLocked}
-              className="chip disabled:opacity-40"
-              onClick={() => {
-                setValue('email', d.email);
-                setValue('password', 'Password@123');
-              }}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-      </div>
     </AuthShell>
   );
 }

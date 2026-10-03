@@ -19,7 +19,6 @@ const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r))
 const STUDY_MATERIAL_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
 
 import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
 import Dashboard from './pages/Dashboard';
 
 const Events = lazy(() => import('./pages/events/Events'));
@@ -123,7 +122,6 @@ export default function App() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
-          <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
           <Route path="/forgot-password" element={<GuestOnly><ForgotPassword /></GuestOnly>} />
           {/* Reachable while signed in too: the emailed link must always work. */}
           <Route path="/reset-password" element={<ResetPassword />} />

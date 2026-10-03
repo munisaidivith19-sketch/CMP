@@ -182,6 +182,9 @@ export const createGatePass = asyncHandler(async (req, res) => {
 
 export const listGatePasses = asyncHandler(async (req, res) => {
   const { role } = req.user;
+  // Alumni are not part of the campus gate-pass workflow; without this they
+  // would match no branch below and the empty filter would list every pass.
+  if (role === 'alumni') throw new ApiError(403, 'Not authorized');
   let filter = {};
 
   if (STUDENT_ROLES.includes(role)) {

@@ -49,8 +49,8 @@ export const STUDY_MATERIAL_CATEGORY_LABELS = {
   assignment: 'Assignment',
   other: 'Other',
 };
-// Warden/Security have no access to Study Materials, same as the timetable.
-export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security'];
+// Warden/Security/Alumni have no access to Study Materials, same as the timetable.
+export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni'];
 
 export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 /** Roles that can add, edit and delete timetable periods (HOD: own department only). */

@@ -212,7 +212,9 @@ export const login = asyncHandler(async (req, res) => {
       });
     }
 
-    throw new ApiError(401, `Invalid email or password. ${anonRes.remainingAttempts} attempt(s) remaining before temporary lockout.`, null, {
+    // Word this exactly like the real-account failure below: any difference in
+    // the message tells an attacker which emails have accounts.
+    throw new ApiError(401, `Invalid email or password. ${anonRes.remainingAttempts} attempt(s) remaining before ${anonRes.nextLockMinutes}-minute lock.`, null, {
       remainingAttempts: anonRes.remainingAttempts,
       nextLockMinutes: anonRes.nextLockMinutes,
     });

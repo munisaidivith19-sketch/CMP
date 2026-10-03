@@ -8,7 +8,8 @@ const chapterMemberSchema = new Schema(
     chapter: { type: Schema.Types.ObjectId, ref: 'Chapter', required: true, index: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     role: { type: String, enum: CHAPTER_ROLES, default: 'member' },
-    status: { type: String, enum: ['active', 'pending'], default: 'active', index: true },
+    // 'removed' = taken out by a moderator; kept (not deleted) so they cannot re-join at will.
+    status: { type: String, enum: ['active', 'pending', 'removed'], default: 'active', index: true },
   },
   { timestamps: true, toJSON: { versionKey: false } }
 );

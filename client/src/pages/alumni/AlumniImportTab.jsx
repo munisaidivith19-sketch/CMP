@@ -54,10 +54,13 @@ export default function AlumniImportTab() {
   // RTK Query
   const [previewImport, { isLoading: isUploading }] = usePreviewImportMutation();
   const [commitImport, { isLoading: isCommitting }] = useCommitImportMutation();
-  const { data: invites = [], isLoading: isLoadingInvites, refetch: refetchInvites } = useGetInvitesQuery({
+  // The invites endpoint is paginated: { items, total, ... }, not a bare array.
+  const { data: invitesPage, isLoading: isLoadingInvites, refetch: refetchInvites } = useGetInvitesQuery({
     search: inviteSearch.trim() || undefined,
     status: inviteStatus || undefined,
   });
+  const invites = Array.isArray(invitesPage) ? invitesPage : invitesPage?.items ?? [];
+  const totals = batchData?.totals;
   const [resendInvite] = useResendInviteMutation();
   const [revokeInvite] = useRevokeInviteMutation();
 
@@ -100,8 +103,8 @@ export default function AlumniImportTab() {
     try {
       const res = await commitImport({ batchId: batchData._id, sendEmails }).unwrap();
       toast.success(`Batch processed! Created ${res.invitesCreated} alumni invitations.`);
-      if (res.claimLinksCsv) {
-        setDownloadLinksCsv(res.claimLinksCsv);
+      if (res.downloadLinksCsv) {
+        setDownloadLinksCsv(res.downloadLinksCsv);
       }
       setStep(3);
       refetchInvites();
@@ -243,23 +246,23 @@ export default function AlumniImportTab() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 text-center text-xs">
               <div className="rounded-2xl bg-slate-50 p-3 dark:bg-white/5">
                 <p className="muted font-bold">Total Rows</p>
-                <p className="text-xl font-extrabold mt-1">{batchData.summary?.total || 0}</p>
+                <p className="text-xl font-extrabold mt-1">{totals?.rows || 0}</p>
               </div>
               <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300">
                 <p className="font-bold">Valid & Ready</p>
-                <p className="text-xl font-extrabold mt-1">{batchData.summary?.valid || 0}</p>
+                <p className="text-xl font-extrabold mt-1">{totals?.valid || 0}</p>
               </div>
               <div className="rounded-2xl bg-rose-50 p-3 text-rose-800 dark:bg-rose-500/10 dark:text-rose-300">
                 <p className="font-bold">Invalid</p>
-                <p className="text-xl font-extrabold mt-1">{batchData.summary?.invalid || 0}</p>
+                <p className="text-xl font-extrabold mt-1">{totals?.invalid || 0}</p>
               </div>
               <div className="rounded-2xl bg-amber-50 p-3 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                 <p className="font-bold">Duplicates</p>
-                <p className="text-xl font-extrabold mt-1">{batchData.summary?.duplicates || 0}</p>
+                <p className="text-xl font-extrabold mt-1">{totals?.duplicates || 0}</p>
               </div>
               <div className="rounded-2xl bg-blue-50 p-3 text-blue-800 dark:bg-blue-500/10 dark:text-blue-300">
                 <p className="font-bold">Already Registered</p>
-                <p className="text-xl font-extrabold mt-1">{batchData.summary?.existing || 0}</p>
+                <p className="text-xl font-extrabold mt-1">{totals?.alreadyExist || 0}</p>
               </div>
             </div>
 
@@ -280,26 +283,26 @@ export default function AlumniImportTab() {
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                   {batchData.rows?.map((r, i) => (
                     <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
-                      <td className="p-3 text-slate-400">{r.rowNum || i + 1}</td>
+                      <td className="p-3 text-slate-400">{r.line || i + 1}</td>
                       <td className="p-3">
                         <Badge
                           color={
-                            r.status === 'valid'
+                            r.state === 'valid'
                               ? 'success'
-                              : r.status === 'exists'
+                              : r.state === 'exists'
                               ? 'info'
                               : 'danger'
                           }
                         >
-                          {r.status}
+                          {r.state}
                         </Badge>
                       </td>
-                      <td className="p-3 font-bold">{r.data?.name}</td>
-                      <td className="p-3">{r.data?.email}</td>
+                      <td className="p-3 font-bold">{r.name}</td>
+                      <td className="p-3">{r.email}</td>
                       <td className="p-3">
-                        {r.data?.department} ({r.data?.gradYear})
+                        {r.department} ({r.gradYear})
                       </td>
-                      <td className="p-3">{r.data?.company || '—'}</td>
+                      <td className="p-3">{r.company || '—'}</td>
                       <td className="p-3 text-rose-500">{r.errors?.join(', ') || '—'}</td>
                     </tr>
                   ))}
@@ -328,10 +331,10 @@ export default function AlumniImportTab() {
                   size="sm"
                   loading={isCommitting}
                   onClick={handleCommit}
-                  disabled={batchData.summary?.valid === 0}
+                  disabled={!totals?.valid}
                   className="font-bold"
                 >
-                  Confirm & Generate Invites ({batchData.summary?.valid || 0})
+                  Confirm & Generate Invites ({totals?.valid || 0})
                 </Button>
               </div>
             </div>

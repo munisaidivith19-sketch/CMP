@@ -15,11 +15,14 @@
  *    department's — plus the academic staff.
  *  - Admin, principal, chairman, dean, AO: anyone (college-wide roles).
  *  - Security / Warden: unchanged — anyone (their existing behaviour).
+ *  - Alumni: only the students they mentor (an accepted mentorship); a
+ *    student in turn may message their accepted mentors.
  *
  * Groups are deliberately outside this rule: a member of an approved group
  * sees its other members, because an authorised creator put them there.
  */
 import User from '../models/User.js';
+import MentorshipRequest from '../models/MentorshipRequest.js';
 import { COLLEGE_WIDE_ROLES } from '../constants.js';
 import {
   STUDENT_ROLES,
@@ -76,6 +79,8 @@ export async function chatContactFilter(user) {
         ...(user.semester ? { semester: { $in: [user.semester, null] } } : {}),
       });
     }
+    const mentors = await MentorshipRequest.find({ student: user._id, status: 'accepted' }).distinct('alumni');
+    if (mentors.length) or.push({ _id: { $in: mentors } });
     return { $or: or };
   }
 
@@ -86,6 +91,11 @@ export async function chatContactFilter(user) {
 
   if (user.role === 'hod') {
     return { $or: [staff, { role: { $in: STUDENT_ROLES }, department: ownDepartment(user) }] };
+  }
+
+  if (user.role === 'alumni') {
+    const mentees = await MentorshipRequest.find({ alumni: user._id, status: 'accepted' }).distinct('student');
+    return { _id: { $in: mentees } };
   }
 
   return { _id: null };

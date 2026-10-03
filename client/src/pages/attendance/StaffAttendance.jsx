@@ -100,8 +100,8 @@ const to12h = (t) => {
 };
 
 const PERIOD_STATUS = {
-  UPCOMING: { color: 'info', label: 'Upcoming', badgeClass: 'bg-sky-500/10 text-sky-400 border border-sky-500/20' },
-  ACTIVE: { color: 'success', label: 'In Progress', badgeClass: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' },
+  UPCOMING: { color: 'info', label: 'Upcoming', badgeClass: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border border-sky-500/20' },
+  ACTIVE: { color: 'success', label: 'In Progress', badgeClass: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 font-bold' },
   COMPLETED: { color: 'neutral', label: 'Completed', badgeClass: 'bg-white/5 text-ink-muted border border-white/10' },
 };
 
@@ -189,7 +189,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
       {(isHod || isAdmin) && unmarkedFaculty.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 text-sm text-amber-700 dark:text-amber-300">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400">
               <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
@@ -197,7 +197,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
               <p className="text-xs text-ink-muted">
                 {unmarkedFaculty.length} faculty member{unmarkedFaculty.length > 1 ? 's' : ''} in {me.department || 'the college'} haven't been marked today:
                 {' '}
-                <span className="font-medium text-amber-400">
+                <span className="font-medium text-amber-700 dark:text-amber-400">
                   {unmarkedFaculty.slice(0, 3).map((f) => f.name).join(', ')}
                   {unmarkedFaculty.length > 3 ? ` +${unmarkedFaculty.length - 3} more` : ''}
                 </span>
@@ -207,7 +207,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
           <Button
             size="sm"
             variant="outline"
-            className="text-amber-300 border-amber-500/30 hover:bg-amber-500/20 text-xs"
+            className="text-amber-800 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/20 text-xs"
             onClick={() => onQuickMark('faculty')}
           >
             Mark Faculty Now →
@@ -279,7 +279,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                       <button
                         type="button"
                         onClick={() => onQuickMark('mark', { slotId: p.slotId })}
-                        className="w-full rounded-xl bg-white/5 hover:bg-white/10 py-1 text-center text-xs font-semibold text-emerald-400 transition-colors"
+                        className="w-full rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 py-1 text-center text-xs font-semibold text-emerald-700 dark:text-emerald-400 transition-colors"
                       >
                         Review Marks →
                       </button>
@@ -403,10 +403,10 @@ function ClassSelectionWizard({
             >
               <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-ink-muted">
                 <span>Step {item.step}</span>
-                {done && <Check className="h-3 w-3 text-emerald-400" />}
+                {done && <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
               </div>
               <p className="font-bold text-xs mt-0.5 truncate">{item.title}</p>
-              <p className={cn('text-[11px] truncate', done ? 'text-emerald-400 font-semibold' : 'text-ink-muted')}>
+              <p className={cn('text-[11px] truncate', done ? 'text-emerald-700 dark:text-emerald-400 font-semibold' : 'text-ink-muted')}>
                 {item.value}
               </p>
             </div>
@@ -777,10 +777,10 @@ function MarkAttendance({ preset, onPresetUsed }) {
             {/* Attendance Bar */}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/5 border border-white/10 p-3">
               <div className="flex items-center gap-4 text-xs">
-                <span className="flex items-center gap-1.5 font-bold text-emerald-400">
+                <span className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
                   <CheckCircle2 className="h-4 w-4" /> {presentCount} Present
                 </span>
-                <span className="flex items-center gap-1.5 font-bold text-rose-400">
+                <span className="flex items-center gap-1.5 font-bold text-rose-700 dark:text-rose-400">
                   <XCircle className="h-4 w-4" /> {absentCount} Absent
                 </span>
                 <span className="text-ink-muted">({totalStudents} total students)</span>
@@ -930,7 +930,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
                           <span
                             className={cn(
                               'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold',
-                              isPresent ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                              isPresent ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-rose-500/20 text-rose-700 dark:text-rose-400'
                             )}
                           >
                             {isPresent ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
@@ -948,8 +948,8 @@ function MarkAttendance({ preset, onPresetUsed }) {
           {/* Sticky Bottom Save Action Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 p-4 bg-white/[0.02]">
             <p className="text-xs text-ink-muted">
-              Ready to submit: <span className="font-bold text-emerald-400">{presentCount} present</span>,{' '}
-              <span className="font-bold text-rose-400">{absentCount} absent</span>
+              Ready to submit: <span className="font-bold text-emerald-700 dark:text-emerald-400">{presentCount} present</span>,{' '}
+              <span className="font-bold text-rose-700 dark:text-rose-400">{absentCount} absent</span>
             </p>
             <Button
               onClick={submit}
@@ -1046,7 +1046,7 @@ function Sessions({ onOpen }) {
                 <p className="text-xs text-ink-muted mt-0.5">
                   {fmtClassDay(s.date, 'EEEE, dd MMM')} · Period {s.period}
                   {s.snapshot ? ` · ${to12h(s.snapshot.startTime)} – ${to12h(s.snapshot.endTime)}` : ''} ·{' '}
-                  <span className="font-semibold text-emerald-400">{s.present}</span> of {s.total} present
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-400">{s.present}</span> of {s.total} present
                   {s.edits ? ` · ${s.edits} edit${s.edits > 1 ? 's' : ''}` : ''}
                 </p>
               </div>
@@ -1223,7 +1223,7 @@ function LowAttendance() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-rose-400" />
+              <AlertTriangle className="h-5 w-5 text-rose-700 dark:text-rose-400" />
               <h3 className="text-base font-extrabold tracking-tight">Low Attendance Tracker</h3>
             </div>
             <p className="text-xs text-ink-muted mt-0.5">
@@ -1274,8 +1274,8 @@ function LowAttendance() {
                 className={cn(
                   'rounded-xl px-3 py-1.5 text-xs font-bold transition-all',
                   severityFilter === btn.id
-                    ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
-                    : 'bg-white/5 text-ink-soft hover:bg-white/10'
+                    ? 'bg-ink/10 text-ink font-bold shadow-sm ring-1 ring-ink/20 dark:bg-white/20 dark:text-white dark:ring-white/30'
+                    : 'bg-black/5 text-ink-soft hover:bg-black/10 dark:bg-white/5 dark:text-ink-soft dark:hover:bg-white/10'
                 )}
               >
                 {btn.label}
@@ -1355,7 +1355,7 @@ function LowAttendance() {
                     <p className="text-xs text-ink-muted truncate">
                       {r.student?.rollNo || '—'} · {r.student?.department}
                       {r.student?.section ? ` · Sec ${r.student.section}` : ''} ·{' '}
-                      <span className="font-semibold text-rose-400">{r.present}</span> of {r.total} periods attended
+                      <span className="font-semibold text-rose-700 dark:text-rose-400">{r.present}</span> of {r.total} periods attended
                     </p>
                   </div>
                 </button>
@@ -1717,7 +1717,7 @@ function ClassOverview() {
                       <td className="px-4 py-3 font-bold text-ink">{s.studentInfo.name}</td>
                       <td className="px-4 py-3 text-xs font-mono text-ink-muted">{s.studentInfo.rollNo || '—'}</td>
                       <td className="px-4 py-3 text-right text-xs">
-                        <span className="font-bold text-emerald-400">{s.presentPeriods}</span>
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400">{s.presentPeriods}</span>
                         <span className="text-ink-muted"> / {s.totalPeriods}</span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -1859,7 +1859,7 @@ export default function StaffAttendance() {
                           'flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all',
                           active
                             ? 'bg-primary-500 text-white font-bold'
-                            : 'text-ink-soft hover:bg-white/10 hover:text-ink'
+                            : 'text-ink-soft hover:bg-black/5 dark:hover:bg-white/10 hover:text-ink'
                         )}
                       >
                         <span>{t.label}</span>
@@ -1884,7 +1884,7 @@ export default function StaffAttendance() {
 
         {/* Informational calculation notice */}
         <p className="hidden md:flex items-center gap-1.5 text-[11px] text-ink-muted">
-          <Info className="h-3.5 w-3.5 text-primary-400" />
+          <Info className="h-3.5 w-3.5 text-primary-600 dark:text-primary-400" />
           <span>Attendance % is calculated as total present periods ÷ total conducted periods</span>
         </p>
       </div>
@@ -1912,7 +1912,7 @@ export default function StaffAttendance() {
       </div>
 
       <p className="flex items-center gap-1.5 text-xs text-ink-muted">
-        <AlertTriangle className="h-3.5 w-3.5 text-amber-400" /> Attendance % is always total present periods ÷ total conducted periods — never an average of subject percentages.
+        <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" /> Attendance % is always total present periods ÷ total conducted periods — never an average of subject percentages.
       </p>
     </div>
   );

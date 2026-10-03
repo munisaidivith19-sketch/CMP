@@ -38,7 +38,7 @@ function useClock() {
 /** Edit / delete buttons shown on a period for HOD and Admin. */
 function SlotActions({ slot, onEdit, onDelete, light }) {
   if (!onEdit) return null;
-  const btn = cn('rounded-lg p-1 transition-colors', light ? 'text-white/85 hover:bg-white/20' : 'text-ink-muted hover:bg-white');
+  const btn = cn('rounded-lg p-1 transition-colors', light ? 'text-white/85 hover:bg-white/20' : 'text-ink-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/10 dark:hover:text-ink');
   return (
     <div className="flex shrink-0 gap-0.5">
       <button type="button" className={btn} aria-label="Edit period" title="Edit period" onClick={() => onEdit(slot)}>
@@ -74,7 +74,7 @@ export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className={cn('text-[11px] font-bold uppercase tracking-wide', state === 'now' ? 'text-white/80' : 'text-primary-600')}>
+          <p className={cn('text-[11px] font-bold uppercase tracking-wide', state === 'now' ? 'text-white/90 font-extrabold' : 'text-primary-700 dark:text-primary-400')}>
             {slot.subject?.code} · P{slot.period}
           </p>
           <p className="truncate font-bold">{slot.subject?.name}</p>
@@ -519,7 +519,7 @@ export default function Timetable() {
                 <tr>
                   <th className="w-28 px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-ink-muted">Time</th>
                   {DAYS.map((d) => (
-                    <th key={d} className={cn('px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide', d === today ? 'text-primary-600' : 'text-ink-muted')}>
+                    <th key={d} className={cn('px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide', d === today ? 'text-primary-700 dark:text-primary-400' : 'text-ink-muted')}>
                       {DAY_SHORT[d]}
                     </th>
                   ))}

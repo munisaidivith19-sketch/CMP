@@ -7,9 +7,25 @@
 @layer base {
   :root {
     color-scheme: light;
+    --bg-app: #eef0fb;
+    --bg-surface: rgba(255, 255, 255, 0.65);
+    --bg-surface-hover: rgba(255, 255, 255, 0.85);
+    --text-primary: #1b1d3a;
+    --text-secondary: #3e4462;
+    --text-muted: #526077;
+    --border-subtle: rgba(255, 255, 255, 0.7);
+    --border-glass: rgba(255, 255, 255, 0.8);
   }
   .dark {
     color-scheme: dark;
+    --bg-app: #0f1021;
+    --bg-surface: rgba(27, 29, 58, 0.5);
+    --bg-surface-hover: rgba(27, 29, 58, 0.75);
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-glass: rgba(255, 255, 255, 0.12);
   }
   html {
     -webkit-tap-highlight-color: transparent;
@@ -55,7 +71,7 @@
       hover:-translate-y-0.5 hover:shadow-[0_14px_34px_-8px_rgba(108,93,211,0.7)] hover:brightness-110;
   }
   .btn-soft {
-    @apply bg-primary-500/10 text-primary-600 hover:bg-primary-500/20 dark:bg-primary-500/20 dark:text-primary-300
+    @apply bg-primary-500/10 text-primary-700 hover:bg-primary-500/20 dark:bg-primary-500/20 dark:text-primary-300
       dark:hover:bg-primary-500/30;
   }
   .btn-ghost {
@@ -66,12 +82,12 @@
       dark:border-white/15 dark:bg-ink/40 dark:text-primary-50 dark:hover:bg-white/10;
   }
   .btn-danger {
-    @apply bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white hover:shadow-[0_10px_24px_-8px_rgba(244,63,94,0.6)]
-      dark:bg-rose-500/20 dark:text-rose-400 dark:hover:bg-rose-500 dark:hover:text-white;
+    @apply bg-rose-500/10 text-rose-700 hover:bg-rose-600 hover:text-white hover:shadow-[0_10px_24px_-8px_rgba(244,63,94,0.6)]
+      dark:bg-rose-500/20 dark:text-rose-300 dark:hover:bg-rose-500 dark:hover:text-white;
   }
   .btn-success {
-    @apply bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white 
-      dark:bg-emerald-500/20 dark:text-emerald-400 dark:hover:bg-emerald-500 dark:hover:text-white;
+    @apply bg-emerald-500/10 text-emerald-700 hover:bg-emerald-600 hover:text-white 
+      dark:bg-emerald-500/20 dark:text-emerald-300 dark:hover:bg-emerald-500 dark:hover:text-white;
   }
   .btn-icon {
     @apply btn h-10 w-10 rounded-2xl p-0;
@@ -80,9 +96,9 @@
   /* ── Form controls ──────────────────────────────── */
   .input {
     @apply w-full rounded-2xl border border-white/80 bg-white/60 px-4 py-2.5 text-sm text-ink shadow-[inset_0_1px_2px_rgba(27,29,58,0.04)]
-      backdrop-blur-xl transition-all duration-300 ease-smooth placeholder:text-ink-muted
+      backdrop-blur-xl transition-all duration-300 ease-smooth placeholder:text-slate-500/80
       hover:bg-white/80 focus:border-primary-300 focus:bg-white/90 focus:outline-none focus:ring-4 focus:ring-primary-400/15
-      dark:border-white/10 dark:bg-ink/40 dark:text-primary-50 dark:placeholder:text-ink-soft dark:hover:bg-ink/60
+      dark:border-white/10 dark:bg-ink/40 dark:text-primary-50 dark:placeholder:text-slate-400/70 dark:hover:bg-ink/60
       dark:focus:border-primary-500/50 dark:focus:bg-ink/80;
   }
   .input-error {
@@ -115,8 +131,14 @@
       hover:bg-white/70 hover:text-ink dark:text-ink-muted dark:hover:bg-white/5 dark:hover:text-primary-50;
   }
   .nav-link-active {
-    @apply bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow hover:bg-primary-500 hover:text-white
-      dark:text-white dark:hover:bg-primary-500;
+    @apply bg-gradient-to-br from-primary-400 to-primary-600 !text-white shadow-glow hover:bg-primary-500 hover:!text-white
+      dark:!text-white dark:hover:bg-primary-500;
+  }
+  .nav-link-active span,
+  .nav-link-active svg,
+  .dark .nav-link-active span,
+  .dark .nav-link-active svg {
+    color: #ffffff !important;
   }
   .table-row {
     @apply transition-colors duration-200 hover:bg-white/50 dark:hover:bg-white/5;
@@ -152,15 +174,16 @@
   stroke: rgba(255, 255, 255, 0.05);
 }
 .recharts-text {
-  fill: #9295b3;
+  fill: #526077;
   font-size: 11px;
 }
 .dark .recharts-text {
-  fill: #5c5f7e;
+  fill: #94a3b8;
 }
 .recharts-tooltip-cursor {
   fill: rgba(108, 93, 211, 0.06);
 }
 .dark .recharts-tooltip-cursor {
   fill: rgba(255, 255, 255, 0.03);
+}
 }

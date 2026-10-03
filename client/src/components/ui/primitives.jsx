@@ -58,7 +58,7 @@ export function CardHeader({ title, subtitle, action, className }) {
     <div className={cn('mb-4 flex flex-wrap items-start justify-between gap-3', className)}>
       <div className="min-w-0">
         <h3 className="section-title">{title}</h3>
-        {subtitle && <p className="mt-0.5 text-xs muted">{subtitle}</p>}
+        {subtitle && <p className="mt-0.5 text-xs text-ink-soft dark:text-ink-muted">{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -67,12 +67,12 @@ export function CardHeader({ title, subtitle, action, className }) {
 
 /* ── Badge ──────────────────────────────────────────────────────── */
 const BADGES = {
-  primary: 'bg-primary-500/10 text-primary-600 dark:text-primary-300',
-  success: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
-  warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  danger: 'bg-rose-500/10 text-rose-600 dark:text-rose-300',
-  info: 'bg-sky-500/10 text-sky-600 dark:text-sky-300',
-  neutral: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
+  primary: 'bg-primary-500/10 text-primary-700 dark:text-primary-300',
+  success: 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300',
+  warning: 'bg-amber-500/15 text-amber-800 dark:text-amber-300',
+  danger: 'bg-rose-500/15 text-rose-800 dark:text-rose-300',
+  info: 'bg-sky-500/15 text-sky-800 dark:text-sky-300',
+  neutral: 'bg-slate-500/15 text-slate-700 dark:text-slate-300',
 };
 
 export function Badge({ color = 'primary', className, children, icon: Icon }) {
@@ -95,12 +95,12 @@ export function CategoryBadge({ category, className }) {
 /* ── Avatar ─────────────────────────────────────────────────────── */
 const AVATAR_SIZES = { xs: 'h-7 w-7 text-[10px]', sm: 'h-9 w-9 text-xs', md: 'h-11 w-11 text-sm', lg: 'h-16 w-16 text-lg', xl: 'h-24 w-24 text-2xl' };
 const GRADS = [
-  'from-violet-400 to-indigo-500',
-  'from-pink-400 to-rose-500',
-  'from-sky-400 to-blue-500',
-  'from-amber-400 to-orange-500',
-  'from-emerald-400 to-teal-500',
-  'from-fuchsia-400 to-purple-500',
+  'from-violet-600 to-indigo-700',
+  'from-pink-600 to-rose-700',
+  'from-sky-600 to-blue-700',
+  'from-amber-600 to-orange-700',
+  'from-emerald-600 to-teal-700',
+  'from-purple-600 to-fuchsia-700',
 ];
 
 export function Avatar({ user, src, name, size = 'md', className, ring }) {
@@ -130,7 +130,7 @@ export function AvatarStack({ users = [], max = 4, size = 'xs' }) {
         <Avatar key={u._id} user={u} size={size} className="ring-2 ring-white dark:ring-[#17182e]" />
       ))}
       {users.length > max && (
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-2xl bg-primary-100 text-[10px] font-bold text-primary-700 ring-2 ring-white dark:bg-primary-500/20 dark:text-primary-200 dark:ring-[#17182e]">
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-2xl bg-primary-100 text-[10px] font-bold text-primary-800 ring-2 ring-white dark:bg-primary-500/20 dark:text-primary-200 dark:ring-[#17182e]">
           +{users.length - max}
         </span>
       )}
@@ -159,12 +159,12 @@ export function EmptyState({ icon: Icon, title, text, action, className }) {
   return (
     <div className={cn('flex flex-col items-center justify-center rounded-[28px] px-6 py-12 text-center', className)}>
       {Icon && (
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-primary-400/20 to-fuchsia-400/20 text-primary-500">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-primary-400/20 to-fuchsia-400/20 text-primary-600 dark:text-primary-400">
           <Icon className="h-7 w-7" />
         </div>
       )}
-      <h3 className="text-base font-bold">{title}</h3>
-      {text && <p className="mt-1 max-w-sm text-sm muted">{text}</p>}
+      <h3 className="text-base font-bold text-ink dark:text-primary-50">{title}</h3>
+      {text && <p className="mt-1 max-w-sm text-sm text-ink-soft dark:text-ink-muted">{text}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );
@@ -173,7 +173,7 @@ export function EmptyState({ icon: Icon, title, text, action, className }) {
 export function ErrorState({ error, onRetry }) {
   return (
     <Card className="text-center">
-      <p className="font-semibold text-rose-600 dark:text-rose-300">{error?.data?.message || 'Could not load data'}</p>
+      <p className="font-semibold text-rose-700 dark:text-rose-300">{error?.data?.message || 'Could not load data'}</p>
       {onRetry && (
         <Button variant="soft" size="sm" className="mt-3" onClick={onRetry}>
           Try again
@@ -194,8 +194,8 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
           </div>
         )}
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">{title}</h1>
-          {subtitle && <p className="mt-0.5 text-sm muted">{subtitle}</p>}
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink dark:text-primary-50">{title}</h1>
+          {subtitle && <p className="mt-0.5 text-sm text-ink-soft dark:text-ink-muted">{subtitle}</p>}
         </div>
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -210,9 +210,9 @@ export function StatCard({ icon: Icon, label, value, hint, gradient = 'from-prim
       <div className={cn('absolute -right-8 -top-8 h-28 w-28 rounded-full bg-gradient-to-br opacity-20 blur-2xl transition-opacity duration-500 group-hover:opacity-40', gradient)} />
       <div className="relative flex items-start justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide muted">{label}</p>
-          <p className="mt-2 text-3xl font-extrabold tracking-tight">{value ?? '—'}</p>
-          {hint && <p className="mt-1 text-xs font-medium muted">{hint}</p>}
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft dark:text-ink-muted">{label}</p>
+          <p className="mt-2 text-3xl font-extrabold tracking-tight text-ink dark:text-primary-50">{value ?? '—'}</p>
+          {hint && <p className="mt-1 text-xs font-medium text-ink-soft dark:text-ink-muted">{hint}</p>}
         </div>
         <div className={cn('flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-lg transition-transform duration-500 ease-smooth group-hover:rotate-6 group-hover:scale-110', gradient)}>
           <Icon className="h-6 w-6" />
@@ -222,7 +222,7 @@ export function StatCard({ icon: Icon, label, value, hint, gradient = 'from-prim
   );
 }
 
-/* ── Tabs & pagination ──────────────────────────────────────────── */
+/* ── Tabs & pagination ──────────────────────────────────── */
 export function Tabs({ tabs, value, onChange, className }) {
   return (
     <div className={cn('glass inline-flex gap-1 overflow-x-auto rounded-2xl p-1 scrollbar-none', className)}>
@@ -233,13 +233,13 @@ export function Tabs({ tabs, value, onChange, className }) {
           className={cn(
             'flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-300 ease-smooth',
             value === t.value
-              ? 'bg-white text-primary-600 shadow-soft dark:bg-white/10 dark:text-white'
-              : 'text-ink-soft hover:text-ink dark:text-slate-400 dark:hover:text-white'
+              ? 'bg-white text-primary-700 shadow-soft dark:bg-white/10 dark:text-white'
+              : 'text-ink-soft hover:text-ink dark:text-slate-300 dark:hover:text-white'
           )}
         >
           {t.label}
           {t.count !== undefined && (
-            <span className="rounded-full bg-primary-500/10 px-2 py-0.5 text-[10px] text-primary-600 dark:text-primary-200">{t.count}</span>
+            <span className="rounded-full bg-primary-500/10 px-2 py-0.5 text-[10px] font-bold text-primary-700 dark:text-primary-200">{t.count}</span>
           )}
         </button>
       ))}
@@ -254,7 +254,7 @@ export function Pagination({ page, pages, onChange }) {
       <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>
         Previous
       </Button>
-      <span className="glass rounded-xl px-3 py-1.5 text-xs font-bold">
+      <span className="glass rounded-xl px-3 py-1.5 text-xs font-bold text-ink dark:text-primary-50">
         {page} / {pages}
       </span>
       <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>
@@ -271,10 +271,11 @@ export function ProgressBar({ value, max, className }) {
       <div
         className={cn(
           'h-full rounded-full bg-gradient-to-r transition-all duration-700 ease-smooth',
-          pct >= 100 ? 'from-rose-400 to-rose-500' : pct > 75 ? 'from-amber-400 to-orange-500' : 'from-primary-400 to-fuchsia-500'
+          pct >= 100 ? 'from-rose-500 to-rose-600' : pct > 75 ? 'from-amber-500 to-orange-600' : 'from-primary-400 to-fuchsia-500'
         )}
         style={{ width: `${pct}%` }}
       />
     </div>
   );
 }
+

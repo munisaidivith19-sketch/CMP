@@ -55,6 +55,8 @@ export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security'];
 export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 /** Roles that can add, edit and delete timetable periods (HOD: own department only). */
 export const TIMETABLE_EDITORS = ['admin', 'hod'];
+/** Roles that can access the timetable (warden and security excluded). */
+export const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
 
 export const GATE_PASS_REGARDING = { outing: 'Outing', home: 'Home' };
 

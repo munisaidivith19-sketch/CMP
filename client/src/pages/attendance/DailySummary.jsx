@@ -75,7 +75,7 @@ function Filters({ value, onChange, canPickDepartment }) {
               'rounded-xl px-2.5 py-1 text-xs font-bold transition-all',
               isToday
                 ? 'bg-primary-500 text-white shadow-glow'
-                : 'bg-white/10 hover:bg-white/20 text-ink-soft'
+                : 'bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 text-ink-soft'
             )}
           >
             Today
@@ -83,7 +83,7 @@ function Filters({ value, onChange, canPickDepartment }) {
           <button
             type="button"
             onClick={setYesterday}
-            className="rounded-xl bg-white/10 hover:bg-white/20 px-2.5 py-1 text-xs font-bold text-ink-soft transition-all"
+            className="rounded-xl bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 px-2.5 py-1 text-xs font-bold text-ink-soft transition-all"
           >
             Yesterday
           </button>
@@ -118,9 +118,9 @@ const clean = (f) => ({ date: f.date, ...(f.department ? { department: f.departm
 
 const STATUS_CHIPS = [
   { value: '', label: 'All', icon: Sparkles },
-  { value: 'present', label: 'Present', icon: CheckCircle2, color: 'text-emerald-500' },
-  { value: 'absent', label: 'Absent', icon: XCircle, color: 'text-rose-500' },
-  { value: 'unmarked', label: 'Not marked', icon: Clock, color: 'text-amber-500' },
+  { value: 'present', label: 'Present', icon: CheckCircle2, color: 'text-emerald-700 dark:text-emerald-400' },
+  { value: 'absent', label: 'Absent', icon: XCircle, color: 'text-rose-700 dark:text-rose-400' },
+  { value: 'unmarked', label: 'Not marked', icon: Clock, color: 'text-amber-700 dark:text-amber-400' },
 ];
 
 /* ── Today: counts + full student / faculty lists ─────────────────── */
@@ -217,13 +217,13 @@ export function DailySummary() {
                     'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all duration-200',
                     who === key
                       ? 'bg-primary-500 text-white shadow-glow'
-                      : 'text-ink-soft hover:text-ink hover:bg-white/5'
+                      : 'text-ink-soft hover:text-ink hover:bg-black/5 dark:hover:bg-white/5'
                   )}
                 >
                   <Icon className="h-4 w-4" />
                   <span>{label}</span>
                   {count !== undefined && (
-                    <span className={cn('rounded-full px-1.5 py-0.2 text-[10px]', who === key ? 'bg-white/20' : 'bg-white/10')}>
+                    <span className={cn('rounded-full px-1.5 py-0.2 text-[10px]', who === key ? 'bg-white/20 text-white' : 'bg-black/5 text-ink-soft dark:bg-white/10 dark:text-ink-soft')}>
                       {count}
                     </span>
                   )}
@@ -235,7 +235,7 @@ export function DailySummary() {
             <div className="flex flex-wrap items-center gap-1.5">
               {[
                 ...STATUS_CHIPS,
-                ...(who === 'faculty' ? [{ value: 'leave', label: 'On Leave', icon: Clock, color: 'text-purple-400' }] : []),
+                ...(who === 'faculty' ? [{ value: 'leave', label: 'On Leave', icon: Clock, color: 'text-purple-700 dark:text-purple-400' }] : []),
               ].map((c) => {
                 const Icon = c.icon;
                 const active = status === c.value;
@@ -246,11 +246,11 @@ export function DailySummary() {
                     className={cn(
                       'flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all',
                       active
-                        ? 'bg-white/20 text-white font-bold ring-1 ring-white/30 shadow-sm'
-                        : 'bg-white/5 text-ink-soft hover:bg-white/10 hover:text-ink'
+                        ? 'bg-ink/10 text-ink font-bold ring-1 ring-ink/20 shadow-sm dark:bg-white/20 dark:text-white dark:ring-white/30'
+                        : 'bg-black/5 text-ink-soft hover:bg-black/10 hover:text-ink dark:bg-white/5 dark:text-ink-soft dark:hover:bg-white/10 dark:hover:text-ink'
                     )}
                   >
-                    <Icon className={cn('h-3.5 w-3.5', c.color || 'text-primary-400')} />
+                    <Icon className={cn('h-3.5 w-3.5', c.color || 'text-primary-600 dark:text-primary-400')} />
                     <span>{c.label}</span>
                   </button>
                 );
@@ -343,17 +343,17 @@ export function DailySummary() {
                       <td className="px-4 py-3.5">
                         {who === 'students' ? (
                           <div className="flex items-center gap-1.5">
-                            <span className="rounded-lg bg-primary-500/10 px-2 py-0.5 text-xs font-bold text-primary-400">
+                            <span className="rounded-lg bg-primary-500/10 px-2 py-0.5 text-xs font-bold text-primary-700 dark:text-primary-300">
                               {r.department}
                             </span>
                             {r.section && (
-                              <span className="rounded-lg bg-white/10 px-2 py-0.5 text-xs font-bold">
+                              <span className="rounded-lg bg-black/5 dark:bg-white/10 px-2 py-0.5 text-xs font-bold">
                                 Sec {r.section}
                               </span>
                             )}
                           </div>
                         ) : (
-                          <span className="rounded-lg bg-sky-500/10 px-2 py-0.5 text-xs font-bold text-sky-400">
+                          <span className="rounded-lg bg-sky-500/10 px-2 py-0.5 text-xs font-bold text-sky-700 dark:text-sky-300">
                             {r.department || '—'}
                           </span>
                         )}
@@ -364,9 +364,9 @@ export function DailySummary() {
                         {r.phone ? (
                           <a
                             href={`tel:${r.phone}`}
-                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-ink-soft hover:bg-primary-500/10 hover:text-primary-400 transition-colors"
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-ink-soft hover:bg-primary-500/10 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
                           >
-                            <Phone className="h-3.5 w-3.5 text-primary-400" />
+                            <Phone className="h-3.5 w-3.5 text-primary-600 dark:text-primary-400" />
                             <span>{r.phone}</span>
                           </a>
                         ) : (
@@ -486,7 +486,7 @@ export function FacultyMarking() {
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 p-5 bg-white/[0.02]">
             <div>
               <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary-400" />
+                <Users className="h-5 w-5 text-primary-600 dark:text-primary-400" />
                 <h3 className="text-base font-extrabold tracking-tight">
                   Faculty Attendance · {data.department || 'Department'}
                 </h3>
@@ -585,18 +585,18 @@ export function FacultyMarking() {
           {/* Footer action bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 p-4 bg-white/[0.02]">
             <div className="flex items-center gap-3 text-sm">
-              <span className="flex items-center gap-1.5 font-bold text-emerald-400">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 inline-block" />
+              <span className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
                 {counts.present || 0} Present
               </span>
               <span className="text-ink-muted">·</span>
-              <span className="flex items-center gap-1.5 font-bold text-rose-400">
-                <span className="h-2 w-2 rounded-full bg-rose-400 inline-block" />
+              <span className="flex items-center gap-1.5 font-bold text-rose-700 dark:text-rose-400">
+                <span className="h-2 w-2 rounded-full bg-rose-500 inline-block" />
                 {counts.absent || 0} Absent
               </span>
               <span className="text-ink-muted">·</span>
-              <span className="flex items-center gap-1.5 font-bold text-amber-400">
-                <span className="h-2 w-2 rounded-full bg-amber-400 inline-block" />
+              <span className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-400">
+                <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" />
                 {counts.leave || 0} On Leave
               </span>
               <span className="text-xs text-ink-muted">({data.faculty.length} total)</span>

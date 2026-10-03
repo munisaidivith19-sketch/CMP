@@ -91,8 +91,8 @@ export default function Alumni() {
                 onClick={() => handleTabChange(tab.id)}
                 className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-bold transition-all duration-300 ${
                   isActive
-                    ? 'bg-white text-primary-600 shadow-soft dark:bg-white/10 dark:text-white'
-                    : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                    ? 'bg-white text-primary-700 shadow-soft dark:bg-white/15 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
                 }`}
               >
                 <Icon className="h-4 w-4 shrink-0" />

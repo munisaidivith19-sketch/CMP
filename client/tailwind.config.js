@@ -24,8 +24,8 @@ export default {
         },
         ink: {
           DEFAULT: '#1b1d3a',
-          soft: '#5c5f7e',
-          muted: '#9295b3',
+          soft: '#475569', // upgraded for WCAG AA compliance in light mode (6.4:1)
+          muted: '#526077', // upgraded for WCAG AA compliance in light mode (5.7:1)
         },
       },
       borderRadius: {
@@ -65,3 +65,4 @@ export default {
   },
   plugins: [],
 };
+

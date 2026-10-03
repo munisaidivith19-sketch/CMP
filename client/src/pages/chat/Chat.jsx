@@ -88,7 +88,7 @@ function PresenceAvatar({ user, online, size = 'md' }) {
   return (
     <span className="relative inline-flex">
       <Avatar user={user} size={size} />
-      {online && <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#fffdf9]" aria-label="online" />}
+      {online && <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-surface" aria-label="online" />}
     </span>
   );
 }
@@ -252,7 +252,7 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold">{r.name}</p>
-                <p className={cn('truncate text-xs', r.status === 'pending' ? 'text-amber-600' : 'text-rose-500')}>
+                <p className={cn('truncate text-xs', r.status === 'pending' ? 'text-amber-700 dark:text-amber-400' : 'text-rose-700 dark:text-rose-400')}>
                   {r.status === 'pending'
                     ? `Waiting for ${me.role === 'hod' ? 'principal' : 'admin'} approval`
                     : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
@@ -270,7 +270,7 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
               to={`/chat/${c._id}`}
               className={cn(
                 'flex items-center gap-3 rounded-2xl p-2.5 transition-all duration-300 ease-smooth',
-                c._id === activeId ? 'bg-white/80 shadow-soft dark:bg-[#fff9f0]/80' : 'hover:bg-white/60 dark:hover:bg-white/5'
+                c._id === activeId ? 'bg-white/80 shadow-soft dark:bg-white/15' : 'hover:bg-white/60 dark:hover:bg-white/5'
               )}
             >
               {d.group ? (
@@ -286,7 +286,7 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
                   <span className="shrink-0 text-[11px] muted">{listTime(c.lastMessage?.sentAt || c.updatedAt)}</span>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <p className={cn('truncate text-xs', isTyping ? 'font-semibold text-primary-600' : 'muted')}>
+                  <p className={cn('truncate text-xs', isTyping ? 'font-semibold text-primary-600 dark:text-primary-400' : 'muted')}>
                     {isTyping
                       ? 'typing…'
                       : c.lastMessage?.body
@@ -315,16 +315,16 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, grou
     <div id={`msg-${m._id}`} className={cn('group flex gap-2', mine ? 'justify-end' : 'justify-start')}>
       {!mine && group && (showAuthor ? <Avatar user={m.sender} size="xs" className="mt-auto" /> : <span className="w-7 shrink-0" />)}
       <div className={cn('flex min-w-0 max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
-        {showAuthor && !mine && group && <span className="mb-0.5 px-2 text-[11px] font-bold text-primary-600">{m.sender?.name}</span>}
+        {showAuthor && !mine && group && <span className="mb-0.5 px-2 text-[11px] font-bold text-primary-600 dark:text-primary-400">{m.sender?.name}</span>}
         <div
           className={cn(
             'relative min-w-0 max-w-full rounded-3xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
-            mine ? 'rounded-br-lg bg-gradient-to-br from-primary-400 to-primary-600 text-white' : 'rounded-bl-lg bg-white/85 text-ink dark:bg-white',
+            mine ? 'rounded-br-lg bg-gradient-to-br from-primary-400 to-primary-600 text-white' : 'rounded-bl-lg bg-white/85 text-ink dark:bg-slate-800/90 dark:text-slate-100 dark:border dark:border-white/10',
             deleted && 'italic opacity-70'
           )}
         >
           {m.replyTo && !deleted && (
-            <div className={cn('mb-1.5 rounded-xl border-l-4 px-2.5 py-1 text-xs', mine ? 'border-white/60 bg-white/15' : 'border-primary-400 bg-primary-500/10')}>
+            <div className={cn('mb-1.5 rounded-xl border-l-4 px-2.5 py-1 text-xs', mine ? 'border-white/60 bg-white/15' : 'border-primary-400 bg-primary-500/10 dark:bg-primary-500/20')}>
               <p className="font-bold">{m.replyTo.sender?.name || 'Message'}</p>
               <p className="line-clamp-2 opacity-80 [overflow-wrap:anywhere]">{m.replyTo.deletedAt ? 'This message was deleted' : m.replyTo.body}</p>
             </div>
@@ -339,7 +339,7 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, grou
       </div>
       {!deleted && (
         <div className={cn('flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100', mine ? 'order-first' : '')}>
-          <button onClick={() => onReply(m)} className="rounded-lg p-1.5 text-ink-muted hover:bg-white/70 hover:text-ink" aria-label="Reply">
+          <button onClick={() => onReply(m)} className="rounded-lg p-1.5 text-ink-muted hover:bg-white/70 hover:text-ink dark:hover:bg-white/10 dark:hover:text-ink" aria-label="Reply">
             <CornerUpLeft className="h-3.5 w-3.5" />
           </button>
           {mine && (
@@ -482,7 +482,7 @@ function Thread({ id, me, presence, typingUsers }) {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <header className="flex min-w-0 items-center gap-2 border-b border-white/60 p-3 dark:border-[#d8c9a8]/40 sm:gap-3 sm:p-4">
+      <header className="flex min-w-0 items-center gap-2 border-b border-white/60 p-3 dark:border-white/10 sm:gap-3 sm:p-4">
         <button className="btn-icon btn-ghost shrink-0 lg:hidden" onClick={() => navigate('/chat')} aria-label="Back to conversations">
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -520,7 +520,7 @@ function Thread({ id, me, presence, typingUsers }) {
       </header>
       {d.group && <GroupInfoModal open={infoOpen} onClose={() => setInfoOpen(false)} conv={conv} me={me} />}
       {searchOpen && (
-        <div className="border-b border-white/60 p-3 dark:border-[#d8c9a8]/40">
+        <div className="border-b border-white/60 p-3 dark:border-white/10">
           <Input icon={Search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search in this conversation" autoFocus />
           {q && <p className="mt-1.5 text-xs muted">{shown.length} match{shown.length === 1 ? '' : 'es'} in loaded messages</p>}
         </div>
@@ -541,7 +541,7 @@ function Thread({ id, me, presence, typingUsers }) {
         )}
         {error && <ErrorState error={error} />}
         {!hasMore && !error && !isLoading && (
-          <p className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-700">
+          <p className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
             <Lock className="h-3 w-3" /> Messages are encrypted before they are stored
           </p>
         )}
@@ -566,7 +566,7 @@ function Thread({ id, me, presence, typingUsers }) {
         })}
       </div>
 
-      <form onSubmit={submit} className="border-t border-white/60 p-3 dark:border-[#d8c9a8]/40">
+      <form onSubmit={submit} className="border-t border-white/60 p-3 dark:border-white/10">
         {replyTo && (
           <div className="mb-2 flex items-start gap-2 rounded-2xl bg-primary-500/10 px-3 py-2 text-xs">
             <CornerUpLeft className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-500" />
@@ -642,7 +642,7 @@ export default function Chat() {
         the card and long text truncates or wraps inside them instead.
       */}
       <Card className="grid h-[calc(100dvh-8.5rem)] min-h-[220px] grid-cols-[minmax(0,1fr)] overflow-hidden p-0 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-        <aside className={cn('min-h-0 min-w-0 border-white/60 dark:border-[#d8c9a8]/40 lg:border-r', id && 'hidden lg:block')}>
+        <aside className={cn('min-h-0 min-w-0 border-white/60 dark:border-white/10 lg:border-r', id && 'hidden lg:block')}>
           <ConversationList activeId={id} me={me} presence={presence} typing={typing} onNew={() => setNewOpen(true)} />
         </aside>
         <section className={cn('min-h-0 min-w-0', !id && 'hidden lg:block')}>

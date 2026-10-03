@@ -7,32 +7,34 @@ import {
   Bell,
   BookOpen,
   BookOpenCheck,
-  CalendarClock,
   CalendarDays,
   ClipboardCheck,
   DoorOpen,
-  LineChart,
-  MessageCircle,
-  MessageSquareWarning,
-  PackageSearch,
-  ShieldCheck,
   GraduationCap,
   LayoutDashboard,
+  LineChart,
   LogOut,
   Megaphone,
+  MessageCircle,
   MessagesSquare,
-  ShieldAlert,
+  MessageSquareWarning,
+  PackageSearch,
   Shapes,
+  ShieldAlert,
+  ShieldCheck,
   UserCog,
   UsersRound,
   X,
 } from 'lucide-react';
-import { setSidebar } from '../../features/uiSlice';
-import { loggedOut, selectUser } from '../../features/authSlice';
-import { api, useGetChatUnreadQuery, useGetGroupRequestsQuery, useLogoutMutation } from '../../services/api';
-import { disconnectSocket } from '../../services/socket';
 import { Avatar, cn } from '../ui/primitives';
-import { PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF_VIEW } from '../../utils/constants';
+import { api, useGetChatUnreadQuery, useGetGroupRequestsQuery, useLogoutMutation } from '../../services/api';
+import { loggedOut, selectUser } from '../../features/authSlice';
+import { setSidebar } from '../../features/uiSlice';
+import { disconnectSocket } from '../../services/socket';
+import { ROLE_LABELS, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
+
+// Staff who can see the administrative nav section (Principal sees every staff screen).
+const STAFF_VIEW = [...STAFF, 'principal'];
 
 const MAIN = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -40,13 +42,12 @@ const MAIN = [
   { to: '/events', label: 'Events', icon: CalendarDays },
   { to: '/clubs', label: 'Clubs', icon: Shapes },
   { to: '/discussions', label: 'Discussions', icon: MessagesSquare },
-  { to: '/people', label: 'People', icon: GraduationCap, excludeRoles: ROLES.filter((r) => !PEOPLE_DIRECTORY.includes(r)) },
   { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 
 const CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
-  { to: '/timetable', label: 'Timetable', icon: CalendarClock, excludeRoles: ['warden', 'security'] },
+  { to: '/timetable', label: 'Timetable', icon: CalendarDays, roles: TIMETABLE_ROLES, excludeRoles: ['warden', 'security'] },
   { to: '/study-materials', label: 'Study Materials', icon: BookOpen, excludeRoles: ['warden', 'security'] },
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
@@ -76,7 +77,7 @@ function NavItem({ item, onClick, badge }) {
       <Icon className="h-[18px] w-[18px]" />
       <span className="flex-1">{item.label}</span>
       {badge > 0 && (
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-pink-500 px-1.5 text-[10px] font-bold text-white" aria-label={`${badge} unread`}>
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-rose-700 px-1.5 text-[10px] font-extrabold text-white shadow-sm" aria-label={`${badge} unread`}>
           {badge > 99 ? '99+' : badge}
         </span>
       )}
@@ -154,7 +155,7 @@ export default function Sidebar() {
             </div>
             <div>
               <p className="text-[20px] font-extrabold leading-tight tracking-tight">J.N.N </p>
-              <p className="text-[10px] font-medium muted">INSTITUTE OF ENGINEERING</p>
+              <p className="text-[10px] font-semibold text-ink-soft dark:text-ink-muted">INSTITUTE OF ENGINEERING</p>
             </div>
           </div>
           <button className="btn-icon btn-ghost lg:hidden" onClick={close} aria-label="Close menu">
@@ -163,17 +164,17 @@ export default function Sidebar() {
         </div>
 
         <nav className="-mx-1 flex-1 space-y-1 overflow-y-auto px-1 scrollbar-none">
-          <p className="px-3.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">Menu</p>
+          <p className="px-3.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft dark:text-ink-muted">Menu</p>
           {mainItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} />
           ))}
-          <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">{isAlumni ? 'Connect' : 'Campus'}</p>
+          <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft dark:text-ink-muted">{isAlumni ? 'Connect' : 'Campus'}</p>
           {campusItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'chat' ? unread?.total : 0} />
           ))}
           {adminItems.length > 0 && (
             <>
-              <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-muted">Administration</p>
+              <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft dark:text-ink-muted">Administration</p>
               {adminItems.map((i) => (
                 <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'groups' ? groupRequests?.length : 0} />
               ))}
@@ -186,7 +187,7 @@ export default function Sidebar() {
             <Avatar user={user} size="sm" />
             <div className="min-w-0">
               <p className="truncate text-sm font-bold">{user?.name}</p>
-              <p className="truncate text-[11px] muted">{ROLE_LABELS[user?.role]}</p>
+              <p className="truncate text-[11px] font-medium text-ink-soft dark:text-ink-muted">{ROLE_LABELS[user?.role]}</p>
             </div>
           </NavLink>
           <NavLink to="/settings/security" onClick={close} className="btn-icon btn-ghost" aria-label="Account security" title="Account security">
@@ -200,3 +201,4 @@ export default function Sidebar() {
     </>
   );
 }
+

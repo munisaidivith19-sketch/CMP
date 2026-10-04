@@ -3,11 +3,12 @@ import Club from '../models/Club.js';
 import Event from '../models/Event.js';
 import Announcement from '../models/Announcement.js';
 import Discussion from '../models/Discussion.js';
+import Achievement from '../models/Achievement.js';
 import { asyncHandler, escapeRegex } from '../utils/http.js';
 import { announcementVisibility } from '../utils/visibility.js';
 import { isModerator } from '../utils/permissions.js';
 import { peopleScopeFilter } from '../utils/peopleScope.js';
-import { PEOPLE_DIRECTORY_ROLES } from '../constants.js';
+import { ACHIEVEMENT_VIEW_ROLES, PEOPLE_DIRECTORY_ROLES } from '../constants.js';
 
 /** People results are scoped the same as the directory — never abusable to
  * enumerate students/faculty outside the viewer's authorization.
@@ -54,12 +55,12 @@ export const globalSearch = asyncHandler(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 64);
   const type = req.query.type;
   const limit = type ? 20 : 5;
-  if (q.length < 2) return res.json({ q, users: [], clubs: [], events: [], announcements: [], discussions: [] });
+  if (q.length < 2) return res.json({ q, users: [], clubs: [], events: [], announcements: [], discussions: [], achievements: [] });
 
   const want = (t) => !type || type === t;
   const empty = Promise.resolve([]);
 
-  const [users, clubs, events, announcements, discussions] = await Promise.all([
+  const [users, clubs, events, announcements, discussions, achievements] = await Promise.all([
     want('users') ? searchUsersScoped(req.user, q, limit) : empty,
     want('clubs')
       ? searchCollection(Club, q, {
@@ -93,6 +94,14 @@ export const globalSearch = asyncHandler(async (req, res) => {
           limit,
         })
       : empty,
+    want('achievements') && ACHIEVEMENT_VIEW_ROLES.includes(req.user.role)
+      ? searchCollection(Achievement, q, {
+          filter: { isDeleted: false },
+          select: 'title category level position achievedOn departments',
+          regexFields: ['title', 'eventName', 'description'],
+          limit,
+        })
+      : empty,
   ]);
 
   res.json({
@@ -102,5 +111,6 @@ export const globalSearch = asyncHandler(async (req, res) => {
     events,
     announcements: announcements.map((a) => ({ ...a, content: a.content.slice(0, 160) })),
     discussions: discussions.map(({ replies, ...d }) => ({ ...d, replyCount: replies?.length || 0 })),
+    achievements,
   });
 });

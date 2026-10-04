@@ -103,7 +103,7 @@ export const REPORT_ACTIONS = ['dismiss', 'hide', 'delete', 'warn', 'suspend'];
 
 export const NOTIFICATION_TYPES = [
   'announcement', 'event', 'club', 'discussion', 'report', 'system',
-  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint', 'alumni',
+  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint', 'alumni', 'achievement',
 ];
 
 // ── Gate Pass ───────────────────────────────────────────────────────
@@ -233,3 +233,17 @@ export const IMPORT_STATUSES = ['validated', 'processing', 'done', 'failed'];
 export const STAFF_ALUMNI = ['admin', 'hod'];
 export const VIEW_ALUMNI_ANALYTICS = ['admin', 'hod', 'principal', 'chairman', 'dean'];
 
+
+// Student achievements: only the Principal and HODs post (HOD: own department only).
+export const ACHIEVEMENT_POST_ROLES = ['principal', 'hod'];
+export const ACHIEVEMENT_MODERATE_ROLES = ['admin'];
+export const ACHIEVEMENT_STATS_ROLES = ['principal', 'hod', 'admin'];
+export const ACHIEVEMENT_BLOCKED_ROLES = ['warden', 'security'];
+export const ACHIEVEMENT_VIEW_ROLES = ROLES.filter((r) => !ACHIEVEMENT_BLOCKED_ROLES.includes(r));
+export const ACHIEVEMENT_CATEGORIES = [
+  'academic', 'sports', 'technical', 'cultural', 'research', 'placement', 'competition', 'certification', 'other',
+];
+export const ACHIEVEMENT_LEVELS = ['college', 'state', 'national', 'international'];
+export const ACHIEVEMENT_POSITIONS = [
+  'winner', 'first', 'second', 'third', 'runner_up', 'finalist', 'participant', 'selected', 'published', 'other',
+];

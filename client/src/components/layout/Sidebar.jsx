@@ -22,6 +22,7 @@ import {
   Shapes,
   ShieldAlert,
   ShieldCheck,
+  Trophy,
   UserCog,
   UsersRound,
   X,
@@ -49,6 +50,7 @@ const CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
   { to: '/timetable', label: 'Timetable', icon: CalendarDays, roles: TIMETABLE_ROLES, excludeRoles: ['warden', 'security'] },
   { to: '/study-materials', label: 'Study Materials', icon: BookOpen, excludeRoles: ['warden', 'security'] },
+  { to: '/achievements', label: 'Achievements', icon: Trophy, excludeRoles: ['warden', 'security'] },
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
@@ -88,6 +90,7 @@ function NavItem({ item, onClick, badge }) {
 const ALUMNI_MAIN = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/alumni', label: 'Alumni Network', icon: GraduationCap },
+  { to: '/achievements', label: 'Achievements', icon: Trophy },
   { to: '/announcements', label: 'Announcements', icon: Megaphone },
   { to: '/events', label: 'Events', icon: CalendarDays },
   { to: '/clubs', label: 'Clubs', icon: Shapes },
@@ -99,7 +102,7 @@ const ALUMNI_CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
 ];
 
-const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/attendance', '/analytics', '/complaints', '/alumni'];
+const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/attendance', '/analytics', '/complaints', '/alumni', '/achievements'];
 
 export default function Sidebar() {
   const dispatch = useDispatch();

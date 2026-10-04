@@ -1845,8 +1845,8 @@ export default function StaffAttendance() {
               className={cn(
                 'flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-bold transition-all border',
                 isCurrentSecondary
-                  ? 'border-primary-500/50 bg-primary-500/15 text-primary-300 ring-1 ring-primary-500/30'
-                  : 'border-white/10 bg-white/5 text-ink-soft hover:text-ink hover:bg-white/10'
+                  ? 'border-primary-500/50 bg-primary-500/15 text-primary-600 dark:text-primary-300 ring-1 ring-primary-500/30'
+                  : 'border-slate-200/80 bg-white/70 text-ink-soft hover:text-ink hover:bg-white/90 dark:border-white/10 dark:bg-white/5 dark:text-ink-muted dark:hover:text-primary-50 dark:hover:bg-white/10'
               )}
             >
               <span>{isCurrentSecondary ? activeSecondaryItem?.label : 'More Attendance Tools'}</span>
@@ -1862,7 +1862,7 @@ export default function StaffAttendance() {
             {moreOpen && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
-                <div className="absolute left-0 top-full mt-2 z-40 w-56 rounded-2xl border border-white/15 bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur-xl animate-fade-in">
+                <div className="glass-strong absolute left-0 top-full mt-2 z-40 w-56 rounded-2xl border border-slate-200/80 bg-white/95 dark:border-white/15 dark:bg-[#131427]/95 p-1.5 shadow-2xl backdrop-blur-xl animate-fade-in">
                   {secondaryTabs.map((t) => {
                     const isCorrections = t.value === 'corrections';
                     const active = currentTab === t.value;
@@ -1870,12 +1870,15 @@ export default function StaffAttendance() {
                       <button
                         key={t.value}
                         type="button"
-                        onClick={() => setTab(t.value)}
+                        onClick={() => {
+                          setTab(t.value);
+                          setMoreOpen(false);
+                        }}
                         className={cn(
                           'flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all',
                           active
-                            ? 'bg-primary-500 text-white font-bold'
-                            : 'text-ink-soft hover:bg-black/5 dark:hover:bg-white/10 hover:text-ink'
+                            ? 'bg-primary-500 text-white font-bold shadow-sm'
+                            : 'text-ink-soft dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white'
                         )}
                       >
                         <span>{t.label}</span>

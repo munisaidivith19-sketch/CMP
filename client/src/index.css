@@ -94,12 +94,33 @@
   }
 
   /* ── Form controls ──────────────────────────────── */
-  .input {
-    @apply w-full rounded-2xl border border-white/80 bg-white/60 px-4 py-2.5 text-sm text-ink shadow-[inset_0_1px_2px_rgba(27,29,58,0.04)]
+  .input,
+  .input-base {
+    @apply w-full rounded-2xl border border-slate-200/90 bg-white/80 px-4 py-2.5 text-sm text-ink shadow-[inset_0_1px_2px_rgba(27,29,58,0.04)]
       backdrop-blur-xl transition-all duration-300 ease-smooth placeholder:text-slate-500/80
-      hover:bg-white/80 focus:border-primary-300 focus:bg-white/90 focus:outline-none focus:ring-4 focus:ring-primary-400/15
-      dark:border-white/10 dark:bg-ink/40 dark:text-primary-50 dark:placeholder:text-slate-400/70 dark:hover:bg-ink/60
-      dark:focus:border-primary-500/50 dark:focus:bg-ink/80;
+      hover:bg-white hover:border-slate-300 focus:border-primary-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-400/15
+      dark:border-white/10 dark:bg-ink/60 dark:text-primary-50 dark:placeholder:text-slate-400/70 dark:hover:bg-ink/80
+      dark:focus:border-primary-500/50 dark:focus:bg-ink/90;
+    color-scheme: light;
+  }
+  .dark .input,
+  .dark .input-base {
+    color-scheme: dark;
+  }
+
+  select.input,
+  select.input-base,
+  select {
+    @apply cursor-pointer;
+  }
+
+  select option {
+    background-color: #ffffff;
+    color: #1b1d3a;
+  }
+  .dark select option {
+    background-color: #131427;
+    color: #f8fafc;
   }
   .input-error {
     @apply border-rose-300 focus:border-rose-400 focus:ring-rose-400/15 dark:border-rose-500/50 dark:focus:border-rose-400;

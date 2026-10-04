@@ -59,7 +59,7 @@ const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
   'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation', 'Holiday',
-  'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics',
+  'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics', 'Achievement',
 ];
 
 export const api = createApi({
@@ -184,6 +184,46 @@ export const api = createApi({
     togglePinAnnouncement: b.mutation({
       query: (id) => ({ url: `/announcements/${id}/pin`, method: 'PATCH' }),
       invalidatesTags: ['Announcement', 'Dashboard'],
+    }),
+
+    // ── Student achievements ──
+    getAchievements: b.query({ query: (params) => ({ url: '/achievements', params }), providesTags: ['Achievement'] }),
+    getAchievementsDashboard: b.query({ query: () => '/achievements/dashboard', providesTags: ['Achievement'] }),
+    getAchievement: b.query({ query: (id) => `/achievements/${id}`, providesTags: ['Achievement'] }),
+    getStudentAchievements: b.query({ query: (id) => `/achievements/student/${id}`, providesTags: ['Achievement'] }),
+    getAchievementStats: b.query({ query: () => '/achievements/stats', providesTags: ['Achievement'] }),
+    searchAchievementStudents: b.query({ query: (params) => ({ url: '/achievements/students', params }) }),
+    createAchievement: b.mutation({
+      query: (body) => ({ url: '/achievements', method: 'POST', body }),
+      invalidatesTags: ['Achievement', 'Announcement', 'Notification'],
+    }),
+    updateAchievement: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/achievements/${id}`, method: 'PUT', body }),
+      invalidatesTags: ['Achievement', 'Notification'],
+    }),
+    deleteAchievement: b.mutation({
+      query: (id) => ({ url: `/achievements/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Achievement', 'Announcement'],
+    }),
+    restoreAchievement: b.mutation({
+      query: (id) => ({ url: `/achievements/${id}/restore`, method: 'POST' }),
+      invalidatesTags: ['Achievement'],
+    }),
+    toggleFeaturedAchievement: b.mutation({
+      query: (id) => ({ url: `/achievements/${id}/feature`, method: 'PATCH' }),
+      invalidatesTags: ['Achievement'],
+    }),
+    congratulateAchievement: b.mutation({
+      query: (id) => ({ url: `/achievements/${id}/congratulate`, method: 'POST' }),
+      invalidatesTags: ['Achievement'],
+    }),
+    requestAchievementHide: b.mutation({
+      query: ({ id, reason }) => ({ url: `/achievements/${id}/hide-request`, method: 'POST', body: { reason } }),
+      invalidatesTags: ['Achievement'],
+    }),
+    resolveAchievementHide: b.mutation({
+      query: ({ id, reqId, action }) => ({ url: `/achievements/${id}/hide-request/${reqId}`, method: 'PATCH', body: { action } }),
+      invalidatesTags: ['Achievement'],
     }),
 
     // ── Discussions ───────────────────────────────────
@@ -789,6 +829,20 @@ export const {
   useUpdateAnnouncementMutation,
   useDeleteAnnouncementMutation,
   useTogglePinAnnouncementMutation,
+  useGetAchievementsQuery,
+  useGetAchievementsDashboardQuery,
+  useGetAchievementQuery,
+  useGetStudentAchievementsQuery,
+  useGetAchievementStatsQuery,
+  useSearchAchievementStudentsQuery,
+  useCreateAchievementMutation,
+  useUpdateAchievementMutation,
+  useDeleteAchievementMutation,
+  useRestoreAchievementMutation,
+  useToggleFeaturedAchievementMutation,
+  useCongratulateAchievementMutation,
+  useRequestAchievementHideMutation,
+  useResolveAchievementHideMutation,
   useGetDiscussionsQuery,
   useGetDiscussionQuery,
   useCreateDiscussionMutation,

@@ -26,6 +26,8 @@ const EventDetail = lazy(() => import('./pages/events/EventDetail'));
 const Clubs = lazy(() => import('./pages/clubs/Clubs'));
 const ClubDetail = lazy(() => import('./pages/clubs/ClubDetail'));
 const Announcements = lazy(() => import('./pages/announcements/Announcements'));
+const Achievements = lazy(() => import('./pages/achievements/Achievements'));
+const AchievementDetail = lazy(() => import('./pages/achievements/AchievementDetail'));
 const Discussions = lazy(() => import('./pages/discussions/Discussions'));
 const DiscussionDetail = lazy(() => import('./pages/discussions/DiscussionDetail'));
 const People = lazy(() => import('./pages/people/People'));
@@ -133,6 +135,8 @@ export default function App() {
             <Route path="clubs" element={<Clubs />} />
             <Route path="clubs/:slug" element={<ClubDetail />} />
             <Route path="announcements" element={<Announcements />} />
+            <Route path="achievements" element={<Achievements />} />
+            <Route path="achievements/:id" element={<AchievementDetail />} />
             <Route path="discussions" element={<Discussions />} />
             <Route path="discussions/:id" element={<DiscussionDetail />} />
             <Route path="people" element={<RequireAuth roles={PEOPLE_DIRECTORY_ROLES}><People /></RequireAuth>} />

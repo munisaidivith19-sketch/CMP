@@ -141,7 +141,7 @@ export const REPORT_REASONS = ['spam', 'harassment', 'inappropriate', 'misinform
 
 /** Accent colours per category — gradient + soft tint. */
 export const CATEGORY_STYLES = {
-  technical: { grad: 'from-violet-600 to-indigo-700', soft: 'bg-violet-500/10 text-violet-700 dark:text-violet-300', hex: '#6d28d9' },
+  technical: { grad: 'from-violet-600 to-indigo-700', soft: 'bg-violet-500/10 text-violet-700 dark:text-violet-300', onDark: 'bg-violet-500/30 text-violet-100 border border-violet-400/40 backdrop-blur-md', hex: '#6d28d9' },
   hackathon: { grad: 'from-fuchsia-600 to-purple-700', soft: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300', hex: '#a21caf' },
   workshop: { grad: 'from-sky-600 to-blue-700', soft: 'bg-sky-500/10 text-sky-700 dark:text-sky-300', hex: '#0369a1' },
   seminar: { grad: 'from-cyan-600 to-teal-700', soft: 'bg-cyan-500/10 text-cyan-800 dark:text-cyan-300', hex: '#0e7490' },
@@ -217,3 +217,63 @@ export const IMPORT_STATUSES = ['validated', 'processing', 'done', 'failed'];
 export const STAFF_ALUMNI = ['admin', 'hod'];
 export const VIEW_ALUMNI_ANALYTICS = ['admin', 'hod', 'principal', 'chairman', 'dean'];
 
+
+/* ── Student achievements ─────────────────────────────────────────── */
+/** Only these roles can post. An HOD is limited to their own department (the server enforces it). */
+export const ACHIEVEMENT_POST_ROLES = ['principal', 'hod'];
+export const ACHIEVEMENT_STATS_ROLES = ['principal', 'hod', 'admin'];
+export const ACHIEVEMENT_BLOCKED_ROLES = ['warden', 'security'];
+export const ACHIEVEMENT_ROLES = ROLES.filter((r) => !ACHIEVEMENT_BLOCKED_ROLES.includes(r));
+
+export const ACHIEVEMENT_CATEGORIES = [
+  { value: 'academic', label: 'Academic' },
+  { value: 'sports', label: 'Sports' },
+  { value: 'technical', label: 'Hackathon / Technical' },
+  { value: 'cultural', label: 'Cultural / Arts' },
+  { value: 'research', label: 'Research / Publication' },
+  { value: 'placement', label: 'Internship / Placement' },
+  { value: 'competition', label: 'Competition' },
+  { value: 'certification', label: 'Certification' },
+  { value: 'other', label: 'Other' },
+];
+
+export const ACHIEVEMENT_LEVELS = [
+  { value: 'college', label: 'College' },
+  { value: 'state', label: 'State' },
+  { value: 'national', label: 'National' },
+  { value: 'international', label: 'International' },
+];
+
+export const ACHIEVEMENT_POSITIONS = [
+  { value: 'winner', label: 'Winner' },
+  { value: 'first', label: '1st place' },
+  { value: 'second', label: '2nd place' },
+  { value: 'third', label: '3rd place' },
+  { value: 'runner_up', label: 'Runner-up' },
+  { value: 'finalist', label: 'Finalist' },
+  { value: 'participant', label: 'Participant' },
+  { value: 'selected', label: 'Selected' },
+  { value: 'published', label: 'Published' },
+  { value: 'other', label: 'Other' },
+];
+
+const labelOf = (list) => Object.fromEntries(list.map((o) => [o.value, o.label]));
+export const ACHIEVEMENT_CATEGORY_LABELS = labelOf(ACHIEVEMENT_CATEGORIES);
+export const ACHIEVEMENT_LEVEL_LABELS = labelOf(ACHIEVEMENT_LEVELS);
+export const ACHIEVEMENT_POSITION_LABELS = labelOf(ACHIEVEMENT_POSITIONS);
+
+/** Badge colour per level (WCAG AA tokens from the Badge primitive). */
+export const ACHIEVEMENT_LEVEL_COLORS = { college: 'neutral', state: 'info', national: 'primary', international: 'warning' };
+
+/** Gradient shown when an achievement has no photo. */
+export const ACHIEVEMENT_GRADIENTS = {
+  academic: 'from-indigo-700 to-violet-900',
+  sports: 'from-emerald-700 to-teal-900',
+  technical: 'from-sky-700 to-blue-900',
+  cultural: 'from-pink-700 to-rose-900',
+  research: 'from-purple-700 to-fuchsia-900',
+  placement: 'from-amber-700 to-orange-900',
+  competition: 'from-rose-700 to-red-900',
+  certification: 'from-cyan-700 to-teal-900',
+  other: 'from-slate-600 to-slate-800',
+};

@@ -1,5 +1,5 @@
 import { forwardRef, useRef, useState } from 'react';
-import { FileText, ImagePlus, Loader2, X } from 'lucide-react';
+import { ChevronDown, FileText, ImagePlus, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { cn } from './primitives';
 import { useUploadFileMutation } from '../../services/api';
@@ -42,17 +42,24 @@ export const Textarea = forwardRef(function Textarea({ label, error, hint, class
 export const Select = forwardRef(function Select({ label, error, hint, className, options = [], placeholder, keepCase, ...props }, ref) {
   return (
     <Field label={label} error={error} hint={hint} className={className}>
-      <select ref={ref} className={cn('input cursor-pointer appearance-none', !keepCase && 'capitalize', error && 'input-error')} {...props}>
-        {placeholder !== undefined && <option value="">{placeholder}</option>}
-        {options.map((o) => {
-          const opt = typeof o === 'object' ? o : { value: o, label: String(o).replace('-', ' ') };
-          return (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
+      <div className="relative">
+        <select ref={ref} className={cn('input cursor-pointer appearance-none pr-10', !keepCase && 'capitalize', error && 'input-error')} {...props}>
+          {placeholder !== undefined && (
+            <option value="" className="bg-white text-ink dark:bg-[#131427] dark:text-primary-50">
+              {placeholder}
             </option>
-          );
-        })}
-      </select>
+          )}
+          {options.map((o) => {
+            const opt = typeof o === 'object' ? o : { value: o, label: String(o).replace('-', ' ') };
+            return (
+              <option key={opt.value} value={opt.value} className="bg-white text-ink dark:bg-[#131427] dark:text-primary-50">
+                {opt.label}
+              </option>
+            );
+          })}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+      </div>
     </Field>
   );
 });

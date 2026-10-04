@@ -75,18 +75,40 @@ const BADGES = {
   neutral: 'bg-slate-500/15 text-slate-700 dark:text-slate-300',
 };
 
-export function Badge({ color = 'primary', className, children, icon: Icon }) {
+const ON_DARK_BADGES = {
+  primary: 'bg-primary-500/30 text-primary-100 border border-primary-400/40 backdrop-blur-md',
+  success: 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/40 backdrop-blur-md',
+  warning: 'bg-amber-500/30 text-amber-100 border border-amber-400/40 backdrop-blur-md',
+  danger: 'bg-rose-500/30 text-rose-100 border border-rose-400/40 backdrop-blur-md',
+  info: 'bg-sky-500/30 text-sky-100 border border-sky-400/40 backdrop-blur-md',
+  neutral: 'bg-white/20 text-white border border-white/30 backdrop-blur-md',
+};
+
+export function Badge({ color = 'primary', className, children, icon: Icon, onDark = false }) {
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold capitalize', BADGES[color], className)}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold capitalize',
+        onDark ? ON_DARK_BADGES[color] || ON_DARK_BADGES.neutral : BADGES[color],
+        className
+      )}
+    >
       {Icon && <Icon className="h-3 w-3" />}
       {children}
     </span>
   );
 }
 
-export function CategoryBadge({ category, className }) {
+export function CategoryBadge({ category, className, onDark = false }) {
+  const style = catStyle(category);
   return (
-    <span className={cn('inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold capitalize', catStyle(category).soft, className)}>
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold capitalize',
+        onDark ? style.onDark || 'bg-white/20 text-white border border-white/30 backdrop-blur-md' : style.soft,
+        className
+      )}
+    >
       {String(category).replace('-', ' ')}
     </span>
   );

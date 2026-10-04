@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import {
   useChangePasswordMutation,
+  useGetStudentAchievementsQuery,
   useGetUserQuery,
   useUpdateMeMutation,
   useUploadAvatarMutation,
@@ -194,6 +195,7 @@ export default function Profile() {
   const [pwd, setPwd] = useState(false);
   const fileRef = useRef(null);
   const { data: user, isLoading, error, refetch } = useGetUserQuery(id);
+  const { data: verifiedAchievements } = useGetStudentAchievementsQuery(id, { skip: !id });
   const [uploadAvatar, { isLoading: uploading }] = useUploadAvatarMutation();
 
   useEffect(() => {
@@ -331,6 +333,41 @@ export default function Profile() {
               </div>
             </div>
           </Card>
+
+          {/* Verified College Honors & Recognitions */}
+          {verifiedAchievements?.items?.length > 0 && (
+            <Card>
+              <CardHeader
+                title="Verified College Honors"
+                subtitle="Official achievements posted by College Leadership"
+                action={<Trophy className="h-5 w-5 text-amber-500" />}
+              />
+              <div className="space-y-3">
+                {verifiedAchievements.items.map((va) => (
+                  <Link
+                    key={va._id}
+                    to={`/achievements/${va._id}`}
+                    className="flex flex-col gap-2 rounded-3xl bg-white/60 p-4 transition-all hover:bg-white hover:shadow-soft dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <CategoryBadge category={va.category} />
+                        <Badge color="primary">{va.level}</Badge>
+                        <Badge color="warning">{va.position}</Badge>
+                      </div>
+                      <span className="text-[11px] font-medium text-ink-muted">
+                        {fmtDate(va.achievedOn)}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-ink dark:text-primary-100">{va.title}</p>
+                      {va.eventName && <p className="text-xs text-ink-muted">{va.eventName}</p>}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card>
             <CardHeader title="Achievements" action={<Award className="h-5 w-5 text-amber-500" />} />

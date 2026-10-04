@@ -1,9 +1,9 @@
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarDays, GraduationCap, Megaphone, MessagesSquare, Search as SearchIcon, Shapes } from 'lucide-react';
+import { CalendarDays, GraduationCap, Megaphone, MessagesSquare, Search as SearchIcon, Shapes, Trophy } from 'lucide-react';
 import { useSearchQuery } from '../services/api';
 import { Avatar, Badge, Card, CardHeader, CategoryBadge, EmptyState, PageHeader, PageLoader } from '../components/ui/primitives';
 import { ROLE_LABELS } from '../utils/constants';
-import { friendlyDay, timeAgo } from '../utils/format';
+import { fmtDate, friendlyDay, timeAgo } from '../utils/format';
 
 function Section({ icon: Icon, title, items, render }) {
   if (!items?.length) return null;
@@ -21,7 +21,14 @@ export default function Search() {
   const [params] = useSearchParams();
   const q = params.get('q') || '';
   const { data, isFetching } = useSearchQuery({ q }, { skip: q.length < 2 });
-  const total = data ? data.users.length + data.clubs.length + data.events.length + data.announcements.length + data.discussions.length : 0;
+  const total = data
+    ? data.users.length +
+      data.clubs.length +
+      data.events.length +
+      data.announcements.length +
+      data.discussions.length +
+      (data.achievements?.length || 0)
+    : 0;
 
   return (
     <div>
@@ -34,6 +41,23 @@ export default function Search() {
         </Card>
       ) : (
         <div className="grid gap-5 xl:grid-cols-2">
+          <Section
+            icon={Trophy}
+            title="Achievements"
+            items={data.achievements}
+            render={(a) => (
+              <Link key={a._id} to={`/achievements/${a._id}`} className={row}>
+                <CategoryBadge category={a.category} />
+                <Badge color="primary">{a.level}</Badge>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold">{a.title}</p>
+                  <p className="text-[11px] muted">
+                    {a.position} • {fmtDate(a.achievedOn)}
+                  </p>
+                </div>
+              </Link>
+            )}
+          />
           <Section
             icon={CalendarDays}
             title="Events"

@@ -68,6 +68,16 @@ import * as lostFound from '../controllers/lostFoundController.js';
 import * as complaints from '../controllers/complaintController.js';
 import { COMPLAINT_AUTHORITY_ROLES } from '../controllers/complaintController.js';
 import * as materials from '../controllers/studyMaterialController.js';
+import * as achievements from '../controllers/achievementController.js';
+import {
+  ACHIEVEMENT_CATEGORIES,
+  ACHIEVEMENT_LEVELS,
+  ACHIEVEMENT_MODERATE_ROLES,
+  ACHIEVEMENT_POSITIONS,
+  ACHIEVEMENT_POST_ROLES,
+  ACHIEVEMENT_STATS_ROLES,
+  ACHIEVEMENT_VIEW_ROLES,
+} from '../constants.js';
 import * as ai from '../controllers/aiController.js';
 import { env } from '../config/env.js';
 import * as analytics from '../controllers/analyticsController.js';
@@ -384,6 +394,77 @@ router.post('/announcements', writeLimiter, ...announcementRules(), ann.createAn
 router.put('/announcements/:id', idParam('id'), ...announcementRules(true), ann.updateAnnouncement);
 router.delete('/announcements/:id', idParam('id'), ann.deleteAnnouncement);
 router.patch('/announcements/:id/pin', idParam('id'), authorize('admin', 'faculty', 'hod'), ann.togglePin);
+
+// ── Student achievements ───────────────────────────────────────────
+// Only the Principal and HODs post (HOD: own department, enforced in the
+// controller). Everyone but wardens/security can read; Admin moderates.
+const achievementRules = (optional = false) => {
+  const o = (chain) => (optional ? chain.optional() : chain);
+  return [
+    o(body('title')).trim().isLength({ min: 3, max: 160 }).withMessage('Title must be 3–160 characters'),
+    o(body('description')).trim().isLength({ min: 10, max: 3000 }).withMessage('Description must be 10–3000 characters'),
+    o(body('category')).isIn(ACHIEVEMENT_CATEGORIES).withMessage('Choose a valid category'),
+    o(body('level')).isIn(ACHIEVEMENT_LEVELS).withMessage('Choose a valid level'),
+    body('position').optional({ values: 'falsy' }).isIn(ACHIEVEMENT_POSITIONS),
+    body('eventName').optional({ values: 'falsy' }).trim().isLength({ max: 160 }),
+    body('organizer').optional({ values: 'falsy' }).trim().isLength({ max: 160 }),
+    o(body('achievedOn')).isISO8601().withMessage('Enter a valid achievement date'),
+    body('externalLink')
+      .optional({ values: 'falsy' })
+      .trim()
+      .isURL({ protocols: ['http', 'https'], require_protocol: true })
+      .withMessage('The link must start with http:// or https://'),
+    o(body('students')).isArray({ min: 1, max: 20 }).withMessage('Select 1–20 students'),
+    body('students.*').isMongoId().withMessage('Invalid student'),
+    body('images').optional().isArray({ max: 5 }).withMessage('You can add at most 5 images'),
+    body('images.*.url')
+      .optional()
+      .custom((v) => String(v).startsWith('/uploads/') || /^https:\/\//.test(v))
+      .withMessage('Invalid image'),
+    body('images.*.mimeType')
+      .optional()
+      .isIn(['image/jpeg', 'image/png', 'image/webp'])
+      .withMessage('Images must be JPG, PNG or WebP'),
+    validate,
+  ];
+};
+const achievementViewers = authorize(...ACHIEVEMENT_VIEW_ROLES);
+router.get('/achievements', achievementViewers, achievements.listAchievements);
+router.get('/achievements/dashboard', achievementViewers, achievements.dashboardAchievements);
+router.get('/achievements/students', authorize(...ACHIEVEMENT_POST_ROLES), achievements.searchStudents);
+router.get('/achievements/stats', authorize(...ACHIEVEMENT_STATS_ROLES), achievements.achievementStats);
+router.get(
+  '/achievements/export',
+  authorize(...ACHIEVEMENT_STATS_ROLES),
+  query('format').optional({ values: 'falsy' }).isIn(['csv', 'pdf']),
+  validate,
+  achievements.exportAchievements
+);
+router.get('/achievements/student/:id', achievementViewers, idParam('id'), achievements.studentAchievements);
+router.post('/achievements', authorize(...ACHIEVEMENT_POST_ROLES), writeLimiter, ...achievementRules(), achievements.createAchievement);
+router.get('/achievements/:id', achievementViewers, idParam('id'), achievements.getAchievement);
+router.put('/achievements/:id', authorize(...ACHIEVEMENT_POST_ROLES), writeLimiter, idParam('id'), ...achievementRules(true), achievements.updateAchievement);
+router.delete('/achievements/:id', authorize(...ACHIEVEMENT_POST_ROLES, ...ACHIEVEMENT_MODERATE_ROLES), writeLimiter, idParam('id'), achievements.deleteAchievement);
+router.post('/achievements/:id/restore', authorize(...ACHIEVEMENT_MODERATE_ROLES), idParam('id'), achievements.restoreAchievement);
+router.patch('/achievements/:id/feature', authorize(...ACHIEVEMENT_POST_ROLES), idParam('id'), achievements.toggleFeatured);
+router.post('/achievements/:id/congratulate', achievementViewers, writeLimiter, idParam('id'), achievements.congratulate);
+router.post(
+  '/achievements/:id/hide-request',
+  authorize(...STUDENT_ROLES),
+  writeLimiter,
+  idParam('id'),
+  body('reason').optional({ values: 'falsy' }).trim().isLength({ max: 300 }),
+  validate,
+  achievements.requestHide
+);
+router.patch(
+  '/achievements/:id/hide-request/:reqId',
+  authorize(...ACHIEVEMENT_POST_ROLES),
+  idParam('id', 'reqId'),
+  body('action').isIn(['approve', 'reject']),
+  validate,
+  achievements.resolveHideRequest
+);
 
 // ── Discussions ────────────────────────────────────────────────────
 router.get('/discussions', disc.listDiscussions);

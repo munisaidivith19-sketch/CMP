@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import {
   ArrowRight,
   ArrowUpRight,
+  Award,
   Bell,
   CalendarCheck2,
   CalendarDays,
@@ -23,7 +24,7 @@ import {
   Users,
 } from 'lucide-react';
 import { selectUser } from '../features/authSlice';
-import { useGetAttendanceSummaryQuery, useGetDashboardQuery, useGetSecurityDashboardQuery } from '../services/api';
+import { useGetAchievementsDashboardQuery, useGetAttendanceSummaryQuery, useGetDashboardQuery, useGetSecurityDashboardQuery } from '../services/api';
 import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, EmptyState, ErrorState, PageHeader, Skeleton, StatCard, cn } from '../components/ui/primitives';
 import { AnnouncementItem } from '../components/domain';
 import { CategoryDonut, EngagementChart } from '../components/charts';
@@ -31,6 +32,7 @@ import TodayStrip from '../components/TodayStrip';
 import { STAFF_VIEW, SUMMARY_VIEW, catStyle } from '../utils/constants';
 import { friendlyDay, fmtTime } from '../utils/format';
 import AlumniDashboard from './alumni/AlumniDashboard';
+import AchievementCard from './achievements/AchievementCard';
 
 function DashboardSkeleton() {
   return (
@@ -243,6 +245,7 @@ export default function Dashboard() {
   if (isAlumni) return <AlumniDashboard />;
 
   const { data, isLoading, error, refetch } = useGetDashboardQuery(undefined, { skip: isSecurity || isAlumni });
+  const { data: achievementsData } = useGetAchievementsDashboardQuery(undefined, { skip: isSecurity || isAlumni });
   const [popover, setPopover] = useState(null);
 
   if (isSecurity) return <SecurityDashboard />;
@@ -403,6 +406,68 @@ export default function Dashboard() {
           </div>
         </Card>
       </div>
+
+      {/* Student Achievements Spotlight (My Achievements & Campus Hall of Fame) */}
+      {achievementsData && (achievementsData.campus?.length > 0 || achievementsData.mine?.count > 0) && (
+        <div className="grid gap-5 xl:grid-cols-3">
+          {/* If student has achievements, show My Achievements card */}
+          {!isStaff && achievementsData.mine?.count > 0 ? (
+            <Card className="flex flex-col justify-between">
+              <div>
+                <CardHeader
+                  title="My Achievements"
+                  subtitle={`${achievementsData.mine.count} verified honor${achievementsData.mine.count > 1 ? 's' : ''}`}
+                  action={
+                    <Badge color="warning" icon={Trophy}>
+                      {achievementsData.mine.count}
+                    </Badge>
+                  }
+                />
+                <div className="space-y-2.5">
+                  {achievementsData.mine.items.map((a) => (
+                    <Link
+                      key={a._id}
+                      to={`/achievements/${a._id}`}
+                      className="flex items-center gap-3 rounded-2xl bg-white/50 p-2.5 transition-colors hover:bg-white/80 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                        <Award className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-bold text-ink dark:text-primary-100">{a.title}</p>
+                        <p className="text-[10px] text-ink-muted capitalize">{a.level} • {a.position}</p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 border-t border-white/40 pt-3 dark:border-white/10">
+                <Button to="/achievements?mine=true" variant="soft" size="sm" className="w-full">
+                  View all my achievements
+                </Button>
+              </div>
+            </Card>
+          ) : null}
+
+          {/* Campus Achievements Feed / Carousel */}
+          <Card className={!isStaff && achievementsData.mine?.count > 0 ? 'xl:col-span-2' : 'xl:col-span-3'}>
+            <CardHeader
+              title="Campus Achievements & Honors"
+              subtitle="Latest student victories, hackathon awards and recognitions"
+              action={
+                <Button to="/achievements" variant="soft" size="sm" icon={ArrowRight}>
+                  View all
+                </Button>
+              }
+            />
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {achievementsData.campus?.slice(0, 3).map((a) => (
+                <AchievementCard key={a._id} achievement={a} compact />
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Recommended */}
       <div className="grid gap-5 xl:grid-cols-3">

@@ -57,3 +57,50 @@ export async function downloadAttendanceReport(type, params = {}) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
   return a.download;
 }
+
+/**
+ * Export achievements list to CSV or PDF for Principal / HOD / Admin.
+ */
+export async function exportAchievementsFile(params = {}, format = 'csv') {
+  const query = new URLSearchParams({ format });
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') query.set(k, String(v));
+  });
+
+  const send = () =>
+    fetch(`/api/achievements/export?${query}`, {
+      credentials: 'include',
+      headers: {
+        accept: format === 'pdf' ? 'application/pdf' : 'text/csv',
+        ...(store.getState().auth.accessToken ? { authorization: `Bearer ${store.getState().auth.accessToken}` } : {}),
+      },
+    });
+
+  let res = await send();
+  if (res.status === 401) {
+    const session = await refreshSession();
+    if (!session?.accessToken) {
+      store.dispatch(loggedOut());
+      throw Object.assign(new Error('Your session has expired. Please sign in again.'), { status: 401 });
+    }
+    store.dispatch(setCredentials(session));
+    res = await send();
+  }
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw Object.assign(new Error(data?.message || 'Could not export achievements'), { status: res.status });
+  }
+
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = match ? match[1] : `achievements-${new Date().toISOString().slice(0, 10)}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return a.download;
+}

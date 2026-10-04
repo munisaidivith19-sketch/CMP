@@ -396,12 +396,43 @@ export const exportAchievements = asyncHandler(async (req, res) => {
   const base = safeFilename(`achievements-${new Date().toISOString().slice(0, 10)}`);
 
   if (req.query.format === 'pdf') {
-    const doc = new PdfDocument({ title: 'Student Achievements', footer: 'Student Achievements' });
-    doc.line('Student Achievements', { size: 18, bold: true });
-    doc.line(`Generated ${new Date().toISOString().slice(0, 10)} - ${rows.length} record(s)`, { size: 9.5 });
+    const today = new Date().toISOString().slice(0, 10);
+    const doc = new PdfDocument({
+      title: 'Student Achievements Report',
+      footer: `J.N.N Institute of Engineering - Student Achievements Report - generated ${today}`,
+    });
+
+    if (!doc.logo()) {
+      doc.line('J.N.N INSTITUTE OF ENGINEERING', { size: 18, bold: true });
+    }
+    doc.line('Student Achievements Report', { size: 12 });
     doc.hr();
-    if (!rows.length) doc.line('No achievements match these filters.', { size: 10 });
-    else {
+
+    const facts = [
+      ['Date', today],
+      ['Total Records', String(rows.length)],
+    ];
+    if (scopeDepartment || req.query.department) {
+      facts.push(['Department', scopeDepartment || String(req.query.department)]);
+    }
+    if (req.query.category) {
+      facts.push(['Category', label(req.query.category)]);
+    }
+    if (req.query.level) {
+      facts.push(['Level', label(req.query.level)]);
+    }
+    if (req.query.q) {
+      facts.push(['Filter Query', String(req.query.q)]);
+    }
+
+    doc.facts(facts);
+    doc.gap(4);
+    doc.hr();
+    doc.gap(6);
+
+    if (!rows.length) {
+      doc.line('No achievements match these filters.', { size: 10 });
+    } else {
       doc.table({
         columns: [
           { header: '#', width: 0.4, align: 'right' },

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { decodePng } from './pngImage.js';
 
@@ -83,27 +83,34 @@ export function wrap(text, maxWidth, size, bold = false) {
 
 const A4 = { width: 595.28, height: 841.89 };
 
-// The college logo lives inside the server tree (not client/public) so it is
-// present wherever only the server is deployed. Decoded once, then reused.
+// The college logo can be loaded from the server assets or client/public.
 const LOGO_URL = new URL('../assets/pdf-logo.png', import.meta.url);
+const CLIENT_LOGO_URL = new URL('../../../client/public/pdf-logo.png', import.meta.url);
+
 let logoCache;
 function loadLogo() {
   if (logoCache !== undefined) return logoCache;
-  try {
-    const img = decodePng(readFileSync(LOGO_URL));
-    logoCache = {
-      width: img.width,
-      height: img.height,
-      colorSpace: img.colorSpace,
-      color: deflateSync(img.color),
-      alpha: img.alpha ? deflateSync(img.alpha) : null,
-    };
-  } catch (err) {
-    // A missing or unreadable logo must never stop a report from downloading.
-    console.warn(`PDF logo unavailable: ${err.message}`);
-    logoCache = null;
+  const candidates = [LOGO_URL, CLIENT_LOGO_URL];
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate)) {
+        const img = decodePng(readFileSync(candidate));
+        logoCache = {
+          width: img.width,
+          height: img.height,
+          colorSpace: img.colorSpace,
+          color: deflateSync(img.color),
+          alpha: img.alpha ? deflateSync(img.alpha) : null,
+        };
+        return logoCache;
+      }
+    } catch {
+      // try next candidate
+    }
   }
-  return logoCache;
+  console.warn('PDF logo unavailable from server/assets or client/public');
+  logoCache = null;
+  return null;
 }
 
 /**

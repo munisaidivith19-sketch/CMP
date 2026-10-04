@@ -12,7 +12,7 @@ import { env } from './config/env.js';
 import routes from './routes/index.js';
 import { apiLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFound } from './middleware/error.js';
-import { UPLOAD_ROOT } from './utils/storage.js';
+import { UPLOAD_ROOT, readStoredFile } from './utils/storage.js';
 import { inputHygieneGuard, csrfAndOriginGuard } from './middleware/security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,6 +69,23 @@ export function createApp() {
       },
     })
   );
+
+  // Files kept in the database (production without Cloudinary).
+  app.get('/uploads/:filename', async (req, res, next) => {
+    try {
+      const file = await readStoredFile(req.params.filename);
+      if (!file) return next();
+      res.set({
+        'Content-Type': file.mimeType,
+        'Cache-Control': 'public, max-age=604800, immutable',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+      });
+      res.send(Buffer.from(file.data));
+    } catch (err) {
+      next(err);
+    }
+  });
 
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
   app.use('/api', apiLimiter, csrfAndOriginGuard, routes);

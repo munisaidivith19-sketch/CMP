@@ -526,10 +526,15 @@ export const verifyParentOtp = asyncHandler(async (req, res) => {
 
 // ── Development OTP portal (admin only; the route is absent in production) ──
 
-export const listDevOtps = asyncHandler(async (_req, res) => {
+export const listDevOtps = asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const provider = otpService.getOtpProvider();
-  res.json({ provider: provider.name, otps: await otpService.listDevOtps(), messages: provider.sentMessages?.() || [] });
+  const otps = await otpService.listDevOtps();
+  // In production this page shows admins parent OTPs that would otherwise go
+  // out by SMS — leave a record of who looked and when, even though the OTP
+  // values themselves are never written to the log.
+  logActivity(req, 'gate_pass.dev_otp_viewed', { summary: `Viewed ${otps.length} OTP record(s) via /dev/otp` });
+  res.json({ provider: provider.name, otps, messages: provider.sentMessages?.() || [] });
 });
 
 // ── Student withdraws a request ────────────────────────────────────

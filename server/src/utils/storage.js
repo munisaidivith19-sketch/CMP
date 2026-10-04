@@ -5,6 +5,7 @@ import multer from 'multer';
 import { fileTypeFromBuffer } from 'file-type';
 import { env } from '../config/env.js';
 import { ApiError } from './http.js';
+import StoredFile from '../models/StoredFile.js';
 
 export const UPLOAD_ROOT = path.resolve(process.cwd(), env.uploadDir);
 
@@ -96,8 +97,21 @@ export async function persistFile(file, kind = 'image') {
     return { ...meta, url: result.secure_url };
   }
 
-  await fs.mkdir(UPLOAD_ROOT, { recursive: true });
   const filename = `${crypto.randomUUID()}.${ext}`;
+
+  // Production without Cloudinary: the disk is ephemeral, so keep the bytes in the database.
+  if (env.isProd) {
+    await StoredFile.create({ filename, mimeType, data: file.buffer });
+    return { ...meta, url: `/uploads/${filename}` };
+  }
+
+  await fs.mkdir(UPLOAD_ROOT, { recursive: true });
   await fs.writeFile(path.join(UPLOAD_ROOT, filename), file.buffer, { mode: 0o644 });
   return { ...meta, url: `/uploads/${filename}` };
+}
+
+/** A file stored by persistFile in MongoDB, or null. `filename` is a bare name. */
+export async function readStoredFile(filename) {
+  if (!/^[w.-]+$/.test(filename)) return null;
+  return StoredFile.findOne({ filename });
 }

@@ -104,7 +104,9 @@ export function renderReportPdf(report) {
     footer: `${h.collegeName} - ${report.title} - generated ${h.generatedAt} (server time)`,
   });
 
-  doc.line(h.collegeName, { size: 19, bold: true });
+  // The college logo replaces the old text heading; the name only appears
+  // as text if the logo asset can't be loaded.
+  if (!doc.logo()) doc.line(h.collegeName, { size: 19, bold: true });
   doc.line(report.title, { size: 12 });
   doc.hr();
   doc.facts(headerFacts(h));

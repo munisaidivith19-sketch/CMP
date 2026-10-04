@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
+import { decodePng } from './pngImage.js';
+
 /**
  * A very small PDF 1.4 writer — just enough for the Attendance reports, with
  * no new dependency. Text uses the two PDF base-14 Helvetica fonts, so no font
@@ -79,6 +83,29 @@ export function wrap(text, maxWidth, size, bold = false) {
 
 const A4 = { width: 595.28, height: 841.89 };
 
+// The college logo lives inside the server tree (not client/public) so it is
+// present wherever only the server is deployed. Decoded once, then reused.
+const LOGO_URL = new URL('../assets/pdf-logo.png', import.meta.url);
+let logoCache;
+function loadLogo() {
+  if (logoCache !== undefined) return logoCache;
+  try {
+    const img = decodePng(readFileSync(LOGO_URL));
+    logoCache = {
+      width: img.width,
+      height: img.height,
+      colorSpace: img.colorSpace,
+      color: deflateSync(img.color),
+      alpha: img.alpha ? deflateSync(img.alpha) : null,
+    };
+  } catch (err) {
+    // A missing or unreadable logo must never stop a report from downloading.
+    console.warn(`PDF logo unavailable: ${err.message}`);
+    logoCache = null;
+  }
+  return logoCache;
+}
+
 /**
  * A paginated A4 document. Content is appended top-down; every writer checks
  * the remaining space first and starts a new page when it runs out, so a
@@ -93,6 +120,7 @@ export class PdfDocument {
     this.ops = null;
     this.y = 0;
     this.repeatOnBreak = null;
+    this.logoPages = new Set();
     this.addPage();
   }
 
@@ -121,6 +149,29 @@ export class PdfDocument {
 
   gap(points = 8) {
     this.y -= points;
+  }
+
+  /**
+   * The college logo, centred at the current position and scaled to fit
+   * `maxWidth` x `maxHeight` with its aspect ratio preserved. Returns false
+   * (drawing nothing) if the logo asset can't be loaded.
+   */
+  logo({ maxWidth = 230, maxHeight = 70, spaceAfter = 14 } = {}) {
+    const img = loadLogo();
+    if (!img) return false;
+    const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    this.ensure(h + spaceAfter);
+    const x = (A4.width - w) / 2;
+    this.y -= h;
+    this.ops.push(`q
+${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${this.y.toFixed(2)} cm
+/Im1 Do
+Q`);
+    this.logoPages.add(this.pages.length - 1);
+    this.y -= spaceAfter;
+    return true;
   }
 
   /** One line of text at the current position. */
@@ -264,14 +315,26 @@ export class PdfDocument {
     const fontReg = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     const fontBold = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
 
+    let imageNo = 0;
+    if (this.logoPages.size) {
+      const img = loadLogo();
+      const stream = (dict, data) => add(`<< ${dict} /Filter /FlateDecode /Length ${data.length} >>
+stream
+${data.toString('latin1')}
+endstream`);
+      const base = `/Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} /BitsPerComponent 8`;
+      const maskNo = img.alpha ? stream(`${base} /ColorSpace /DeviceGray`, img.alpha) : 0;
+      imageNo = stream(`${base} /ColorSpace /${img.colorSpace}${maskNo ? ` /SMask ${maskNo} 0 R` : ''}`, img.color);
+    }
+
     const pageNos = [];
-    for (const ops of this.pages) {
+    for (const [pageIndex, ops] of this.pages.entries()) {
       const stream = ops.join('\n');
       const contentNo = add(`<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`);
       pageNos.push(
         add(
           `<< /Type /Page /Parent ${pagesNo} 0 R /MediaBox [0 0 ${A4.width.toFixed(2)} ${A4.height.toFixed(2)}] ` +
-            `/Resources << /Font << /F1 ${fontReg} 0 R /F2 ${fontBold} 0 R >> >> /Contents ${contentNo} 0 R >>`
+            `/Resources << /Font << /F1 ${fontReg} 0 R /F2 ${fontBold} 0 R >>${this.logoPages.has(pageIndex) ? ` /XObject << /Im1 ${imageNo} 0 R >>` : ''} >> /Contents ${contentNo} 0 R >>`
         )
       );
     }
@@ -291,7 +354,7 @@ export class PdfDocument {
     for (const off of offsets) out += `${String(off).padStart(10, '0')} 00000 n \n`;
     out +=
       `trailer\n<< /Size ${objects.length + 1} /Root ${catalogNo} 0 R ` +
-      `/Info << /Title (${pdfString(this.title)}) /Producer (VEXON) >> >>\nstartxref\n${xref}\n%%EOF\n`;
+      `/Info << /Title (${pdfString(this.title)}) >> >>\nstartxref\n${xref}\n%%EOF\n`;
 
     return Buffer.from(out, 'latin1');
   }

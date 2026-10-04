@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import StudyMaterial from '../../models/StudyMaterial.js';
 import StudyMaterialChunk from '../../models/StudyMaterialChunk.js';
-import { UPLOAD_ROOT } from '../../utils/storage.js';
+import { UPLOAD_ROOT, readStoredFile } from '../../utils/storage.js';
 
 /**
  * RAG ingestion for the existing Study Materials module:
@@ -31,7 +31,8 @@ async function readFileBuffer(url) {
     try {
       return await fs.readFile(full);
     } catch {
-      return null;
+      const stored = await readStoredFile(path.basename(url)).catch(() => null);
+      return stored ? Buffer.from(stored.data) : null;
     }
   }
   let parsed;

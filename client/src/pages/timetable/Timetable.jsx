@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { CalendarClock, Clock, Coffee, MapPin, Pencil, Plus, Search, ShieldCheck, Trash2, User } from 'lucide-react';
+import { CalendarClock, CalendarOff, Clock, Coffee, MapPin, Pencil, Plus, Search, ShieldCheck, Trash2, User } from 'lucide-react';
 import { useDeleteSlotMutation, useGetMyScheduleQuery, useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import MySchedule from './MySchedule';
-import { errMsg } from '../../utils/format';
+import { errMsg, fmtClassDay } from '../../utils/format';
 import SlotModal from './SlotModal';
+import { HolidayBanner } from '../attendance/Holidays';
 
 export const DAYS = WEEKDAYS;
 const DAY_SHORT = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat' };
@@ -61,6 +62,32 @@ export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }
           {to12h(slot.startTime)} – {to12h(slot.endTime)}
         </span>
         <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} />
+      </div>
+    );
+  }
+  // This week's meeting is cancelled by a holiday. The timetable entry itself
+  // is untouched and comes back by itself after the holiday.
+  if (slot.holiday) {
+    return (
+      <div className="relative overflow-hidden rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5" title={`Holiday: ${slot.holiday.reason}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+              <CalendarOff className="h-3.5 w-3.5" /> Holiday · P{slot.period}
+            </p>
+            <p className="truncate font-bold">{slot.holiday.reason}</p>
+          </div>
+          <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} />
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs muted">
+          <span className="line-through">{slot.subject?.code} · {slot.subject?.name}</span>
+          <span>No class · Attendance unavailable</span>
+          {showSection && (
+            <span className="font-semibold">
+              {YEAR_LABELS[slot.year] || `Year ${slot.year}`} · Sec {slot.section} · {slot.department}
+            </span>
+          )}
+        </div>
       </div>
     );
   }
@@ -200,7 +227,11 @@ export default function Timetable() {
 
   const today = todayName();
   const todaySlots = byDay[today] || [];
-  const nextSlot = todaySlots.find((s) => !s.isBreak && s.startTime > now);
+  // A period cancelled by a holiday (server-annotated) is never "next".
+  const nextSlot = todaySlots.find((s) => !s.isBreak && !s.holiday && s.startTime > now);
+  // The whole of today is a holiday when every class period today carries one.
+  const todayClasses = todaySlots.filter((s) => !s.isBreak);
+  const todayHoliday = todayClasses.length && todayClasses.every((s) => s.holiday) ? todayClasses[0].holiday : null;
   const periods = useMemo(() => {
     const rows = new Map();
     slots.forEach((s) => rows.set(`${s.startTime}-${s.endTime}`, { startTime: s.startTime, endTime: s.endTime, period: s.period, isBreak: s.isBreak }));
@@ -456,7 +487,8 @@ export default function Timetable() {
         // wider than a phone screen instead of ellipsizing.
         <div className="grid gap-5 xl:grid-cols-3 [&>*]:min-w-0">
           <Card className="xl:col-span-2">
-            <CardHeader title={`Today · ${today.charAt(0).toUpperCase()}${today.slice(1)}`} subtitle={`${todaySlots.filter((s) => !s.isBreak).length} classes`} />
+            <CardHeader title={`Today · ${today.charAt(0).toUpperCase()}${today.slice(1)}`} subtitle={todayHoliday ? 'Holiday' : `${todaySlots.filter((s) => !s.isBreak).length} classes`} />
+            {todayHoliday && <HolidayBanner holiday={todayHoliday} text="No classes scheduled · Attendance unavailable" className="mb-3" />}
             {!todaySlots.length ? (
               <EmptyState icon={Coffee} title="No classes today" text="Enjoy the break — check the weekly view for upcoming classes." />
             ) : (
@@ -481,12 +513,16 @@ export default function Timetable() {
             <div className="mt-5 border-t border-white/60 pt-4 dark:border-white/10">
               <p className="label">This week</p>
               <div className="grid grid-cols-3 gap-2">
-                {DAYS.map((d) => (
-                  <button key={d} onClick={() => { setDay(d); setView('week'); }} className={cn('rounded-2xl bg-white/50 p-2 text-center dark:bg-white/5', d === today && 'ring-2 ring-primary-400')}>
-                    <p className="text-[11px] font-bold uppercase muted">{DAY_SHORT[d]}</p>
-                    <p className="text-lg font-extrabold">{byDay[d].filter((s) => !s.isBreak).length}</p>
-                  </button>
-                ))}
+                {DAYS.map((d) => {
+                  const classes = byDay[d].filter((s) => !s.isBreak);
+                  const off = classes.length > 0 && classes.every((s) => s.holiday);
+                  return (
+                    <button key={d} onClick={() => { setDay(d); setView('week'); }} className={cn('rounded-2xl bg-white/50 p-2 text-center dark:bg-white/5', d === today && 'ring-2 ring-primary-400', off && 'bg-rose-500/10 dark:bg-rose-500/10')}>
+                      <p className="text-[11px] font-bold uppercase muted">{DAY_SHORT[d]}</p>
+                      {off ? <p className="py-1 text-[11px] font-extrabold uppercase text-rose-600 dark:text-rose-300">Holiday</p> : <p className="text-lg font-extrabold">{classes.length}</p>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </Card>
@@ -521,6 +557,7 @@ export default function Timetable() {
                   {DAYS.map((d) => (
                     <th key={d} className={cn('px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide', d === today ? 'text-primary-700 dark:text-primary-400' : 'text-ink-muted')}>
                       {DAY_SHORT[d]}
+                      {data?.week?.[d] && <span className="ml-1 font-semibold normal-case opacity-70">{fmtClassDay(data.week[d], 'dd MMM')}</span>}
                     </th>
                   ))}
                 </tr>

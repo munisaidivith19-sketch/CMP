@@ -13,16 +13,19 @@ import {
   startOfWeek,
   subMonths,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from './ui/primitives';
 import { catStyle } from '../utils/constants';
 import { fmtTime } from '../utils/format';
+import { fmtHolidayDates, holidaysOn } from '../utils/holidays';
 
 /**
  * Month calendar with event dots. Pass `month` + `onMonthChange` to control the
  * visible month (e.g. to load that month's events); `large` for the full-size view.
+ * `holidays` (from GET /holidays) tints every day a holiday covers — a custom
+ * range marks each of its days, across month and year boundaries.
  */
-export default function MiniCalendar({ events = [], month: controlled, onMonthChange, large = false }) {
+export default function MiniCalendar({ events = [], holidays = [], month: controlled, onMonthChange, large = false }) {
   const [own, setOwn] = useState(new Date());
   const month = controlled || own;
   const setMonth = onMonthChange || setOwn;
@@ -39,6 +42,7 @@ export default function MiniCalendar({ events = [], month: controlled, onMonthCh
 
   const eventsOn = (day) => events.filter((e) => isSameDay(new Date(e.startDate), day));
   const selectedEvents = eventsOn(selected);
+  const selectedHolidays = holidaysOn(holidays, format(selected, 'yyyy-MM-dd'));
 
   return (
     <div>
@@ -61,6 +65,7 @@ export default function MiniCalendar({ events = [], month: controlled, onMonthCh
         ))}
         {days.map((day) => {
           const evs = eventsOn(day);
+          const hols = holidaysOn(holidays, format(day, 'yyyy-MM-dd'));
           const active = isSameDay(day, selected);
           return (
             <button
@@ -72,12 +77,18 @@ export default function MiniCalendar({ events = [], month: controlled, onMonthCh
                 !isSameMonth(day, month) && 'text-ink-muted/50',
                 active
                   ? 'bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow'
-                  : isToday(day)
-                    ? 'bg-primary-500/10 text-primary-600 dark:text-primary-200'
-                    : 'hover:bg-white/70 dark:hover:bg-white/10'
+                  : hols.length
+                    ? 'bg-rose-500/15 text-rose-700 ring-1 ring-rose-500/40 dark:text-rose-300'
+                    : isToday(day)
+                      ? 'bg-primary-500/10 text-primary-600 dark:text-primary-200'
+                      : 'hover:bg-white/70 dark:hover:bg-white/10'
               )}
+              aria-label={hols.length ? `${format(day, 'd MMMM')}, holiday: ${hols[0].reason}` : undefined}
             >
               {format(day, 'd')}
+              {large && hols.length > 0 && !evs.length && (
+                <span className={cn('mt-0.5 hidden max-w-full truncate px-1 text-[9px] font-bold uppercase sm:block', active ? 'text-white/90' : 'text-rose-600 dark:text-rose-300')}>Holiday</span>
+              )}
               {large && evs.length > 0 && (
                 <span className={cn('mt-0.5 hidden max-w-full truncate px-1 text-[9px] font-medium sm:block', active ? 'text-white/90' : 'muted')}>{evs[0].title}</span>
               )}
@@ -94,7 +105,18 @@ export default function MiniCalendar({ events = [], month: controlled, onMonthCh
       </div>
       <div className="mt-4 space-y-2">
         <p className="text-xs font-bold uppercase tracking-wide muted">{format(selected, 'EEEE, dd MMM')}</p>
-        {selectedEvents.length === 0 && <p className="text-xs muted">No events on this day.</p>}
+        {selectedHolidays.map((h) => (
+          <div key={h._id} className="flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-2.5">
+            <CalendarOff className="mt-0.5 h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+            <div className="min-w-0 text-xs">
+              <p className="font-extrabold uppercase tracking-widest text-rose-700 dark:text-rose-300">Holiday</p>
+              <p className="mt-0.5 text-sm font-semibold">Reason: {h.reason}</p>
+              <p className="muted">Scope: {h.scope}</p>
+              <p className="muted">{fmtHolidayDates(h)}</p>
+            </div>
+          </div>
+        ))}
+        {selectedEvents.length === 0 && !selectedHolidays.length && <p className="text-xs muted">No events on this day.</p>}
         {selectedEvents.map((e) => (
           <Link key={e._id} to={`/events/${e._id}`} className="flex items-center gap-3 rounded-2xl bg-white/50 p-2.5 transition-colors hover:bg-white/80 dark:bg-white/5 dark:hover:bg-white/10">
             <span className="h-8 w-1.5 rounded-full" style={{ background: catStyle(e.category).hex }} />

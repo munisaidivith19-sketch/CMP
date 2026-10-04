@@ -4,9 +4,11 @@ import User from '../models/User.js';
 import { ApiError, asyncHandler, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { emitToRoles } from '../config/socket.js';
-import { campusParts } from '../utils/dates.js';
+import { campusParts, toDay } from '../utils/dates.js';
 import { COLLEGE_WIDE_ROLES, TIMETABLE_VIEW_ROLES, yearOfSemester } from '../constants.js';
 import { STUDENT_ROLES, classInChargeFilter, facultyClassInChargeScope, ownDepartment } from '../utils/academicScope.js';
+import { annotateWeek, findHoliday, toApi as toHolidayApi } from '../services/holidays.js';
+import { clock } from '../utils/clock.js';
 
 // Warden/Security must never receive a timetable event, even a bare
 // department/section identifier — emit only to the roles that can see timetables.
@@ -191,7 +193,10 @@ export const getMyTimetable = asyncHandler(async (req, res) => {
   const filter = await timetableReadScope(req.user, req.query);
   if (!filter) return res.json({ slots: [], needsSection: true });
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
-  const body = { slots: sortSlots(slots), needsSection: false };
+  // Each slot carries this week's date for its weekday and the holiday (if
+  // any) that cancels that meeting; the stored schedule is never changed.
+  const week = await annotateWeek(slots);
+  const body = { slots: sortSlots(slots), needsSection: false, week };
   // Our Class view: say which class it is (or that there is none), so the UI
   // never has to work it out — or guess — on its own.
   if (req.user.role === 'faculty' && req.query.scope === 'class') {
@@ -210,7 +215,8 @@ export const getMySchedule = asyncHandler(async (req, res) => {
   if (req.query.semester) filter.semester = Number(req.query.semester);
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
   const semesters = await TimetableSlot.find({ faculty: req.user._id, isActive: true, isBreak: { $ne: true } }).distinct('semester');
-  res.json({ slots: sortSlots(slots), semesters: semesters.sort((a, b) => a - b) });
+  const week = await annotateWeek(slots);
+  res.json({ slots: sortSlots(slots), semesters: semesters.sort((a, b) => a - b), week });
 });
 
 export const getSectionTimetable = asyncHandler(async (req, res) => {
@@ -224,6 +230,7 @@ export const getSectionTimetable = asyncHandler(async (req, res) => {
   if (STUDENT_ROLES.includes(req.user.role) && scope.section !== section) return res.json([]);
   const filter = { ...scope, section };
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
+  await annotateWeek(slots);
   res.json(sortSlots(slots));
 });
 
@@ -239,6 +246,7 @@ export const getFacultyTimetable = asyncHandler(async (req, res) => {
   if (!self && user.role === 'hod') filter.department = ownDepartment(user);
   if (req.query.semester) filter.semester = Number(req.query.semester);
   const slots = await populateSlot(TimetableSlot.find(filter)).lean();
+  await annotateWeek(slots);
   res.json(sortSlots(slots));
 });
 
@@ -260,13 +268,23 @@ export const getCurrentClass = asyncHandler(async (req, res) => {
   }
 
   const slots = await populateSlot(TimetableSlot.find(filter)).sort({ period: 1 }).lean();
+  await annotateWeek(slots);
   let current = null;
   let next = null;
+  // A period cancelled by a holiday is never "current" or "next".
   for (const slot of slots) {
+    if (slot.holiday) continue;
     if (slot.startTime <= time && slot.endTime > time) current = slot;
     else if (slot.startTime > time && !slot.isBreak && !next) next = slot;
   }
-  res.json({ current, next, today: slots, weekday, time });
+  // The holiday for the viewer's own class today (students), or the one that
+  // empties a faculty member's whole day.
+  const holiday = STUDENT_ROLES.includes(user.role)
+    ? toHolidayApi(await findHoliday({ department: user.department, year: user.year, section: user.section }, toDay(clock.now())))
+    : slots.length && slots.every((s) => s.holiday)
+      ? slots[0].holiday
+      : null;
+  res.json({ current, next, today: slots, weekday, time, holiday });
 });
 
 // ── Timetable writes (admin) ───────────────────────────────────────

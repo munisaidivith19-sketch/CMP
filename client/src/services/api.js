@@ -58,7 +58,7 @@ const baseQueryWithReauth = async (args, api, extra) => {
 const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
-  'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation',
+  'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation', 'Holiday',
   'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics',
 ];
 
@@ -333,6 +333,13 @@ export const api = createApi({
       query: (body) => ({ url: '/attendance/faculty/mark', method: 'POST', body }),
       invalidatesTags: ['StaffAttendance'],
     }),
+
+    // ── Holidays (create / edit / delete: Principal only, enforced server-side) ──
+    getHolidays: b.query({ query: (params) => ({ url: '/holidays', params }), providesTags: ['Holiday'] }),
+    getHolidayOptions: b.query({ query: () => '/holidays/options' }),
+    createHoliday: b.mutation({ query: (body) => ({ url: '/holidays', method: 'POST', body }), invalidatesTags: ['Holiday', 'Attendance', 'Timetable'] }),
+    updateHoliday: b.mutation({ query: ({ id, ...body }) => ({ url: `/holidays/${id}`, method: 'PUT', body }), invalidatesTags: ['Holiday', 'Attendance', 'Timetable'] }),
+    deleteHoliday: b.mutation({ query: (id) => ({ url: `/holidays/${id}`, method: 'DELETE' }), invalidatesTags: ['Holiday', 'Attendance', 'Timetable'] }),
 
     // ── Timetable / subjects ──────────────────────────
     getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
@@ -996,4 +1003,9 @@ export const {
   useSubmitPublicClaimMutation,
   useGetAlumniAnalyticsQuery,
   useGetAlumniDashboardQuery,
+  useGetHolidaysQuery,
+  useGetHolidayOptionsQuery,
+  useCreateHolidayMutation,
+  useUpdateHolidayMutation,
+  useDeleteHolidayMutation,
 } = api;

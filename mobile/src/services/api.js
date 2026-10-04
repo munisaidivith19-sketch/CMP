@@ -56,7 +56,7 @@ export const api = createApi({
   tagTypes: [
     'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat',
     'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin',
-    'StudyMaterial', 'Complaint',
+    'StudyMaterial', 'Complaint', 'Holiday',
     'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics'
   ],
   endpoints: (b) => ({
@@ -134,6 +134,8 @@ export const api = createApi({
     // Faculty may pass { scope: 'class' } (Our Class) or { scope: 'handling' };
     // the server derives both scopes from the account.
     getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
+    // Holidays that apply to this account — the server decides which (read-only on mobile).
+    getHolidays: b.query({ query: (params) => ({ url: '/holidays', params }), providesTags: ['Holiday'] }),
     getOurClassAttendance: b.query({ query: (params) => ({ url: '/attendance/our-class', params }), providesTags: ['Attendance'] }),
     getReportOptions: b.query({ query: () => '/attendance/reports/options', providesTags: ['Attendance', 'Timetable'] }),
     getReportPeriods: b.query({ query: (params) => ({ url: '/attendance/reports/periods', params }), providesTags: ['Attendance', 'Timetable'] }),
@@ -489,6 +491,7 @@ export const api = createApi({
 });
 
 export const {
+  useGetHolidaysQuery,
   useLoginMutation,
   useForgotPasswordMutation,
   useChangePasswordMutation,

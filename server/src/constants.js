@@ -142,6 +142,15 @@ export const GROUP_CATEGORIES = ['custom', 'academic', 'faculty'];
 export const ATTENDANCE_STATUSES = ['present', 'absent'];
 export const CORRECTION_STATUSES = ['pending', 'approved', 'rejected'];
 
+// ── Holidays ────────────────────────────────────────────────────────
+// Only the Principal declares, edits or cancels a holiday. Everyone who can
+// see a timetable can read the holidays that apply to them.
+export const HOLIDAY_MANAGE_ROLES = ['principal'];
+export const HOLIDAY_TYPES = ['SINGLE', 'CUSTOM'];
+export const HOLIDAY_STATUSES = ['ACTIVE', 'CANCELLED'];
+// Longest range one holiday may cover.
+export const HOLIDAY_MAX_DAYS = 366;
+
 // ── Timetable ───────────────────────────────────────────────────────
 export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 

@@ -2,9 +2,12 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
 import { addMonths, eachDayOfInterval, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, isToday, startOfMonth, startOfWeek, subMonths } from 'date-fns';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { CalendarOff, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { Card, ErrorState, Header, IconButton, Screen, T } from '../../components/ui';
-import { useGetEventsQuery } from '../../services/api';
+import { useGetEventsQuery, useGetHolidaysQuery } from '../../services/api';
+import { useSelector } from 'react-redux';
+import { selectUser } from '../../store/authSlice';
+import { holidaysOn, fmtHolidayDates } from '../../components/HolidayCard';
 import { colors, fonts } from '../../theme';
 
 // Slightly under 1/7 so float rounding never pushes Sunday onto the next row.
@@ -22,12 +25,19 @@ export default function Calendar() {
   }, [month]);
   const { data, isFetching, error, refetch } = useGetEventsQuery({ when: 'all', from: from.toISOString(), to: to.toISOString(), limit: 50 });
   const events = data?.items || [];
+  // Holidays that apply to this account (filtered by the server); no academic
+  // calendar for warden / security / alumni.
+  const me = useSelector(selectUser);
+  const academic = !['warden', 'security', 'alumni'].includes(me?.role);
+  const hol = useGetHolidaysQuery({ from: format(from, 'yyyy-MM-dd'), to: format(to, 'yyyy-MM-dd') }, { skip: !academic });
+  const holidays = hol.data?.holidays || [];
+  const pickedHolidays = holidaysOn(holidays, format(selected, 'yyyy-MM-dd'));
   const on = (day) => events.filter((e) => isSameDay(new Date(e.startDate), day));
   const picked = on(selected);
 
   return (
     <Screen refreshing={false} onRefresh={refetch}>
-      <Header back title="Calendar" subtitle="Events across campus" right={isFetching ? <ActivityIndicator color={colors.primary} /> : null} />
+      <Header back title="Calendar" subtitle="Events and holidays" right={isFetching ? <ActivityIndicator color={colors.primary} /> : null} />
       <Card style={{ gap: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <T v="h3" style={{ flex: 1 }}>
@@ -47,19 +57,20 @@ export default function Calendar() {
         <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
           {days.map((day) => {
             const evs = on(day);
+            const off = holidaysOn(holidays, format(day, 'yyyy-MM-dd')).length > 0;
             const active = isSameDay(day, selected);
             return (
-              <Pressable key={day.toISOString()} onPress={() => setSelected(day)} style={{ width: CELL, aspectRatio: 1, padding: 2 }} accessibilityLabel={`${format(day, 'd MMMM')}, ${evs.length} events`}>
+              <Pressable key={day.toISOString()} onPress={() => setSelected(day)} style={{ width: CELL, aspectRatio: 1, padding: 2 }} accessibilityLabel={`${format(day, 'd MMMM')}, ${off ? 'holiday, ' : ''}${evs.length} events`}>
                 <View
                   style={{
                     flex: 1,
                     borderRadius: 12,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: active ? colors.primary : isToday(day) ? colors.primarySoft : 'transparent',
+                    backgroundColor: active ? colors.primary : off ? colors.dangerSoft : isToday(day) ? colors.primarySoft : 'transparent',
                   }}
                 >
-                  <T v="small" style={{ fontFamily: fonts.bold, color: active ? '#fff' : !isSameMonth(day, month) ? 'rgba(146,149,179,0.5)' : colors.ink }}>
+                  <T v="small" style={{ fontFamily: fonts.bold, color: active ? '#fff' : off ? colors.danger : !isSameMonth(day, month) ? 'rgba(146,149,179,0.5)' : colors.ink }}>
                     {format(day, 'd')}
                   </T>
                   {evs.length ? (
@@ -77,6 +88,17 @@ export default function Calendar() {
       </Card>
       {error ? <ErrorState error={error} onRetry={refetch} /> : null}
       <T v="label">{format(selected, 'EEEE, dd MMM')}</T>
+      {pickedHolidays.map((h) => (
+        <Card key={h._id} style={{ flexDirection: 'row', gap: 10, backgroundColor: colors.dangerSoft, borderColor: 'rgba(244,63,94,0.3)' }}>
+          <CalendarOff size={20} color={colors.danger} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <T v="label" style={{ color: '#be123c' }}>HOLIDAY</T>
+            <T v="strong">Reason: {h.reason}</T>
+            <T v="small">Scope: {h.scope}</T>
+            <T v="small">{fmtHolidayDates(h)}</T>
+          </View>
+        </Card>
+      ))}
       {picked.length ? (
         picked.map((e) => (
           <Card key={e._id} onPress={() => router.push(`/events/${e._id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -91,7 +113,7 @@ export default function Calendar() {
             </View>
           </Card>
         ))
-      ) : (
+      ) : pickedHolidays.length ? null : (
         <T v="small">No events on this day.</T>
       )}
     </Screen>

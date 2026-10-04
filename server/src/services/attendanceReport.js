@@ -28,6 +28,7 @@ import {
 } from '../utils/academicScope.js';
 import { env } from '../config/env.js';
 import { COLLEGE_WIDE_ROLES, yearOfSemester } from '../constants.js';
+import { fullHolidayOn, reportHolidays } from './holidays.js';
 
 // `current` = today's completed periods only; `custom` = an explicit from/to range.
 export const REPORT_TYPES = ['period', 'date', 'current', 'weekly', 'monthly', 'semester', 'custom'];
@@ -220,7 +221,27 @@ export async function periodReport(user, query) {
   const period = num(query.period);
   if (!Number.isInteger(period) || period < 1 || period > 12) throw new ApiError(422, 'Choose a period');
 
-  const session = await AttendanceSession.findOne({ ...sessionFilter(scope), date, period }).lean();
+  const [session, holidays] = await Promise.all([
+    AttendanceSession.findOne({ ...sessionFilter(scope), date, period }).lean(),
+    reportHolidays(scope, date, date),
+  ]);
+  const holiday = fullHolidayOn(holidays, date);
+
+  // A holiday for the whole class with nothing recorded: "not applicable" —
+  // never a list of absent students, and no "period not finished" wait.
+  if (holiday && !session) {
+    return {
+      type: 'period',
+      title: 'Period-wise Attendance Report',
+      header: scopeHeader(scope, { date: dayKey(date), period, facultyName: scope.facultyName ?? null, generatedAt: serverNow().stamp }),
+      holiday,
+      holidays,
+      notTaken: false,
+      present: [],
+      absent: [],
+      totals: { present: 0, absent: 0, total: 0, percentage: 0 },
+    };
+  }
 
   // No session yet: the timetable entry still tells us when the period ends,
   // so "not finished" and "not taken" stay two different answers.
@@ -260,6 +281,8 @@ export async function periodReport(user, query) {
         facultyName: scope.facultyName ?? null,
         generatedAt: serverNow().stamp,
       }),
+      holiday: null,
+      holidays,
       notTaken: true,
       present: [],
       absent: [],
@@ -299,6 +322,9 @@ export async function periodReport(user, query) {
         generatedAt: serverNow().stamp,
       }
     ),
+    // Attendance taken before a holiday was declared stays as it was recorded.
+    holiday,
+    holidays,
     notTaken: false,
     present,
     absent,
@@ -321,7 +347,10 @@ export async function dateReport(user, query) {
   const now = serverNow();
   if (date.getTime() > now.day.getTime()) throw new ApiError(422, 'That date is in the future');
 
-  const sessions = await AttendanceSession.find({ ...sessionFilter(scope), date }).sort({ period: 1 }).lean();
+  const [sessions, holidays] = await Promise.all([
+    AttendanceSession.find({ ...sessionFilter(scope), date }).sort({ period: 1 }).lean(),
+    reportHolidays(scope, date, date),
+  ]);
   // Today's still-running periods are left out, the same server-time rule the
   // single-period report applies.
   const finished = sessions.filter((s) => date.getTime() < now.day.getTime() || now.time >= s.endTime);
@@ -389,6 +418,10 @@ export async function dateReport(user, query) {
     type: 'date',
     title: 'Attendance Report — Particular Date',
     header: scopeHeader(scope, { date: dayKey(date), generatedAt: now.stamp }),
+    // `holiday`: the whole class is on holiday that day (attendance not
+    // applicable); `holidays`: every holiday touching any part of the scope.
+    holiday: fullHolidayOn(holidays, date),
+    holidays,
     periods,
     students,
     totals: {
@@ -432,11 +465,12 @@ export async function rangeReport(user, query, kind) {
   // A period still running today is not part of any report yet.
   const finished = sessions.filter((s) => dayKey(s.date) < dayKey(now.day) || now.time >= s.endTime);
 
-  const [records, roster] = await Promise.all([
+  const [records, roster, holidays] = await Promise.all([
     finished.length
       ? AttendanceRecord.find({ session: { $in: finished.map((s) => s._id) } }).select('student status session').lean()
       : [],
     rosterOf(scope),
+    reportHolidays(scope, from, to),
   ]);
 
   const stats = new Map();
@@ -473,6 +507,9 @@ export async function rangeReport(user, query, kind) {
     type: spec.type,
     title: spec.title,
     header: scopeHeader(scope, { from: dayKey(from), to: dayKey(to), generatedAt: now.stamp }),
+    // Holiday days hold no sessions, so they are simply not counted — they
+    // never add a conducted period and never an absence.
+    holidays,
     students,
     sessions: finished.map((s) => ({
       date: dayKey(s.date),
@@ -505,6 +542,7 @@ export async function rangeReport(user, query, kind) {
  */
 export async function currentReport(user, query) {
   const report = await dateReport(user, { ...query, date: dayKey(serverNow().day) });
+  if (!report.periods.length && report.holiday) return { ...report, type: 'current', title: 'Current Data — Today’s Completed Periods' };
   if (!report.periods.length) throw new ApiError(409, 'No completed periods are available for today.');
   return { ...report, type: 'current', title: 'Current Data — Today’s Completed Periods' };
 }
@@ -546,9 +584,10 @@ export async function reportPeriods(user, query) {
   if (scope.subject) slotFilter.subject = scope.subject._id;
   if (scope.forFaculty) slotFilter.faculty = scope.facultyId;
 
-  const [slots, sessions] = await Promise.all([
+  const [slots, sessions, holidays] = await Promise.all([
     TimetableSlot.find(slotFilter).populate('subject', 'name code').populate('faculty', 'name').lean(),
     AttendanceSession.find({ ...sessionFilter(scope), date }).lean(),
+    reportHolidays(scope, date, date),
   ]);
 
   const byPeriod = new Map();
@@ -580,7 +619,7 @@ export async function reportPeriods(user, query) {
       ...p,
       completed: date.getTime() < now.day.getTime() || (date.getTime() === now.day.getTime() && now.time >= p.endTime),
     }));
-  return { date: dayKey(date), serverTime: now.stamp, periods };
+  return { date: dayKey(date), serverTime: now.stamp, periods, holiday: fullHolidayOn(holidays, date), holidays };
 }
 
 /**

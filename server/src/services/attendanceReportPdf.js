@@ -97,6 +97,9 @@ function presentAbsentSections(doc, { present, absent }) {
 }
 
 /** Render a report object to a PDF buffer. */
+// The PDF fonts are WinAnsi; the scope label's arrows are written as ">".
+const plainScope = (scope) => String(scope || '').replace(/\s*→\s*/g, ' > ');
+
 export function renderReportPdf(report) {
   const h = report.header;
   const doc = new PdfDocument({
@@ -112,6 +115,24 @@ export function renderReportPdf(report) {
   doc.facts(headerFacts(h));
   doc.gap(4);
   doc.hr();
+
+  // A holiday for the whole class: attendance is not applicable that day.
+  if (report.holiday) {
+    doc.section('HOLIDAY');
+    doc.facts([
+      ['Reason', report.holiday.reason],
+      ['Scope', plainScope(report.holiday.scope)],
+    ]);
+    doc.paragraph('Attendance not applicable.', { size: 9.5 });
+    const nothingRecorded = report.type === 'period' ? !report.totals.total : !report.periods?.length;
+    if (nothingRecorded) return doc.toBuffer();
+  }
+  // Holidays inside a weekly / monthly / semester / custom window.
+  const listed = (report.holidays || []).filter((x) => x !== report.holiday && x._id !== report.holiday?._id);
+  if (!['period', 'date', 'current'].includes(report.type) && listed.length) {
+    doc.section('HOLIDAYS IN THIS PERIOD (NOT COUNTED)');
+    doc.facts(listed.map((x) => [x.startDate === x.endDate ? x.startDate : `${x.startDate} to ${x.endDate}`, `${x.reason} (${plainScope(x.scope)})`]));
+  }
 
   if (report.type === 'period') {
     if (report.notTaken) {

@@ -30,6 +30,7 @@ const LIVE_TAGS = {
   'attendance:updated': ['Attendance', 'Analytics'],
   'gatepass:updated': ['GatePass'],
   'timetable:updated': ['Timetable'],
+  'holiday:changed': ['Holiday', 'Attendance', 'Timetable'],
   'lostfound:updated': ['LostFound'],
   'chat:conversation': ['Chat'],
   'chat:read': ['Chat'],

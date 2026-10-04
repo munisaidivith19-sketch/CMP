@@ -43,6 +43,8 @@ import {
   DEPARTMENTS,
   SEMESTERS,
   SECTIONS,
+  HOLIDAY_MANAGE_ROLES,
+  HOLIDAY_TYPES,
   yearOfSemester,
 } from '../constants.js';
 
@@ -60,6 +62,7 @@ import * as attendance from '../controllers/attendanceController.js';
 import { REPORT_SCOPES, REPORT_TYPES } from '../services/attendanceReport.js';
 import * as staffAttendance from '../controllers/staffAttendanceController.js';
 import * as timetable from '../controllers/timetableController.js';
+import * as holidays from '../controllers/holidayController.js';
 import * as gatePass from '../controllers/gatePassController.js';
 import * as lostFound from '../controllers/lostFoundController.js';
 import * as complaints from '../controllers/complaintController.js';
@@ -868,6 +871,29 @@ router.delete('/subjects/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES
 router.post('/timetable', writeLimiter, authorize(...TIMETABLE_WRITE_ROLES), ...slotRules(), timetable.createSlot);
 router.put('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), ...slotRules(true), timetable.updateSlot);
 router.delete('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), timetable.deleteSlot);
+
+// ── Holidays ───────────────────────────────────────────────────────
+// Reading: anyone with timetable access, filtered to what applies to them.
+// Create / edit / delete: the Principal ONLY — enforced here and re-checked in
+// the controller; Admin, HOD and Faculty keep no holiday-management rights.
+const holidayRules = [
+  body('reason').isString().trim().isLength({ min: 3, max: 200 }).withMessage('Reason must be 3–200 characters'),
+  body('type').isIn(HOLIDAY_TYPES).withMessage('Choose Single Day or Custom'),
+  dateField('startDate'),
+  body('endDate')
+    .if((_v, { req }) => req.body.type === 'CUSTOM')
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('Choose a "To" date'),
+  body('department').optional({ values: 'null' }).isString().isLength({ max: 80 }),
+  body('year').optional({ values: 'null' }).custom((v) => v === 'ALL' || ACADEMIC_YEARS.includes(Number(v))).withMessage('Year must be 1–4 or ALL'),
+  body('section').optional({ values: 'null' }).isString().isLength({ max: 10 }),
+  validate,
+];
+router.get('/holidays', authorize(...TIMETABLE_VIEW_ROLES), dateField('from', query).optional({ values: 'falsy' }), dateField('to', query).optional({ values: 'falsy' }), validate, holidays.listHolidays);
+router.get('/holidays/options', authorize(...HOLIDAY_MANAGE_ROLES), holidays.holidayOptions);
+router.post('/holidays', writeLimiter, authorize(...HOLIDAY_MANAGE_ROLES), ...holidayRules, holidays.createHoliday);
+router.put('/holidays/:id', writeLimiter, idParam('id'), authorize(...HOLIDAY_MANAGE_ROLES), ...holidayRules, holidays.updateHoliday);
+router.delete('/holidays/:id', idParam('id'), authorize(...HOLIDAY_MANAGE_ROLES), holidays.cancelHoliday);
 
 // ── Study Materials ────────────────────────────────────────────────
 // Upload/edit/delete authorization is never role-only — the controller

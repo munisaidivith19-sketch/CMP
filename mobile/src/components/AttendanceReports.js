@@ -8,6 +8,7 @@ import { errMsg, useGetAttendanceReportQuery, useGetReportOptionsQuery, useGetRe
 import { selectUser } from '../store/authSlice';
 import { YEAR_LABELS, colors, fonts } from '../theme';
 import { to12h } from '../utils/format';
+import HolidayCard from './HolidayCard';
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -223,7 +224,22 @@ export default function AttendanceReports() {
             <T v="small">Generated {report.header.generatedAt} (server time)</T>
           </Card>
 
-          {report.type === 'period' ? (
+          {/* Holiday for the whole class: not applicable — never a list of absentees. */}
+          <HolidayCard holiday={report.holiday} text="Attendance not applicable." />
+          {(report.holidays || []).filter((x) => x._id !== report.holiday?._id).length ? (
+            <Card style={{ gap: 2 }}>
+              <T v="label">Holidays in this report (not counted)</T>
+              {report.holidays
+                .filter((x) => x._id !== report.holiday?._id)
+                .map((x) => (
+                  <T key={x._id} v="small">
+                    {x.startDate === x.endDate ? x.startDate : `${x.startDate} → ${x.endDate}`} · {x.reason} ({x.scope})
+                  </T>
+                ))}
+            </Card>
+          ) : null}
+
+          {report.holiday && (report.type === 'period' ? !report.totals.total : !report.periods?.length) ? null : report.type === 'period' ? (
             report.notTaken ? (
               <Card>
                 <EmptyState icon={FileText} title="Attendance was not taken for this period" />

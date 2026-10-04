@@ -9,6 +9,8 @@ import { Button, Card, CardHeader, EmptyState, ErrorState, Skeleton, Tabs, cn } 
 import { MiniStat, PercentBadge } from '../../components/insights';
 import { ACADEMIC_YEARS, YEAR_LABELS } from '../../utils/constants';
 import { errMsg, todayKey } from '../../utils/format';
+import { fmtHolidayDates } from '../../utils/holidays';
+import { HolidayBanner } from './Holidays';
 
 /** Report types per scope. "Current data" exists only for Our Class. */
 const TYPES = {
@@ -408,7 +410,25 @@ function Preview({ report }) {
         ))}
       </div>
 
-      {report.type === 'period' ? (
+      {/* Holiday for the whole class: not applicable — never a list of absentees. */}
+      <HolidayBanner holiday={report.holiday} text="Attendance not applicable." className="mb-4" />
+      {(() => {
+        const others = (report.holidays || []).filter((x) => x._id !== report.holiday?._id);
+        return others.length ? (
+          <div className="mb-4 rounded-2xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs">
+            <p className="mb-1 font-bold uppercase tracking-wide text-rose-700 dark:text-rose-300">Holidays in this report (not counted as absence)</p>
+            <ul className="space-y-0.5">
+              {others.map((x) => (
+                <li key={x._id}>
+                  <span className="font-semibold">{fmtHolidayDates(x)}</span> · {x.reason} <span className="muted">({x.scope})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null;
+      })()}
+
+      {report.holiday && (report.type === 'period' ? !report.totals.total : !report.periods?.length) ? null : report.type === 'period' ? (
         report.notTaken ? (
           <EmptyState icon={AlertTriangle} title="Attendance was not taken for this period" />
         ) : (

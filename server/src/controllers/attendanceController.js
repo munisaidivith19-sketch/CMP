@@ -27,6 +27,7 @@ import {
 import { buildReport, byRollNo, reportFilename, reportPeriods } from '../services/attendanceReport.js';
 import { renderReportPdf } from '../services/attendanceReportPdf.js';
 import { safeFilename } from '../utils/pdf.js';
+import { appliesTo, assertNotHoliday, findHoliday, holidayMessage, holidaysBetween, toApi as toHolidayApi } from '../services/holidays.js';
 import { ACADEMIC_READ_ONLY_ROLES, COLLEGE_WIDE_ROLES, yearOfSemester } from '../constants.js';
 
 export const LOW_ATTENDANCE_THRESHOLD = 75;
@@ -242,6 +243,19 @@ async function resolveClass(user, src) {
   return { slot, session, subject, day, section, period };
 }
 
+/**
+ * The class (department + year + section) a resolved class meeting belongs
+ * to, for the holiday check. A held session's snapshot wins, then the
+ * timetable entry, then the subject itself.
+ */
+function classOf({ session, slot, subject, section }) {
+  return {
+    department: session?.department || slot?.department || subject.department,
+    year: session?.year ?? slot?.year ?? subject.year ?? (subject.semester ? yearOfSemester(subject.semester) : undefined),
+    section: section || undefined,
+  };
+}
+
 /** Freeze the timetable entry as it is now, for this class meeting. */
 async function ensureSession({ slot, session, subject, day }, user) {
   if (session || !slot) return session;
@@ -321,6 +335,12 @@ export const getRoster = asyncHandler(async (req, res) => {
     editable = false;
     lockedReason = e.message;
   }
+  // A holiday closes the sheet for everyone — the same check markAttendance enforces.
+  const holiday = await findHoliday(classOf(cls), day);
+  if (holiday) {
+    editable = false;
+    lockedReason = holidayMessage(holiday);
+  }
   // What the class looked like when attendance was taken (or looks like now, if not yet taken).
   const slotView = session
     ? { ...slotInfo, period: session.period, startTime: session.startTime, endTime: session.endTime, room: session.room, faculty: { _id: session.faculty, name: session.facultyName }, snapshot: true }
@@ -338,6 +358,7 @@ export const getRoster = asyncHandler(async (req, res) => {
     markedAt: last?.markedAt || null,
     editable,
     lockedReason,
+    holiday: toHolidayApi(holiday),
     students: students.map((s) => ({ ...s, status: byStudent[String(s._id)]?.status || null })),
   });
 });
@@ -351,6 +372,9 @@ export const markAttendance = asyncHandler(async (req, res) => {
   const cls = await resolveClass(user, req.body);
   const { subject, section, day, period } = cls;
   assertCanWrite(user, cls);
+  // Before anything is written: on a holiday no session and no record (and so
+  // no absentee) is ever created, whatever the client sends.
+  await assertNotHoliday(classOf(cls), day);
   const session = await ensureSession(cls, user);
   const sessionCreated = Boolean(session && !cls.session);
 
@@ -451,6 +475,7 @@ export const getMyPeriods = asyncHandler(async (req, res) => {
   const marked = new Set(
     (await AttendanceRecord.find({ session: { $in: sessions.map((s) => s._id) } }).distinct('session')).map(String)
   );
+  const holidays = slots.length ? await holidaysBetween(now.day, now.day) : [];
 
   res.json({
     date: dayKey(now.day),
@@ -459,7 +484,9 @@ export const getMyPeriods = asyncHandler(async (req, res) => {
     periods: slots.map((slot) => {
       const session = bySlot[String(slot._id)];
       const window = session || slot;
+      const holiday = holidays.find((h) => appliesTo(h, slot, now.day));
       return {
+        holiday: toHolidayApi(holiday),
         slotId: slot._id,
         period: window.period,
         startTime: window.startTime,

@@ -7,6 +7,7 @@ import { useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../store/authSlice';
 import { STUDENT_ROLES, YEAR_LABELS, colors } from '../../theme';
 import { to12h } from '../../utils/format';
+import HolidayCard from '../../components/HolidayCard';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const todayName = () => ['sunday', ...DAYS][new Date().getDay()];
@@ -44,7 +45,10 @@ export default function Timetable() {
 
   const slots = useMemo(() => (data?.slots || []).filter((s) => s.dayOfWeek === day).sort((a, b) => a.startTime.localeCompare(b.startTime)), [data, day]);
   const isToday = day === todayName();
-  const next = isToday ? slots.find((s) => !s.isBreak && s.startTime > now) : null;
+  // Holidays are annotated per slot by the server for this week's date.
+  const next = isToday ? slots.find((s) => !s.isBreak && !s.holiday && s.startTime > now) : null;
+  const classes = slots.filter((s) => !s.isBreak);
+  const dayHoliday = classes.length && classes.every((s) => s.holiday) ? classes[0].holiday : null;
 
   return (
     <Screen refreshing={isFetching && !isLoading} onRefresh={refetch}>
@@ -96,7 +100,23 @@ export default function Timetable() {
           <EmptyState icon={Coffee} title="No classes" text="Nothing scheduled on this day." />
         </Card>
       ) : (
-        slots.map((s) => {
+        [dayHoliday ? <HolidayCard key="holiday" holiday={dayHoliday} text="No classes scheduled · Attendance unavailable" /> : null].concat(slots.map((s) => {
+          if (s.holiday) {
+            return (
+              <Card key={s._id} style={{ gap: 4, backgroundColor: colors.dangerSoft, borderColor: 'rgba(244,63,94,0.3)' }}>
+                <T v="label" style={{ color: '#be123c' }}>
+                  HOLIDAY · Period {s.period}
+                </T>
+                <T v="strong">{s.holiday.reason}</T>
+                <T v="small" style={{ textDecorationLine: 'line-through' }}>
+                  {s.subject?.code} · {s.subject?.name}
+                </T>
+                <T v="small">
+                  {to12h(s.startTime)} – {to12h(s.endTime)} · No class · Attendance unavailable
+                </T>
+              </Card>
+            );
+          }
           if (s.isBreak) {
             return (
               <View key={s._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 18, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.primary300 }}>
@@ -138,7 +158,7 @@ export default function Timetable() {
               </View>
             </Card>
           );
-        })
+        }))
       )}
     </Screen>
   );

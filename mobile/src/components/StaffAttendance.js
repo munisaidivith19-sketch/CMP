@@ -19,6 +19,7 @@ import { selectUser } from '../store/authSlice';
 import { ATTENDANCE_READ_ONLY, COLLEGE_WIDE, SUMMARY_VIEW, colors, fonts } from '../theme';
 import OurClassAttendance from './OurClassAttendance';
 import AttendanceReports from './AttendanceReports';
+import HolidayCard from './HolidayCard';
 import { fmtClassDay, to12h } from '../utils/format';
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -133,7 +134,7 @@ function MarkClass() {
               <Chip
                 key={s._id}
                 active={form.subjectId === s.subject._id && form.period === String(s.period) && form.date === todayKey()}
-                label={`P${s.period} · ${s.subject.code}${s.section ? ` · ${s.section}` : ''} · ${to12h(s.startTime)}`}
+                label={`P${s.period} · ${s.subject.code}${s.section ? ` · ${s.section}` : ''} · ${s.holiday ? 'Holiday' : to12h(s.startTime)}`}
                 onPress={() => set({ subjectId: s.subject._id, section: s.section || '', period: String(s.period), date: todayKey() })}
               />
             ))}
@@ -203,7 +204,7 @@ function MarkClass() {
               {r.alreadyMarked ? ` · marked by ${r.markedBy?.name || 'staff'}` : ''}
             </T>
           </View>
-          {!r.editable ? <LockNote text={r.lockedReason} /> : null}
+          {r.holiday ? <HolidayCard holiday={r.holiday} /> : !r.editable ? <LockNote text={r.lockedReason} /> : null}
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Button small variant="success" title="All present" disabled={!r.editable} onPress={() => setMarks(Object.fromEntries(r.students.map((s) => [s._id, 'present'])))} />
             <Button small variant="danger" title="All absent" disabled={!r.editable} onPress={() => setMarks(Object.fromEntries(r.students.map((s) => [s._id, 'absent'])))} />

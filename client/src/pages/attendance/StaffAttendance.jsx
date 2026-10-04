@@ -70,6 +70,7 @@ import { DailySummary, FacultyMarking } from './DailySummary';
 import MyClasses from './MyClasses';
 import OurClass from './OurClass';
 import AttendanceReports from './AttendanceReports';
+import { HolidayBanner, HolidaysButton } from './Holidays';
 import {
   Avatar,
   Badge,
@@ -229,14 +230,17 @@ function AttendanceHeroDashboard({ onQuickMark }) {
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
             {todayPeriods.map((p) => {
               const st = PERIOD_STATUS[p.status] || PERIOD_STATUS.UPCOMING;
-              const isActive = p.status === 'ACTIVE';
+              // A holiday cancels the period: never offer to take attendance.
+              const isActive = p.status === 'ACTIVE' && !p.holiday;
 
               return (
                 <div
                   key={p.slotId}
                   className={cn(
                     'flex-shrink-0 w-64 rounded-2xl p-3.5 transition-all border flex flex-col justify-between',
-                    isActive && !p.marked
+                    p.holiday
+                      ? 'bg-rose-500/10 border-rose-500/30'
+                      : isActive && !p.marked
                       ? 'bg-primary-500/10 border-primary-500/40 shadow-glow'
                       : p.marked
                       ? 'bg-emerald-500/10 border-emerald-500/30'
@@ -248,9 +252,15 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                       <span className="text-[11px] font-bold uppercase tracking-wider text-primary-400">
                         Period {p.period}
                       </span>
-                      <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold', st.badgeClass)}>
-                        {p.marked ? '✓ Marked' : st.label}
-                      </span>
+                      {p.holiday ? (
+                        <span className="rounded-full border border-rose-500/30 bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-rose-700 dark:text-rose-300">
+                          Holiday
+                        </span>
+                      ) : (
+                        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold', st.badgeClass)}>
+                          {p.marked ? '✓ Marked' : st.label}
+                        </span>
+                      )}
                     </div>
 
                     <p className="font-bold text-sm text-ink truncate">{p.subject?.name}</p>
@@ -265,7 +275,11 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                   </div>
 
                   <div className="mt-3 pt-2 border-t border-white/10">
-                    {isActive ? (
+                    {p.holiday ? (
+                      <span className="block py-1 text-center text-[11px] font-medium text-rose-700 dark:text-rose-300" title={p.holiday.reason}>
+                        {p.holiday.reason} · attendance unavailable
+                      </span>
+                    ) : isActive ? (
                       <Button
                         size="sm"
                         variant={p.marked ? 'outline' : 'primary'}
@@ -801,8 +815,10 @@ function MarkAttendance({ preset, onPresetUsed }) {
             </div>
           </div>
 
-          {/* Locked Notice */}
-          {!roster.editable && (
+          {/* Holiday / Locked Notice */}
+          {roster.holiday ? (
+            <HolidayBanner holiday={roster.holiday} className="m-4" />
+          ) : !roster.editable && (
             <div className="m-4 flex items-center gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-3.5 text-xs text-amber-700 dark:text-amber-300">
               <Lock className="h-4 w-4 shrink-0 text-amber-500" />
               <span>{roster.lockedReason || 'This attendance sheet is locked.'}</span>
@@ -1880,6 +1896,10 @@ export default function StaffAttendance() {
               </>
             )}
           </div>
+
+          {/* Holidays: everyone sees the ones that apply to them; only the
+              Principal gets declare / edit / delete (enforced server-side). */}
+          <HolidaysButton />
         </div>
 
         {/* Informational calculation notice */}

@@ -130,23 +130,28 @@ export const getUser = asyncHandler(async (req, res) => {
   res.json({ ...user, stats: { eventsJoined, eventsAttended, discussions, clubs: user.clubs.length }, recentEvents });
 });
 
-const PROFILE_FIELDS = [
-  'name',
-  'department',
-  'year',
-  'rollNo',
-  'designation',
-  'bio',
-  'phone',
-  'parentPhone',
-  'stayType',
-  'interests',
-  'skills',
-  'extracurriculars',
-  'achievements',
-];
+// What a user may edit about themselves.
+const PROFILE_FIELDS = ['name', 'designation', 'bio', 'phone', 'interests', 'skills', 'extracurriculars', 'achievements'];
+// Set by an administrator only (PATCH /admin/users/:id). These decide academic
+// scope (department → an HOD's whole department; department / year → which
+// class, timetable, holidays and chat contacts a student gets), identity
+// (roll number), the gate-pass parent-OTP number and hostel status, so a
+// self-service change would be a privilege escalation. The profile form sends
+// them back unchanged, which is accepted; any actual change is refused.
+const ADMIN_MANAGED_FIELDS = ['department', 'year', 'rollNo', 'parentPhone', 'stayType'];
 
 export const updateMe = asyncHandler(async (req, res) => {
+  const changed = ADMIN_MANAGED_FIELDS.filter((k) => {
+    if (req.body[k] === undefined) return false;
+    const now = req.user[k];
+    const sent = req.body[k];
+    if ((now == null || now === '') && (sent == null || sent === '')) return false;
+    return String(now ?? '') !== String(sent ?? '');
+  });
+  if (changed.length) {
+    logActivity(req, 'profile.protected_field_rejected', { entityType: 'user', entityId: req.user._id, summary: changed.join(', ') });
+    throw new ApiError(403, 'Department, year, roll number, parent’s mobile number and stay type are set by the administrator');
+  }
   const updates = pick(req.body, PROFILE_FIELDS);
   Object.assign(req.user, updates);
   await req.user.save();

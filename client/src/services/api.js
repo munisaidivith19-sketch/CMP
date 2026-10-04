@@ -1,5 +1,6 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { loggedOut, setCredentials } from '../features/authSlice';
+import { broadcastSession, markIdleLogout } from './sessionSync';
 
 function getCsrfCookie() {
   if (typeof document === 'undefined') return null;
@@ -26,7 +27,13 @@ export function refreshSession() {
     const csrf = getCsrfCookie();
     const headers = csrf ? { 'x-csrf-token': csrf } : undefined;
     refreshPromise = fetch('/api/auth/refresh', { method: 'POST', credentials: 'include', headers })
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        // The server ended this session for inactivity: say so on the login page.
+        const body = await r.json().catch(() => null);
+        if (body?.reason === 'idle') markIdleLogout();
+        return null;
+      })
       .catch(() => null)
       .finally(() => {
         setTimeout(() => {
@@ -44,6 +51,14 @@ const baseQueryWithReauth = async (args, api, extra) => {
   let result = await rawBaseQuery(args, api, extra);
   const url = typeof args === 'string' ? args : args.url;
   if (result.error?.status === 401 && !NO_RETRY.some((p) => url.startsWith(p))) {
+    // Idle expiry is final — the session is revoked server-side, so there is
+    // nothing to refresh. Sign out here and in every other tab.
+    if (result.error.data?.reason === 'idle') {
+      markIdleLogout();
+      broadcastSession({ type: 'logout', reason: 'idle' });
+      api.dispatch(loggedOut());
+      return result;
+    }
     const session = await refreshSession();
     if (session?.accessToken) {
       api.dispatch(setCredentials(session));
@@ -71,7 +86,12 @@ export const api = createApi({
     // ── Auth ──────────────────────────────────────────
     login: b.mutation({ query: (body) => ({ url: '/auth/login', method: 'POST', body }) }),
     register: b.mutation({ query: (body) => ({ url: '/auth/register', method: 'POST', body }) }),
-    logout: b.mutation({ query: () => ({ url: '/auth/logout', method: 'POST' }) }),
+    // `{ reason: 'idle' }` when the inactivity timer signs the user out (audit only).
+    logout: b.mutation({ query: (body) => ({ url: '/auth/logout', method: 'POST', ...(body ? { body } : {}) }) }),
+    // Web idle rule: reported user activity — sent only after real interaction, at most every 30 s.
+    reportActivity: b.mutation({ query: () => ({ url: '/auth/activity', method: 'POST' }) }),
+    // One check when a tab comes back into view: is this session still alive?
+    verifySession: b.query({ query: () => '/auth/me', keepUnusedDataFor: 0 }),
     changePassword: b.mutation({ query: (body) => ({ url: '/auth/change-password', method: 'POST', body }), invalidatesTags: ['Session'] }),
     forgotPassword: b.mutation({ query: (body) => ({ url: '/auth/forgot-password', method: 'POST', body }) }),
     resetPassword: b.mutation({ query: (body) => ({ url: '/auth/reset-password', method: 'POST', body }) }),

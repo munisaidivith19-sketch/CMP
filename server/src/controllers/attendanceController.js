@@ -1193,8 +1193,11 @@ export const listCorrections = asyncHandler(async (req, res) => {
     if (req.query.student) filter.student = oid(req.query.student, 'student');
     if (req.user.role === 'faculty') {
       filter.subject = { $in: await Subject.find({ faculty: req.user._id }).distinct('_id') };
-    } else if (req.user.role === 'hod' && req.user.department) {
-      filter.subject = { $in: await Subject.find({ department: req.user.department }).distinct('_id') };
+    } else if (req.user.role === 'hod') {
+      // ownDepartment refuses an HOD with no department rather than widening to all.
+      filter.subject = { $in: await Subject.find({ department: ownDepartment(req.user) }).distinct('_id') };
+    } else if (!COLLEGE_WIDE_ROLES.includes(req.user.role)) {
+      throw new ApiError(403, 'You cannot view attendance corrections');
     }
   }
   if (req.query.subject && !filter.subject) filter.subject = oid(req.query.subject, 'subject');
@@ -1276,6 +1279,14 @@ export const notifyStudentLowAttendance = asyncHandler(async (req, res) => {
 
   if (req.user.role === 'hod' && student.department !== req.user.department) {
     throw new ApiError(403, 'You can only notify students in your own department');
+  }
+  // Faculty: only students of the classes they teach or are in charge of —
+  // the same scope as reading that student's attendance.
+  if (req.user.role === 'faculty') {
+    const [handling, ourClass] = await Promise.all([facultyClasses(req.user), facultyClassInChargeScope(req.user)]);
+    if (!inClasses(handling, student) && !inClasses(ourClass, student)) {
+      throw new ApiError(403, 'This student is not in one of your classes');
+    }
   }
 
   const title = 'Low Attendance Warning';

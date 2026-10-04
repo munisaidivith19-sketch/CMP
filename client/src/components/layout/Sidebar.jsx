@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Avatar, cn } from '../ui/primitives';
 import { api, useGetChatUnreadQuery, useGetGroupRequestsQuery, useLogoutMutation } from '../../services/api';
+import { broadcastSession } from '../../services/sessionSync';
 import { loggedOut, selectUser } from '../../features/authSlice';
 import { setSidebar } from '../../features/uiSlice';
 import { disconnectSocket } from '../../services/socket';
@@ -133,6 +134,8 @@ export default function Sidebar() {
       /* ignore network errors on logout */
     }
     disconnectSocket();
+    // Sign out every other open tab too (an event only — no token is shared).
+    broadcastSession({ type: 'logout', reason: 'manual' });
     dispatch(loggedOut());
     dispatch(api.util.resetApiState());
     navigate('/login');

@@ -49,6 +49,9 @@ export const env = {
   refreshSecret: secret('JWT_REFRESH_SECRET', 'dev_refresh_secret_do_not_use_in_production'),
   // Encrypts chat message bodies at rest. Changing it makes older messages unreadable.
   chatKey: secret('CHAT_ENCRYPTION_KEY', 'dev_chat_key_do_not_use_in_production'),
+  // Public student sign-up (POST /auth/register). Off: accounts are created by
+  // the administrator, who also sets the student's class and parent number.
+  allowSelfSignup: process.env.ALLOW_SELF_SIGNUP === 'true',
   accessExpires: process.env.JWT_ACCESS_EXPIRES || '15m',
   refreshExpires: process.env.JWT_REFRESH_EXPIRES || '7d',
   uploadDir: process.env.UPLOAD_DIR || 'uploads',

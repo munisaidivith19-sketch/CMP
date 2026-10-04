@@ -33,3 +33,22 @@ export function pick(obj = {}, keys = []) {
     return acc;
   }, {});
 }
+
+/**
+ * Throw 422 unless `value` is an absolute http(s) URL. Every user-supplied
+ * link that the web app renders as an <a href> must pass this on the server:
+ * a `javascript:` or `data:` URL there runs in the app's own origin on click.
+ * Empty values are allowed (the field is optional).
+ */
+export function assertHttpUrl(value, label = 'Link') {
+  if (value === undefined || value === null || value === '') return;
+  let url;
+  try {
+    url = new URL(String(value).trim());
+  } catch {
+    throw new ApiError(422, `${label} must be a valid http(s) URL`);
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || String(value) !== String(value).trim()) {
+    throw new ApiError(422, `${label} must start with http:// or https://`);
+  }
+}

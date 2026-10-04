@@ -21,7 +21,7 @@ export const signRefreshToken = (user, sid, jti) =>
     expiresIn: env.refreshExpires,
   });
 
-export const verifyRefreshToken = (token) => jwt.verify(token, env.refreshSecret);
+export const verifyRefreshToken = (token) => jwt.verify(token, env.refreshSecret, { algorithms: ['HS256'] });
 
 export const refreshExpiry = () => new Date(Date.now() + REFRESH_MAX_AGE_MS);
 
@@ -43,7 +43,13 @@ export function clearRefreshCookie(res) {
  * Native apps cannot use the httpOnly cookie reliably, so a client that
  * identifies itself as mobile receives the refresh token in the JSON body and
  * sends it back in the body (it is kept in the device's secure store).
+ *
+ * A request carrying Sec-Fetch-Site is never mobile: browsers always send
+ * that header and page scripts cannot remove or forge it, while the native
+ * app's HTTP client never sends it. So a browser cannot sign in as "mobile"
+ * to escape the web portal's idle-session rule. The client type is then
+ * bound to the Session row at sign-in and never re-read from a request.
  */
-export const isMobileClient = (req) => req.get('x-client-platform') === 'mobile';
+export const isMobileClient = (req) => req.get('x-client-platform') === 'mobile' && !req.get('sec-fetch-site');
 
 export const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');

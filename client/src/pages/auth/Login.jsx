@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/primitives';
 import { Input } from '../../components/ui/form';
 import { useLoginMutation } from '../../services/api';
 import { setCredentials } from '../../features/authSlice';
+import { IDLE_LOGOUT_MESSAGE, clearLogoutReason, peekLogoutReason } from '../../services/sessionSync';
 import { errMsg } from '../../utils/format';
 
 function formatCountdown(totalSecs) {
@@ -43,6 +44,9 @@ export default function Login() {
   const [remainingAttempts, setRemainingAttempts] = useState(null);
   const [nextLockMinutes, setNextLockMinutes] = useState(5);
   const timerRef = useRef(null);
+  // Shown once when the previous session ended for inactivity.
+  const [idleNotice] = useState(() => peekLogoutReason() === 'idle');
+  useEffect(() => clearLogoutReason(), []);
 
   const {
     register,
@@ -111,6 +115,12 @@ export default function Login() {
 
   return (
     <AuthShell title="Welcome back 👋" subtitle="Sign in to continue to your campus dashboard.">
+      {idleNotice && (
+        <div role="status" className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-800 dark:text-amber-300">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{IDLE_LOGOUT_MESSAGE}</span>
+        </div>
+      )}
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         {/* Active Lockout Banner with Live Monospace Countdown */}
         {lockout.isLocked && (

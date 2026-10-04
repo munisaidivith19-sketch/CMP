@@ -8,6 +8,7 @@ import { NotificationIcon } from './NotificationBell';
 import { api, refreshSession } from '../../services/api';
 import { connectSocket, disconnectSocket } from '../../services/socket';
 import { loggedOut, setCredentials } from '../../features/authSlice';
+import { useIdleSession } from './useIdleSession';
 
 export function Backdrop() {
   return (
@@ -135,6 +136,8 @@ function useRealtime() {
 export default function AppLayout() {
   const { pathname } = useLocation();
   useRealtime();
+  // Web idle-session rule (server-enforced; this is the UX + cross-tab layer).
+  useIdleSession();
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });

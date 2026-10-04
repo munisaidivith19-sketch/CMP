@@ -42,3 +42,13 @@ export const toLocalInput = (d) => (d ? format(new Date(d), "yyyy-MM-dd'T'HH:mm"
 /** Class days (attendance dates) are calendar dates stored as UTC midnight — format the date itself, not a local instant. */
 export const fmtClassDay = (d, pattern = 'dd MMM yyyy') => (d ? format(new Date(`${String(d).slice(0, 10)}T00:00:00`), pattern) : '');
 export const todayKey = () => format(new Date(), 'yyyy-MM-dd');
+
+/**
+ * Only http(s) and same-site paths may become an <a href>. The server already
+ * validates links on write; this keeps any stored legacy value such as
+ * `javascript:` from ever being rendered as a clickable script.
+ */
+export const safeHref = (url) => {
+  const s = String(url || '').trim();
+  return /^https?:\/\//i.test(s) || /^\/(?!\/)/.test(s) ? s : undefined;
+};

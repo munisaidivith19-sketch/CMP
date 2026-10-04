@@ -130,7 +130,10 @@ function populateAll(query) {
 // ── Student creates a gate pass request ────────────────────────────
 
 export const createGatePass = asyncHandler(async (req, res) => {
-  const data = pick(req.body, ['regarding', 'description', 'fromDate', 'toDate', 'parentPhone']);
+  // parentPhone is deliberately NOT taken from the request: the parent OTP must
+  // reach the number the administrator registered for this student, or a
+  // student could enter their own phone and confirm their own "parent" OTP.
+  const data = pick(req.body, ['regarding', 'description', 'fromDate', 'toDate']);
   const destination = pick(req.body.destination || {}, ['state', 'district', 'area']);
   const from = new Date(data.fromDate);
   const to = new Date(data.toDate);
@@ -140,6 +143,10 @@ export const createGatePass = asyncHandler(async (req, res) => {
   if (!req.user.department || !req.user.section) {
     throw new ApiError(422, 'Your account has no department/section on file — ask an admin to set it');
   }
+  if (!req.user.parentPhone) {
+    throw new ApiError(422, 'Your parent’s mobile number is not on file — ask the administrator to add it before requesting a gate pass');
+  }
+  data.parentPhone = req.user.parentPhone;
 
   const existing = await GatePass.exists({
     student: req.user._id,
@@ -207,14 +214,19 @@ export const listGatePasses = asyncHandler(async (req, res) => {
     filter = { passType: 'emergency', emergencyAuthority: role };
   } else if (role === 'security') {
     filter.status = { $in: ['approved', 'active', 'completed'] };
+  } else {
+    // Fail closed: a role with no gate-pass scope (e.g. warden) sees nothing,
+    // never the empty filter that would match every pass in the college.
+    throw new ApiError(403, 'Not authorized');
   }
 
+  // A requested status only ever NARROWS the role's scope ($and), so it can
+  // never replace a constraint the role already has (e.g. security's statuses).
   if (req.query.status === 'overdue') {
-    filter.status = 'active';
-    filter.toDate = { $lt: new Date(Date.now() - DAY - GRACE_AFTER_RETURN_MS) };
+    filter = { $and: [filter, { status: 'active', toDate: { $lt: new Date(Date.now() - DAY - GRACE_AFTER_RETURN_MS) } }] };
   } else if (req.query.status) {
     const statuses = String(req.query.status).split(',');
-    filter = filter.$or ? { $and: [filter, { status: { $in: statuses } }] } : { ...filter, status: { $in: statuses } };
+    filter = { $and: [filter, { status: { $in: statuses } }] };
   }
   if (req.query.date) {
     const day = toDay(req.query.date);

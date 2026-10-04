@@ -46,6 +46,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
+import { safeHref } from '../../utils/format';
 
 export default function AlumniDashboard() {
   const currentUser = useSelector(selectUser);
@@ -517,7 +518,7 @@ export default function AlumniDashboard() {
                       <div className="flex items-center gap-2">
                         {sess.meetingLink && (
                           <a
-                            href={sess.meetingLink}
+                            href={safeHref(sess.meetingLink)}
                             target="_blank"
                             rel="noreferrer"
                             className="btn btn-soft btn-sm text-xs font-bold"

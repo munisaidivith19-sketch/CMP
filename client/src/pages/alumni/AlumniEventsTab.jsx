@@ -38,6 +38,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
+import { safeHref } from '../../utils/format';
 
 const EVENT_TYPE_LABELS = {
   reunion: 'Batch Reunion',
@@ -506,7 +507,7 @@ export default function AlumniEventsTab() {
                     </p>
                   </div>
                   <a
-                    href={selectedEvent.meetingLink}
+                    href={safeHref(selectedEvent.meetingLink)}
                     target="_blank"
                     rel="noreferrer"
                     className="btn btn-primary btn-sm flex items-center gap-1 font-bold"

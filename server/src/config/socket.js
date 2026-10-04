@@ -44,7 +44,7 @@ export function initSocket(httpServer) {
   // Every socket must present a valid access token bound to a live session.
   io.use(async (socket, next) => {
     try {
-      const { user, sessionId } = await authenticateAccessToken(socket.handshake.auth?.token);
+      const { user, sessionId } = await authenticateAccessToken(socket.handshake.auth?.token, socket.handshake.address);
       socket.data.userId = String(user._id);
       socket.data.role = user.role;
       socket.data.sessionId = sessionId;

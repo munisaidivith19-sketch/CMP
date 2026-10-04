@@ -30,7 +30,7 @@ import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, ErrorState, Pag
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select, TagInput, Textarea } from '../../components/ui/form';
 import { ReportButton } from '../../components/domain';
-import { DEPARTMENTS, ROLE_LABELS } from '../../utils/constants';
+import { ROLE_LABELS } from '../../utils/constants';
 import { errMsg, fmtDate, friendlyDay } from '../../utils/format';
 
 function EditProfile({ open, onClose, user }) {
@@ -43,9 +43,6 @@ function EditProfile({ open, onClose, user }) {
     if (open)
       reset({
         name: user.name,
-        department: user.department || '',
-        year: user.year || '',
-        rollNo: user.rollNo || '',
         designation: user.designation || '',
         phone: user.phone || '',
         bio: user.bio || '',
@@ -60,7 +57,6 @@ function EditProfile({ open, onClose, user }) {
     try {
       const updated = await save({
         ...v,
-        year: v.year ? Number(v.year) : null,
         achievements: v.achievements.filter((a) => a.title?.trim()).map(({ _id, ...a }) => ({ ...a, date: a.date || undefined })),
       }).unwrap();
       dispatch(setUser(updated));
@@ -93,11 +89,13 @@ function EditProfile({ open, onClose, user }) {
     >
       <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit(onSubmit)}>
         <Input label="Full name" error={errors.name} {...register('name', { required: 'Required', minLength: { value: 2, message: 'Too short' } })} />
-        <Select label="Department" placeholder="Select" options={DEPARTMENTS} {...register('department')} />
+        {/* Academic placement and identity are set by the administrator (the
+            server refuses self-service changes), so they are shown, not edited. */}
+        <Input label="Department" value={user.department || '—'} readOnly disabled hint="Set by the administrator" />
         {isStudent ? (
           <>
-            <Select label="Year" placeholder="Select" options={[1, 2, 3, 4, 5].map((y) => ({ value: y, label: `Year ${y}` }))} {...register('year')} />
-            <Input label="Roll number" {...register('rollNo')} />
+            <Input label="Year" value={user.year ? `Year ${user.year}` : '—'} readOnly disabled hint="Set by the administrator" />
+            <Input label="Roll number" value={user.rollNo || '—'} readOnly disabled hint="Set by the administrator" />
           </>
         ) : (
           <Input label="Designation" {...register('designation')} />

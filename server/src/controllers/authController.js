@@ -32,6 +32,7 @@ import {
   recordAnonFailure,
 } from '../utils/loginSecurity.js';
 import { CSRF_COOKIE, generateCsrfToken } from '../middleware/security.js';
+import { IDLE_MESSAGE, expireIdleSession, idleTimeoutFor, isIdleExpired, recordSessionActivity } from '../utils/sessionIdle.js';
 
 const MAX_PUSH_TOKENS = 5;
 const MAX_CONCURRENT_SESSIONS = 5;
@@ -85,8 +86,12 @@ async function issueSession(req, res, user, existingSession) {
   const jti = newJti();
   let session = existingSession;
   if (session) {
+    const idleMs = idleTimeoutFor(session.client, user.role);
     session.jti = jti;
-    session.lastUsedAt = new Date();
+    session.idleTimeoutMs = idleMs;
+    // Rotation is not user activity: for a session with the web idle rule
+    // lastUsedAt only moves on reported activity (utils/sessionIdle.js).
+    if (!idleMs) session.lastUsedAt = new Date();
     session.expiresAt = refreshExpiry();
     session.ip = req.ip;
     await session.save();
@@ -103,12 +108,14 @@ async function issueSession(req, res, user, existingSession) {
       await revokeSessions({ _id: { $in: toEvict } }, 'concurrency_limit');
     }
 
-    session = await Session.create({ user: user._id, jti, expiresAt: refreshExpiry(), ...clientMeta(req) });
+    const meta = clientMeta(req);
+    session = await Session.create({ user: user._id, jti, expiresAt: refreshExpiry(), idleTimeoutMs: idleTimeoutFor(meta.client, user.role), ...meta });
   }
 
   const refreshToken = signRefreshToken(user, session._id, jti);
   const fresh = await User.findById(user._id).populate('clubs', 'name slug logo');
-  const body = { accessToken: signAccessToken(user, session._id), user: fresh };
+  // The client uses idleTimeoutSec only for its own timer; the server enforces regardless.
+  const body = { accessToken: signAccessToken(user, session._id), user: fresh, idleTimeoutSec: session.idleTimeoutMs ? session.idleTimeoutMs / 1000 : null };
 
   if (isMobileClient(req)) {
     body.refreshToken = refreshToken;
@@ -152,6 +159,10 @@ function recordLogin(req, user, success, reason) {
 const COLLEGE_EMAIL_DOMAIN = /^\S+@jnn\.edu\.in$/i;
 
 export const register = asyncHandler(async (req, res) => {
+  // Self sign-up was removed from the app: without it an outsider with any
+  // @jnn.edu.in-looking address (never verified) could create a student
+  // account in a class of their choosing.
+  if (!env.allowSelfSignup) throw new ApiError(403, 'Self sign-up is disabled. Your account is created by the college administrator.');
   const data = pick(req.body, ['name', 'email', 'password', 'department', 'year', 'rollNo']);
   if (!COLLEGE_EMAIL_DOMAIN.test(String(data.email || ''))) {
     throw new ApiError(400, 'Use your @jnn.edu.in college email to sign up');
@@ -380,6 +391,15 @@ export const refresh = asyncHandler(async (req, res) => {
     throw fail('Session is no longer valid');
   }
 
+  // An idle web session cannot be revived by its refresh token: it is revoked
+  // here, so this and every older refresh token for it are dead for good.
+  if (isIdleExpired(session, idleTimeoutFor(session.client, user.role))) {
+    await expireIdleSession(session._id, user._id, req.ip);
+    const err = fail(IDLE_MESSAGE);
+    err.data = { reason: 'idle' };
+    throw err;
+  }
+
   res.json(await issueSession(req, res, user, session));
 });
 
@@ -390,8 +410,11 @@ export const logout = asyncHandler(async (req, res) => {
     try {
       const { sid, sub } = verifyRefreshToken(token);
       if (sid) {
-        await revokeSessions({ _id: sid, user: sub }, 'logout');
-        logActivity(req, 'auth.logout', { user: { _id: sub }, entityType: 'session', entityId: sid });
+        // The web client signs out with reason "idle" when its inactivity
+        // timer fires; it is recorded separately for the audit trail only.
+        const idle = req.body?.reason === 'idle';
+        await revokeSessions({ _id: sid, user: sub }, idle ? 'idle_timeout_client' : 'logout');
+        logActivity(req, idle ? 'auth.idle_logout' : 'auth.logout', { user: { _id: sub }, entityType: 'session', entityId: sid });
       }
       if (typeof req.body?.pushToken === 'string') {
         // The device stops receiving this user's pushes once it signs out.
@@ -403,6 +426,19 @@ export const logout = asyncHandler(async (req, res) => {
   }
   clearRefreshCookie(res);
   res.json({ message: 'Signed out' });
+});
+
+/**
+ * Reported user activity for the web idle rule. The web client calls this at
+ * most once every ~30 s, and only after real interaction — never on a timer.
+ * The write itself is conditional (see recordSessionActivity), so this can
+ * never cost more than one write per ~25 s per session. Sessions without the
+ * rule (mobile, exempt roles) are a no-op. Already-idle sessions never get
+ * here: protect has rejected them.
+ */
+export const recordActivity = asyncHandler(async (req, res) => {
+  if (req.sessionIdleTimeoutMs && req.sessionId) await recordSessionActivity(req.sessionId);
+  res.json({ idleTimeoutSec: req.sessionIdleTimeoutMs ? req.sessionIdleTimeoutMs / 1000 : null });
 });
 
 export const me = asyncHandler(async (req, res) => {

@@ -3,6 +3,9 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
   user: null,
   accessToken: null,
+  // Seconds of inactivity after which the server ends this web session, or
+  // null when the rule does not apply (exempt roles). Drives the UX timer only.
+  idleTimeoutSec: null,
   ready: false, // true once the initial session check has finished
 };
 
@@ -13,6 +16,7 @@ const authSlice = createSlice({
     setCredentials(state, { payload }) {
       state.user = payload.user;
       state.accessToken = payload.accessToken;
+      state.idleTimeoutSec = payload.idleTimeoutSec ?? null;
     },
     setUser(state, { payload }) {
       state.user = payload;
@@ -20,6 +24,7 @@ const authSlice = createSlice({
     loggedOut(state) {
       state.user = null;
       state.accessToken = null;
+      state.idleTimeoutSec = null;
     },
     sessionChecked(state) {
       state.ready = true;

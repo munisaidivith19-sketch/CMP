@@ -6,7 +6,7 @@ import AlumniEvent from '../../models/AlumniEvent.js';
 import Chapter from '../../models/Chapter.js';
 import ChapterMember from '../../models/ChapterMember.js';
 import User from '../../models/User.js';
-import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../../utils/http.js';
+import { ApiError, asyncHandler, assertHttpUrl, escapeRegex, pageMeta, paginate, pick } from '../../utils/http.js';
 import { applyPrivacy, batchApplyPrivacy } from '../../utils/alumniPrivacy.js';
 import { logActivity } from '../../utils/activity.js';
 import { notifyRoles, notifyUsers } from '../../utils/notify.js';
@@ -70,6 +70,7 @@ export const updateMyProfile = asyncHandler(async (req, res) => {
     'openToReferrals', 'showInDirectory', 'privacy',
   ];
   const patch = pick(req.body, allowed);
+  assertHttpUrl(patch.linkedin, 'LinkedIn URL');
 
   let profile = await AlumniProfile.findOne({ user: req.user._id });
 

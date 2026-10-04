@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Alert, View } from 'react-native';
 import { router } from 'expo-router';
+import { useSelector } from 'react-redux';
+import { selectUser } from '../../../store/authSlice';
 import { Button, Card, Chip, Header, Input, Screen, T } from '../../../components/ui';
 import DateField from '../../../components/DateField';
 import PickerField from '../../../components/PickerField';
@@ -13,7 +15,8 @@ export default function NewGatePass() {
   const [create, { isLoading }] = useCreateGatePassMutation();
   const [regarding, setRegarding] = useState('outing');
   const [description, setDescription] = useState('');
-  const [parentPhone, setParentPhone] = useState('');
+  // The parent OTP always goes to the number the administrator registered.
+  const me = useSelector(selectUser);
   const [state, setState] = useState('');
   const [district, setDistrict] = useState('');
   const [area, setArea] = useState('');
@@ -24,7 +27,6 @@ export default function NewGatePass() {
   const submit = async () => {
     const e = {};
     if (description.trim().length < 5) e.description = 'Please describe the reason (5+ characters)';
-    if (parentPhone.trim().length < 6) e.parentPhone = "Enter a valid parent's mobile number";
     if (!state) e.state = 'Select a state';
     if (!district.trim()) e.district = 'Required';
     if (!area.trim()) e.area = 'Required';
@@ -35,7 +37,6 @@ export default function NewGatePass() {
       await create({
         regarding,
         description: description.trim(),
-        parentPhone: parentPhone.trim(),
         destination: { state, district: district.trim(), area: area.trim() },
         fromDate: fromDate.toISOString().slice(0, 10),
         toDate: toDate.toISOString().slice(0, 10),
@@ -73,7 +74,7 @@ export default function NewGatePass() {
           </View>
         </View>
         <Input label="Description" value={description} onChangeText={setDescription} multiline maxLength={500} placeholder="Why do you need to leave campus?" error={errors.description} />
-        <Input label="Parent's mobile number" value={parentPhone} onChangeText={setParentPhone} keyboardType="phone-pad" maxLength={20} error={errors.parentPhone} />
+        <Input label="Parent's mobile number (registered)" value={me?.parentPhone || 'Not on file — ask the administrator'} editable={false} />
         <DateField label="From date" value={fromDate} onChange={setFromDate} minimumDate={new Date()} error={errors.fromDate} />
         <DateField label="To date (return by)" value={toDate} onChange={setToDate} minimumDate={fromDate} error={errors.toDate} />
         <PickerField label="State" value={state} onChange={setState} options={INDIAN_STATES} placeholder="Select state" error={errors.state} />

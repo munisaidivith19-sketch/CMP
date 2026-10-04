@@ -37,6 +37,7 @@ import {
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
 import { MENTORSHIP_DOMAINS } from '../../utils/constants';
+import { safeHref } from '../../utils/format';
 
 const DOMAIN_LABELS = {
   software_engineering: 'Software Engineering',
@@ -540,7 +541,7 @@ export default function AlumniDirectoryTab() {
                 )}
                 {profileModalUser.social?.linkedin && (
                   <a
-                    href={profileModalUser.social.linkedin}
+                    href={safeHref(profileModalUser.social.linkedin)}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-1 font-medium text-blue-600 hover:underline"
@@ -550,7 +551,7 @@ export default function AlumniDirectoryTab() {
                 )}
                 {profileModalUser.social?.github && (
                   <a
-                    href={profileModalUser.social.github}
+                    href={safeHref(profileModalUser.social.github)}
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-1 font-medium text-slate-700 hover:underline dark:text-slate-300"

@@ -2,7 +2,7 @@ import AlumniEvent from '../../models/AlumniEvent.js';
 import AlumniEventRsvp from '../../models/AlumniEventRsvp.js';
 import AlumniProfile from '../../models/AlumniProfile.js';
 import User from '../../models/User.js';
-import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../../utils/http.js';
+import { ApiError, asyncHandler, assertHttpUrl, escapeRegex, pageMeta, paginate, pick } from '../../utils/http.js';
 import { logActivity } from '../../utils/activity.js';
 import { notifyRoles, notifyUsers } from '../../utils/notify.js';
 import { emitToUsers } from '../../config/socket.js';
@@ -134,6 +134,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     'audience', 'cover', 'organizerName',
   ];
   const body = pick(req.body, allowed);
+  assertHttpUrl(body.meetingLink, 'Meeting link');
 
   const startsAt = new Date(body.startsAt);
   const endsAt = new Date(body.endsAt);
@@ -215,6 +216,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     'audience', 'cover', 'organizerName',
   ];
   const patch = pick(req.body, allowed);
+  assertHttpUrl(patch.meetingLink, 'Meeting link');
 
   const dateOrVenueChanged =
     (patch.startsAt && new Date(patch.startsAt).getTime() !== event.startsAt.getTime()) ||

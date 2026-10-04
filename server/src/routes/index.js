@@ -229,6 +229,8 @@ router.use(protect);
 router.use(realtimeChanges);
 
 router.get('/auth/me', auth.me);
+// Web idle rule: reported user activity (throttled client- and server-side).
+router.post('/auth/activity', auth.recordActivity);
 router.get('/auth/sessions', auth.listSessions);
 router.post('/auth/sessions/revoke-others', auth.revokeOtherSessions);
 router.delete('/auth/sessions/:id', idParam('id'), auth.revokeSession);
@@ -768,7 +770,14 @@ router.get('/attendance/records', ...rangeQuery, validate, attendance.getAttenda
 router.get('/attendance/trends', ...rangeQuery, validate, attendance.getAttendanceTrends);
 router.get('/attendance/sessions', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.listSessions);
 router.get('/attendance/low', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getLowAttendance);
-router.post('/attendance/notify/:id', idParam('id'), authorize('admin', 'hod', 'faculty'), attendance.notifyStudentLowAttendance);
+router.post(
+  '/attendance/notify/:id',
+  idParam('id'),
+  authorize('admin', 'hod', 'faculty'),
+  body('message').optional({ values: 'falsy' }).isString().trim().isLength({ max: 500 }).withMessage('Message must be at most 500 characters'),
+  validate,
+  attendance.notifyStudentLowAttendance
+);
 router.get('/attendance/student/:id', idParam('id'), authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getStudentAttendance);
 router.get('/attendance/subject/:subjectId', idParam('subjectId'), authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getSubjectAttendance);
 router.get('/attendance/section', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getSectionAttendance);
@@ -869,7 +878,8 @@ router.post(
   validate,
   attendance.requestCorrection
 );
-router.get('/attendance/corrections', attendance.listCorrections);
+// Students (their own) and the attendance staff only — never warden, security or alumni.
+router.get('/attendance/corrections', authorize(...STUDENT_ROLES, ...ATTENDANCE_VIEW_ROLES), attendance.listCorrections);
 router.patch(
   '/attendance/corrections/:id',
   idParam('id'),
@@ -1048,7 +1058,8 @@ const gateDestinationRules = [
   body('description').trim().isLength({ min: 5, max: 500 }).withMessage('Please describe the reason (5+ characters)'),
   body('fromDate').isISO8601().withMessage('Departure date required'),
   body('toDate').isISO8601().withMessage('Return date required'),
-  body('parentPhone').trim().isLength({ min: 6, max: 20 }).withMessage("Parent's mobile number is required"),
+  // Ignored if sent: the registered parent number is always used (createGatePass).
+  body('parentPhone').optional().isString().isLength({ max: 20 }),
   body('destination.state').trim().isLength({ min: 1, max: 80 }).withMessage('State is required'),
   body('destination.district').trim().isLength({ min: 1, max: 80 }).withMessage('District is required'),
   body('destination.area').trim().isLength({ min: 1, max: 120 }).withMessage('Village / area is required'),

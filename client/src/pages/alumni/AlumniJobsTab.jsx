@@ -41,6 +41,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
+import { safeHref } from '../../utils/format';
 
 const JOB_TYPE_LABELS = {
   full_time: 'Full Time',
@@ -721,7 +722,7 @@ export default function AlumniJobsTab() {
                             {app.note && <p className="mt-1 text-slate-700 italic dark:text-slate-300">"{app.note}"</p>}
                             {app.resumeUrl && (
                               <a
-                                href={app.resumeUrl}
+                                href={safeHref(app.resumeUrl)}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="mt-1 inline-flex items-center gap-1 font-semibold text-primary-600 hover:underline"

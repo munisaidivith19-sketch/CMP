@@ -93,6 +93,13 @@ export const resolveReport = asyncHandler(async (req, res) => {
   if (!report) throw new ApiError(404, 'Report not found');
   if (report.status !== 'pending') throw new ApiError(400, 'This report has already been handled');
   if (action === 'suspend' && req.user.role !== 'admin') throw new ApiError(403, 'Only administrators can suspend accounts');
+  // A report must never grant more than the moderator's own role allows:
+  // faculty / HOD moderate discussions and replies (which they can delete
+  // directly anyway), but deleting a club, event or announcement is an admin
+  // action — otherwise "report it, then resolve it" bypasses that rule.
+  if (action === 'delete' && !['discussion', 'reply'].includes(report.targetType) && req.user.role !== 'admin') {
+    throw new ApiError(403, 'Only administrators can delete clubs, events, announcements or accounts — warn the owner or leave the report for an administrator');
+  }
 
   const { doc, reply, ownerId } = await resolveTarget(report);
 

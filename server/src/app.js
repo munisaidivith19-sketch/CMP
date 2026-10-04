@@ -87,6 +87,12 @@ export function createApp() {
     }
   });
 
+  // API responses carry account data: never cache them in the browser or a
+  // shared proxy (a handler may still set its own, stricter or streaming, value).
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
   app.use('/api', apiLimiter, csrfAndOriginGuard, routes);
   app.use('/api', notFound);

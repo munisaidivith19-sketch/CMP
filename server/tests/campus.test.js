@@ -22,8 +22,10 @@ before(async () => {
   ctx = await startServer();
   const [f, s, s2, o, h, p, sec, of] = await Promise.all([
     ctx.createUser({ role: 'faculty', name: 'Warden', department: 'CSE', section: 'A' }),
-    ctx.createUser({ name: 'Gate Student', rollNo: 'R1', department: 'CSE', section: 'A' }),
-    ctx.createUser({ name: 'Second Gate Student', rollNo: 'R2', department: 'CSE', section: 'A' }),
+    // The parent OTP goes to the number registered by the admin (never one
+    // typed into the request), so the gate-pass students have one on file.
+    ctx.createUser({ name: 'Gate Student', rollNo: 'R1', department: 'CSE', section: 'A', parentPhone: '9800000000' }),
+    ctx.createUser({ name: 'Second Gate Student', rollNo: 'R2', department: 'CSE', section: 'A', parentPhone: '9800000000' }),
     ctx.createUser({ name: 'Other Student' }),
     ctx.createUser({ role: 'hod', name: 'HOD CSE', department: 'CSE', employeeId: 'H-1' }),
     ctx.createUser({ role: 'principal', name: 'Principal', employeeId: 'P-1' }),

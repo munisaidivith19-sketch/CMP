@@ -133,6 +133,7 @@ function ExitQr({ pass }) {
 
 /* ── Student ────────────────────────────────────────────────────── */
 function RequestModal({ open, onClose }) {
+  const me = useSelector(selectUser);
   const [type, setType] = useState('normal');
   const [emergencyBusy, setEmergencyBusy] = useState(false);
   const [create, { isLoading }] = useCreateGatePassMutation();
@@ -147,7 +148,7 @@ function RequestModal({ open, onClose }) {
   useEffect(() => {
     if (!open) return;
     setType('normal');
-    reset({ regarding: 'outing', description: '', fromDate: todayKey(), toDate: todayKey(), parentPhone: '', state: '', district: '', area: '' });
+    reset({ regarding: 'outing', description: '', fromDate: todayKey(), toDate: todayKey(), state: '', district: '', area: '' });
   }, [open, reset]);
 
   const onSubmit = async (v) => {
@@ -157,7 +158,6 @@ function RequestModal({ open, onClose }) {
         description: v.description,
         fromDate: v.fromDate,
         toDate: v.toDate,
-        parentPhone: v.parentPhone,
         destination: { state: v.state, district: v.district, area: v.area },
       }).unwrap();
       toast.success('Gate pass requested — your class faculty has been notified');
@@ -221,7 +221,8 @@ function RequestModal({ open, onClose }) {
           error={errors.regarding}
           {...register('regarding', { required: true })}
         />
-        <Input label="Parent's mobile number" type="tel" maxLength={20} error={errors.parentPhone} {...register('parentPhone', { required: 'Required', minLength: { value: 6, message: 'Enter a valid number' } })} />
+        {/* The parent OTP always goes to the number the administrator registered. */}
+        <Input label="Parent's mobile number (registered)" value={me?.parentPhone || 'Not on file — ask the administrator'} readOnly disabled hint="Set by the administrator" />
         <Textarea
           label="Description"
           className="sm:col-span-2"

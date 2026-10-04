@@ -112,6 +112,7 @@ export async function persistFile(file, kind = 'image') {
 
 /** A file stored by persistFile in MongoDB, or null. `filename` is a bare name. */
 export async function readStoredFile(filename) {
-  if (!/^[w.-]+$/.test(filename)) return null;
+  // A bare generated name only (uuid.ext): no path separators, no traversal.
+  if (!/^[\w-]+\.[a-z0-9]+$/i.test(filename) || filename.length > 80) return null;
   return StoredFile.findOne({ filename });
 }

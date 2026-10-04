@@ -50,6 +50,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
+import { safeHref } from '../../utils/format';
 
 const DOMAIN_LABELS = {
   software_engineering: 'Software Engineering',
@@ -622,7 +623,7 @@ export default function AlumniMentorshipTab() {
                           <Video className="h-3.5 w-3.5" /> Google Meet / Video Call
                         </span>
                         <a
-                          href={sess.meetingLink}
+                          href={safeHref(sess.meetingLink)}
                           target="_blank"
                           rel="noreferrer"
                           className="font-bold text-primary-600 hover:underline flex items-center gap-1"

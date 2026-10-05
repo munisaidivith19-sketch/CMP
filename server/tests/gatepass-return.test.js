@@ -295,13 +295,7 @@ test('STUDENT IS INSIDE completes the pass once, consumes every credential, then
   assert.equal((await inside(id, credential.code, security2)).status, 409);
   assert.equal((await checkLocation(id, student, north(10))).status, 422, 'no new return attempt after completion');
 
-  const sent = parentMessagesFor(student.u.name);
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].to, '******4321');
-  assert.match(
-    sent[0].message,
-    new RegExp(`^Dear Parent, ${student.u.name} has returned to the college campus on \\d{2}/\\d{2}/\\d{4} at \\d{1,2}:\\d{2} (AM|PM)\\. This is an automated notification from JNN INSTITUTE OF ENGINEERING\\.$`)
-  );
+  assert.equal(parentMessagesFor(student.u.name).length, 0, 'no SMS goes to the parent on return — only on exit');
 
   const [notice] = await returnNotices(classFaculty, id);
   assert.ok(notice, 'assigned class faculty notified');
@@ -315,7 +309,7 @@ test('two guards pressing STUDENT IS INSIDE at once complete the pass exactly on
   const { id, student, credential } = await verifiedPass();
   const results = await Promise.all([inside(id, credential.code), inside(id, credential.payload, security2)]);
   assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
-  assert.equal(parentMessagesFor(student.u.name).length, 1, 'one parent message');
+  assert.equal(parentMessagesFor(student.u.name).length, 0, 'no parent message on return');
   assert.equal((await returnNotices(classFaculty, id)).length, 1, 'one faculty notice');
 });
 

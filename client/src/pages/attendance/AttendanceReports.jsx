@@ -7,7 +7,7 @@ import { downloadAttendanceReport } from '../../services/reports';
 import { selectUser } from '../../features/authSlice';
 import { Button, Card, CardHeader, EmptyState, ErrorState, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { MiniStat, PercentBadge } from '../../components/insights';
-import { ACADEMIC_YEARS, YEAR_LABELS } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, YEAR_LABELS } from '../../utils/constants';
 import { errMsg, todayKey } from '../../utils/format';
 import { fmtHolidayDates } from '../../utils/holidays';
 import { HolidayBanner } from './Holidays';
@@ -86,7 +86,12 @@ function StudentList({ title, students, tone }) {
 export default function AttendanceReports() {
   const me = useSelector(selectUser);
   const isFaculty = me.role === 'faculty';
-  const { data: options, isLoading: loadingOptions, error: optionsError, refetch } = useGetReportOptionsQuery();
+  // Admin / Principal / AO / Dean / Chairman may also narrow a report to one department.
+  const canPickDepartment = ['admin', 'principal', 'ao', 'dean', 'chairman'].includes(me.role);
+  const [department, setDepartment] = useState('');
+  const { data: options, isLoading: loadingOptions, error: optionsError, refetch } = useGetReportOptionsQuery(
+    canPickDepartment && department ? { department } : undefined
+  );
 
   const [scope, setScope] = useState(null);
   const [type, setType] = useState('period');
@@ -137,7 +142,7 @@ export default function AttendanceReports() {
     ? { scope: 'class', date }
     : facultyScope === 'handling'
       ? { scope: 'handling', subjectId, section, date }
-      : { date, ...(year ? { year } : {}), ...(section ? { section } : {}), ...(semester ? { semester } : {}) };
+      : { date, ...(canPickDepartment && department ? { department } : {}), ...(year ? { year } : {}), ...(section ? { section } : {}), ...(semester ? { semester } : {}) };
   const canListPeriods = needsPeriod && (isClass ? Boolean(options?.ourClass) : isFaculty ? Boolean(subjectId && section) : Boolean(section));
   const { data: periodList, isFetching: loadingPeriods } = useGetReportPeriodsQuery(periodQuery, { skip: !canListPeriods });
   const periods = periodList?.periods || [];
@@ -158,6 +163,7 @@ export default function AttendanceReports() {
         if (section) p.section = section;
       }
     } else {
+      if (canPickDepartment && department) p.department = department;
       if (year) p.year = year;
       if (section) p.section = section;
       if (semester) p.semester = semester;
@@ -169,7 +175,7 @@ export default function AttendanceReports() {
       if (to) p.to = to;
     }
     return p;
-  }, [isFaculty, facultyScope, subjectId, section, year, semester, needsDate, needsPeriod, date, period, type, from, to]);
+  }, [isFaculty, facultyScope, subjectId, canPickDepartment, department, section, year, semester, needsDate, needsPeriod, date, period, type, from, to]);
 
   const missing = (() => {
     if (isClass && !options?.ourClass) return 'no-class';
@@ -215,7 +221,9 @@ export default function AttendanceReports() {
                   ? `Our Class · ${ourClass.department} · ${YEAR_LABELS[ourClass.year]} · Section ${ourClass.section} · Semester ${ourClass.semester}`
                   : 'Our Class'
                 : 'Handling Class · the subjects and sections you teach'
-              : `${options?.department || 'Your department'} — year, section and semester within your own department.`
+              : canPickDepartment
+                ? 'All departments — filter by department, year, section and semester.'
+                : `${options?.department || 'Your department'} — year, section and semester within your own department.`
           }
         />
 
@@ -279,10 +287,31 @@ export default function AttendanceReports() {
 
             {!isFaculty && (
               <>
+                {canPickDepartment && (
+                  <div className={field}>
+                    <label className="label" htmlFor="rp-dept">Department</label>
+                    <select
+                      id="rp-dept"
+                      className={selectClass}
+                      value={department}
+                      onChange={(e) => {
+                        setDepartment(e.target.value);
+                        setSection('');
+                      }}
+                    >
+                      <option value="">All Departments</option>
+                      {DEPARTMENTS.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className={field}>
                   <label className="label" htmlFor="rp-year">Year</label>
                   <select id="rp-year" className={selectClass} value={year} onChange={(e) => setYear(e.target.value)}>
-                    <option value="">All years</option>
+                    <option value="">All Years</option>
                     {(options?.years?.length ? options.years : ACADEMIC_YEARS).map((y) => (
                       <option key={y} value={y}>
                         {YEAR_LABELS[y] || `Year ${y}`}
@@ -293,7 +322,7 @@ export default function AttendanceReports() {
                 <div className={field}>
                   <label className="label" htmlFor="rp-section">Section</label>
                   <select id="rp-section" className={selectClass} value={section} onChange={(e) => setSection(e.target.value)}>
-                    <option value="">All sections</option>
+                    <option value="">All Sections</option>
                     {sections.map((s) => (
                       <option key={s}>{s}</option>
                     ))}
@@ -302,8 +331,8 @@ export default function AttendanceReports() {
                 <div className={field}>
                   <label className="label" htmlFor="rp-sem">Semester</label>
                   <select id="rp-sem" className={selectClass} value={semester} onChange={(e) => setSemester(e.target.value)}>
-                    <option value="">All semesters</option>
-                    {(options?.semesters || []).map((s) => (
+                    <option value="">All Semesters</option>
+                    {(canPickDepartment ? [1, 2, 3, 4, 5, 6, 7, 8] : options?.semesters || []).map((s) => (
                       <option key={s} value={s}>
                         Semester {s}
                       </option>

@@ -54,7 +54,7 @@ function Timeline({ history }) {
   const label = (h) => {
     switch (h.action) {
       case 'submitted':
-        return `Complaint submitted · assigned to ${titleCase(h.newAuthority)}`;
+        return `Grievance submitted · assigned to ${titleCase(h.newAuthority)}`;
       case 'authority_update':
         return `${titleCase(h.actorRole)} updated status to ${titleCase(h.newStatus)}${h.comment ? ` — “${h.comment}”` : ''}`;
       case 'not_resolved':
@@ -64,9 +64,9 @@ function Timeline({ history }) {
       case 'resolved':
         return 'Marked resolved';
       case 'closed':
-        return 'Student confirmed resolution — complaint closed';
+        return 'Student confirmed resolution — grievance closed';
       case 'cancelled':
-        return 'Complaint cancelled by the student';
+        return 'Grievance cancelled by the student';
       case 'identity_accessed':
         return `Identity accessed by ${titleCase(h.actorRole)}`;
       default:
@@ -212,14 +212,14 @@ export default function ComplaintDetail() {
       <ConfirmDialog
         open={confirmCancel}
         onClose={() => setConfirmCancel(false)}
-        title="Cancel this complaint?"
-        text="This withdraws the complaint immediately."
-        confirmText="Cancel complaint"
+        title="Cancel this grievance?"
+        text="This withdraws the grievance immediately."
+        confirmText="Cancel grievance"
         loading={cancelling}
         onConfirm={async () => {
           try {
             await cancel(complaint._id).unwrap();
-            toast.success('Complaint cancelled');
+            toast.success('Grievance cancelled');
             navigate('/complaints');
           } catch (e) {
             toast.error(errMsg(e));
@@ -231,7 +231,7 @@ export default function ComplaintDetail() {
       <Modal
         open={authorityModal}
         onClose={() => setAuthorityModal(false)}
-        title="Update complaint status"
+        title="Update grievance status"
         size="sm"
         footer={
           <>

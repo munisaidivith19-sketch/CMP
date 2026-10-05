@@ -39,7 +39,7 @@ export default function ComplaintDashboard() {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={AlertOctagon} title="Complaints" subtitle="College-wide complaint monitoring, filters and statistics." />
+      <PageHeader icon={AlertOctagon} title="Grievances" subtitle="College-wide grievance monitoring, filters and statistics." />
 
       {dashLoading ? (
         <Skeleton className="h-28" />
@@ -84,13 +84,13 @@ export default function ComplaintDashboard() {
       </Card>
 
       <Card>
-        <CardHeader title="Complaints" />
+        <CardHeader title="Grievances" />
         {isLoading ? (
           <Skeleton className="h-64" />
         ) : error ? (
           <ErrorState error={error} onRetry={refetch} />
         ) : !data.complaints.length ? (
-          <EmptyState icon={XCircle} title="No complaints match these filters" />
+          <EmptyState icon={XCircle} title="No grievances match these filters" />
         ) : (
           <>
             <ul className="divide-y divide-white/60 dark:divide-white/5">

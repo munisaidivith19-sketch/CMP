@@ -78,9 +78,17 @@ function otpError(status, message, event, reason) {
 /**
  * The parent mobile an OTP goes to: the student's registered number on their
  * account, falling back to the number captured from that same account when
- * the pass was created. Never anything from the request.
+ * the pass was created. Never anything from the OTP request itself.
+ *
+ * Exception, by the college's decision: a day scholar's Outing uses the parent
+ * number the student typed on that request (stored on the pass when it was
+ * created). Reviewers see a warning when it differs from the registered one.
  */
 async function registeredParentMobile(pass) {
+  if (pass.dayScholarOuting) {
+    const typed = String(pass.parentPhone || '').trim();
+    return typed.replace(/\D/g, '').length >= 6 ? typed : null;
+  }
   const student = await User.findById(pass.student?._id || pass.student).select('parentPhone').lean();
   const phone = String(student?.parentPhone || pass.parentPhone || '').trim();
   return phone.replace(/\D/g, '').length >= 6 ? phone : null;

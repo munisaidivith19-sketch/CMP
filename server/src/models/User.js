@@ -58,6 +58,9 @@ const userSchema = new Schema(
     stayType: { type: String, enum: STAY_TYPES },
     // Only meaningful for students; never shown to classmates, only to staff.
     parentPhone: { type: String, trim: true, maxlength: 20 },
+    // Short-lived lock while a gate pass request is being created, so parallel
+    // requests cannot each pass the "one open pass" check. Never returned.
+    gatePassLockUntil: { type: Date, select: false },
     designation: { type: String, trim: true, maxlength: 80 }, // faculty
     bio: { type: String, trim: true, maxlength: 500 },
     avatar: String,

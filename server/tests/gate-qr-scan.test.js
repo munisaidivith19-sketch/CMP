@@ -69,6 +69,33 @@ const scannedPayload = async (id, student) => (await ctx.request('GET', `/gate-p
 const scanVerify = (payload, who = staff.security) => ctx.request('POST', '/gate-pass/verify', { token: who.token, body: { code: payload } });
 const confirmOut = (id, payload, who = staff.security) => ctx.request('PATCH', `/gate-pass/${id}/out`, { token: who.token, body: { code: payload } });
 
+const exitMessagesFor = (name) => testOtpProvider.sentMessages().filter((m) => m.message.includes(`${name} has left`));
+
+test('exit: Security confirming the exit sends one SMS to the registered parent mobile, once', async () => {
+  const { id, student } = await approvedNormal();
+  const payload = await scannedPayload(id, student);
+  // A number on the request is ignored; the parent mobile comes from the student's record.
+  await ctx.models.User.updateOne({ _id: student.u._id }, { $set: { parentPhone: '9111100000' } });
+  assert.equal(exitMessagesFor(student.u.name).length, 0, 'nothing sent before the exit');
+  assert.equal((await scanVerify(payload)).status, 200);
+  assert.equal(exitMessagesFor(student.u.name).length, 0, 'verifying a scan sends nothing');
+
+  const out = await ctx.request('PATCH', `/gate-pass/${id}/out`, { token: staff.security.token, body: { code: payload, parentPhone: '9999999999' } });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const sent = exitMessagesFor(student.u.name);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].to, '******0000', 'registered parent mobile, not the request value');
+  assert.match(
+    sent[0].message,
+    new RegExp(`^Dear Parent, ${student.u.name} has left the college campus on \\d{2}/\\d{2}/\\d{4} at \\d{1,2}:\\d{2} (AM|PM) with an approved gate pass\\. This is an automated notification from JNN INSTITUTE OF ENGINEERING\\.$`)
+  );
+
+  // A replay or second guard cannot send another one.
+  assert.equal((await confirmOut(id, payload)).status, 409);
+  assert.equal((await confirmOut(id, payload, staff.security2)).status, 409);
+  assert.equal(exitMessagesFor(student.u.name).length, 1);
+});
+
 for (const [label, make] of [
   ['normal', approvedNormal],
   ['emergency', approvedEmergency],

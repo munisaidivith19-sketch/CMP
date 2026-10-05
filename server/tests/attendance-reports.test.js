@@ -492,3 +492,134 @@ test('PDF: an HOD’s report is generated for their own department only', async 
   assert.ok(!text.includes('Student Alpha'), 'section A is not part of a section B report');
   assert.ok(!text.includes('Student Ece'));
 });
+
+// ── Principal / AO / Dean / Chairman: department, year, section, semester ──
+
+let eceMarked = false;
+/** ECE attendance for Monday, so cross-department assertions are not vacuous. */
+async function ensureEceAttendance() {
+  if (eceMarked) return;
+  eceMarked = true;
+  const slot = await ctx.models.TimetableSlot.findOne({ subject: subjEce._id }).lean();
+  setNow(MONDAY, '08:45');
+  const res = await ctx.request('POST', '/attendance/mark', {
+    token: facEce.token,
+    body: { slotId: String(slot._id), records: [{ student: String(stuEce.u._id), status: 'present' }] },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  setNow(MONDAY, '12:00');
+}
+
+async function collegeUser(role) {
+  await ensureEceAttendance();
+  const u = await ctx.createUser({ role, name: `College ${role}` });
+  return ctx.loginWeb(u);
+}
+
+test('College roles: Daily Summary honours department, year, section and semester server-side', async () => {
+  const q = (s, tok) => ctx.request('GET', `/attendance/summary?date=${MONDAY}${s}`, { token: tok });
+  for (const role of ['principal', 'ao', 'dean', 'chairman']) {
+    const { token } = await collegeUser(role);
+    const all = await q('', token);
+    assert.equal(all.status, 200, role);
+    assert.equal(all.body.students.total, 6, 'all departments, years, sections, semesters');
+
+    assert.equal((await q(`&department=${encodeURIComponent(CSE)}`, token)).body.students.total, 5);
+    assert.equal((await q('&section=A', token)).body.students.total, 5, 'section A across departments');
+    assert.equal((await q(`&department=${encodeURIComponent(CSE)}&section=B`, token)).body.students.total, 1);
+    assert.equal((await q('&year=3&semester=6', token)).body.students.total, 6);
+    assert.equal((await q('&year=2', token)).body.students.total, 0);
+    assert.equal((await q('&semester=5', token)).body.students.total, 0);
+
+    const combo = await q(`&department=${encodeURIComponent(CSE)}&year=3&section=A&semester=6`, token);
+    assert.equal(combo.body.students.total, 4);
+    assert.equal(combo.body.students.present, 2);
+    assert.equal(combo.body.students.absent, 1, 'only the selected class attendance is counted');
+    assert.equal(combo.body.students.unmarked, 1);
+  }
+});
+
+test('College roles: the student list is narrowed by the same filters', async () => {
+  const { token } = await collegeUser('principal');
+  const res = await ctx.request('GET', `/attendance/summary/students?date=${MONDAY}&department=${encodeURIComponent(CSE)}&year=3&section=A&semester=6`, { token });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.students.length, 4);
+  assert.ok(res.body.students.every((s) => s.department === CSE && s.section === 'A' && s.year === 3 && s.semester === 6));
+});
+
+test('Daily Summary: invalid filter values are rejected and operator injection is inert', async () => {
+  const { token } = await collegeUser('dean');
+  assert.equal((await ctx.request('GET', '/attendance/summary?year=9', { token })).status, 422);
+  assert.equal((await ctx.request('GET', '/attendance/summary?semester=abc', { token })).status, 422);
+  const inj = await ctx.request('GET', '/attendance/summary?section[$ne]=A&year[$gt]=0', { token });
+  assert.ok([200, 422].includes(inj.status));
+  if (inj.status === 200) assert.ok(inj.body.students.total <= 6);
+});
+
+test('Daily Summary: an HOD stays inside their own department whatever filters are sent', async () => {
+  const own = await ctx.request('GET', `/attendance/summary?date=${MONDAY}&year=3&section=A`, { token: hodCse.token });
+  assert.equal(own.status, 200);
+  assert.equal(own.body.students.total, 4);
+  const other = await ctx.request('GET', '/attendance/summary?department=ECE', { token: hodCse.token });
+  assert.equal(other.status, 403);
+  assert.equal((await ctx.request('GET', '/attendance/summary', { token: stuA1.token })).status, 403);
+  assert.equal((await ctx.request('GET', '/attendance/summary', { token: facNs.token })).status, 403);
+});
+
+test('College-role reports: department + year + section + semester narrow the report; All covers everything', async () => {
+  for (const role of ['principal', 'ao', 'dean', 'chairman']) {
+    const { token } = await collegeUser(role);
+    const cse = await ctx.request(
+      'GET',
+      `/attendance/reports/date?date=${MONDAY}&department=${encodeURIComponent(CSE)}&year=3&section=A&semester=6`,
+      { token }
+    );
+    assert.equal(cse.status, 200, role);
+    assert.equal(cse.body.header.department, CSE);
+    assert.ok(cse.body.students.length > 0 && cse.body.students.every((s) => s.department === CSE && s.section === 'A'));
+
+    const ece = await ctx.request('GET', `/attendance/reports/date?date=${MONDAY}&department=ECE&section=A`, { token });
+    assert.equal(ece.status, 200);
+    assert.ok(ece.body.students.every((s) => s.department === 'ECE'));
+
+    const all = await ctx.request('GET', `/attendance/reports/date?date=${MONDAY}`, { token });
+    assert.equal(all.status, 200);
+    assert.equal(all.body.header.department, 'All Departments');
+    const depts = new Set(all.body.students.map((s) => s.department));
+    assert.ok(depts.has(CSE) && depts.has('ECE'), 'All Departments spans every department');
+  }
+});
+
+test('College-role reports: monthly roster follows the department filter, and All Departments works for a period', async () => {
+  const { token } = await collegeUser('principal');
+  const cse = await ctx.request('GET', `/attendance/reports/monthly?department=${encodeURIComponent(CSE)}&year=3&semester=6`, { token });
+  assert.equal(cse.status, 200);
+  assert.ok(cse.body.students.every((s) => s.department === CSE));
+  const everyone = await ctx.request('GET', '/attendance/reports/monthly', { token });
+  assert.ok(everyone.body.students.some((s) => s.department === 'ECE'));
+
+  const period = await ctx.request('GET', `/attendance/reports/period?date=${MONDAY}&period=1&section=A`, { token });
+  assert.equal(period.status, 200, JSON.stringify(period.body));
+});
+
+test('College-role reports: the PDF respects the selected department and shows it', async () => {
+  const { token } = await collegeUser('principal');
+  const res = await getPdf(`/attendance/reports/date?date=${MONDAY}&department=ECE&section=A&format=pdf`, token);
+  assert.equal(res.status, 200);
+  const text = await pdfText(res);
+  assert.ok(text.includes('Student Ece'));
+  assert.ok(!text.includes('Student Alpha'), 'another department is not in an ECE report');
+
+  const all = await getPdf(`/attendance/reports/date?date=${MONDAY}&format=pdf`, token);
+  const allText = await pdfText(all);
+  assert.ok(allText.includes('All Departments'));
+  assert.ok(allText.includes('Student Alpha') && allText.includes('Student Ece'));
+});
+
+test('Reports: an HOD or faculty department parameter still cannot leave their scope', async () => {
+  const hod = await ctx.request('GET', `/attendance/reports/date?date=${MONDAY}&department=ECE`, { token: hodCse.token });
+  assert.equal(hod.status, 200);
+  assert.equal(hod.body.header.department, CSE);
+  const fac = await ctx.request('GET', `/attendance/reports/date?date=${MONDAY}&department=ECE&scope=handling&subjectId=${subjEce._id}&section=A`, { token: facNs.token });
+  assert.ok([403, 404, 422].includes(fac.status));
+});

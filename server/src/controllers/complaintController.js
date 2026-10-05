@@ -96,7 +96,7 @@ async function notifyAuthority(complaint, recipientIds, { title, extra }) {
   await notifyUsers(recipientIds, {
     type: 'complaint',
     title,
-    message: `${who} raised a ${complaint.category.replace(/_/g, ' ')} complaint${extra ? ` · ${extra}` : ''}`,
+    message: `${who} raised a ${complaint.category.replace(/_/g, ' ')} grievance${extra ? ` · ${extra}` : ''}`,
     link: `/complaints/${complaint._id}`,
   });
 }
@@ -108,14 +108,14 @@ async function writeHistory(complaintId, entry) {
 // ── Student creates a complaint ────────────────────────────────────
 
 export const createComplaint = asyncHandler(async (req, res) => {
-  if (req.user.role !== 'student') throw new ApiError(403, 'Only student accounts can register a complaint');
+  if (req.user.role !== 'student') throw new ApiError(403, 'Only student accounts can register a grievance');
 
   const data = pick(req.body, ['anonymous', 'category', 'subCategory', 'description']);
   const escalateTo = String(req.body.escalateTo || '').toLowerCase();
   const attachments = Array.isArray(req.body.attachments) ? req.body.attachments.slice(0, 5) : [];
 
   const allowedTargets = COMPLAINT_ESCALATE_TO[data.category];
-  if (!allowedTargets) throw new ApiError(422, 'Invalid complaint category');
+  if (!allowedTargets) throw new ApiError(422, 'Invalid grievance category');
   if (!allowedTargets.includes(escalateTo)) throw new ApiError(422, 'Invalid "escalate to" authority for this category');
 
   const allowedSub = COMPLAINT_SUBCATEGORIES[data.category] || [];
@@ -164,7 +164,7 @@ export const createComplaint = asyncHandler(async (req, res) => {
   });
   logActivity(req, 'complaint.create', { entityType: 'complaint', entityId: complaint._id, summary: complaint.category });
 
-  await notifyAuthority(complaint, recipientIds, { title: 'New complaint assigned to you' });
+  await notifyAuthority(complaint, recipientIds, { title: 'New grievance assigned to you' });
   publishComplaint(complaint);
 
   res.status(201).json(sanitizeComplaint(complaint, req.user, req));
@@ -216,7 +216,7 @@ export const listComplaints = asyncHandler(async (req, res) => {
 
 export const getComplaint = asyncHandler(async (req, res) => {
   const complaint = await Complaint.findById(req.params.id).populate('student', STUDENT_FIELDS);
-  if (!complaint) throw new ApiError(404, 'Complaint not found');
+  if (!complaint) throw new ApiError(404, 'Grievance not found');
   if (!canView(complaint, req.user)) throw new ApiError(403, 'Not authorized');
 
   const history = await ComplaintHistory.find({ complaint: complaint._id }).sort({ timestamp: 1 }).lean();
@@ -238,9 +238,9 @@ export const authorityUpdate = asyncHandler(async (req, res) => {
   if (!['IN_REVIEW', 'IN_PROGRESS', 'RESOLVED'].includes(status)) throw new ApiError(422, 'Invalid status');
 
   const complaint = await Complaint.findById(req.params.id);
-  if (!complaint) throw new ApiError(404, 'Complaint not found');
+  if (!complaint) throw new ApiError(404, 'Grievance not found');
   if (req.user.role !== 'admin' && !sameId(complaint.currentAuthorityUserId, req.user)) {
-    throw new ApiError(403, 'You are not the current authority for this complaint');
+    throw new ApiError(403, 'You are not the current authority for this grievance');
   }
 
   const updated = await Complaint.findOneAndUpdate(
@@ -248,7 +248,7 @@ export const authorityUpdate = asyncHandler(async (req, res) => {
     { $set: { status, ...(status === 'RESOLVED' ? { resolvedAt: new Date() } : {}) } },
     { new: true }
   );
-  if (!updated) throw new ApiError(422, 'This complaint was just updated by someone else');
+  if (!updated) throw new ApiError(422, 'This grievance was just updated by someone else');
 
   await writeHistory(complaint._id, {
     action: 'authority_update',
@@ -262,7 +262,7 @@ export const authorityUpdate = asyncHandler(async (req, res) => {
 
   await notifyUsers([updated.student], {
     type: 'complaint',
-    title: status === 'RESOLVED' ? 'Your complaint was marked resolved' : 'Update on your complaint',
+    title: status === 'RESOLVED' ? 'Your grievance was marked resolved' : 'Update on your grievance',
     message: comment || `Status changed to ${status.replace(/_/g, ' ').toLowerCase()}`,
     link: `/complaints/${updated._id}`,
   });
@@ -275,10 +275,10 @@ export const authorityUpdate = asyncHandler(async (req, res) => {
 
 export const markNotResolved = asyncHandler(async (req, res) => {
   const complaint = await Complaint.findById(req.params.id);
-  if (!complaint) throw new ApiError(404, 'Complaint not found');
-  if (!sameId(complaint.student, req.user)) throw new ApiError(403, 'Only the complainant can do this');
+  if (!complaint) throw new ApiError(404, 'Grievance not found');
+  if (!sameId(complaint.student, req.user)) throw new ApiError(403, 'Only the student who raised this grievance can do this');
   if (!['SUBMITTED', 'IN_REVIEW', 'IN_PROGRESS', 'ESCALATED', 'RESOLVED'].includes(complaint.status)) {
-    throw new ApiError(422, `A ${complaint.status.toLowerCase()} complaint cannot be escalated`);
+    throw new ApiError(422, `A ${complaint.status.toLowerCase()} grievance cannot be escalated`);
   }
   if (complaint.notResolvedAvailableAt && Date.now() < complaint.notResolvedAvailableAt.getTime()) {
     throw new ApiError(422, 'The waiting period for escalation has not elapsed yet');
@@ -294,7 +294,7 @@ export const markNotResolved = asyncHandler(async (req, res) => {
       { $set: { status: 'NOT_RESOLVED' } },
       { new: true }
     );
-    if (!updated) throw new ApiError(422, 'This complaint was just updated by someone else');
+    if (!updated) throw new ApiError(422, 'This grievance was just updated by someone else');
     await writeHistory(complaint._id, {
       action: 'not_resolved',
       actorUserId: req.user._id,
@@ -326,7 +326,7 @@ export const markNotResolved = asyncHandler(async (req, res) => {
     },
     { new: true }
   );
-  if (!updated) throw new ApiError(422, 'This complaint was just updated by someone else');
+  if (!updated) throw new ApiError(422, 'This grievance was just updated by someone else');
 
   await writeHistory(complaint._id, {
     action: 'escalated',
@@ -339,7 +339,7 @@ export const markNotResolved = asyncHandler(async (req, res) => {
   });
   logActivity(req, 'complaint.escalate', { entityType: 'complaint', entityId: complaint._id, summary: `${previousAuthority} -> ${nextRole}` });
 
-  await notifyAuthority(updated, recipientIds, { title: 'Complaint escalated to you', extra: `escalated from ${previousAuthority}` });
+  await notifyAuthority(updated, recipientIds, { title: 'Grievance escalated to you', extra: `escalated from ${previousAuthority}` });
   publishComplaint(updated);
   res.json(sanitizeComplaint(await Complaint.findById(updated._id).populate('student', STUDENT_FIELDS), req.user, req));
 });
@@ -352,7 +352,7 @@ export const markResolved = asyncHandler(async (req, res) => {
     { $set: { status: 'CLOSED', closedAt: new Date() } },
     { new: true }
   );
-  if (!complaint) throw new ApiError(404, 'Complaint not found');
+  if (!complaint) throw new ApiError(404, 'Grievance not found');
 
   await writeHistory(complaint._id, {
     action: 'closed',
@@ -375,8 +375,8 @@ export const cancelComplaint = asyncHandler(async (req, res) => {
   );
   if (!complaint) {
     const exists = await Complaint.findById(req.params.id).select('student status').lean();
-    if (!exists || !sameId(exists.student, req.user)) throw new ApiError(404, 'Complaint not found');
-    throw new ApiError(422, `A ${exists.status.toLowerCase()} complaint cannot be cancelled`);
+    if (!exists || !sameId(exists.student, req.user)) throw new ApiError(404, 'Grievance not found');
+    throw new ApiError(422, `A ${exists.status.toLowerCase()} grievance cannot be cancelled`);
   }
 
   await writeHistory(complaint._id, {

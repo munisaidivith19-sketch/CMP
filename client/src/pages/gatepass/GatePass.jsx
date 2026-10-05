@@ -6,10 +6,12 @@ import toast from 'react-hot-toast';
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarDays,
   CheckCircle2,
   Clock,
   DoorClosed,
   DoorOpen,
+  FileText,
   LogIn,
   LogOut,
   MapPin,
@@ -21,6 +23,7 @@ import {
 } from 'lucide-react';
 import {
   useCancelGatePassMutation,
+  useCreateDayScholarOutingMutation,
   useCreateGatePassMutation,
   useEmergencyReviewGatePassMutation,
   useFacultyReviewGatePassMutation,
@@ -32,6 +35,7 @@ import {
   usePrincipalReviewGatePassMutation,
   useRecordGateOutMutation,
   useRevokeGatePassMutation,
+  useUploadFileMutation,
   useVerifyGatePassMutation,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
@@ -53,8 +57,22 @@ export const passStatusLabel = (status, pass) => {
   if (status === 'pending_authority') return `Pending — ${AUTHORITY_LABELS[pass?.emergencyAuthority] || 'authority'} approval`;
   return status === 'parent_verified' ? 'Parent verified' : status.replace('pending_', 'Waiting on ');
 };
-const passTitle = (p) => (isEmergency(p) ? 'Emergency gate pass' : GATE_PASS_REGARDING[p.regarding] || titleCase(p.regarding || ''));
+/** A day scholar's same-day Outing (no destination, no return step). */
+export const isOuting = (p) => Boolean(p?.dayScholarOuting);
+const passTitle = (p) =>
+  isEmergency(p) ? 'Emergency gate pass' : isOuting(p) ? `Outing · ${p.subject || ''}` : GATE_PASS_REGARDING[p.regarding] || titleCase(p.regarding || '');
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '');
+
+/** The Outing's attachment, if the student added one. */
+function Attachment({ doc }) {
+  if (!doc?.url) return null;
+  return (
+    <a href={doc.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-xs font-semibold text-primary-600 hover:underline">
+      <FileText className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{doc.name || 'Attachment'}</span>
+    </a>
+  );
+}
 
 /* ── Shared pieces ──────────────────────────────────────────────── */
 export function PassTimeline({ pass }) {
@@ -79,9 +97,14 @@ export function PassTimeline({ pass }) {
   const steps = [
     { label: 'Requested', at: pass.createdAt, done: true },
     ...approvalSteps,
-    { label: 'Left campus', at: pass.actualExit, done: Boolean(pass.actualExit) },
-    ...(pass.actualExit ? [{ label: 'Return location verified', at: pass.returnLocationVerifiedAt, done: Boolean(pass.returnLocationVerifiedAt) }] : []),
-    { label: 'Returned', at: pass.actualReturn, done: Boolean(pass.actualReturn) },
+    // An Outing has no return step: leaving campus completes it.
+    ...(isOuting(pass)
+      ? [{ label: 'Left campus · outing complete', at: pass.actualExit, done: Boolean(pass.actualExit) }]
+      : [
+          { label: 'Left campus', at: pass.actualExit, done: Boolean(pass.actualExit) },
+          ...(pass.actualExit ? [{ label: 'Return location verified', at: pass.returnLocationVerifiedAt, done: Boolean(pass.returnLocationVerifiedAt) }] : []),
+          { label: 'Returned', at: pass.actualReturn, done: Boolean(pass.actualReturn) },
+        ]),
   ];
   if (['cancelled', 'revoked', 'expired'].includes(pass.status)) {
     steps.push({ label: titleCase(pass.status), at: pass.cancelledAt || pass.revokedAt || pass.verificationExpiry, done: true, bad: true });
@@ -132,10 +155,107 @@ function ExitQr({ pass }) {
 }
 
 /* ── Student ────────────────────────────────────────────────────── */
+/**
+ * Day scholar Outing: subject, description, parent mobile and an optional
+ * attachment. For today only — the server sets the date — and there is no
+ * return check-in: the pass completes when security records the exit.
+ */
+function OutingForm({ formId, onSubmitted, onBusy }) {
+  const me = useSelector(selectUser);
+  const [create, { isLoading }] = useCreateDayScholarOutingMutation();
+  const [upload, { isLoading: uploading }] = useUploadFileMutation();
+  const [doc, setDoc] = useState(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm({ defaultValues: { subject: '', description: '', parentPhone: me?.parentPhone || '' } });
+
+  useEffect(() => onBusy?.(isLoading || uploading), [isLoading, uploading, onBusy]);
+
+  const pickFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setDoc(await upload({ file, kind: 'document' }).unwrap());
+    } catch (err) {
+      toast.error(errMsg(err, 'Could not upload the attachment'));
+    }
+  };
+
+  const onSubmit = async (v) => {
+    try {
+      await create({
+        subject: v.subject.trim(),
+        description: v.description.trim(),
+        parentPhone: v.parentPhone.trim(),
+        ...(doc ? { supportingDocument: { url: doc.url, name: doc.name, mimeType: doc.mimeType } } : {}),
+      }).unwrap();
+      toast.success('Outing requested — your class faculty has been notified');
+      onSubmitted?.();
+    } catch (err) {
+      toast.error(errMsg(err));
+    }
+  };
+
+  return (
+    <form id={formId} onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 gap-3 sm:grid-cols-2" noValidate>
+      <Input
+        label="Subject"
+        className="sm:col-span-2"
+        maxLength={120}
+        placeholder="e.g. Doctor appointment"
+        error={errors.subject}
+        {...register('subject', { required: 'Required', validate: (x) => x.trim().length >= 2 || 'At least 2 characters' })}
+      />
+      <Textarea
+        label="Description"
+        className="sm:col-span-2"
+        rows={3}
+        maxLength={500}
+        placeholder="Why do you need to go out today?"
+        error={errors.description}
+        {...register('description', { required: 'Please add details', validate: (x) => x.trim().length >= 5 || 'At least 5 characters' })}
+      />
+      <Input
+        label="Parent mobile"
+        type="tel"
+        maxLength={20}
+        hint="The parent verification OTP is sent to this number."
+        error={errors.parentPhone}
+        {...register('parentPhone', {
+          required: 'Required',
+          validate: (x) => x.replace(/\D/g, '').length >= 6 || 'Enter a valid mobile number',
+          pattern: { value: /^[0-9+\-\s()]*$/, message: 'Digits, +, spaces, - and brackets only' },
+        })}
+      />
+      <div>
+        <span className="label">Attachment (optional)</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="btn btn-soft cursor-pointer px-3 py-1.5 text-xs">
+            <FileText className="h-4 w-4" />
+            {uploading ? 'Uploading…' : doc ? 'Replace file' : 'Attach image or PDF'}
+            <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={pickFile} disabled={uploading} />
+          </label>
+          {doc && <span className="min-w-0 break-all text-xs muted">{doc.name}</span>}
+        </div>
+      </div>
+      <p className="text-xs muted sm:col-span-2">
+        For today ({fmtClassDay(todayKey())}) only. No return check-in is needed — the pass is complete once security records your exit.
+      </p>
+    </form>
+  );
+}
+
 function RequestModal({ open, onClose }) {
   const me = useSelector(selectUser);
-  const [type, setType] = useState('normal');
+  // Day scholars see Outing instead of the multi-day pass; hostelers are unchanged.
+  const isDayScholar = me?.stayType === 'day_scholar';
+  const defaultType = isDayScholar ? 'outing' : 'normal';
+  const [type, setType] = useState(defaultType);
   const [emergencyBusy, setEmergencyBusy] = useState(false);
+  const [outingBusy, setOutingBusy] = useState(false);
   const [create, { isLoading }] = useCreateGatePassMutation();
   const {
     register,
@@ -147,9 +267,9 @@ function RequestModal({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return;
-    setType('normal');
+    setType(defaultType);
     reset({ regarding: 'outing', description: '', fromDate: todayKey(), toDate: todayKey(), state: '', district: '', area: '' });
-  }, [open, reset]);
+  }, [open, reset, defaultType]);
 
   const onSubmit = async (v) => {
     try {
@@ -171,11 +291,13 @@ function RequestModal({ open, onClose }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Request a gate pass"
+      title={isDayScholar ? 'Request an outing' : 'Request a gate pass'}
       subtitle={
         type === 'emergency'
           ? 'Goes straight to the authority you choose — no faculty, HOD or parent OTP step.'
-          : 'Goes to your class faculty, then HOD, then the principal for approval.'
+          : type === 'outing'
+            ? 'For today only. Goes to your class faculty (parent OTP), then HOD, then the principal for approval.'
+            : 'Goes to your class faculty, then HOD, then the principal for approval.'
       }
       footer={
         <>
@@ -185,6 +307,10 @@ function RequestModal({ open, onClose }) {
           {type === 'emergency' ? (
             <Button type="submit" form="emergency-gate-pass" variant="danger" loading={emergencyBusy}>
               Send emergency request
+            </Button>
+          ) : type === 'outing' ? (
+            <Button type="submit" form="outing-gate-pass" loading={outingBusy}>
+              Request outing
             </Button>
           ) : (
             <Button loading={isLoading} onClick={handleSubmit(onSubmit)}>
@@ -196,7 +322,7 @@ function RequestModal({ open, onClose }) {
     >
       <div role="radiogroup" aria-label="Gate pass type" className="mb-4 grid grid-cols-2 gap-2">
         {[
-          ['normal', 'Normal gate pass'],
+          isDayScholar ? ['outing', 'Outing'] : ['normal', 'Normal gate pass'],
           ['emergency', 'Emergency gate pass'],
         ].map(([value, label]) => (
           <button
@@ -213,6 +339,8 @@ function RequestModal({ open, onClose }) {
       </div>
       {type === 'emergency' ? (
         <EmergencyRequestForm formId="emergency-gate-pass" onSubmitted={onClose} onBusy={setEmergencyBusy} />
+      ) : type === 'outing' ? (
+        <OutingForm formId="outing-gate-pass" onSubmitted={onClose} onBusy={setOutingBusy} />
       ) : (
       <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 gap-3 sm:grid-cols-2" noValidate>
         <Select
@@ -259,6 +387,9 @@ function RequestModal({ open, onClose }) {
 }
 
 function StudentGatePass() {
+  const me = useSelector(selectUser);
+  const isDayScholar = me?.stayType === 'day_scholar';
+  const requestLabel = isDayScholar ? 'Request outing' : 'Request gate pass';
   const [open, setOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [confirmCancel, setConfirmCancel] = useState(null);
@@ -271,8 +402,12 @@ function StudentGatePass() {
       <PageHeader
         icon={DoorOpen}
         title="Gate pass"
-        subtitle="Request permission to leave campus — a normal pass (Faculty → HOD → Principal) or, in an emergency, straight to one authority."
-        actions={!current && <Button icon={Plus} onClick={() => setOpen(true)}>Request gate pass</Button>}
+        subtitle={
+          isDayScholar
+            ? 'Request a same-day outing (Faculty → HOD → Principal) or, in an emergency, go straight to one authority.'
+            : 'Request permission to leave campus — a normal pass (Faculty → HOD → Principal) or, in an emergency, straight to one authority.'
+        }
+        actions={!current && <Button icon={Plus} onClick={() => setOpen(true)}>{requestLabel}</Button>}
       />
       {isLoading ? (
         <Skeleton className="h-72" />
@@ -290,13 +425,22 @@ function StudentGatePass() {
                   {current.overdue && <StatusBadge status="rejected" label="overdue" />}
                 </div>
                 <p className="mt-1 text-sm">{current.description}</p>
-                <p className="mt-1 flex items-center gap-1 text-xs muted">
-                  <MapPin className="h-3.5 w-3.5" /> {destinationLine(current.destination)}
-                </p>
+                {destinationLine(current.destination) && (
+                  <p className="mt-1 flex items-center gap-1 text-xs muted">
+                    <MapPin className="h-3.5 w-3.5" /> {destinationLine(current.destination)}
+                  </p>
+                )}
                 {isEmergency(current) ? (
                   <div className="mt-3">
                     <EmergencyDetails pass={current} compact />
                   </div>
+                ) : isOuting(current) ? (
+                  <>
+                    <p className="mt-1 text-xs muted">
+                      Today, {fmtClassDay(current.fromDate)} · Parent: {current.parentPhone}
+                    </p>
+                    <Attachment doc={current.supportingDocument} />
+                  </>
                 ) : (
                   <p className="mt-1 text-xs muted">
                     {fmtClassDay(current.fromDate)} → {fmtClassDay(current.toDate)} · Parent: {current.parentPhone}
@@ -325,7 +469,7 @@ function StudentGatePass() {
                 icon={DoorOpen}
                 title="No active gate pass"
                 text="Need to leave campus? Request a pass and tell your code to security once it’s approved."
-                action={<Button icon={Plus} onClick={() => setOpen(true)}>Request gate pass</Button>}
+                action={<Button icon={Plus} onClick={() => setOpen(true)}>{requestLabel}</Button>}
               />
             </Card>
           )}
@@ -383,10 +527,26 @@ function StudentGatePass() {
 }
 
 /* ── Staff: shared bits ─────────────────────────────────────────── */
-function StudentLine({ student, extra }) {
+// College-wide roles: may open any student's profile from a gate pass.
+const PROFILE_ROLES = ['admin', 'principal', 'ao', 'dean', 'chairman'];
+// …and look back at a past day's gate movements.
+const HISTORY_ROLES = PROFILE_ROLES;
+
+function StudentLine({ student, extra, linkProfile = false }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <Avatar user={student} size="sm" />
+      {linkProfile && student?._id ? (
+        <Link
+          to={`/people/${student._id}`}
+          title={`View ${student.name || 'student'}'s profile`}
+          aria-label={`View ${student.name || 'student'}'s profile`}
+          className="shrink-0 rounded-full ring-primary-400 transition hover:ring-2 focus-visible:ring-2"
+        >
+          <Avatar user={student} size="sm" />
+        </Link>
+      ) : (
+        <Avatar user={student} size="sm" />
+      )}
       <div className="min-w-0">
         <p className="truncate text-sm font-bold">{student?.name}</p>
         <p className="truncate text-xs muted">
@@ -438,7 +598,7 @@ export function ReviewCard({ pass, onDone }) {
     <Card className="flex flex-col gap-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <div className="min-w-0 flex-1">
-          <StudentLine student={pass.student} extra={` · requested ${timeAgo(pass.createdAt)}`} />
+          <StudentLine student={pass.student} extra={` · requested ${timeAgo(pass.createdAt)}`} linkProfile={PROFILE_ROLES.includes(me.role)} />
           {isEmergency(pass) ? (
             <div className="mt-3 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -447,6 +607,23 @@ export function ReviewCard({ pass, onDone }) {
               </div>
               <EmergencyDetails pass={pass} />
             </div>
+          ) : isOuting(pass) ? (
+            <>
+              <p className="mt-2 break-words text-sm">
+                <span className="mr-1.5 rounded-lg bg-sky-500/10 px-1.5 py-0.5 text-[11px] font-bold uppercase text-sky-700 dark:text-sky-300">Day scholar outing</span>
+                <span className="font-bold">{pass.subject}:</span> {pass.description}
+              </p>
+              <p className="mt-0.5 text-xs muted">
+                Today, {fmtClassDay(pass.fromDate)} · Parent (entered by student): {pass.parentPhone}
+              </p>
+              {pass.parentPhoneDiffers && (
+                <p className="mt-1.5 flex items-start gap-1.5 rounded-xl bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  This number is not the parent number registered on the student’s account. The OTP goes to the number above — confirm it is really the parent.
+                </p>
+              )}
+              <Attachment doc={pass.supportingDocument} />
+            </>
           ) : (
             <>
               <p className="mt-2 break-words text-sm">
@@ -537,22 +714,106 @@ function ReviewQueue({ role }) {
   );
 }
 
-function OutsideNow({ dash }) {
-  if (!dash.outsideStudents.length) return <Card><EmptyState icon={Users} title="Everyone is on campus" /></Card>;
+const fmtStamp = (v) => (v ? fmtClassDay(v, 'dd MMM, h:mm a') : '—');
+
+/**
+ * Students outside campus (now, or at the end of a past day), or the exits /
+ * returns of one day. `when` picks the timestamp shown on each row.
+ */
+function PassList({ passes, when = 'left', linkProfile, emptyTitle = 'Everyone is on campus' }) {
+  if (!passes?.length) return <Card><EmptyState icon={Users} title={emptyTitle} /></Card>;
   return (
     <Card>
       <ul className="divide-y divide-white/60 dark:divide-white/5">
-        {dash.outsideStudents.map((p) => (
+        {passes.map((p) => (
           <li key={p._id} className="flex flex-wrap items-center gap-3 py-3">
             <div className="min-w-0 flex-1">
-              <StudentLine student={p.student} extra={` · left ${timeAgo(p.actualExit)}`} />
+              <StudentLine
+                student={p.student}
+                linkProfile={linkProfile}
+                extra={
+                  when === 'returned'
+                    ? ` · returned ${fmtStamp(p.actualReturn)}`
+                    : when === 'exited'
+                      ? ` · left ${fmtStamp(p.actualExit)}`
+                      : ` · left ${timeAgo(p.actualExit)}`
+                }
+              />
             </div>
+            {isEmergency(p) && <EmergencyBadge />}
             <span className="text-xs muted">due back {fmtClassDay(p.toDate)}</span>
             {p.overdue && <StatusBadge status="rejected" label="overdue" />}
           </li>
         ))}
       </ul>
     </Card>
+  );
+}
+
+/**
+ * Every request this account can see (the API scopes it: the principal's
+ * stage and the emergency requests sent to them; AO / Dean / Chairman only
+ * the emergency requests sent to them), any status, optionally for one day.
+ */
+function MyRequests({ date, linkProfile }) {
+  const [page, setPage] = useState(1);
+  useEffect(() => setPage(1), [date]);
+  const { data, isLoading, error, refetch } = useGetGatePassesQuery({ page, ...(date ? { date } : {}) });
+  if (isLoading) return <Skeleton className="h-48" />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
+  if (!data.passes.length) {
+    return (
+      <Card>
+        <EmptyState icon={DoorOpen} title="No requests" text={date ? `No gate pass requests were raised on ${fmtClassDay(date)}.` : 'Requests sent to you appear here.'} />
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <ul className="divide-y divide-white/60 dark:divide-white/5">
+        {data.passes.map((p) => (
+          <li key={p._id} className="flex flex-wrap items-center gap-3 py-3">
+            <div className="min-w-0 flex-1">
+              <StudentLine student={p.student} linkProfile={linkProfile} extra={` · ${passTitle(p)} · requested ${fmtStamp(p.createdAt)}`} />
+            </div>
+            {isEmergency(p) && <EmergencyBadge />}
+            <span className="text-xs muted">
+              {fmtClassDay(p.fromDate)} → {fmtClassDay(p.toDate)}
+            </span>
+            <StatusBadge status={p.status} label={passStatusLabel(p.status, p)} />
+            <Button size="sm" variant="ghost" to={`/gate-pass/${p._id}`} icon={ArrowRight}>
+              View
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <Pagination page={data.pagination.page} pages={data.pagination.pages} onChange={setPage} />
+    </Card>
+  );
+}
+
+/** Calendar control: pick a past day to see that day's gate history; Today returns to live. */
+function HistoryPicker({ date, onChange }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label htmlFor="gp-history" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ink-muted" title="View a past day">
+        <CalendarDays className="h-4 w-4 text-primary-500" />
+        <span>History</span>
+      </label>
+      <input
+        id="gp-history"
+        type="date"
+        max={todayKey()}
+        value={date || todayKey()}
+        onChange={(e) => onChange(e.target.value && e.target.value !== todayKey() ? e.target.value : '')}
+        className="input w-auto rounded-xl py-1.5 px-3 text-sm"
+      />
+      {date && (
+        <Button size="sm" variant="ghost" onClick={() => onChange('')}>
+          Today
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -628,15 +889,43 @@ function AllPasses() {
 function StaffGatePass() {
   const me = useSelector(selectUser);
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') || 'review';
-  // AO / Dean / Chairman only decide emergency requests sent to them — no campus dashboard.
+  // AO / Dean / Chairman decide only the emergency requests sent to them, and
+  // see the same read-only campus overview as the principal.
   const authorityOnly = AUTHORITY_ONLY.includes(me.role);
-  const { data: dash, isLoading, error, refetch } = useGetGateDashboardQuery(undefined, { skip: authorityOnly });
-  const tabs = [
-    { value: 'review', label: 'Review' },
-    ...(authorityOnly ? [] : [{ value: 'outside', label: 'Outside now', count: dash?.studentsOutside || undefined }]),
-    ...(me.role === 'admin' ? [{ value: 'all', label: 'All passes' }] : []),
-  ];
+  const linkProfile = PROFILE_ROLES.includes(me.role);
+  const canHistory = HISTORY_ROLES.includes(me.role);
+  const hasRequests = ['principal', ...AUTHORITY_ONLY].includes(me.role);
+  // '' = live (today); a YYYY-MM-DD = that past day's history.
+  const historyDate = canHistory ? params.get('date') || '' : '';
+  const inHistory = Boolean(historyDate);
+  const { data: dash, isLoading, isFetching, error, refetch } = useGetGateDashboardQuery(inHistory ? { date: historyDate } : undefined);
+  const tabs = inHistory
+    ? [
+        { value: 'outside', label: 'Outside at day end', count: dash?.studentsOutside || undefined },
+        { value: 'exits', label: 'Exits', count: dash?.todayExits || undefined },
+        { value: 'returns', label: 'Returns', count: dash?.todayReturns || undefined },
+        ...(hasRequests ? [{ value: 'requests', label: 'Requests' }] : []),
+      ]
+    : [
+        { value: 'review', label: 'Review' },
+        { value: 'outside', label: 'Outside now', count: dash?.studentsOutside || undefined },
+        ...(hasRequests ? [{ value: 'requests', label: authorityOnly ? 'My requests' : 'Requests' }] : []),
+        ...(me.role === 'admin' ? [{ value: 'all', label: 'All passes' }] : []),
+      ];
+  const requested = params.get('tab');
+  const tab = tabs.some((t) => t.value === requested) ? requested : tabs[0].value;
+  const setQuery = (next) => {
+    const q = {};
+    const t = next.tab ?? tab;
+    const d = next.date ?? historyDate;
+    if (d) q.date = d;
+    if (t && t !== (d ? 'outside' : 'review')) q.tab = t;
+    setParams(q, { replace: true });
+  };
+  const dayLabel = inHistory ? fmtClassDay(historyDate) : null;
+  // The cached result belongs to another day while a new one loads — never show it.
+  const stale = Boolean(dash) && (inHistory ? dash.date !== historyDate : Boolean(dash.history));
+  const view = stale ? null : dash;
   return (
     <div className="space-y-5">
       <PageHeader
@@ -650,14 +939,30 @@ function StaffGatePass() {
               : me.role === 'principal'
                 ? 'Final approval, plus emergency requests students send to you directly.'
                 : authorityOnly
-                  ? 'Emergency gate pass requests students send to you directly.'
+                  ? 'Emergency requests students send to you, plus who is in and out of campus.'
                   : 'Review requests at any stage and see who is outside.'
         }
+        actions={canHistory && <HistoryPicker date={historyDate} onChange={(d) => setQuery({ date: d, tab: d ? 'outside' : 'review' })} />}
       />
-      {authorityOnly ? null : isLoading ? (
+      {inHistory && (
+        <p className="flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-primary-500/5 px-4 py-2.5 text-sm">
+          <CalendarDays className="h-4 w-4 shrink-0 text-primary-500" />
+          <span>
+            Showing gate history for <span className="font-bold">{dayLabel}</span> — exits and returns recorded that day, and who was still outside when the day ended.
+          </span>
+        </p>
+      )}
+      {isLoading || (isFetching && stale) ? (
         <Skeleton className="h-28" />
       ) : error ? (
         <ErrorState error={error} onRetry={refetch} />
+      ) : inHistory ? (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard icon={Clock} label="Requests" value={dash.requests} hint={`Raised on ${dayLabel}`} gradient="from-amber-400 to-orange-500" />
+          <StatCard icon={Users} label="Outside at day end" value={dash.studentsOutside} hint={dash.overdue ? `${dash.overdue} overdue` : 'None overdue'} gradient="from-sky-400 to-blue-500" delay={60} />
+          <StatCard icon={LogOut} label="Exits" value={dash.todayExits} hint={dayLabel} gradient="from-violet-400 to-indigo-500" delay={120} />
+          <StatCard icon={LogIn} label="Returns" value={dash.todayReturns} hint={dayLabel} gradient="from-emerald-400 to-teal-500" delay={180} />
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard icon={Clock} label="Pending" value={dash.pending} hint="Across all stages" gradient="from-amber-400 to-orange-500" />
@@ -666,9 +971,14 @@ function StaffGatePass() {
           <StatCard icon={LogIn} label="Returns today" value={dash.todayReturns} gradient="from-emerald-400 to-teal-500" delay={180} />
         </div>
       )}
-      <Tabs tabs={tabs} value={tab} onChange={(t) => setParams(t === 'review' ? {} : { tab: t }, { replace: true })} />
+      <Tabs tabs={tabs} value={tab} onChange={(t) => setQuery({ tab: t })} />
       {tab === 'review' && <ReviewQueue role={me.role} />}
-      {tab === 'outside' && dash && <OutsideNow dash={dash} />}
+      {tab === 'outside' && view && !error && (
+        <PassList passes={view.outsideStudents} linkProfile={linkProfile} emptyTitle={inHistory ? 'Nobody was outside at the end of that day' : 'Everyone is on campus'} />
+      )}
+      {tab === 'exits' && view?.exits && <PassList passes={view.exits} when="exited" linkProfile={linkProfile} emptyTitle="No exits recorded that day" />}
+      {tab === 'returns' && view?.returns && <PassList passes={view.returns} when="returned" linkProfile={linkProfile} emptyTitle="No returns recorded that day" />}
+      {tab === 'requests' && <MyRequests date={historyDate} linkProfile={linkProfile} />}
       {tab === 'all' && <AllPasses />}
     </div>
   );

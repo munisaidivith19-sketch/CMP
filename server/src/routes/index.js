@@ -183,11 +183,21 @@ const yearMatchesSemester = () =>
     .withMessage('That semester does not belong to this year')
     .toInt();
 
+/** An /uploads/ path must stay inside /uploads/: no "..", backslash or encoded form of either. */
+const insideUploads = (v) => {
+  let decoded = v;
+  try {
+    decoded = decodeURIComponent(v);
+  } catch {
+    return false;
+  }
+  return ![v, decoded].some((s) => s.includes('..') || s.includes('\\'));
+};
 const safeUrl = (field) =>
   body(field)
     .optional({ values: 'falsy' })
     .isString()
-    .custom((v) => v.startsWith('/uploads/') || /^https:\/\//.test(v))
+    .custom((v) => (v.startsWith('/uploads/') && insideUploads(v)) || /^https:\/\//.test(v))
     .withMessage(`${field} must be an uploaded file or https URL`);
 
 // ── Auth ───────────────────────────────────────────────────────────
@@ -684,6 +694,34 @@ router.post(
   validate,
   account.createClassStudent
 );
+// Class In-Charge: read and edit one student of their own class. Department is
+// never changed here; any other class, role or field is refused or ignored.
+router.get('/class-students/:id', idParam('id'), authorize('faculty'), account.getClassStudent);
+router.patch(
+  '/class-students/:id',
+  idParam('id'),
+  authorize('faculty'),
+  writeLimiter,
+  body('name').optional().isString().trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2–80 characters'),
+  body('email').optional().isString().trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
+  body('rollNo').optional().isString().trim().isLength({ min: 1, max: 30 }).withMessage('Roll number is required').toUpperCase(),
+  body('stayType').optional().isIn(STAY_TYPES).withMessage('Select hosteler or day scholar'),
+  body('parentPhone')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ min: 6, max: 20 })
+    .withMessage("Parent's mobile number is required")
+    .matches(PHONE_CHARS)
+    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets"),
+  phoneRule(body('phone').optional({ values: 'null' }).isString()),
+  body('year').optional().isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4').toInt(),
+  body('section').optional().isString().trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
+  body('semester').optional().isIn(SEMESTERS).withMessage('Semester must be 1–8').toInt(),
+  body('department').optional().isString().isLength({ max: 80 }),
+  validate,
+  account.updateClassStudent
+);
 
 // ── Authorized password reset (no current password) ────────────────
 // Admin: any non-admin account. Faculty: students of their own Class
@@ -864,6 +902,7 @@ router.get('/attendance/my-classes/options', authorize('faculty'), attendance.ge
 // "Our Class": the complete attendance of the faculty member's Class In-Charge
 // class — no subject chosen; the class comes from the account.
 router.get('/attendance/our-class', authorize('faculty'), ...rangeQuery, validate, attendance.getOurClassAttendance);
+
 router.get(
   '/attendance/my-classes',
   authorize('faculty'),
@@ -883,6 +922,7 @@ router.get(
   '/attendance/reports/periods',
   authorize(...ATTENDANCE_VIEW_ROLES),
   query('scope').optional({ values: 'falsy' }).isIn(REPORT_SCOPES),
+  query('department').optional({ values: 'falsy' }).trim().isLength({ max: 80 }),
   query('subjectId').optional({ values: 'falsy' }).isMongoId(),
   query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
   query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
@@ -896,6 +936,7 @@ router.get(
   authorize(...ATTENDANCE_VIEW_ROLES),
   param('type').isIn(REPORT_TYPES).withMessage('Unknown report type'),
   query('format').optional({ values: 'falsy' }).isIn(['json', 'pdf']),
+  query('department').optional({ values: 'falsy' }).trim().isLength({ max: 80 }),
   query('subjectId').optional({ values: 'falsy' }).isMongoId(),
   query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
   query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
@@ -920,6 +961,8 @@ const summaryQuery = [
   query('date').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Date must be YYYY-MM-DD'),
   query('department').optional({ values: 'falsy' }).trim().isLength({ max: 80 }),
   query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
+  query('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
   query('status').optional({ values: 'falsy' }).isIn(['present', 'absent', 'leave', 'unmarked']),
   validate,
 ];
@@ -1147,6 +1190,33 @@ const gateReviewRules = (actions) => [
 ];
 
 router.post('/gate-pass', writeLimiter, authorize(...STUDENT_ROLES), ...gateDestinationRules, validate, gatePass.createGatePass);
+// Day scholar Outing: today only, no destination, and the parent number typed
+// on the request. Only an account whose stay type is day scholar may use it.
+router.post(
+  '/gate-pass/outing',
+  writeLimiter,
+  authorize(...STUDENT_ROLES),
+  body('subject').isString().trim().isLength({ min: 2, max: 120 }).withMessage('Subject is required (2–120 characters)'),
+  body('description').isString().trim().isLength({ min: 5, max: 500 }).withMessage('Please describe the reason (5+ characters)'),
+  body('parentPhone')
+    .isString()
+    .trim()
+    .isLength({ min: 6, max: 20 })
+    .withMessage("Parent's mobile number is required")
+    .matches(PHONE_CHARS)
+    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets")
+    // The OTP is sent to this number, so it must be a real one, not just symbols.
+    .custom((v) => {
+      const digits = v.replace(/\D/g, '').length;
+      return digits >= 6 && digits <= 15;
+    })
+    .withMessage("Enter the parent's mobile number (6–15 digits)"),
+  safeUrl('supportingDocument.url'),
+  body('supportingDocument.name').optional().isString().trim().isLength({ max: 200 }),
+  body('supportingDocument.mimeType').optional().isString().trim().isLength({ max: 100 }),
+  validate,
+  gatePass.createDayScholarOuting
+);
 // Emergency: goes straight to the chosen authority. Student identity comes from the session.
 router.post(
   '/gate-pass/emergency',
@@ -1164,7 +1234,15 @@ router.post(
   gatePass.createEmergencyGatePass
 );
 router.get('/gate-pass', ...rangeQuery, validate, gatePass.listGatePasses);
-router.get('/gate-pass/dashboard', authorize(...GATE_VIEW), gatePass.gateDashboard);
+// AO / Dean / Chairman see the same campus overview as the principal (read-only);
+// `date` (college-wide roles) looks back at one past day.
+router.get(
+  '/gate-pass/dashboard',
+  authorize(...GATE_VIEW, ...EMERGENCY_AUTHORITIES.filter((r) => !GATE_VIEW.includes(r))),
+  query('date').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Date must be YYYY-MM-DD'),
+  validate,
+  gatePass.gateDashboard
+);
 router.get('/gate-pass/dashboard/security', authorize(...GATE_SECURITY), gatePass.securityDashboard);
 router.post(
   '/gate-pass/verify',
@@ -1289,7 +1367,7 @@ router.patch(
 // from the database, never from a client-supplied recipient.
 const complaintCreateRules = [
   body('anonymous').optional().isBoolean().toBoolean(),
-  body('category').isIn(COMPLAINT_CATEGORIES).withMessage('Choose a valid complaint category'),
+  body('category').isIn(COMPLAINT_CATEGORIES).withMessage('Choose a valid grievance category'),
   body('subCategory')
     .custom((v, { req }) => {
       const allowed = COMPLAINT_SUBCATEGORIES[req.body.category] || [];
@@ -1300,7 +1378,7 @@ const complaintCreateRules = [
   body('escalateTo')
     .custom((v, { req }) => (COMPLAINT_ESCALATE_TO[req.body.category] || []).includes(String(v || '').toLowerCase()))
     .withMessage('Choose a valid authority to escalate to'),
-  body('description').trim().isLength({ min: 10, max: 2000 }).withMessage('Describe the complaint (10–2000 characters)'),
+  body('description').trim().isLength({ min: 10, max: 2000 }).withMessage('Describe the grievance (10–2000 characters)'),
   body('attachments').optional().isArray({ max: 5 }).withMessage('At most 5 supporting files'),
   body('attachments.*.url')
     .optional()

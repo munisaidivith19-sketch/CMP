@@ -150,7 +150,8 @@ export async function resolveReportScope(user, query = {}) {
 
 /** The AttendanceSession filter for a resolved scope. */
 function sessionFilter(scope) {
-  const filter = { department: scope.department };
+  const filter = {};
+  if (scope.department) filter.department = scope.department;
   if (scope.section) filter.section = scope.section;
   if (scope.year !== undefined) filter.year = scope.year;
   if (scope.semester !== undefined) filter.semester = scope.semester;
@@ -163,7 +164,8 @@ function sessionFilter(scope) {
 
 /** The students of a resolved scope's class(es), ordered by roll number. */
 async function rosterOf(scope) {
-  const filter = { role: { $in: STUDENT_ROLES }, isActive: true, department: scope.department };
+  const filter = { role: { $in: STUDENT_ROLES }, isActive: true };
+  if (scope.department) filter.department = scope.department;
   if (scope.section) filter.section = scope.section;
   if (scope.year !== undefined) filter.year = scope.year;
   else if (scope.subject?.semester) filter.year = scope.subject.year ?? yearOfSemester(scope.subject.semester);
@@ -197,9 +199,9 @@ export function assertPeriodCompleted({ date, endTime }) {
 
 const scopeHeader = (scope, extra = {}) => ({
   collegeName: env.collegeName,
-  department: scope.department,
+  department: scope.department ?? 'All Departments',
   // The department string carries the program (e.g. 'CSE (Cyber Security)').
-  program: scope.department,
+  program: scope.department ?? 'All Departments',
   year: scope.year ?? null,
   section: scope.section ?? null,
   semester: scope.semester ?? null,
@@ -249,7 +251,7 @@ export async function periodReport(user, query) {
   let startTime = session?.startTime;
   if (!session) {
     const slotFilter = {
-      department: scope.department,
+      ...(scope.department ? { department: scope.department } : {}),
       section: scope.section,
       period,
       dayOfWeek: weekdayOf(date),
@@ -573,7 +575,7 @@ export async function reportPeriods(user, query) {
   const now = serverNow();
 
   const slotFilter = {
-    department: scope.department,
+    ...(scope.department ? { department: scope.department } : {}),
     dayOfWeek: weekdayOf(date),
     isActive: true,
     isBreak: { $ne: true },
@@ -642,7 +644,7 @@ export function reportFilename(report) {
   if (h.scope === 'class') parts.push('OurClass');
   if (h.date) parts.push(h.date);
   else if (h.to) parts.push(h.to);
-  if (h.department) parts.push(h.department);
+  if (h.department && h.department !== 'All Departments') parts.push(h.department);
   if (h.year) parts.push(`Y${h.year}`);
   if (h.section) parts.push(h.section);
   if (report.type === 'period' && h.period) parts.push(`P${h.period}`);

@@ -107,6 +107,88 @@ export const createClassStudent = asyncHandler(async (req, res) => {
   res.status(201).json(await User.findById(user._id).select(CLASS_STUDENT_FIELDS).lean());
 });
 
+// What a Class In-Charge may change on a student of their class. Department is
+// deliberately absent: moving a student to another department stays with Admin.
+const CLASS_STUDENT_EDITABLE = ['name', 'email', 'rollNo', 'phone', 'parentPhone', 'stayType', 'year', 'section', 'semester'];
+const CLASS_STUDENT_DETAIL_FIELDS = `${CLASS_STUDENT_FIELDS} phone parentPhone`;
+const CLASS_SCOPE_KEYS = ['year', 'section', 'semester'];
+
+/**
+ * A student of the faculty's exact Class In-Charge class, or a 403. A student
+ * of another class, a staff account and an unknown id all get the same answer,
+ * so the endpoint cannot be used to probe accounts outside the class.
+ */
+async function ownClassStudent(req, select) {
+  const scope = exactClassInCharge(req.user);
+  if (!scope) throw new ApiError(403, 'Only a Class In-Charge can manage student details, and only for their own class');
+  const student = await User.findOne({ _id: req.params.id, role: { $in: STUDENT_ROLES }, ...scope }).select(select);
+  if (!student || !inScope(scope, student)) throw new ApiError(403, 'You can only manage students of your own class');
+  return { scope, student };
+}
+
+/** One student of the Class In-Charge's own class, with the details the edit form needs. */
+export const getClassStudent = asyncHandler(async (req, res) => {
+  const { student } = await ownClassStudent(req, CLASS_STUDENT_DETAIL_FIELDS);
+  res.set('Cache-Control', 'no-store');
+  res.json(student.toObject());
+});
+
+/**
+ * Class In-Charge edits a student of their own class: name, login email, roll
+ * number, mobiles, stay, and year / section / semester (which may move the
+ * student out of the class — after that it is the new class's in-charge, or
+ * Admin, who can edit them). Any other field in the request is ignored, and a
+ * different department is refused outright.
+ */
+export const updateClassStudent = asyncHandler(async (req, res) => {
+  const { scope, student } = await ownClassStudent(req, CLASS_STUDENT_DETAIL_FIELDS);
+  if (req.body.department !== undefined && String(req.body.department) !== String(student.department)) {
+    logSecurity(req, 'USER_UPDATED', { target: student, success: false, reason: 'scope_tampering', entityType: 'user', entityId: student._id, details: { fields: ['department'] } });
+    throw new ApiError(403, 'Only an administrator can move a student to another department');
+  }
+
+  const before = Object.fromEntries(CLASS_SCOPE_KEYS.map((k) => [k, student[k] ?? null]));
+  for (const key of CLASS_STUDENT_EDITABLE) {
+    if (req.body[key] === undefined) continue;
+    let value = req.body[key] === '' || req.body[key] === null ? undefined : req.body[key];
+    if ((key === 'name' || key === 'email' || key === 'section') && value === undefined) {
+      throw new ApiError(422, `${{ name: 'Name', email: 'Email', section: 'Section' }[key]} cannot be empty`);
+    }
+    if (key === 'email') value = String(value).toLowerCase().trim();
+    if (String(value ?? '') !== String(student[key] ?? '')) student[key] = value;
+  }
+
+  if (student.isModified('email') && (await User.exists({ email: student.email, _id: { $ne: student._id } }))) {
+    throw new ApiError(409, 'An account with this email already exists');
+  }
+  if (!student.year || !student.semester) throw new ApiError(422, 'Year and semester are required');
+  if (yearOfSemester(student.semester) !== student.year) {
+    throw new ApiError(422, `Semester ${student.semester} belongs to year ${yearOfSemester(student.semester)}, not year ${student.year}`);
+  }
+
+  const changed = CLASS_STUDENT_EDITABLE.filter((k) => student.isModified(k));
+  if (!changed.length) return res.json({ ...student.toObject(), movedOutOfClass: false });
+  await student.save({ validateModifiedOnly: true });
+
+  // Security & Logs: field names only — never the phone numbers themselves.
+  const sec = { target: student, entityType: 'user', entityId: student._id, reason: 'class_in_charge_edit' };
+  if (CLASS_SCOPE_KEYS.some((k) => changed.includes(k))) {
+    logSecurity(req, 'ACADEMIC_SCOPE_CHANGED', {
+      ...sec,
+      details: { previous: before, new: Object.fromEntries(CLASS_SCOPE_KEYS.map((k) => [k, student[k] ?? null])) },
+    });
+  }
+  logSecurity(req, 'USER_UPDATED', { ...sec, details: { fields: changed } });
+  logActivity(req, 'class.student_update', { entityType: 'user', entityId: student._id, summary: `${student.email}: ${changed.join(', ')}` });
+  notifyUsers([student._id], {
+    type: 'system',
+    title: 'Your details were updated',
+    message: `Your Class In-Charge updated: ${changed.join(', ')}`,
+  }, { push: false });
+
+  res.json({ ...student.toObject(), movedOutOfClass: !inScope(scope, student) });
+});
+
 /** Route guard: only Admin and Faculty reach the reset handler; anyone else gets a recorded 403. */
 export function passwordResetRoles(req, _res, next) {
   if (['admin', 'faculty'].includes(req.user?.role)) return next();

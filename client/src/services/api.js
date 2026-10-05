@@ -329,6 +329,12 @@ export const api = createApi({
     // ── Class In-Charge: students of their own class ──
     getClassStudents: b.query({ query: () => '/class-students', providesTags: ['ClassStudents'] }),
     createClassStudent: b.mutation({ query: (body) => ({ url: '/class-students', method: 'POST', body }), invalidatesTags: ['ClassStudents'] }),
+    // One student of the Class In-Charge's class (with mobiles), and editing it.
+    getClassStudent: b.query({ query: (id) => `/class-students/${id}`, providesTags: ['ClassStudents'] }),
+    updateClassStudent: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/class-students/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['ClassStudents', 'Attendance', 'User'],
+    }),
 
     // ── Chat ──────────────────────────────────────────
     getConversations: b.query({ query: (params) => ({ url: '/chat/conversations', params }), providesTags: ['Chat'] }),
@@ -377,7 +383,7 @@ export const api = createApi({
     // the attendance of one of those exact classes.
     getMyClassOptions: b.query({ query: () => '/attendance/my-classes/options', providesTags: ['Attendance', 'Timetable'] }),
     getMyClassAttendance: b.query({ query: (params) => ({ url: '/attendance/my-classes', params }), providesTags: ['Attendance'] }),
-    getReportOptions: b.query({ query: () => '/attendance/reports/options', providesTags: ['Attendance', 'Timetable'] }),
+    getReportOptions: b.query({ query: (params) => ({ url: '/attendance/reports/options', params }), providesTags: ['Attendance', 'Timetable'] }),
     // "Our Class": the complete attendance of the faculty member's Class In-Charge class.
     getOurClassAttendance: b.query({ query: (params) => ({ url: '/attendance/our-class', params }), providesTags: ['Attendance'] }),
     // The report Period dropdown, derived from the authorized class's timetable for a date.
@@ -452,7 +458,7 @@ export const api = createApi({
     getGatePasses: b.query({ query: (params) => ({ url: '/gate-pass', params }), providesTags: ['GatePass'] }),
     getGatePass: b.query({ query: (id) => `/gate-pass/${id}`, providesTags: ['GatePass'] }),
     getGatePassQr: b.query({ query: (id) => `/gate-pass/${id}/qr`, providesTags: ['GatePass'], keepUnusedDataFor: 0 }),
-    getGateDashboard: b.query({ query: () => '/gate-pass/dashboard', providesTags: ['GatePass'] }),
+    getGateDashboard: b.query({ query: (params) => ({ url: '/gate-pass/dashboard', params }), providesTags: ['GatePass'] }),
     getSecurityDashboard: b.query({ query: () => '/gate-pass/dashboard/security', providesTags: ['GatePass'] }),
     createGatePass: b.mutation({ query: (body) => ({ url: '/gate-pass', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
     facultyReviewGatePass: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/${id}/faculty-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
@@ -467,6 +473,8 @@ export const api = createApi({
     verifyGatePass: b.mutation({ query: (code) => ({ url: '/gate-pass/verify', method: 'POST', body: { code } }) }),
     recordGateOut: b.mutation({ query: ({ id, code }) => ({ url: `/gate-pass/${id}/out`, method: 'PATCH', body: { code } }), invalidatesTags: ['GatePass'] }),
     createEmergencyGatePass: b.mutation({ query: (body) => ({ url: '/gate-pass/emergency', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
+    // Day scholar same-day Outing.
+    createDayScholarOuting: b.mutation({ query: (body) => ({ url: '/gate-pass/outing', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
     emergencyReviewGatePass: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/${id}/emergency-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
     recordGateIn: b.mutation({ query: ({ id, code }) => ({ url: `/gate-pass/${id}/in`, method: 'PATCH', body: { code } }), invalidatesTags: ['GatePass'] }),
     verifyReturnCredential: b.mutation({ query: (code) => ({ url: '/gate-pass/return/verify', method: 'POST', body: { code } }) }),
@@ -898,6 +906,8 @@ export const {
   useGetSecurityLogsQuery,
   useGetSecurityOtpsQuery,
   useGetClassStudentsQuery,
+  useGetClassStudentQuery,
+  useUpdateClassStudentMutation,
   useCreateClassStudentMutation,
   useUpdateAdminUserMutation,
   useGetActivityQuery,
@@ -984,6 +994,7 @@ export const {
   useVerifyGatePassMutation,
   useRecordGateOutMutation,
   useCreateEmergencyGatePassMutation,
+  useCreateDayScholarOutingMutation,
   useEmergencyReviewGatePassMutation,
   useRecordGateInMutation,
   useGetComplaintsQuery,

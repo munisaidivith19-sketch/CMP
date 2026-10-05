@@ -8,7 +8,7 @@ import { distanceMeters } from '../utils/geo.js';
 import { facultyClasses, inClasses } from '../utils/academicScope.js';
 import { notifyUsers } from '../utils/notify.js';
 import { sendParentMessage } from './otp/otpService.js';
-import { renderReturnSms } from './otp/providers/collegeSmsProvider.js';
+import { renderExitSms } from './otp/providers/collegeSmsProvider.js';
 
 export const RETURN_QR_PREFIX = 'CCRT:';
 
@@ -101,24 +101,40 @@ const fmtParts = (date) => {
 };
 
 /**
- * Tell the parent (SMS provider) and the student's assigned class faculty
- * (in-app + push) that the student is back. Call only after the return has
+ * Tell the parent (SMS provider) that the student has left campus. Call only
+ * after the exit has been committed. The number is the pass holder's
+ * registered parent mobile from their account (falling back to the one
+ * captured on the pass), never anything from the request. Never throws.
+ */
+export async function notifyExited({ pass, student, exitedAt }) {
+  const holder = await User.findById(student._id || student).select('parentPhone name').lean().catch(() => null);
+  const to = holder?.parentPhone || pass.parentPhone;
+  if (!to) return { parentSent: false };
+  const { date, time12 } = fmtParts(exitedAt);
+  const parentSent = await sendParentMessage({
+    to,
+    kind: 'gate_pass_exit',
+    message: renderExitSms({ studentName: student.name || holder?.name || 'Your ward', date, time: time12 }),
+  });
+  return { parentSent };
+}
+
+/**
+ * Tell the student's assigned class faculty (in-app + push) that the student is
+ * back. No SMS goes to the parent on return. Call only after the return has
  * been committed. Never throws.
  */
 export async function notifyReturned({ pass, student, returnedAt }) {
-  const { date, time24, time12 } = fmtParts(returnedAt);
-  const [parentSent, facultyIds] = await Promise.all([
-    sendParentMessage({ to: pass.parentPhone, kind: 'gate_pass_return', message: renderReturnSms({ studentName: student.name, date, time: time12 }) }),
-    assignedFacultyIds(student).catch((err) => {
-      console.error('[gate-pass] could not resolve class faculty:', err.message);
-      return [];
-    }),
-  ]);
+  const { date, time24 } = fmtParts(returnedAt);
+  const facultyIds = await assignedFacultyIds(student).catch((err) => {
+    console.error('[gate-pass] could not resolve class faculty:', err.message);
+    return [];
+  });
   await notifyUsers(facultyIds, {
     type: 'gate_pass',
     title: '🔔 Student Returned to Campus',
     message: `${student.name} — Roll No: ${student.rollNo || '—'} has returned to the campus.\nDate: ${date}\nTime: ${time24}`,
     link: `/gate-pass/${pass._id}`,
   });
-  return { parentSent, facultyNotified: facultyIds.length };
+  return { facultyNotified: facultyIds.length };
 }

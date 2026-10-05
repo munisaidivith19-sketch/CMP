@@ -37,6 +37,11 @@ export function normalizeGateCode(input, prefix = '') {
 const isNormal = function isNormal() {
   return this.passType !== 'emergency';
 };
+// A normal pass that also needs a destination: everything except a day
+// scholar's same-day Outing, which has no destination on the form.
+const needsDestination = function needsDestination() {
+  return this.passType !== 'emergency' && !this.dayScholarOuting;
+};
 
 const reviewStage = {
   by: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -54,6 +59,11 @@ const gatePassSchema = new Schema(
     section: { type: String, trim: true, uppercase: true, maxlength: 10 },
 
     passType: { type: String, enum: GATE_PASS_TYPES, default: 'normal', index: true },
+    // Day scholar Outing: same approval chain as a normal pass, for today only,
+    // with a subject instead of a destination and no return-to-campus step —
+    // the pass completes when security records the exit.
+    dayScholarOuting: { type: Boolean, default: false },
+    subject: { type: String, trim: true, maxlength: 120 },
 
     // Normal passes pick a category; an emergency pass's reason is the description.
     regarding: { type: String, enum: GATE_PASS_REGARDING, required: isNormal },
@@ -67,9 +77,9 @@ const gatePassSchema = new Schema(
     // Typed by the student on a normal pass; copied from their record on an emergency one.
     parentPhone: { type: String, required: isNormal, trim: true, maxlength: 20 },
     destination: {
-      state: { type: String, required: isNormal, trim: true, maxlength: 80 },
-      district: { type: String, required: isNormal, trim: true, maxlength: 80 },
-      area: { type: String, required: true, trim: true, maxlength: 120 },
+      state: { type: String, required: needsDestination, trim: true, maxlength: 80 },
+      district: { type: String, required: needsDestination, trim: true, maxlength: 80 },
+      area: { type: String, required: function needsArea() { return !this.dayScholarOuting; }, trim: true, maxlength: 120 },
     },
     supportingDocument: {
       url: { type: String, trim: true, maxlength: 500 },

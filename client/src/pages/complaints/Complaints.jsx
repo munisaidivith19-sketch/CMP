@@ -42,11 +42,11 @@ function StudentComplaints() {
     <div className="space-y-5">
       <PageHeader
         icon={MessageSquareWarning}
-        title="Complaints"
-        subtitle="Register and track complaints — academics, ragging & harassment, infrastructure or hostel."
+        title="Grievances"
+        subtitle="Register and track grievances — academics, ragging & harassment, infrastructure or hostel."
         actions={
           <button onClick={() => setOpen(true)} className="btn btn-primary">
-            <Plus className="h-4 w-4" /> Register complaint
+            <Plus className="h-4 w-4" /> Register grievance
           </button>
         }
       />
@@ -58,11 +58,11 @@ function StudentComplaints() {
         <Card>
           <EmptyState
             icon={MessageSquareWarning}
-            title="No complaints yet"
+            title="No grievances yet"
             text="Raised a concern? Register it here and we'll route it to the right authority."
             action={
               <button onClick={() => setOpen(true)} className="btn btn-primary">
-                <Plus className="h-4 w-4" /> Register complaint
+                <Plus className="h-4 w-4" /> Register grievance
               </button>
             }
           />
@@ -88,14 +88,14 @@ function AuthorityComplaints() {
 
   return (
     <div className="space-y-5">
-      <PageHeader icon={MessageSquareWarning} title="Complaints assigned to you" subtitle="Complaints currently waiting on your review." />
+      <PageHeader icon={MessageSquareWarning} title="Grievances assigned to you" subtitle="Grievances currently waiting on your review." />
       {isLoading ? (
         <Skeleton className="h-72" />
       ) : error ? (
         <ErrorState error={error} onRetry={refetch} />
       ) : !data.complaints.length ? (
         <Card>
-          <EmptyState icon={CheckCircle2} title="Nothing assigned to you" text="New complaints appear here the moment they're routed to you." />
+          <EmptyState icon={CheckCircle2} title="Nothing assigned to you" text="New grievances appear here the moment they're routed to you." />
         </Card>
       ) : (
         <>
@@ -114,9 +114,9 @@ function AuthorityComplaints() {
 function ChairAdminRedirect() {
   return (
     <div className="space-y-5">
-      <PageHeader icon={AlertOctagon} title="Complaints" subtitle="Use the full Complaints dashboard for college-wide monitoring, filters and statistics." />
+      <PageHeader icon={AlertOctagon} title="Grievances" subtitle="Use the full Grievances dashboard for college-wide monitoring, filters and statistics." />
       <Card>
-        <EmptyState icon={MessageSquareWarning} title="Head to the admin dashboard" text="Chairman and Admin accounts manage complaints from the dedicated dashboard." action={<Link to="/admin/complaints" className="btn btn-primary">Open dashboard</Link>} />
+        <EmptyState icon={MessageSquareWarning} title="Head to the admin dashboard" text="Chairman and Admin accounts manage grievances from the dedicated dashboard." action={<Link to="/admin/complaints" className="btn btn-primary">Open dashboard</Link>} />
       </Card>
     </div>
   );

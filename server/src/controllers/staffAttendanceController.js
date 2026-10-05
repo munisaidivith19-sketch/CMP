@@ -31,9 +31,9 @@ function scopedDepartment(user, requested) {
 const dayOf = (value) => (value ? toDay(value) : today());
 
 /** Per-student day status: present if marked present in at least one period that day. */
-async function studentDayStatus(day, department) {
+async function studentDayStatus(day, department, studentIds) {
   const rows = await AttendanceRecord.aggregate([
-    { $match: { date: day, ...(department ? { department } : {}) } },
+    { $match: { date: day, ...(department ? { department } : {}), ...(studentIds ? { student: { $in: studentIds } } : {}) } },
     {
       $group: {
         _id: '$student',
@@ -52,12 +52,18 @@ async function facultyDayStatus(day, department) {
   return new Map(rows.map((r) => [String(r.faculty), r]));
 }
 
-const studentFilter = (department, section) => ({
+const studentFilter = (department, { section, year, semester } = {}) => ({
   role: { $in: STUDENT_ROLES },
   isActive: true,
   ...(department ? { department } : {}),
   ...(section ? { section: String(section).toUpperCase() } : {}),
+  ...(year ? { year: Number(year) } : {}),
+  ...(semester ? { semester: Number(semester) } : {}),
 });
+
+/** Class filters (all optional; "All" = absent) from the already-validated query. */
+const classFilters = (q) => ({ section: q.section, year: q.year, semester: q.semester });
+const isNarrowed = (f) => Boolean(f.section || f.year || f.semester);
 
 const staffFilter = (department) => ({
   role: { $in: TRACKED_STAFF },
@@ -71,10 +77,11 @@ export const attendanceSummary = asyncHandler(async (req, res) => {
   const department = scopedDepartment(req.user, req.query.department);
   const day = dayOf(req.query.date);
 
-  const [studentIds, staffIds, studentStatus, staffStatus] = await Promise.all([
-    User.find(studentFilter(department)).distinct('_id'),
+  const filters = classFilters(req.query);
+  const studentIds = await User.find(studentFilter(department, filters)).distinct('_id');
+  const [staffIds, studentStatus, staffStatus] = await Promise.all([
     User.find(staffFilter(department)).distinct('_id'),
-    studentDayStatus(day, department),
+    studentDayStatus(day, department, isNarrowed(filters) ? studentIds : null),
     facultyDayStatus(day, department),
   ]);
 
@@ -105,10 +112,9 @@ export const summaryStudents = asyncHandler(async (req, res) => {
   const day = dayOf(req.query.date);
   const wanted = ['present', 'absent', 'unmarked'].includes(req.query.status) ? req.query.status : null;
 
-  const [students, status] = await Promise.all([
-    User.find(studentFilter(department, req.query.section)).select(STUDENT_FIELDS).sort({ department: 1, section: 1, rollNo: 1 }).limit(2000).lean(),
-    studentDayStatus(day, department),
-  ]);
+  const filters = classFilters(req.query);
+  const students = await User.find(studentFilter(department, filters)).select(STUDENT_FIELDS).sort({ department: 1, section: 1, rollNo: 1 }).limit(2000).lean();
+  const status = await studentDayStatus(day, department, isNarrowed(filters) ? students.map((s) => s._id) : null);
 
   const rows = students
     .map((s) => {

@@ -8,12 +8,12 @@ export const OTP_SMS_TEMPLATE =
 export const renderOtpSms = ({ studentName, otp }) =>
   OTP_SMS_TEMPLATE.replace('{#studentName#}', studentName).replace('#OTP#', otp);
 
-/** Parent notice once security records the student's return. */
-export const RETURN_SMS_TEMPLATE =
-  'Dear Parent, {#studentName#} has returned to the college campus on {#date#} at {#time#}. This is an automated notification from JNN INSTITUTE OF ENGINEERING.';
+/** Parent notice once security records the student leaving campus. */
+export const EXIT_SMS_TEMPLATE =
+  'Dear Parent, {#studentName#} has left the college campus on {#date#} at {#time#} with an approved gate pass. This is an automated notification from JNN INSTITUTE OF ENGINEERING.';
 
-export const renderReturnSms = ({ studentName, date, time }) =>
-  RETURN_SMS_TEMPLATE.replace('{#studentName#}', studentName).replace('{#date#}', date).replace('{#time#}', time);
+export const renderExitSms = ({ studentName, date, time }) =>
+  EXIT_SMS_TEMPLATE.replace('{#studentName#}', studentName).replace('{#date#}', date).replace('{#time#}', time);
 
 export const isCollegeSmsConfigured = () => Boolean(env.sms.apiKey && env.sms.senderId && env.sms.otpTemplateId);
 

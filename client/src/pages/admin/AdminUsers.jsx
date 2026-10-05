@@ -13,19 +13,22 @@ import ResetPasswordModal from '../../components/ResetPasswordModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo } from '../../utils/format';
 
+/** The form's values for a user; every text field is a string, never undefined. */
+const classFormValues = (user) => ({
+  department: user?.department || '', year: user?.year || '', section: user?.section || '', semester: user?.semester || '', rollNo: user?.rollNo || '',
+  name: user?.name || '', email: user?.email || '', phone: user?.phone || '', parentPhone: user?.parentPhone || '', stayType: user?.stayType || '',
+  teachingYears: user?.teachingYears || [], teachingSections: user?.teachingSections || [],
+  inChargeYear: user?.inChargeYear || '', inChargeSemester: user?.inChargeSemester || '',
+});
+
 /** Department / section / semester decide which timetable and attendance roster a student belongs to. */
 function ClassModal({ user, onClose }) {
   const [update, { isLoading }] = useUpdateAdminUserMutation();
-  const [v, setV] = useState({});
+  // Filled from the user on the very first render: the Save button reads
+  // v.name / v.email immediately, so an empty first render crashed the page.
+  const [v, setV] = useState(() => classFormValues(user));
   useEffect(() => {
-    if (user) {
-      setV({
-        department: user.department || '', year: user.year || '', section: user.section || '', semester: user.semester || '', rollNo: user.rollNo || '',
-        name: user.name || '', email: user.email || '', phone: user.phone || '', parentPhone: user.parentPhone || '', stayType: user.stayType || '',
-        teachingYears: user.teachingYears || [], teachingSections: user.teachingSections || [],
-        inChargeYear: user.inChargeYear || '', inChargeSemester: user.inChargeSemester || '',
-      });
-    }
+    if (user) setV(classFormValues(user));
   }, [user]);
   if (!user) return null;
   const isFaculty = user.role === 'faculty';

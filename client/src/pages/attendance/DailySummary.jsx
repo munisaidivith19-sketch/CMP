@@ -19,6 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
+  useGetReportOptionsQuery,
   useGetAttendanceSummaryQuery,
   useGetFacultyRosterQuery,
   useGetSummaryFacultyQuery,
@@ -39,11 +40,22 @@ import {
   cn,
 } from '../../components/ui/primitives';
 import { StatusBadge } from '../../components/insights';
-import { DEPARTMENTS } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, YEAR_LABELS } from '../../utils/constants';
 import { errMsg, fmtClassDay, todayKey } from '../../utils/format';
 
+// Roles that also get the Year / Section / Semester filters.
+const CLASS_FILTER_ROLES = ['admin', 'principal', 'ao', 'dean', 'chairman'];
+const SEMESTER_LIST = [1, 2, 3, 4, 5, 6, 7, 8];
+
 /** Date + (admin/principal only) department filter shared by both tabs. */
-function Filters({ value, onChange, canPickDepartment }) {
+function Filters({ value, onChange, canPickDepartment, classFilters = false }) {
+  // Sections that exist in the chosen department (or college-wide), from the server.
+  const { data: options } = useGetReportOptionsQuery(value.department ? { department: value.department } : undefined, {
+    skip: !classFilters,
+  });
+  const sections = options?.sections || [];
+  const selectCls = 'input w-full py-1.5 px-3 text-sm rounded-xl font-medium sm:w-auto sm:min-w-[140px]';
+
   const isToday = value.date === todayKey();
 
   const setYesterday = () => {
@@ -99,9 +111,9 @@ function Filters({ value, onChange, canPickDepartment }) {
             id="ds-dept"
             className="input w-auto min-w-[200px] py-1.5 px-3 text-sm rounded-xl font-medium"
             value={value.department}
-            onChange={(e) => onChange({ ...value, department: e.target.value })}
+            onChange={(e) => onChange({ ...value, department: e.target.value, section: '' })}
           >
-            <option value="">All departments</option>
+            <option value="">{classFilters ? 'All Departments' : 'All departments'}</option>
             {DEPARTMENTS.map((d) => (
               <option key={d} value={d}>
                 {d}
@@ -110,11 +122,49 @@ function Filters({ value, onChange, canPickDepartment }) {
           </select>
         </div>
       )}
+
+      {classFilters && (
+        <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center">
+          <div className="flex items-center gap-2">
+            <label htmlFor="ds-year" className="text-xs font-bold uppercase tracking-wider text-ink-muted">Year:</label>
+            <select id="ds-year" className={selectCls} value={value.year} onChange={(e) => onChange({ ...value, year: e.target.value })}>
+              <option value="">All Years</option>
+              {ACADEMIC_YEARS.map((y) => (
+                <option key={y} value={y}>{YEAR_LABELS[y]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="ds-section" className="text-xs font-bold uppercase tracking-wider text-ink-muted">Section:</label>
+            <select id="ds-section" className={selectCls} value={value.section || ''} onChange={(e) => onChange({ ...value, section: e.target.value })}>
+              <option value="">All Sections</option>
+              {sections.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="ds-sem" className="text-xs font-bold uppercase tracking-wider text-ink-muted">Semester:</label>
+            <select id="ds-sem" className={selectCls} value={value.semester} onChange={(e) => onChange({ ...value, semester: e.target.value })}>
+              <option value="">All Semesters</option>
+              {SEMESTER_LIST.map((n) => (
+                <option key={n} value={n}>Semester {n}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
 
-const clean = (f) => ({ date: f.date, ...(f.department ? { department: f.department } : {}) });
+const clean = (f) => ({
+  date: f.date,
+  ...(f.department ? { department: f.department } : {}),
+  ...(f.year ? { year: f.year } : {}),
+  ...(f.section ? { section: f.section } : {}),
+  ...(f.semester ? { semester: f.semester } : {}),
+});
 
 const STATUS_CHIPS = [
   { value: '', label: 'All', icon: Sparkles },
@@ -127,7 +177,8 @@ const STATUS_CHIPS = [
 export function DailySummary() {
   const me = useSelector(selectUser);
   const canPick = me.role !== 'hod';
-  const [filters, setFilters] = useState({ date: todayKey(), department: '' });
+  const classFilters = CLASS_FILTER_ROLES.includes(me.role);
+  const [filters, setFilters] = useState({ date: todayKey(), department: '', year: '', section: '', semester: '' });
   const [who, setWho] = useState('students');
   const [status, setStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -154,7 +205,7 @@ export function DailySummary() {
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <Filters value={filters} onChange={setFilters} canPickDepartment={canPick} />
+      <Filters value={filters} onChange={setFilters} canPickDepartment={canPick} classFilters={classFilters} />
 
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

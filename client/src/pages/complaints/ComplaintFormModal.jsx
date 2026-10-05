@@ -47,7 +47,7 @@ export default function ComplaintFormModal({ open, onClose }) {
         description: v.description,
         attachments: v.attachments,
       }).unwrap();
-      toast.success('Complaint registered — the responsible authority has been notified');
+      toast.success('Grievance registered — the responsible authority has been notified');
       onClose();
     } catch (e) {
       toast.error(errMsg(e));
@@ -58,7 +58,7 @@ export default function ComplaintFormModal({ open, onClose }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Register a complaint"
+      title="Register a grievance"
       subtitle="Tell us what happened — we'll route it to the right authority."
       size="lg"
       footer={
@@ -67,14 +67,14 @@ export default function ComplaintFormModal({ open, onClose }) {
             Cancel
           </Button>
           <Button loading={isLoading} onClick={handleSubmit(onSubmit)}>
-            Submit complaint
+            Submit grievance
           </Button>
         </>
       }
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
         <div>
-          <p className="label">Choose how your complaint will be submitted.</p>
+          <p className="label">Choose how your grievance will be submitted.</p>
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -93,14 +93,14 @@ export default function ComplaintFormModal({ open, onClose }) {
           </div>
           <p className="mt-2 text-xs muted">
             {anonymous
-              ? 'Your identity will be hidden from the authorities handling the complaint. Your identity can only be accessed by authorized Chairman/Admin accounts according to the system’s privacy rules.'
+              ? 'Your identity will be hidden from the authorities handling the grievance. Your identity can only be accessed by authorized Chairman/Admin accounts according to the system’s privacy rules.'
               : 'The responsible authority will be able to see your identity.'}
           </p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <Select
-            label="Complaint category"
+            label="Grievance category"
             options={Object.entries(COMPLAINT_CATEGORY_LABELS).map(([value, label]) => ({ value, label }))}
             error={errors.category}
             {...register('category', { required: true })}
@@ -126,12 +126,12 @@ export default function ComplaintFormModal({ open, onClose }) {
         </div>
 
         <Textarea
-          label="Complaint description"
+          label="Grievance description"
           rows={5}
           maxLength={2000}
           error={errors.description}
           placeholder="Describe what happened in detail…"
-          {...register('description', { required: 'Please describe the complaint', minLength: { value: 10, message: 'At least 10 characters' } })}
+          {...register('description', { required: 'Please describe the grievance', minLength: { value: 10, message: 'At least 10 characters' } })}
         />
 
         <Controller

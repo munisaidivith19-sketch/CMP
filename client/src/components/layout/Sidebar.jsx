@@ -58,7 +58,7 @@ const CAMPUS = [
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
-  { to: '/complaints', label: 'Complaints', icon: MessageSquareWarning },
+  { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning },
   { to: '/alumni', label: 'Alumni Network', icon: GraduationCap, excludeRoles: ['warden', 'security'] },
   { to: '/analytics', label: 'Insights', icon: LineChart },
 ];
@@ -67,7 +67,7 @@ const ADMIN = [
   { to: '/admin', label: 'Analytics', icon: BarChart3, roles: STAFF_VIEW, end: true },
   { to: '/admin/attendance', label: 'Attendance', icon: ClipboardCheck, roles: STAFF_VIEW },
   { to: '/admin/reports', label: 'Moderation', icon: ShieldAlert, roles: STAFF_VIEW },
-  { to: '/admin/complaints', label: 'Complaints', icon: MessageSquareWarning, roles: ['admin', 'chairman'] },
+  { to: '/admin/complaints', label: 'Grievances', icon: MessageSquareWarning, roles: ['admin', 'chairman'] },
   { to: '/admin/users', label: 'Users', icon: UserCog, roles: ['admin'] },
   // Admin approves faculty groups; the principal approves HOD groups.
   { to: '/admin/chat-requests', label: 'Group requests', icon: UsersRound, roles: ['admin', 'principal'], badge: 'groups' },

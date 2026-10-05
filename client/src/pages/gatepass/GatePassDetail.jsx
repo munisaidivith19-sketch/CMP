@@ -7,7 +7,7 @@ import { Avatar, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../.
 import { StatusBadge } from '../../components/insights';
 import { fmtClassDay, fmtDateTime, titleCase } from '../../utils/format';
 import { GATE_PASS_REGARDING } from '../../utils/constants';
-import { PassQr, PassTimeline, ReviewCard, canReviewPass, passStatusLabel } from './GatePass';
+import { PassQr, PassTimeline, ReviewCard, canReviewPass, isOuting, passStatusLabel } from './GatePass';
 import { AUTHORITY_LABELS, EmergencyBadge, EmergencyDetails, isEmergency } from './EmergencyGatePass';
 
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '—');
@@ -31,7 +31,7 @@ export default function GatePassDetail() {
         <>
           <PageHeader
             icon={DoorOpen}
-            title={isEmergency(pass) ? 'Emergency gate pass' : `${GATE_PASS_REGARDING[pass.regarding] || titleCase(pass.regarding)} pass`}
+            title={isEmergency(pass) ? 'Emergency gate pass' : isOuting(pass) ? 'Outing pass' : `${GATE_PASS_REGARDING[pass.regarding] || titleCase(pass.regarding)} pass`}
             subtitle={`Requested ${fmtDateTime(pass.createdAt)}`}
             actions={
               <div className="flex flex-wrap items-center gap-2">
@@ -67,22 +67,48 @@ export default function GatePassDetail() {
                   <dt className="label">Details</dt>
                   <dd>{pass.description}</dd>
                 </div>
+                {isOuting(pass) ? (
+                  <>
+                    <div>
+                      <dt className="label">Subject</dt>
+                      <dd>{pass.subject}</dd>
+                    </div>
+                    <div>
+                      <dt className="label">Date (day scholar outing)</dt>
+                      <dd>{fmtClassDay(pass.fromDate)}</dd>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <dt className="label">Where</dt>
+                      <dd>{destinationLine(pass.destination)}</dd>
+                    </div>
+                    <div>
+                      <dt className="label">From date</dt>
+                      <dd>{fmtClassDay(pass.fromDate)}</dd>
+                    </div>
+                    <div>
+                      <dt className="label">To date</dt>
+                      <dd>{fmtClassDay(pass.toDate)}</dd>
+                    </div>
+                  </>
+                )}
                 <div>
-                  <dt className="label">Where</dt>
-                  <dd>{destinationLine(pass.destination)}</dd>
-                </div>
-                <div>
-                  <dt className="label">From date</dt>
-                  <dd>{fmtClassDay(pass.fromDate)}</dd>
-                </div>
-                <div>
-                  <dt className="label">To date</dt>
-                  <dd>{fmtClassDay(pass.toDate)}</dd>
-                </div>
-                <div>
-                  <dt className="label">Parent's mobile</dt>
+                  <dt className="label">Parent's mobile{isOuting(pass) ? ' (entered by student)' : ''}</dt>
                   <dd>{pass.parentPhone}</dd>
+                  {pass.parentPhoneDiffers && <p className="mt-0.5 text-xs font-semibold text-amber-600">Not the registered parent number</p>}
                 </div>
+                {isOuting(pass) && pass.supportingDocument?.url && (
+                  <div>
+                    <dt className="label">Attachment</dt>
+                    <dd>
+                      <a href={pass.supportingDocument.url} target="_blank" rel="noreferrer" className="break-all font-semibold text-primary-600 hover:underline">
+                        {pass.supportingDocument.name || 'Attachment'}
+                      </a>
+                    </dd>
+                  </div>
+                )}
                 {pass.principalReview?.by && (
                   <div>
                     <dt className="label">Approved by</dt>

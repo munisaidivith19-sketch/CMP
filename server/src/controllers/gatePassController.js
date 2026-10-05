@@ -16,7 +16,7 @@ import * as returnSvc from '../services/gatePassReturn.js';
 import ReturnLocationCheck from '../models/ReturnLocationCheck.js';
 
 // Everyone whose queue a gate pass can sit in, for the live "updated" event.
-export const GATE_STAFF = ['admin', 'faculty', 'hod', 'principal', 'security'];
+export const GATE_STAFF = ['admin', 'faculty', 'hod', 'principal', 'ao', 'dean', 'chairman', 'security'];
 const STUDENT_ROLES = ['student', 'club_admin'];
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
@@ -149,6 +149,9 @@ export const createGatePass = asyncHandler(async (req, res) => {
   const from = new Date(data.fromDate);
   const to = new Date(data.toDate);
 
+  // Day scholars request a same-day Outing instead (createDayScholarOuting);
+  // the stay type comes from their account, never from the request.
+  if (req.user.stayType === 'day_scholar') throw new ApiError(403, 'Day scholars request an Outing pass instead');
   if (to < from) throw new ApiError(422, 'Return date cannot be before the departure date');
   if (to.getTime() - from.getTime() > MAX_DURATION_MS) throw new ApiError(422, 'A gate pass can cover at most 30 days');
   if (!req.user.department || !req.user.section) {
@@ -195,6 +198,115 @@ export const createGatePass = asyncHandler(async (req, res) => {
 
   res.status(201).json(withFlags(pass));
 });
+
+// ── Day scholar: same-day Outing ───────────────────────────────────
+
+/**
+ * A day scholar's Outing: subject, description, the parent mobile they type,
+ * and an optional attachment. It is for today only (the server's day — no
+ * date is read from the request) and follows the normal approval chain:
+ * Class In-Charge (parent OTP) → HOD → Principal. There is no return step:
+ * the pass completes when security records the exit.
+ */
+export const createDayScholarOuting = asyncHandler(async (req, res) => {
+  if (req.user.stayType !== 'day_scholar') throw new ApiError(403, 'Outing passes are for day scholars only');
+  if (!req.user.department || !req.user.section) {
+    throw new ApiError(422, 'Your account has no department/section on file — ask an admin to set it');
+  }
+  const pass = await withGatePassLock(req.user._id, async () => {
+    const existing = await GatePass.exists({
+      student: req.user._id,
+      status: { $in: [...GATE_PASS_PENDING_STATUSES, 'approved', 'active'] },
+    });
+    if (existing) throw new ApiError(409, 'You already have a pending or active gate pass');
+    return createOutingPass(req);
+  });
+  logActivity(req, 'gate_pass.create', { entityType: 'gate_pass', entityId: pass._id, summary: `outing: ${pass.subject}` });
+  await notifyOutingFaculty(req, pass);
+  publish(pass);
+  res.status(201).json(withFlags(pass));
+});
+
+/**
+ * Run `fn` holding a per-student lock taken atomically on the student's own
+ * record, so "check for an open pass, then create one" cannot interleave with
+ * a parallel request. The lock expires on its own after a few seconds if the
+ * process dies mid-way.
+ */
+const GATE_LOCK_MS = 10000;
+async function withGatePassLock(studentId, fn) {
+  const now = new Date();
+  const locked = await User.findOneAndUpdate(
+    { _id: studentId, $or: [{ gatePassLockUntil: null }, { gatePassLockUntil: { $lte: now } }] },
+    { $set: { gatePassLockUntil: new Date(now.getTime() + GATE_LOCK_MS) } },
+    { new: true, projection: { _id: 1 } }
+  );
+  if (!locked) throw new ApiError(409, 'Your gate pass request is already being processed');
+  try {
+    return await fn();
+  } finally {
+    await User.updateOne({ _id: studentId }, { $unset: { gatePassLockUntil: 1 } });
+  }
+}
+
+function createOutingPass(req) {
+  const day = toDay(new Date());
+  const doc = pick(req.body.supportingDocument || {}, ['url', 'name', 'mimeType']);
+  return GatePass.create({
+    student: req.user._id,
+    department: req.user.department,
+    section: req.user.section,
+    passType: 'normal',
+    dayScholarOuting: true,
+    regarding: 'outing',
+    subject: req.body.subject,
+    description: req.body.description,
+    parentPhone: req.body.parentPhone,
+    fromDate: day,
+    toDate: day,
+    ...(doc.url ? { supportingDocument: doc } : {}),
+  });
+}
+
+/** Tell the class in-charge (or, with none set, the department's faculty). */
+async function notifyOutingFaculty(req, pass) {
+  const message = `${req.user.name}${req.user.rollNo ? ` (${req.user.rollNo})` : ''} · Outing: ${pass.subject}`;
+  const notified = await notifyStage(facultyFilter(req.user.department, req.user.section), {
+    type: 'gate_pass',
+    title: 'New outing request',
+    message,
+    link: '/gate-pass?tab=review',
+  });
+  if (!notified.length) {
+    await notifyStage({ role: 'faculty', department: req.user.department, isActive: true }, {
+      type: 'gate_pass',
+      title: 'New outing request (no class in-charge set)',
+      message,
+      link: '/gate-pass?tab=review',
+    });
+  }
+}
+
+const digitsOf = (v) => String(v || '').replace(/\D/g, '');
+
+/**
+ * On an Outing the student types the parent number, so reviewers are told
+ * when it is not the number registered on the account (a flag only — the
+ * registered number itself is not sent).
+ */
+async function flagOutingParent(passes, user) {
+  if (STUDENT_ROLES.includes(user.role) || user.role === 'security') return passes;
+  const ids = passes.filter((p) => p.dayScholarOuting).map((p) => p.student?._id || p.student);
+  if (!ids.length) return passes;
+  const registered = new Map(
+    (await User.find({ _id: { $in: ids } }).select('parentPhone').lean()).map((u) => [String(u._id), digitsOf(u.parentPhone)])
+  );
+  return passes.map((p) =>
+    p.dayScholarOuting
+      ? { ...p, parentPhoneDiffers: digitsOf(p.parentPhone) !== (registered.get(String(p.student?._id || p.student)) || '') }
+      : p
+  );
+}
 
 // ── List gate passes (role-filtered queue) ─────────────────────────
 
@@ -255,7 +367,8 @@ export const listGatePasses = asyncHandler(async (req, res) => {
 
   const guard = await parentPhoneGuard(req.user);
   await logEmergencyViewed(req, passes);
-  res.json({ passes: passes.map((p) => guard(withFlags(p))), pagination: pageMeta(total, page, limit) });
+  const flagged = await flagOutingParent(passes, req.user);
+  res.json({ passes: flagged.map((p) => guard(withFlags(p))), pagination: pageMeta(total, page, limit) });
 });
 
 // ── Get single gate pass ───────────────────────────────────────────
@@ -278,7 +391,8 @@ export const getGatePass = asyncHandler(async (req, res) => {
   if (!pass) throw new ApiError(404, 'Gate pass not found');
   if (!canView(pass, req.user)) throw new ApiError(403, 'Not authorized');
   await logEmergencyViewed(req, [pass]);
-  res.json((await parentPhoneGuard(req.user))(withFlags(pass)));
+  const [flagged] = await flagOutingParent([withFlags(pass)], req.user);
+  res.json((await parentPhoneGuard(req.user))(flagged));
 });
 
 /**
@@ -679,17 +793,33 @@ export const recordOut = asyncHandler(async (req, res) => {
   const problems = problemsFor(pass);
   if (problems.length) throw new ApiError(422, problems[0]);
 
+  // A day scholar's Outing has no return step: the exit completes it.
+  const now = new Date();
+  const set = pass.dayScholarOuting
+    ? { status: 'completed', actualExit: now, exitVerifiedBy: req.user._id, verificationExpiry: now }
+    : { status: 'active', actualExit: now, exitVerifiedBy: req.user._id };
   const updated = await GatePass.findOneAndUpdate(
     { _id: pass._id, status: 'approved', actualExit: null, verificationCode: code },
-    { $set: { status: 'active', actualExit: new Date(), exitVerifiedBy: req.user._id }, $unset: { verificationCode: 1 } },
+    { $set: set, $unset: { verificationCode: 1 } },
     { new: true }
   ).populate('student', STUDENT_FIELDS);
   if (!updated) throw new ApiError(409, 'Exit has already been recorded');
 
   logActivity(req, 'gate_pass.out', { entityType: 'gate_pass', entityId: pass._id });
   passSecurity(req, 'GATE_PASS_EXIT_CONFIRMED', updated);
+  const exitNotice = await returnSvc.notifyExited({ pass: updated, student: updated.student, exitedAt: updated.actualExit });
+  logActivity(req, exitNotice.parentSent ? 'gate_pass.parent_exit_notified' : 'gate_pass.parent_exit_notice_failed', { entityType: 'gate_pass', entityId: updated._id });
   logActivity(req, 'gate_pass.code_consumed', { entityType: 'gate_pass', entityId: pass._id });
-  notifyUsers([pass.student], { type: 'gate_pass', title: 'Exit recorded', message: 'Have a safe trip. Remember to check in when you return.', link: `/gate-pass/${pass._id}` }, { push: false });
+  notifyUsers(
+    [pass.student],
+    {
+      type: 'gate_pass',
+      title: 'Exit recorded',
+      message: pass.dayScholarOuting ? 'Have a safe trip. Your outing pass is now complete.' : 'Have a safe trip. Remember to check in when you return.',
+      link: `/gate-pass/${pass._id}`,
+    },
+    { push: false }
+  );
   publish(updated);
   res.json(withFlags(updated));
 });
@@ -723,8 +853,7 @@ export const recordIn = asyncHandler(async (req, res) => {
   logActivity(req, 'gate_pass.in', { entityType: 'gate_pass', entityId: updated._id });
   passSecurity(req, 'GATE_PASS_RETURN_CONFIRMED', updated);
   publish(updated);
-  const notified = await returnSvc.notifyReturned({ pass: updated, student: updated.student, returnedAt: now });
-  logActivity(req, notified.parentSent ? 'gate_pass.parent_return_notified' : 'gate_pass.parent_return_notice_failed', { entityType: 'gate_pass', entityId: updated._id });
+  await returnSvc.notifyReturned({ pass: updated, student: updated.student, returnedAt: now });
   res.json(withFlags(updated));
 });
 
@@ -846,14 +975,73 @@ export const revokeGatePass = asyncHandler(async (req, res) => {
   res.json(withFlags(updated));
 });
 
-// ── Staff overview dashboard (admin / faculty / hod / principal) ────
+// ── Staff overview dashboard (admin / faculty / hod / principal / ao / dean / chairman) ────
+
+// College-wide roles that may look back at a past day's gate movements.
+const GATE_HISTORY_ROLES = ['admin', 'principal', ...EMERGENCY_AUTHORITIES];
+
+/**
+ * The dashboard guard: faculty keep their class-based masking, and AO / Dean /
+ * Chairman — who are not in the normal approval chain — never see a parent's
+ * full number for passes that were not sent to them.
+ */
+async function dashboardGuard(user) {
+  const guard = await parentPhoneGuard(user);
+  if (!['ao', 'dean', 'chairman'].includes(user.role)) return guard;
+  return (pass) => {
+    const p = guard(pass);
+    return p.passType === 'emergency' && p.emergencyAuthority === user.role ? p : { ...p, parentPhone: otpService.maskMobile(p.parentPhone) };
+  };
+}
+
+/**
+ * One past campus day: exits and returns recorded that day, requests raised
+ * that day, and who was still outside when the day ended — all read from the
+ * recorded exit / return timestamps, never recomputed from anything the
+ * client sends beyond the day itself.
+ */
+async function gateHistory(req, res, day) {
+  if (day > toDay(new Date())) throw new ApiError(422, 'That date is in the future');
+  const dayTs = timestampFilter({ from: day, to: day });
+  const endOfDay = dayTs.$lt;
+  const guard = await dashboardGuard(req.user);
+  // A day scholar's Outing ends at the exit, so it is never "outside".
+  const outsideFilter = { dayScholarOuting: { $ne: true }, actualExit: { $lt: endOfDay }, $or: [{ actualReturn: null }, { actualReturn: { $gte: endOfDay } }] };
+
+  const [exits, returns, requests, outside] = await Promise.all([
+    GatePass.find({ actualExit: dayTs }).populate('student', STUDENT_FIELDS).sort({ actualExit: 1 }).lean(),
+    GatePass.find({ actualReturn: dayTs }).populate('student', STUDENT_FIELDS).sort({ actualReturn: 1 }).lean(),
+    GatePass.countDocuments({ createdAt: dayTs }),
+    GatePass.find(outsideFilter).populate('student', STUDENT_FIELDS).sort({ toDate: 1 }).lean(),
+  ]);
+  const overdueAt = (p) => dueByMs(p.toDate) < endOfDay.getTime();
+  const view = (p) => ({ ...guard(withFlags(p)), overdue: overdueAt(p) });
+
+  res.json({
+    date: day.toISOString().slice(0, 10),
+    history: true,
+    studentsOutside: outside.length,
+    overdue: outside.filter(overdueAt).length,
+    todayExits: exits.length,
+    todayReturns: returns.length,
+    requests,
+    outsideStudents: outside.map(view),
+    exits: exits.map(view),
+    returns: returns.map(view),
+  });
+}
 
 export const gateDashboard = asyncHandler(async (req, res) => {
   await expireGatePasses();
   const day = toDay(new Date());
+  if (req.query.date) {
+    if (!GATE_HISTORY_ROLES.includes(req.user.role)) throw new ApiError(403, 'Gate history is available to college-wide roles only');
+    const asked = toDay(req.query.date);
+    if (asked.getTime() !== day.getTime()) return gateHistory(req, res, asked);
+  }
   const todayTs = timestampFilter({ from: day, to: day });
   const now = new Date();
-  const guard = await parentPhoneGuard(req.user);
+  const guard = await dashboardGuard(req.user);
 
   const [studentsOutside, overdue, todayExits, todayReturns, pending, approvedToday, rejectedToday, outsideStudents] = await Promise.all([
     GatePass.countDocuments({ status: 'active' }),

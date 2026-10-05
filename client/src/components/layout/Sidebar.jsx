@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Trophy,
   UserCog,
+  Users,
   UsersRound,
   X,
 } from 'lucide-react';
@@ -33,7 +34,7 @@ import { broadcastSession } from '../../services/sessionSync';
 import { loggedOut, selectUser } from '../../features/authSlice';
 import { setSidebar } from '../../features/uiSlice';
 import { disconnectSocket } from '../../services/socket';
-import { ROLE_LABELS, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
+import { PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
 
 // Staff who can see the administrative nav section (Principal sees every staff screen).
 const STAFF_VIEW = [...STAFF, 'principal'];
@@ -44,6 +45,8 @@ const MAIN = [
   { to: '/events', label: 'Events', icon: CalendarDays },
   { to: '/clubs', label: 'Clubs', icon: Shapes },
   { to: '/discussions', label: 'Discussions', icon: MessagesSquare },
+  // Directory roles only (faculty, HOD, admin, principal, chairman, dean, AO); the server enforces the same scope.
+  { to: '/people', label: 'People', icon: GraduationCap, excludeRoles: ROLES.filter((r) => !PEOPLE_DIRECTORY.includes(r)) },
   { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 
@@ -71,7 +74,12 @@ const ADMIN = [
   { to: '/admin/clubs', label: 'Club approvals', icon: BadgeCheck, roles: ['admin'] },
   { to: '/admin/academics', label: 'Academics', icon: BookOpenCheck, roles: ['admin', 'hod'] },
   { to: '/admin/activity', label: 'Activity log', icon: Activity, roles: ['admin'] },
+  { to: '/admin/security', label: 'Security & Logs', icon: ShieldCheck, roles: ['admin'] },
 ];
+
+// Faculty Class In-Charge only: create student logins and reset their passwords.
+const CLASS_IN_CHARGE_ITEM = { to: '/class/students', label: 'Students', icon: Users };
+const isClassInCharge = (u) => u?.role === 'faculty' && Boolean(u.section && u.inChargeYear && u.inChargeSemester);
 
 function NavItem({ item, onClick, badge }) {
   const Icon = item.icon;
@@ -121,7 +129,10 @@ export default function Sidebar() {
 
   const campusItems = isAlumni
     ? ALUMNI_CAMPUS
-    : CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
+    : [
+        ...CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role)),
+        ...(isClassInCharge(user) ? [CLASS_IN_CHARGE_ITEM] : []),
+      ];
 
   const adminItems = ADMIN.filter((i) => i.roles.includes(user?.role));
   const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user });

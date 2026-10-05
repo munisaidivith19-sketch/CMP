@@ -44,7 +44,7 @@ export function refreshSession() {
   return refreshPromise;
 }
 
-const NO_RETRY = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout', '/auth/forgot-password', '/auth/reset-password'];
+const NO_RETRY = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
 
 /** Access tokens are short-lived: on a 401, refresh once and replay the request. */
 const baseQueryWithReauth = async (args, api, extra) => {
@@ -74,6 +74,7 @@ const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
   'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation', 'Holiday',
+  'Security', 'ClassStudents',
   'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics', 'Achievement',
 ];
 
@@ -93,8 +94,6 @@ export const api = createApi({
     // One check when a tab comes back into view: is this session still alive?
     verifySession: b.query({ query: () => '/auth/me', keepUnusedDataFor: 0 }),
     changePassword: b.mutation({ query: (body) => ({ url: '/auth/change-password', method: 'POST', body }), invalidatesTags: ['Session'] }),
-    forgotPassword: b.mutation({ query: (body) => ({ url: '/auth/forgot-password', method: 'POST', body }) }),
-    resetPassword: b.mutation({ query: (body) => ({ url: '/auth/reset-password', method: 'POST', body }) }),
     getSessions: b.query({ query: () => '/auth/sessions', providesTags: ['Session'] }),
     revokeSession: b.mutation({ query: (id) => ({ url: `/auth/sessions/${id}`, method: 'DELETE' }), invalidatesTags: ['Session'] }),
     revokeOtherSessions: b.mutation({ query: () => ({ url: '/auth/sessions/revoke-others', method: 'POST' }), invalidatesTags: ['Session'] }),
@@ -317,6 +316,19 @@ export const api = createApi({
       query: (id) => ({ url: `/admin/users/${id}`, method: 'DELETE' }),
       invalidatesTags: ['Admin', 'User'],
     }),
+    // Authorized reset (Admin: any non-admin account; Class In-Charge: own students). No current password.
+    resetUserPassword: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/users/${id}/reset-password`, method: 'POST', body }),
+      invalidatesTags: ['Security'],
+    }),
+    // Admin → Security & Logs (admin only on the server).
+    getSecuritySummary: b.query({ query: () => '/admin/security/summary', providesTags: ['Security'], keepUnusedDataFor: 0 }),
+    getSecurityLogs: b.query({ query: (params) => ({ url: '/admin/security/logs', params }), providesTags: ['Security'], keepUnusedDataFor: 0 }),
+    getSecurityOtps: b.query({ query: (params) => ({ url: '/admin/security/otps', params }), keepUnusedDataFor: 0 }),
+
+    // ── Class In-Charge: students of their own class ──
+    getClassStudents: b.query({ query: () => '/class-students', providesTags: ['ClassStudents'] }),
+    createClassStudent: b.mutation({ query: (body) => ({ url: '/class-students', method: 'POST', body }), invalidatesTags: ['ClassStudents'] }),
 
     // ── Chat ──────────────────────────────────────────
     getConversations: b.query({ query: (params) => ({ url: '/chat/conversations', params }), providesTags: ['Chat'] }),
@@ -881,6 +893,12 @@ export const {
   useDeleteNotificationMutation,
   useGetAnalyticsQuery,
   useGetAdminUsersQuery,
+  useResetUserPasswordMutation,
+  useGetSecuritySummaryQuery,
+  useGetSecurityLogsQuery,
+  useGetSecurityOtpsQuery,
+  useGetClassStudentsQuery,
+  useCreateClassStudentMutation,
   useUpdateAdminUserMutation,
   useGetActivityQuery,
   useCreateAdminUserMutation,
@@ -892,8 +910,6 @@ export const {
   useGetSummaryFacultyQuery,
   useGetFacultyRosterQuery,
   useMarkFacultyAttendanceMutation,
-  useForgotPasswordMutation,
-  useResetPasswordMutation,
   useGetSessionsQuery,
   useRevokeSessionMutation,
   useRevokeOtherSessionsMutation,

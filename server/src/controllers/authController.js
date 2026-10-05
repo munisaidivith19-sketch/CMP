@@ -9,10 +9,11 @@ import { ApiError, asyncHandler, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { notifyUsers } from '../utils/notify.js';
 import { sendMail } from '../utils/mailer.js';
+import { parseDevice } from '../utils/device.js';
+import { logSecurity } from '../utils/securityLog.js';
 import {
   REFRESH_COOKIE,
   clearRefreshCookie,
-  hashToken,
   isMobileClient,
   newJti,
   refreshExpiry,
@@ -39,36 +40,8 @@ const MAX_CONCURRENT_SESSIONS = 5;
 // Compared against when the email is unknown, so both paths cost one bcrypt check.
 const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 12);
 
-/** A readable device label, e.g. "Chrome on Windows" or "CampusConnect app · Pixel 7". */
-export function parseDevice(ua = '', req) {
-  const mobileName = req?.get?.('x-device-name');
-  if (req && isMobileClient(req)) {
-    return `Mobile app${mobileName ? ` · ${String(mobileName).replace(/[^\w .\-()]/g, '').slice(0, 60)}` : ''}`;
-  }
-  const browser = /Edg\//.test(ua)
-    ? 'Edge'
-    : /OPR\//.test(ua)
-      ? 'Opera'
-      : /Chrome\//.test(ua)
-        ? 'Chrome'
-        : /Firefox\//.test(ua)
-          ? 'Firefox'
-          : /Safari\//.test(ua)
-            ? 'Safari'
-            : 'Browser';
-  const os = /Android/i.test(ua)
-    ? 'Android'
-    : /iPhone|iPad/i.test(ua)
-      ? 'iOS'
-      : /Windows/i.test(ua)
-        ? 'Windows'
-        : /Mac OS/i.test(ua)
-          ? 'macOS'
-          : /Linux/i.test(ua)
-            ? 'Linux'
-            : 'Unknown OS';
-  return `${browser} on ${os}`;
-}
+/** A readable device label, e.g. "Chrome on Windows" or "Mobile app · Pixel 7". */
+export { parseDevice };
 
 const clientMeta = (req) => ({
   client: isMobileClient(req) ? 'mobile' : 'web',
@@ -110,6 +83,7 @@ async function issueSession(req, res, user, existingSession) {
 
     const meta = clientMeta(req);
     session = await Session.create({ user: user._id, jti, expiresAt: refreshExpiry(), idleTimeoutMs: idleTimeoutFor(meta.client, user.role), ...meta });
+    logSecurity(req, 'SESSION_CREATED', { actor: user, target: user, entityType: 'session', entityId: session._id });
   }
 
   const refreshToken = signRefreshToken(user, session._id, jti);
@@ -134,7 +108,7 @@ async function issueSession(req, res, user, existingSession) {
   return body;
 }
 
-async function revokeSessions(filter, reason) {
+export async function revokeSessions(filter, reason) {
   const sessions = await Session.find({ ...filter, revokedAt: null }).select('_id').lean();
   if (!sessions.length) return 0;
   const ids = sessions.map((s) => s._id);
@@ -212,6 +186,7 @@ export const login = asyncHandler(async (req, res) => {
 
     await bcrypt.compare(String(password), DUMMY_HASH); // equalize response timing
     recordIpFailure(req.ip);
+    logSecurity(req, 'LOGIN_FAILED', { actor: null, success: false, identifier: normalizedEmail, reason: 'unknown_account' });
     const anonRes = recordAnonFailure(req.ip, normalizedEmail);
 
     if (anonRes.locked) {
@@ -242,6 +217,7 @@ export const login = asyncHandler(async (req, res) => {
   // 4. Existing User Lockout Check
   if (user.lockUntil && user.lockUntil > new Date()) {
     recordLogin(req, user, false, 'account_locked');
+    logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'account_locked' });
     const retryAfterSeconds = Math.ceil((user.lockUntil.getTime() - Date.now()) / 1000);
     const mins = Math.ceil(retryAfterSeconds / 60);
     throw new ApiError(423, `Too many failed attempts. Try again in ${mins} minute(s).`, null, {
@@ -256,6 +232,7 @@ export const login = asyncHandler(async (req, res) => {
   const ok = await user.comparePassword(password);
   if (!ok) {
     recordIpFailure(req.ip);
+    logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'invalid_password' });
     user.failedLogins = (user.failedLogins || 0) + 1;
     user.lastFailedLoginAt = new Date();
 
@@ -277,7 +254,7 @@ export const login = asyncHandler(async (req, res) => {
       notifyUsers([user._id], {
         type: 'system',
         title: 'Security Alert: Account Temporarily Locked',
-        message: `Your account was locked for ${lockMins} minutes following repeated failed sign-ins from ${device} (${req.ip}). If this wasn't you, reset your password immediately.`,
+        message: `Your account was locked for ${lockMins} minutes following repeated failed sign-ins from ${device} (${req.ip}). If this wasn't you, contact your Class In-Charge or Admin.`,
         link: '/settings/security',
       });
 
@@ -285,7 +262,7 @@ export const login = asyncHandler(async (req, res) => {
       sendMail({
         to: user.email,
         subject: 'Security Alert: Account Temporarily Locked - CampusConnect',
-        text: `Hi ${user.name},\n\nWe detected ${user.failedLogins} consecutive failed sign-in attempts to your CampusConnect account.\n\n• Device: ${device}\n• IP Address: ${req.ip}\n• Date & Time: ${new Date().toUTCString()}\n\nAs a security precaution, your account has been temporarily locked for ${lockMins} minutes.\n\nIf this was you, you may try again once the timer expires.\n\nIf this was NOT you, someone may be attempting to access your account. Please reset your password immediately:\n${env.appUrl.replace(/\/$/, '')}/forgot-password\n\nCampusConnect Security Team`,
+        text: `Hi ${user.name},\n\nWe detected ${user.failedLogins} consecutive failed sign-in attempts to your CampusConnect account.\n\n• Device: ${device}\n• IP Address: ${req.ip}\n• Date & Time: ${new Date().toUTCString()}\n\nAs a security precaution, your account has been temporarily locked for ${lockMins} minutes.\n\nIf this was you, you may try again once the timer expires.\n\nIf this was NOT you, someone may be attempting to access your account. Contact your Class In-Charge or Admin to reset your password.\n\nCampusConnect Security Team`,
         html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;">
           <h2 style="color:#e11d48;margin-top:0;">🛡️ Security Alert: Account Locked</h2>
           <p>Hi <strong>${user.name.replace(/[<>&]/g, '')}</strong>,</p>
@@ -295,8 +272,7 @@ export const login = asyncHandler(async (req, res) => {
             <p style="margin:4px 0;"><strong>IP Address:</strong> ${req.ip}</p>
             <p style="margin:4px 0;"><strong>Lockout Duration:</strong> ${lockMins} minutes</p>
           </div>
-          <p>If you forgot your password, you can reset it safely using the link below:</p>
-          <p style="margin:20px 0;"><a href="${env.appUrl.replace(/\/$/, '')}/forgot-password" style="background:#2563eb;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:8px;font-weight:bold;display:inline-block;">Reset Password</a></p>
+          <p>Forgot your password? Contact your Class In-Charge or Admin to reset your password.</p>
           <p style="color:#64748b;font-size:12px;margin-top:24px;">If you were the one attempting to sign in, simply wait for the timer to expire and try again.</p>
         </div>`,
       });
@@ -321,6 +297,7 @@ export const login = asyncHandler(async (req, res) => {
 
   if (!user.isActive) {
     recordLogin(req, user, false, 'account_suspended');
+    logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'account_disabled' });
     throw new ApiError(403, 'This account has been suspended. Contact the administrator.');
   }
 
@@ -341,6 +318,7 @@ export const login = asyncHandler(async (req, res) => {
 
   req.user = user;
   logActivity(req, 'auth.login', { entityType: 'user', entityId: user._id, summary: device });
+  logSecurity(req, 'LOGIN_SUCCESS', { actor: user, target: user });
   await recordLogin(req, user, true);
 
   const session = await issueSession(req, res, user);
@@ -382,12 +360,21 @@ export const refresh = asyncHandler(async (req, res) => {
     // A rotated-out refresh token was replayed: treat the session as stolen.
     await revokeSessions({ _id: session._id }, 'refresh_token_reuse');
     logActivity(req, 'auth.token_reuse', { user: { _id: session.user }, entityType: 'session', entityId: session._id });
+    logSecurity(req, 'SESSION_REVOKED', { actor: null, target: { _id: session.user }, success: false, reason: 'refresh_token_reuse', entityType: 'session', entityId: session._id });
     throw fail('Session is no longer valid');
   }
 
   const user = await User.findById(payload.sub).select('+tokenVersion');
   if (!user || !user.isActive || (user.tokenVersion || 0) !== payload.v) {
     await revokeSessions({ _id: session._id }, 'token_version');
+    logSecurity(req, 'REFRESH_FAILED', {
+      actor: null,
+      target: user || { _id: session.user },
+      success: false,
+      reason: !user ? 'account_missing' : !user.isActive ? 'account_disabled' : 'credentials_changed',
+      entityType: 'session',
+      entityId: session._id,
+    });
     throw fail('Session is no longer valid');
   }
 
@@ -415,6 +402,8 @@ export const logout = asyncHandler(async (req, res) => {
         const idle = req.body?.reason === 'idle';
         await revokeSessions({ _id: sid, user: sub }, idle ? 'idle_timeout_client' : 'logout');
         logActivity(req, idle ? 'auth.idle_logout' : 'auth.logout', { user: { _id: sub }, entityType: 'session', entityId: sid });
+        const who = (await User.findById(sub).select('role').lean()) || { _id: sub };
+        logSecurity(req, idle ? 'SESSION_EXPIRED' : 'LOGOUT', { actor: who, target: who, reason: idle ? 'idle_timeout_client' : undefined, entityType: 'session', entityId: sid });
       }
       if (typeof req.body?.pushToken === 'string') {
         // The device stops receiving this user's pushes once it signs out.
@@ -449,14 +438,19 @@ export const me = asyncHandler(async (req, res) => {
 export const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const user = await User.findById(req.user._id).select('+password +tokenVersion');
-  if (!(await user.comparePassword(currentPassword))) throw new ApiError(400, 'Current password is incorrect');
+  if (!(await user.comparePassword(currentPassword))) {
+    logSecurity(req, 'PASSWORD_CHANGED', { target: req.user, success: false, reason: 'wrong_current_password' });
+    throw new ApiError(400, 'Current password is incorrect');
+  }
   if (await user.comparePassword(newPassword)) throw new ApiError(422, 'New password must be different from the current one');
   user.password = newPassword;
   user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidates refresh tokens everywhere
   await user.save();
 
   // Every other device is signed out; this device gets a rotated session.
-  await revokeSessions({ user: user._id, _id: { $ne: req.sessionId } }, 'password_change');
+  const signedOut = await revokeSessions({ user: user._id, _id: { $ne: req.sessionId } }, 'password_change');
+  logSecurity(req, 'PASSWORD_CHANGED', { target: req.user, details: { otherSessionsSignedOut: signedOut } });
+  if (signedOut) logSecurity(req, 'SESSION_REVOKED', { target: req.user, reason: 'password_change', details: { count: signedOut } });
   const current = req.sessionId ? await Session.findById(req.sessionId) : null;
   logActivity(req, 'auth.password_change', { entityType: 'user', entityId: user._id });
   notifyUsers([user._id], {
@@ -469,71 +463,19 @@ export const changePassword = asyncHandler(async (req, res) => {
 });
 
 // ── Password reset ─────────────────────────────────────────────────
+// Email password reset is retired. A forgotten password is reset by the
+// student's Class In-Charge or an Admin (POST /users/:id/reset-password), who
+// are authorized server-side. These two endpoints remain only so older
+// clients get a clear answer; they never read or change an account.
 
-const GENERIC_RESET = { message: 'If an account exists for that email, a password reset link has been sent to your inbox.' };
+export const PASSWORD_HELP_MESSAGE = 'Forgot your password? Contact your Class In-Charge or Admin to reset your password.';
 
-/**
- * Always answers with the same message and status (no account enumeration).
- * The work happens after the response so timing does not leak either.
- */
-export const forgotPassword = asyncHandler(async (req, res) => {
-  const email = String(req.body.email || '').toLowerCase().trim();
-  res.json(GENERIC_RESET);
-
-  try {
-    const user = await User.findOne({ email, isActive: true }).select('+resetTokenExpires');
-    if (!user) return;
-    const ttl = env.passwordResetMinutes * 60000;
-    // At most one email per minute per account.
-    if (user.resetTokenExpires && user.resetTokenExpires.getTime() - Date.now() > ttl - 60000) return;
-
-    const token = crypto.randomBytes(32).toString('base64url');
-    user.resetTokenHash = hashToken(token);
-    user.resetTokenExpires = new Date(Date.now() + ttl);
-    await user.save({ validateModifiedOnly: true });
-
-    // Token goes in the URL fragment: browsers never send it to any server log.
-    const link = `${env.appUrl.replace(/\/$/, '')}/reset-password#token=${token}`;
-    await sendMail({
-      to: user.email,
-      subject: 'Reset your CampusConnect password',
-      text: `Hi ${user.name},\n\nUse this link to choose a new password. It expires in ${env.passwordResetMinutes} minutes and works once:\n\n${link}\n\nIf you did not ask for this, ignore this email — your password stays the same.`,
-      html: `<p>Hi ${user.name.replace(/[<>&]/g, '')},</p><p>Use this link to choose a new password. It expires in ${env.passwordResetMinutes} minutes and works once:</p><p><a href="${link}">Reset my password</a></p><p>If you did not ask for this, ignore this email — your password stays the same.</p>`,
-    });
-    logActivity(req, 'auth.password_reset_request', { user, entityType: 'user', entityId: user._id });
-  } catch (err) {
-    console.error('[auth] forgot-password processing failed:', err.message);
-  }
+export const forgotPassword = asyncHandler(async () => {
+  throw new ApiError(410, PASSWORD_HELP_MESSAGE);
 });
 
-export const resetPassword = asyncHandler(async (req, res) => {
-  const { token, password } = req.body;
-  const user = await User.findOne({
-    resetTokenHash: hashToken(token),
-    resetTokenExpires: { $gt: new Date() },
-  }).select('+password +tokenVersion +resetTokenHash +resetTokenExpires +failedLogins +lockUntil +lastFailedLoginAt +lockoutCount');
-  if (!user || !user.isActive) throw new ApiError(400, 'This reset link is invalid or has expired');
-
-  // Single use: the token is cleared in the same save that sets the password.
-  user.password = password;
-  user.resetTokenHash = undefined;
-  user.resetTokenExpires = undefined;
-  user.failedLogins = 0;
-  user.lockUntil = undefined;
-  user.lastFailedLoginAt = undefined;
-  user.lockoutCount = 0;
-  user.tokenVersion = (user.tokenVersion || 0) + 1;
-  await user.save();
-
-  await revokeSessions({ user: user._id }, 'password_reset');
-  logActivity(req, 'auth.password_reset', { user, entityType: 'user', entityId: user._id });
-  notifyUsers([user._id], {
-    type: 'system',
-    title: 'Your password was reset',
-    message: 'All sessions were signed out. If this was not you, contact the administrator.',
-    link: '/settings/security',
-  });
-  res.json({ message: 'Password updated. Please sign in with your new password.' });
+export const resetPassword = asyncHandler(async () => {
+  throw new ApiError(410, PASSWORD_HELP_MESSAGE);
 });
 
 // ── Sessions / devices ─────────────────────────────────────────────
@@ -549,12 +491,14 @@ export const revokeSession = asyncHandler(async (req, res) => {
   const n = await revokeSessions({ _id: req.params.id, user: req.user._id }, 'user_revoked');
   if (!n) throw new ApiError(404, 'Session not found');
   logActivity(req, 'auth.session_revoke', { entityType: 'session', entityId: req.params.id });
+  logSecurity(req, 'SESSION_REVOKED', { target: req.user, reason: 'user_revoked', entityType: 'session', entityId: req.params.id });
   res.json({ message: 'Session signed out' });
 });
 
 export const revokeOtherSessions = asyncHandler(async (req, res) => {
   const n = await revokeSessions({ user: req.user._id, _id: { $ne: req.sessionId } }, 'user_revoked_others');
   logActivity(req, 'auth.session_revoke_others', { entityType: 'user', entityId: req.user._id, summary: `${n} sessions` });
+  if (n) logSecurity(req, 'SESSION_REVOKED', { target: req.user, reason: 'user_revoked_others', details: { count: n } });
   res.json({ message: n ? `Signed out ${n} other session(s)` : 'No other active sessions', count: n });
 });
 

@@ -8,10 +8,9 @@ import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
 import { PEOPLE_DIRECTORY, ROLES, STAFF_VIEW } from './utils/constants';
 
-// The People directory (browse/search) is off-limits to students — a single
-// profile fetched from elsewhere (chat, discussions, clubs) is unaffected.
-// Security and Warden have no academic directory; students get single
-// profiles only, which /people/:id still serves.
+// The People directory: students see only their own class (classmates and
+// that class's faculty); staff see their academic scope. Security and Warden
+// have no academic directory. The server enforces the same scope.
 const PEOPLE_DIRECTORY_ROLES = PEOPLE_DIRECTORY;
 // Warden/Security have zero timetable access anywhere in the app.
 const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
@@ -43,8 +42,8 @@ const AdminActivity = lazy(() => import('./pages/admin/AdminActivity'));
 const AdminAcademics = lazy(() => import('./pages/admin/AdminAcademics'));
 const AttendanceDashboard = lazy(() => import('./pages/admin/AttendanceDashboard'));
 const AdminChatRequests = lazy(() => import('./pages/admin/AdminChatRequests'));
-const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword'));
-const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
+const SecurityLogs = lazy(() => import('./pages/admin/SecurityLogs'));
+const ClassStudents = lazy(() => import('./pages/class/ClassStudents'));
 const Security = lazy(() => import('./pages/settings/Security'));
 const Chat = lazy(() => import('./pages/chat/Chat'));
 const Timetable = lazy(() => import('./pages/timetable/Timetable'));
@@ -124,9 +123,10 @@ export default function App() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
-          <Route path="/forgot-password" element={<GuestOnly><ForgotPassword /></GuestOnly>} />
-          {/* Reachable while signed in too: the emailed link must always work. */}
-          <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Email password reset is retired: old links land on the sign-in page,
+              which explains that the Class In-Charge or Admin resets passwords. */}
+          <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+          <Route path="/reset-password" element={<Navigate to="/login" replace />} />
           <Route path="/alumni/claim" element={<AlumniClaim />} />
           <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
             <Route index element={<Dashboard />} />
@@ -149,6 +149,8 @@ export default function App() {
             <Route path="admin/users" element={<RequireAuth roles={['admin']}><AdminUsers /></RequireAuth>} />
             <Route path="admin/clubs" element={<RequireAuth roles={['admin']}><AdminClubs /></RequireAuth>} />
             <Route path="admin/activity" element={<RequireAuth roles={['admin']}><AdminActivity /></RequireAuth>} />
+            <Route path="admin/security" element={<RequireAuth roles={['admin']}><SecurityLogs /></RequireAuth>} />
+            <Route path="class/students" element={<RequireAuth roles={['faculty']}><ClassStudents /></RequireAuth>} />
             <Route path="admin/academics" element={<RequireAuth roles={['admin', 'hod']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
             <Route path="admin/chat-requests" element={<RequireAuth roles={['admin', 'principal']}><AdminChatRequests /></RequireAuth>} />

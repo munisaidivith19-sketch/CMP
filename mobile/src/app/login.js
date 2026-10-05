@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
-import { Link, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDispatch, useSelector } from 'react-redux';
 import { Controller, useForm } from 'react-hook-form';
@@ -147,9 +147,10 @@ export default function Login() {
           </View>
           {error && !lockedInfo ? <T v="small" style={{ color: colors.danger }}>{error}</T> : null}
           <Button title={lockedInfo ? 'Locked' : 'Sign in'} onPress={handleSubmit(onSubmit)} loading={isLoading} disabled={Boolean(lockedInfo)} />
-          <Link href="/forgot-password" style={{ alignSelf: 'center' }}>
-            <T v="small" style={{ color: colors.primary }}>Forgot password?</T>
-          </Link>
+          {/* Passwords are reset by the Class In-Charge or an Admin — there is no email reset. */}
+          <T v="small" style={{ color: colors.muted, textAlign: 'center' }}>
+            Forgot your password? Contact your Class In-Charge or Admin to reset your password.
+          </T>
         </Card>
         <ServerSettings />
       </KeyboardAvoidingView>

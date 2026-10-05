@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
+import { Ban, CheckCircle2, KeyRound, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
 import { useDeleteAdminUserMutation, useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { ChipMultiSelect, Input, Select } from '../../components/ui/form';
 import { selectUser } from '../../features/authSlice';
 import CreateUserModal from '../../components/CreateUserModal';
-import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
+import ResetPasswordModal from '../../components/ResetPasswordModal';
+import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo } from '../../utils/format';
 
 /** Department / section / semester decide which timetable and attendance roster a student belongs to. */
@@ -20,6 +21,7 @@ function ClassModal({ user, onClose }) {
     if (user) {
       setV({
         department: user.department || '', year: user.year || '', section: user.section || '', semester: user.semester || '', rollNo: user.rollNo || '',
+        name: user.name || '', email: user.email || '', phone: user.phone || '', parentPhone: user.parentPhone || '', stayType: user.stayType || '',
         teachingYears: user.teachingYears || [], teachingSections: user.teachingSections || [],
         inChargeYear: user.inChargeYear || '', inChargeSemester: user.inChargeSemester || '',
       });
@@ -27,6 +29,7 @@ function ClassModal({ user, onClose }) {
   }, [user]);
   if (!user) return null;
   const isFaculty = user.role === 'faculty';
+  const isStudent = STUDENT_ROLES.includes(user.role);
   const set = (k) => (e) =>
     setV((s) => {
       const next = { ...s, [k]: e.target.value };
@@ -52,6 +55,16 @@ function ClassModal({ user, onClose }) {
               inChargeSemester: v.section && v.inChargeSemester ? Number(v.inChargeSemester) : null,
             }
           : { year: v.year ? Number(v.year) : undefined, semester: v.semester ? Number(v.semester) : undefined, rollNo: v.rollNo || null }),
+        // Student account details (Admin edits students college-wide).
+        ...(isStudent
+          ? {
+              name: v.name.trim(),
+              email: v.email.trim(),
+              phone: v.phone.trim() || null,
+              parentPhone: v.parentPhone.trim() || null,
+              ...(v.stayType ? { stayType: v.stayType } : {}),
+            }
+          : {}),
       }).unwrap();
       toast.success('Class details saved');
       onClose();
@@ -63,7 +76,7 @@ function ClassModal({ user, onClose }) {
     <Modal
       open
       onClose={onClose}
-      title={`${isFaculty ? 'Teaching scope' : 'Class details'} · ${user.name}`}
+      title={`${isFaculty ? 'Teaching scope' : isStudent ? 'Edit student' : 'Class details'} · ${user.name}`}
       subtitle={isFaculty ? 'Bounds which classes this faculty can be scheduled for in the timetable.' : 'Department, year, section and semester decide the timetable and attendance roster.'}
       footer={
         <>
@@ -73,7 +86,7 @@ function ClassModal({ user, onClose }) {
           <Button
             loading={isLoading}
             onClick={save}
-            disabled={isFaculty && (!v.teachingYears?.length || !v.section || !v.inChargeYear !== !v.inChargeSemester)}
+            disabled={(isFaculty && (!v.teachingYears?.length || !v.section || !v.inChargeYear !== !v.inChargeSemester)) || (isStudent && (!v.name.trim() || !v.email.trim()))}
           >
             Save
           </Button>
@@ -81,6 +94,15 @@ function ClassModal({ user, onClose }) {
       }
     >
       <div className="grid gap-3 sm:grid-cols-2">
+        {isStudent && (
+          <>
+            <Input label="Full name" maxLength={80} value={v.name} onChange={set('name')} />
+            <Input label="College email (username)" type="email" value={v.email} onChange={set('email')} />
+            <Input label="Student mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} />
+            <Input label="Parent mobile" type="tel" maxLength={20} hint="Gate-pass OTPs go only to this number." value={v.parentPhone} onChange={set('parentPhone')} />
+            <Select label="Stay" placeholder="—" options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))} value={v.stayType} onChange={set('stayType')} />
+          </>
+        )}
         <Select label="Department" placeholder="—" keepCase options={[...new Set([user.department, ...DEPARTMENTS].filter(Boolean))]} value={v.department} onChange={set('department')} />
         {isFaculty ? (
           <>
@@ -139,6 +161,7 @@ export default function AdminUsers() {
   const [deleting, setDeleting] = useState(null);
   const [classEdit, setClassEdit] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [resetting, setResetting] = useState(null);
   const { data, isLoading } = useGetAdminUsersQuery({ q: q || undefined, role: role || undefined, status: status || undefined, page });
   const [update, { isLoading: saving }] = useUpdateAdminUserMutation();
   const [removeUser, { isLoading: deletingSaving }] = useDeleteAdminUserMutation();
@@ -202,7 +225,7 @@ export default function AdminUsers() {
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-ink-muted">
                   <th className="px-5 py-4 font-bold">User</th>
@@ -231,7 +254,7 @@ export default function AdminUsers() {
                         </Link>
                       </td>
                       <td className="px-3 py-3 text-xs muted">
-                        <button onClick={() => setClassEdit(u)} className="rounded-lg px-1.5 py-1 text-left hover:bg-white/70 hover:text-ink" title={u.role === 'faculty' ? 'Edit teaching scope' : 'Edit class details'}>
+                        <button onClick={() => setClassEdit(u)} className="rounded-lg px-1.5 py-1 text-left hover:bg-white/70 hover:text-ink" title={u.role === 'faculty' ? 'Edit teaching scope' : STUDENT_ROLES.includes(u.role) ? 'Edit student' : 'Edit class details'}>
                           {u.department || '—'}
                           {u.role === 'faculty' ? (
                             <>
@@ -274,6 +297,11 @@ export default function AdminUsers() {
                       <td className="px-5 py-3 text-right">
                         {!self && (
                           <div className="inline-flex items-center gap-2">
+                            {u.role !== 'admin' && (
+                              <Button size="sm" variant="outline" icon={KeyRound} onClick={() => setResetting(u)}>
+                                Reset password
+                              </Button>
+                            )}
                             {u.isActive ? (
                               <Button size="sm" variant="danger" icon={Ban} onClick={() => setPending(u)}>
                                 Suspend
@@ -302,6 +330,7 @@ export default function AdminUsers() {
       )}
 
       <ClassModal user={classEdit} onClose={() => setClassEdit(null)} />
+      <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />
       <ConfirmDialog
         open={Boolean(pending)}
         onClose={() => setPending(null)}

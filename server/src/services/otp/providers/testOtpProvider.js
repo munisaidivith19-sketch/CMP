@@ -17,6 +17,8 @@ function prune(now = Date.now()) {
 export const testOtpProvider = {
   name: 'test',
   devPortal: true,
+  // Stand-in while SMS is disabled: nothing is delivered.
+  delivers: false,
 
   async sendOtp({ otpId, otp, maskedMobile, expiresAt }) {
     prune();

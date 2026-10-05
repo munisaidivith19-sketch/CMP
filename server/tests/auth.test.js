@@ -100,42 +100,27 @@ test('sockets without a valid token are refused', async () => {
   await ctx.connect('garbage', { expectFail: true });
 });
 
-test('forgot password: same response for known and unknown emails', async () => {
-  const user = await ctx.createUser();
-  const known = await ctx.request('POST', '/auth/forgot-password', { body: { email: user.email } });
-  const unknown = await ctx.request('POST', '/auth/forgot-password', { body: { email: 'ghost@test.edu' } });
-  assert.equal(known.status, 200);
-  assert.deepEqual(known.body, unknown.body);
-  await sleep(300);
-  const stored = await ctx.models.User.findById(user._id).select('+resetTokenHash +resetTokenExpires');
-  assert.ok(stored.resetTokenHash, 'a hashed token is stored');
-  assert.ok(stored.resetTokenExpires > new Date());
-});
-
-test('password reset is single-use, expires, and signs out every session', async () => {
+test('email password reset is disabled: both endpoints answer 410 and never touch an account', async () => {
   const user = await ctx.createUser();
   const web = await ctx.loginWeb(user);
+  const known = await ctx.request('POST', '/auth/forgot-password', { body: { email: user.email } });
+  const unknown = await ctx.request('POST', '/auth/forgot-password', { body: { email: 'ghost@test.edu' } });
+  assert.equal(known.status, 410);
+  assert.deepEqual(known.body, unknown.body, 'no account enumeration');
+  assert.match(known.body.message, /Contact your Class In-Charge or Admin/);
+  await sleep(300);
+  const stored = await ctx.models.User.findById(user._id).select('+resetTokenHash +resetTokenExpires');
+  assert.equal(stored.resetTokenHash, undefined, 'no reset token is issued');
+
+  // A token planted the old way cannot be redeemed either.
   const token = crypto.randomBytes(32).toString('base64url');
   const hash = crypto.createHash('sha256').update(token).digest('hex');
   await ctx.models.User.updateOne({ _id: user._id }, { resetTokenHash: hash, resetTokenExpires: new Date(Date.now() + 60000) });
-
-  const weak = await ctx.request('POST', '/auth/reset-password', { body: { token, password: 'short' } });
-  assert.equal(weak.status, 422);
-
-  const ok = await ctx.request('POST', '/auth/reset-password', { body: { token, password: 'BrandNew123' } });
-  assert.equal(ok.status, 200);
-  assert.equal((await ctx.request('POST', '/auth/reset-password', { body: { token, password: 'Another123' } })).status, 400, 'token is single-use');
-  assert.equal((await ctx.request('GET', '/auth/me', { token: web.token })).status, 401, 'old sessions revoked');
+  const reset = await ctx.request('POST', '/auth/reset-password', { body: { token, password: 'BrandNew123' } });
+  assert.equal(reset.status, 410);
+  assert.equal((await ctx.request('GET', '/auth/me', { token: web.token })).status, 200, 'sessions untouched');
   const login = await ctx.request('POST', '/auth/login', { body: { email: user.email, password: 'BrandNew123' } });
-  assert.equal(login.status, 200);
-
-  // Expired token.
-  const t2 = crypto.randomBytes(32).toString('base64url');
-  await ctx.models.User.updateOne(
-    { _id: user._id },
-    { resetTokenHash: crypto.createHash('sha256').update(t2).digest('hex'), resetTokenExpires: new Date(Date.now() - 1000) }
-  );
-  assert.equal((await ctx.request('POST', '/auth/reset-password', { body: { token: t2, password: 'Another123' } })).status, 400);
+  assert.equal(login.status, 401, 'password unchanged');
 });
 
 test('change password keeps this device and signs out the others', async () => {

@@ -49,7 +49,11 @@ export default function People() {
         icon={GraduationCap}
         title="People"
         subtitle={
-          config?.scope === 'assignment'
+          config?.scope === 'class'
+            ? config.class
+              ? `Your class — ${config.class.department} · ${YEAR_LABELS[config.class.year] || `Year ${config.class.year}`} · Section ${config.class.section}: classmates and faculty.`
+              : 'Your class details are not set yet. Ask your administrator.'
+            : config?.scope === 'assignment'
             ? 'The students of the classes you teach.'
             : config?.scope === 'department'
               ? `${config.department} — students and faculty of your department.`
@@ -97,7 +101,7 @@ export default function People() {
 
           {can.has('role') && (
             <select aria-label="Role" value={role} onChange={reset(setRole)} className={selectClass}>
-              <option value="">All roles</option>
+              <option value="">{config?.scope === 'class' ? 'Students & faculty' : 'All roles'}</option>
               {(config.roles || Object.keys(ROLE_LABELS)).map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r] || r}

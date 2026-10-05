@@ -384,8 +384,22 @@ test('providers: test provider stores in memory only; college SMS provider is a 
     'Dear Parent, Rahul Kumar has requested a gate pass. For confirmation, your OTP is 0427. This OTP is valid for 10 minutes. Do not share this OTP with anyone except the authorized college faculty.'
   );
 
+  // SMS is off by default: even with the college provider configured, nothing is sent.
+  const quiet = await newPass();
+  env.otp.provider = 'college_sms';
+  try {
+    assert.equal(env.otp.smsEnabled, false, 'OTP_SMS_ENABLED defaults to off');
+    const res = await sendOtp(quiet);
+    assert.equal(res.status, 200);
+    assert.equal((await latestOtp(quiet)).provider, 'test');
+  } finally {
+    env.otp.provider = 'test';
+  }
+
+  // With SMS switched on, the college provider is used (and refuses until it is connected).
   const id = await newPass();
   env.otp.provider = 'college_sms';
+  env.otp.smsEnabled = true;
   try {
     const res = await sendOtp(id);
     assert.equal(res.status, 503);
@@ -393,5 +407,6 @@ test('providers: test provider stores in memory only; college SMS provider is a 
     assert.equal((await latestOtp(id)).provider, 'college_sms');
   } finally {
     env.otp.provider = 'test';
+    env.otp.smsEnabled = false;
   }
 });

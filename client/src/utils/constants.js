@@ -19,8 +19,8 @@ export const COLLEGE_WIDE = ['admin', 'principal', 'chairman', 'dean', 'ao'];
 export const ATTENDANCE_VIEW = ['faculty', 'hod', ...COLLEGE_WIDE];
 /** In Attendance, these roles read but never mark or review. */
 export const ATTENDANCE_READ_ONLY = COLLEGE_WIDE.filter((r) => r !== 'admin');
-/** Can browse the People directory (students get single profiles only). */
-export const PEOPLE_DIRECTORY = ['faculty', 'hod', ...COLLEGE_WIDE];
+/** Can browse the People directory (students: their own class — classmates and class faculty). */
+export const PEOPLE_DIRECTORY = ['student', 'club_admin', 'faculty', 'hod', ...COLLEGE_WIDE];
 /** Sees the daily college / department attendance summary. */
 export const SUMMARY_VIEW = ['hod', ...COLLEGE_WIDE];
 /** The gate pass approval chain, in order. */

@@ -5,6 +5,7 @@ import Activity from '../models/Activity.js';
 import { EMERGENCY_AUTHORITIES, GATE_PASS_PENDING_STATUSES } from '../constants.js';
 import { ApiError, asyncHandler, paginate, pageMeta, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
+import { logSecurity } from '../utils/securityLog.js';
 import { notifyUsers } from '../utils/notify.js';
 import { sameId } from '../utils/permissions.js';
 import { emitToRoles, emitToUsers } from '../config/socket.js';
@@ -28,6 +29,16 @@ const STUDENT_FIELDS = 'name email rollNo avatar department year section semeste
 const REVIEWER_FIELDS = 'name role';
 
 const isAdmin = (user) => user.role === 'admin';
+
+/** Security & Logs record for a gate pass; the target is always the pass holder. */
+const passSecurity = (req, event, pass, extra = {}) =>
+  logSecurity(req, event, {
+    target: pass?.student?._id ? { _id: pass.student._id, role: pass.student.role || 'student' } : pass?.student ? { _id: pass.student, role: 'student' } : undefined,
+    entityType: 'gate_pass',
+    entityId: pass?._id,
+    ...extra,
+    details: { passRef: pass?._id ? `GP-${String(pass._id).slice(-6).toUpperCase()}` : undefined, ...(extra.details || {}) },
+  });
 // The faculty stage: waiting for the parent OTP, then ready to forward to the HOD.
 const FACULTY_STAGE = ['pending_faculty', 'parent_verified'];
 
@@ -341,6 +352,10 @@ async function reviewStage(req, res, { stage, from, forwardFrom = from, forwardB
   if (!updated) throw new ApiError(422, 'This pass was just reviewed by someone else');
 
   logActivity(req, `gate_pass.${stage}_${forwarding ? (approving ? 'approve' : 'forward') : 'reject'}`, { entityType: 'gate_pass', entityId: pass._id });
+  passSecurity(req, forwarding ? 'GATE_PASS_APPROVED' : 'GATE_PASS_REJECTED', pass, {
+    reason: forwarding ? undefined : reason || undefined,
+    details: { stage, final: approving || !forwarding },
+  });
   if (approving) logActivity(req, 'gate_pass.code_issued', { entityType: 'gate_pass', entityId: pass._id });
 
   if (approving) {
@@ -494,6 +509,12 @@ async function loadForParentOtp(req) {
 const otpAudit = (req, pass, event, summary) =>
   logActivity(req, `gate_pass.otp_${event}`, { entityType: 'gate_pass', entityId: pass._id, summary });
 
+// OTP lifecycle in Security & Logs. The code itself is never recorded — it is
+// shown only in the admin OTP dashboard.
+const OTP_FAILURE_EVENTS = { expired: 'OTP_EXPIRED', locked: 'OTP_LOCKED', failed: 'OTP_FAILED' };
+const otpSecurity = (req, pass, event, extra = {}) =>
+  passSecurity(req, event, pass, { ...extra, success: extra.success ?? !['OTP_FAILED', 'OTP_EXPIRED', 'OTP_LOCKED'].includes(event) });
+
 export const getParentOtp = asyncHandler(async (req, res) => {
   const pass = await loadForParentOtp(req);
   res.set('Cache-Control', 'no-store');
@@ -503,10 +524,26 @@ export const getParentOtp = asyncHandler(async (req, res) => {
 export const requestParentOtp = asyncHandler(async (req, res) => {
   const pass = await loadForParentOtp(req);
   if (pass.status !== 'pending_faculty') throw new ApiError(422, 'This request is not waiting for parent verification');
-  const state = await otpService.requestOtp({ pass, studentName: pass.student?.name || 'Your ward', faculty: req.user });
+  let otpState;
+  try {
+    otpState = await otpService.requestOtp({ pass, studentName: pass.student?.name || 'Your ward', faculty: req.user });
+  } catch (err) {
+    if (err.otpEvent) otpSecurity(req, pass, 'OTP_FAILED', { reason: err.otpReason, details: { otpId: err.otpId } });
+    throw err;
+  }
+  const { otpId, smsSent, ...state } = otpState;
   otpAudit(req, pass, state.resent ? 'resent' : 'requested', `OTP sent to ${state.maskedMobile}`);
+  const otpDetails = { otpId, parentMobile: state.maskedMobile, smsEnabled: smsSent };
+  otpSecurity(req, pass, 'OTP_CREATED', { details: otpDetails });
+  if (state.resent) otpSecurity(req, pass, 'OTP_RESEND', { details: otpDetails });
+  if (smsSent) otpSecurity(req, pass, 'OTP_SENT', { details: otpDetails });
   res.set('Cache-Control', 'no-store');
-  res.json({ message: 'OTP sent to the registered parent mobile number', passStatus: pass.status, ...state, parentMobile: pass.parentPhone });
+  res.json({
+    message: smsSent ? 'OTP sent to the registered parent mobile number' : 'OTP generated for the registered parent mobile number',
+    passStatus: pass.status,
+    ...state,
+    parentMobile: pass.parentPhone,
+  });
 });
 
 export const verifyParentOtp = asyncHandler(async (req, res) => {
@@ -515,10 +552,14 @@ export const verifyParentOtp = asyncHandler(async (req, res) => {
   try {
     await otpService.verifyOtp({ gatePassId: pass._id, otp: req.body.otp });
   } catch (err) {
-    if (err.otpEvent) otpAudit(req, pass, err.otpEvent === 'expired' ? 'expired' : 'verify_failed', err.otpEvent);
+    if (err.otpEvent) {
+      otpAudit(req, pass, err.otpEvent === 'expired' ? 'expired' : 'verify_failed', err.otpEvent);
+      otpSecurity(req, pass, OTP_FAILURE_EVENTS[err.otpEvent] || 'OTP_FAILED', { reason: err.otpReason || err.otpEvent });
+    }
     throw err;
   }
   otpAudit(req, pass, 'verified');
+  otpSecurity(req, pass, 'OTP_VERIFIED');
 
   const updated = await GatePass.findOneAndUpdate(
     { _id: pass._id, status: 'pending_faculty' },
@@ -563,6 +604,7 @@ export const cancelGatePass = asyncHandler(async (req, res) => {
     throw new ApiError(422, `A ${exists.status.replace('pending_', '')} pass cannot be cancelled`);
   }
   logActivity(req, 'gate_pass.cancel', { entityType: 'gate_pass', entityId: pass._id });
+  passSecurity(req, 'GATE_PASS_CANCELLED', pass, { reason: 'cancelled_by_student' });
   publish(pass);
   res.json(withFlags(pass));
 });
@@ -600,6 +642,7 @@ export const verifyGatePass = asyncHandler(async (req, res) => {
   const pass = await GatePass.findOne({ verificationCode: code }).populate('student', STUDENT_FIELDS);
   if (!pass) {
     logActivity(req, 'gate_pass.verify_failed', { summary: 'Unknown code' });
+    logSecurity(req, 'GATE_PASS_VERIFICATION_FAILED', { success: false, reason: 'unknown_code', entityType: 'gate_pass' });
     throw new ApiError(404, 'Invalid or already-used verification code');
   }
 
@@ -609,6 +652,8 @@ export const verifyGatePass = asyncHandler(async (req, res) => {
   logActivity(req, 'gate_pass.verify', { entityType: 'gate_pass', entityId: pass._id });
 
   const problems = problemsFor(pass);
+  if (problems.length) passSecurity(req, 'GATE_PASS_VERIFICATION_FAILED', pass, { success: false, reason: problems[0] });
+  else passSecurity(req, 'GATE_PASS_QR_VERIFIED', pass, { details: { direction: 'out' } });
   // The exit code only lets a student out. Coming back needs the return
   // credential the student gets after the location check.
   const nextAction = problems.length ? null : pass.status === 'approved' ? 'out' : null;
@@ -642,6 +687,7 @@ export const recordOut = asyncHandler(async (req, res) => {
   if (!updated) throw new ApiError(409, 'Exit has already been recorded');
 
   logActivity(req, 'gate_pass.out', { entityType: 'gate_pass', entityId: pass._id });
+  passSecurity(req, 'GATE_PASS_EXIT_CONFIRMED', updated);
   logActivity(req, 'gate_pass.code_consumed', { entityType: 'gate_pass', entityId: pass._id });
   notifyUsers([pass.student], { type: 'gate_pass', title: 'Exit recorded', message: 'Have a safe trip. Remember to check in when you return.', link: `/gate-pass/${pass._id}` }, { push: false });
   publish(updated);
@@ -670,10 +716,12 @@ export const recordIn = asyncHandler(async (req, res) => {
     if (pass.status === 'completed') throw new ApiError(409, 'This student’s return has already been recorded');
     if (pass.status !== 'active') throw new ApiError(422, 'The student has not exited on this pass');
     logActivity(req, 'gate_pass.return_failed', { entityType: 'gate_pass', entityId: pass._id, summary: 'Invalid or expired return credential' });
+    passSecurity(req, 'GATE_PASS_VERIFICATION_FAILED', pass, { success: false, reason: 'invalid_or_expired_return_credential' });
     throw new ApiError(422, 'Invalid or expired return code — ask the student to verify their location again');
   }
 
   logActivity(req, 'gate_pass.in', { entityType: 'gate_pass', entityId: updated._id });
+  passSecurity(req, 'GATE_PASS_RETURN_CONFIRMED', updated);
   publish(updated);
   const notified = await returnSvc.notifyReturned({ pass: updated, student: updated.student, returnedAt: now });
   logActivity(req, notified.parentSent ? 'gate_pass.parent_return_notified' : 'gate_pass.parent_return_notice_failed', { entityType: 'gate_pass', entityId: updated._id });
@@ -749,14 +797,17 @@ export const verifyReturnCredential = asyncHandler(async (req, res) => {
   const pass = await GatePass.findOne(credential).populate('student', STUDENT_FIELDS);
   if (!pass) {
     logActivity(req, 'gate_pass.return_verify_failed', { summary: 'Unknown return credential' });
+    logSecurity(req, 'GATE_PASS_VERIFICATION_FAILED', { success: false, reason: 'unknown_return_credential', entityType: 'gate_pass' });
     throw new ApiError(404, 'Invalid or already-used return code');
   }
   if (pass.status !== 'active' || !pass.actualExit) throw new ApiError(422, 'This pass is not waiting for a return');
   if (pass.returnCredentialExpiresAt <= new Date()) {
     logActivity(req, 'gate_pass.return_verify_failed', { entityType: 'gate_pass', entityId: pass._id, summary: 'Expired return credential' });
+    passSecurity(req, 'GATE_PASS_VERIFICATION_FAILED', pass, { success: false, reason: 'expired_return_credential' });
     throw new ApiError(410, 'This return code has expired — ask the student to verify their location again');
   }
   logActivity(req, 'gate_pass.return_verify', { entityType: 'gate_pass', entityId: pass._id });
+  passSecurity(req, 'GATE_PASS_QR_VERIFIED', pass, { details: { direction: 'in' } });
   res.json({
     valid: true,
     nextAction: 'inside',
@@ -784,6 +835,7 @@ export const revokeGatePass = asyncHandler(async (req, res) => {
   }
 
   logActivity(req, 'gate_pass.revoke', { entityType: 'gate_pass', entityId: updated._id });
+  passSecurity(req, 'GATE_PASS_REVOKED', updated, { reason: updated.revokeReason || undefined });
   notifyUsers([updated.student], {
     type: 'gate_pass',
     title: 'Gate pass revoked',

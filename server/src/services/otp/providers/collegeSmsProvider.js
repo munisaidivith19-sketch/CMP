@@ -26,6 +26,8 @@ export const isCollegeSmsConfigured = () => Boolean(env.sms.apiKey && env.sms.se
 export const collegeSmsProvider = {
   name: 'college_sms',
   devPortal: false,
+  // A real sender: OTP_SENT is recorded when it accepts a message.
+  delivers: true,
 
   async sendOtp() {
     if (!isCollegeSmsConfigured()) {

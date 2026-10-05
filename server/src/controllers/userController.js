@@ -4,7 +4,7 @@ import Discussion from '../models/Discussion.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../utils/http.js';
 import { persistFile } from '../utils/storage.js';
 import { logActivity } from '../utils/activity.js';
-import { canViewProfile, peopleScopeFilter } from '../utils/peopleScope.js';
+import { canViewProfile, peopleScopeFilter, studentClass } from '../utils/peopleScope.js';
 import { chatContactFilter } from '../utils/chatScope.js';
 import { ownDepartment, STUDENT_ROLES } from '../utils/academicScope.js';
 import { ACADEMIC_YEARS, COLLEGE_WIDE_ROLES, DEPARTMENTS } from '../constants.js';
@@ -66,6 +66,11 @@ export const listUsers = asyncHandler(async (req, res) => {
  */
 export const peopleFilters = asyncHandler(async (req, res) => {
   const { role } = req.user;
+
+  // Students: their own class only — search plus a Students / Faculty switch.
+  if (STUDENT_ROLES.includes(role)) {
+    return res.json({ scope: 'class', class: studentClass(req.user), filters: ['search', 'role'], roles: ['student', 'faculty'] });
+  }
 
   if (role === 'faculty') {
     return res.json({ scope: 'assignment', department: req.user.department || null, filters: ['search'] });

@@ -218,3 +218,22 @@ test('F10: public self-registration is disabled — accounts come from the admin
   assert.equal(res.status, 403);
   assert.equal(await ctx.models.User.exists({ email: 'intruder@jnn.edu.in' }), null);
 });
+
+// ── F-phone: phone numbers accepted free text (incl. markup) ───────
+
+test('phone numbers must be digits/+/spaces/dashes/brackets on self-service and admin edits', async () => {
+  for (const phone of ['<script>x</script>', 'call me', '98400{$gt}']) {
+    const res = await req('PUT', '/users/me', stuA, { phone });
+    assert.equal(res.status, 422, `self ${phone}`);
+    const adm = await req('PATCH', `/admin/users/${stuA.u._id}`, admin, { parentPhone: phone });
+    assert.equal(adm.status, 422, `admin parentPhone ${phone}`);
+  }
+  const stu = await ctx.models.User.findById(stuA.u._id).lean();
+  assert.equal(stu.parentPhone, '9000000001');
+
+  // Real formats (and clearing the field) still work.
+  for (const phone of ['+91 98400 12345', '(044) 2345-6789', '']) {
+    const res = await req('PUT', '/users/me', stuA, { phone });
+    assert.equal(res.status, 200, `self ${phone}: ${JSON.stringify(res.body)}`);
+  }
+});

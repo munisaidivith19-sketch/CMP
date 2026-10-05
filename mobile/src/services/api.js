@@ -19,7 +19,7 @@ const rawBaseQuery = (args, api, extra) =>
     },
   })(args, api, extra);
 
-const NO_RETRY = ['/auth/login', '/auth/refresh', '/auth/logout', '/auth/forgot-password', '/auth/reset-password'];
+const NO_RETRY = ['/auth/login', '/auth/refresh', '/auth/logout'];
 
 /** Same behaviour as the web client: on 401, refresh once and replay. */
 const authedQuery = async (args, api, extra) => {
@@ -62,7 +62,6 @@ export const api = createApi({
   endpoints: (b) => ({
     // ── Auth / account ────────────────────────────────
     login: b.mutation({ query: (body) => ({ url: '/auth/login', method: 'POST', body }) }),
-    forgotPassword: b.mutation({ query: (body) => ({ url: '/auth/forgot-password', method: 'POST', body }) }),
     changePassword: b.mutation({ query: (body) => ({ url: '/auth/change-password', method: 'POST', body }), invalidatesTags: ['Session'] }),
     getMe: b.query({ query: () => '/auth/me', providesTags: ['Me'] }),
     getSessions: b.query({ query: () => '/auth/sessions', providesTags: ['Session'] }),
@@ -493,7 +492,6 @@ export const api = createApi({
 export const {
   useGetHolidaysQuery,
   useLoginMutation,
-  useForgotPasswordMutation,
   useChangePasswordMutation,
   useGetMeQuery,
   useGetSessionsQuery,

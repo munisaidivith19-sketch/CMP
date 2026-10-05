@@ -75,7 +75,7 @@ Open **http://localhost:5173**.
 | Club admin | clubadmin@campus.edu |
 | Student | student@campus.edu |
 
-The login page has one-click buttons that fill in each demo account.
+The login page no longer has demo-account shortcuts or student self-sign-up: type the credentials above (seed data only), or have an admin create the account.
 
 ### Production / single-server mode
 ```bash
@@ -221,9 +221,19 @@ All routes are prefixed with `/api`. Every route except register, login, refresh
 | **Digital gate pass**: request, cancel, approve/reject, owner-only QR (opaque 60-bit code, no student data), verify → exit → return (single use), expiry sweep, revoke, overdue tracking | `/gate-pass` | Gate pass (request + QR) | `/api/gate-pass/*` |
 | **Lost & found**: report with photo, search/filters, possible-match suggestions (never an ownership claim), staff linking/handover, owner close/withdraw | `/lost-found` | Lost & found | `/api/lost-found/*` |
 | **Advanced analytics** (day/week/month/semester/custom): student, faculty classes, department/section, college, club, gate | `/analytics`, club “Insights” tab | Home tiles | `/api/analytics/*` |
-| **Account security**: forgot/reset password, change password, per-device sessions, sign out one/other devices, login history (incl. failures), new-device alerts | `/forgot-password`, `/reset-password`, `/settings/security` | Login, forgot password, Security | `/api/auth/*` |
+| **Student achievements**: Principal/HOD post achievements for students (HOD: own department only), with images, featured posts, congratulations, student hide-requests, soft-delete + admin restore, stats and PDF export; read-only for everyone except warden/security | `/achievements`, dashboard, profile | – | `/api/achievements/*` |
+| **Account security**: change password, authorized password reset by the Class In-Charge (own students) or Admin, per-device sessions, sign out one/other devices, login history (incl. failures), new-device alerts | `/settings/security`, `/class/students`, `/admin/users` | Login, Security | `/api/auth/*`, `/api/users/:id/reset-password` |
 
 Students are placed in a class by an admin (**User management → click the department cell** to set department, year, section, semester, roll no). Subjects and timetables are managed at **Administration → Academics**.
+
+### Web idle-session timeout
+Web sessions end after **2 minutes without user activity** (pointer, key, scroll, touch). The browser reports activity to `POST /api/auth/activity` at most every 30 s; the **server is the authority** (the same check runs in the REST middleware, the Socket.IO handshake and the refresh endpoint, and a 30 s sweep disconnects idle sockets). Ordinary API calls, polling and token refresh never extend a session. Logging out or timing out in one tab signs out every tab (`client/src/services/sessionSync.js`). Chairman, security, admin and principal web sessions, and all mobile sessions, keep the previous 7-day idle rule. The rule lives in `server/src/utils/sessionIdle.js`.
+
+### Security hardening notes
+- User-supplied links shown as `<a href>` must pass `assertHttpUrl` (`server/src/utils/http.js`): only absolute `http(s)` URLs, so `javascript:` / `data:` links are rejected.
+- Stored-file lookups accept only a generated bare name (`uuid.ext`), which blocks path traversal.
+- Gate pass: the registered parent number is always used; a client-supplied `parentPhone` is ignored.
+- `/api/attendance/corrections` is limited to students (own records) and attendance staff.
 
 ### Development data
 `npm run seed` now also loads **clearly-separated demo academic data** (`server/src/seed/academic.js`): sections for the demo students, six CSE-A classmates, five CSE semester-5 subjects, a weekly timetable and four weeks of attendance. To add it to an existing database without wiping anything:
@@ -236,8 +246,10 @@ REST does all reads/writes; Socket.io only pushes “something changed” signal
 `client → REST → auth/validation → MongoDB → Socket.io event → authorised clients`.
 Sockets authenticate with the access token **and a live session**; chat rooms are joined only after a MongoDB membership check; revoking a session disconnects its sockets. Broadcast events for public data (`announcement:changed`, `event:changed`, …) carry only an id, so every client re-reads through REST with its own permissions.
 
-### Password-reset email
-Set `SMTP_*` and `APP_URL` in `server/.env` (see `.env.example`). Without `SMTP_HOST` the request is still accepted (same response, no account enumeration) but no mail can be sent — the server logs a warning, never the token. Reset links are single-use, expire after 15 minutes and put the token in the URL fragment so it never reaches server logs.
+### Password reset and Security & Logs
+Email password reset is retired (`/api/auth/forgot-password` and `/api/auth/reset-password` answer `410`). A forgotten password is reset without the old one by the student's **Class In-Charge** (own class only — department, year, section and semester from their account) or an **Admin** (any non-admin account) via `POST /api/users/:id/reset-password`; the user is then signed out on every device. A Class In-Charge also creates student logins for their own class at **Students** (`/class/students`).
+
+**Admin → Security & Logs** (`/admin/security`, Admin only on the server) records authentication, session, password, user-management, scope, OTP and gate-pass security events (append-only; never passwords, hashes, tokens or OTP values), with a separate **OTP** tab showing every generated parent OTP as its own card. SMS is off by default (`OTP_SMS_ENABLED=false`): OTPs are generated, stored (hashed for verification, server-encrypted for the admin view) and verified normally but not sent. To enable SMS later set `OTP_SMS_ENABLED=true`, `OTP_PROVIDER=college_sms` and the `SMS_*` secrets, and connect the vendor API in `server/src/services/otp/providers/collegeSmsProvider.js`; OTPs only ever go to the student's registered parent mobile from the database.
 
 ### Android app (`mobile/`, React Native + Expo SDK 57)
 Uses the **same backend, database, roles and Socket.io server** as the web app. The refresh token is stored in the device’s encrypted SecureStore and sent in the request body (`X-Client-Platform: mobile`); everything else is identical to the web client.
@@ -277,6 +289,7 @@ Reliability on mobile networks: every request has a 20 s timeout, reads retry au
 
 ### Tests
 ```bash
-npm test --prefix server                     # 43 integration tests (uses the separate cmp_test database)
+npm test --prefix server                     # integration + security tests (346 at last run; uses the separate cmp_test database)
+npm test --prefix client                     # client unit tests (idle-session tracker)
 node server/scripts/realtime-smoke.mjs       # against a RUNNING server: web ↔ Android chat round-trip
 ```

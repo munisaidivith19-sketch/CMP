@@ -107,26 +107,29 @@ env.ai = {
 };
 
 /**
- * Parent OTP for gate passes. "test" keeps OTPs in server memory for the
- * development OTP portal; "college_sms" is the future college SMS vendor.
+ * Parent OTP for gate passes.
+ *
+ * OTP_SMS_ENABLED (default false) is the switch for sending OTPs by SMS. While
+ * it is off, OTPs are still generated, stored and verified normally, and are
+ * shown to admins only in Admin → Security & Logs → OTP — nothing is sent.
+ * To go live: set OTP_SMS_ENABLED=true, OTP_PROVIDER=college_sms and the
+ * SMS_* credentials below (server-side only), once the vendor adapter in
+ * services/otp/providers/collegeSmsProvider.js is connected.
  */
 env.otp = {
-  provider: (process.env.OTP_PROVIDER || 'test').trim().toLowerCase(),
+  smsEnabled: process.env.OTP_SMS_ENABLED === 'true',
+  provider: (process.env.OTP_PROVIDER || 'college_sms').trim().toLowerCase(),
   expiryMinutes: num('OTP_EXPIRY_MINUTES', 10, { max: 60 }),
   length: num('OTP_LENGTH', 4, { min: 4, max: 8 }),
   maxAttempts: num('OTP_MAX_ATTEMPTS', 5, { max: 10 }),
   resendCooldownSeconds: num('OTP_RESEND_COOLDOWN_SECONDS', 60, { min: 0, max: 600 }),
-  // The admin-only development OTP portal is always on outside production. In
-  // production it stays off unless DEV_OTP_PORTAL=true — a deliberate, temporary
-  // opt-in for deployments that have no SMS provider yet.
+  // The older admin-only development OTP portal (/dev/otp) is on outside
+  // production. In production it stays off unless DEV_OTP_PORTAL=true. The
+  // Admin → Security & Logs → OTP dashboard replaces it and is always available.
   devPortalInProduction: process.env.DEV_OTP_PORTAL === 'true',
 };
-if (isProd && env.otp.provider === 'test') {
-  console.warn(
-    env.otp.devPortalInProduction
-      ? '[env] OTP_PROVIDER=test + DEV_OTP_PORTAL=true in production: parent OTPs are shown to admins at /dev/otp instead of being sent by SMS. Turn this off once the college SMS provider is connected.'
-      : '[env] OTP_PROVIDER=test in production: parent OTPs are not delivered and the development OTP portal is disabled (set DEV_OTP_PORTAL=true to enable it for admins)'
-  );
+if (isProd && !env.otp.smsEnabled) {
+  console.warn('[env] OTP_SMS_ENABLED is off: parent OTPs are not sent by SMS — admins read them in Security & Logs → OTP.');
 }
 env.sms = {
   apiKey: (process.env.SMS_API_KEY || '').trim(),

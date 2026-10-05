@@ -13,6 +13,15 @@ import { ROLES, yearOfSemester } from '../constants.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
 import { pick } from '../utils/http.js';
+import { logSecurity } from '../utils/securityLog.js';
+
+// Security-relevant snapshots of an account, for before/after audit records.
+const SCOPE_KEYS = ['department', 'year', 'section', 'semester'];
+const IN_CHARGE_KEYS = ['department', 'section', 'inChargeYear', 'inChargeSemester'];
+const snapshot = (user, keys) => Object.fromEntries(keys.map((k) => [k, user[k] ?? null]));
+const differs = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
+// Never named in a USER_UPDATED record, even as a field name.
+const UNLISTED_PATHS = new Set(['password', 'tokenVersion', 'failedLogins', 'lockUntil', 'lastFailedLoginAt', 'lockoutCount', 'resetTokenHash', 'resetTokenExpires', 'pushTokens', 'updatedAt']);
 
 /** Last `n` months as 'YYYY-MM' keys, oldest first. */
 function monthKeys(n) {
@@ -237,6 +246,12 @@ export const createUser = asyncHandler(async (req, res) => {
   const user = await User.create({ name: req.body.name, email, password: req.body.password, role, ...data });
 
   logActivity(req, 'admin.user_create', { entityType: 'user', entityId: user._id, summary: `${role}: ${user.email}` });
+  logSecurity(req, 'USER_CREATED', {
+    target: user,
+    entityType: 'user',
+    entityId: user._id,
+    details: { role, ...snapshot(user, ['department', 'year', 'section', 'semester']), via: 'admin' },
+  });
   notifyUsers([user._id], {
     type: 'system',
     title: 'Your Vexon account is ready',
@@ -255,6 +270,17 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   const { role, isActive, unlock, unlockAccount } = req.body;
   const changes = [];
+  const before = { role: user.role, isActive: user.isActive, scope: snapshot(user, SCOPE_KEYS), inCharge: snapshot(user, IN_CHARGE_KEYS) };
+
+  // Name and login email (the username). Email stays unique college-wide.
+  if (req.body.name !== undefined && String(req.body.name).trim() !== user.name) user.name = String(req.body.name).trim();
+  if (req.body.email !== undefined) {
+    const email = String(req.body.email).toLowerCase().trim();
+    if (email !== user.email) {
+      if (await User.exists({ email, _id: { $ne: user._id } })) throw new ApiError(409, 'An account with this email already exists');
+      user.email = email;
+    }
+  }
 
   // Manual admin unlock override
   if (unlock || unlockAccount) {
@@ -320,12 +346,28 @@ export const updateUser = asyncHandler(async (req, res) => {
   }
   // Any privilege change forces re-authentication on every device, immediately.
   if (changes.length) user.tokenVersion = (user.tokenVersion || 0) + 1;
+  const changedFields = user.modifiedPaths().filter((p) => !p.includes('.') && !UNLISTED_PATHS.has(p));
   await user.save({ validateModifiedOnly: true });
+  let forced = 0;
   if (changes.length) {
     const live = await Session.find({ user: user._id, revokedAt: null }).distinct('_id');
     await Session.updateMany({ _id: { $in: live } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_change' } });
     disconnectSessions(live);
+    forced = live.length;
   }
+
+  // Security & Logs: one record per kind of change, then the overall update.
+  const sec = { target: user, entityType: 'user', entityId: user._id };
+  if (before.role !== user.role) logSecurity(req, 'ROLE_CHANGED', { ...sec, details: { previousRole: before.role, newRole: user.role } });
+  if (before.isActive !== user.isActive) logSecurity(req, user.isActive ? 'USER_ENABLED' : 'USER_DISABLED', sec);
+  const scope = snapshot(user, SCOPE_KEYS);
+  if (differs(before.scope, scope)) logSecurity(req, 'ACADEMIC_SCOPE_CHANGED', { ...sec, details: { previous: before.scope, new: scope } });
+  const inCharge = snapshot(user, IN_CHARGE_KEYS);
+  if ((before.role === 'faculty' || user.role === 'faculty') && differs(before.inCharge, inCharge)) {
+    logSecurity(req, 'CLASS_IN_CHARGE_CHANGED', { ...sec, details: { previous: before.inCharge, new: inCharge } });
+  }
+  if (changedFields.length) logSecurity(req, 'USER_UPDATED', { ...sec, details: { fields: changedFields } });
+  if (forced) logSecurity(req, 'FORCED_LOGOUT', { ...sec, reason: 'admin_change', details: { sessions: forced } });
   if (academic.length) {
     logActivity(req, 'admin.user_academic', { entityType: 'user', entityId: user._id, summary: `${user.email}: ${academic.join(', ')}` });
     if (!changes.length) notifyUsers([user._id], { type: 'system', title: 'Your class details were updated', message: academic.join(', '), link: '/timetable' });
@@ -351,12 +393,14 @@ export const deleteUser = asyncHandler(async (req, res) => {
   if (live.length) {
     await Session.updateMany({ _id: { $in: live } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_delete' } });
     disconnectSessions(live);
+    logSecurity(req, 'FORCED_LOGOUT', { target: user, reason: 'admin_delete', details: { sessions: live.length } });
   }
 
   const { name, email, role } = user;
   await user.deleteOne();
 
   logActivity(req, 'admin.user_delete', { entityType: 'user', entityId: req.params.id, summary: `${role}: ${email} (${name})` });
+  logSecurity(req, 'USER_DELETED', { target: { _id: req.params.id, role }, entityType: 'user', entityId: req.params.id, details: { name, email } });
   res.status(204).end();
 });
 

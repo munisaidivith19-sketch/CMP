@@ -61,15 +61,18 @@ after(async () => {
   await ctx.stop();
 });
 
-// ── Student: no directory access ───────────────────────────────────
+// ── Student: their own class only ──────────────────────────────────
 
-test('student cannot browse the directory, and can open only the profiles of people they may chat with', async () => {
+test('student browses only their own class (classmates + class faculty), and opens only the profiles of people they may chat with', async () => {
   const list = await ctx.request('GET', '/users', { token: stuC1.token });
-  assert.equal(list.status, 403);
+  assert.equal(list.status, 200);
+  const names = list.body.items.map((u) => u.name);
+  // Fac Other CSE teaches CSE-C year 3 semester 5 on the timetable.
+  assert.deepEqual(names, ['Fac Other CSE'], 'no other class, year, department or staff');
 
   const search = await ctx.request('GET', '/search?q=Stu&type=users', { token: stuC1.token });
   assert.equal(search.status, 200);
-  assert.deepEqual(search.body.users, []);
+  assert.ok(search.body.users.every((u) => !['Stu A1', 'Stu B1', 'Stu ECE1', 'Stu C Other Year'].includes(u.name)), 'search stays inside the class');
 
   // Profiles follow the chat scope: another class's student is not visible
   // (another section, or the same section letter in another year)...

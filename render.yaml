@@ -31,13 +31,16 @@ services:
       # Render adds a suffix — then update both of these to the actual URL and
       # redeploy. (comma-separate if you ever add more origins.)
       - key: CLIENT_URL
-        value: https://jnn-api.onrender.com
+        value: https://jnn.onrender.com
       - key: APP_URL
-        value: https://jnn-api.onrender.com
-      # TEMPORARY: no SMS provider is connected yet, so a parent OTP can't be sent.
-      # This shows the OTP to signed-in ADMINS only, at /dev/otp, so faculty can
-      # still complete parent verification. Delete this entry (and set
-      # OTP_PROVIDER=college_sms) once the college SMS API is connected.
+        value: https://jnn.onrender.com
+      # Parent OTP SMS is OFF until the college SMS API is connected: OTPs are
+      # generated and verified normally and shown to ADMINS only in
+      # Security & Logs → OTP. To go live set this to "true" with
+      # OTP_PROVIDER=college_sms and the SMS_* secrets.
+      - key: OTP_SMS_ENABLED
+        value: "false"
+      # Legacy admin-only /dev/otp page (superseded by Security & Logs → OTP).
       - key: DEV_OTP_PORTAL
         value: "true"
       # Auto-generated securely by Render — you never see or set these yourself.

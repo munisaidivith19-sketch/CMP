@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useDispatch } from 'react-redux';
 import toast from 'react-hot-toast';
-import { AlertTriangle, Clock, Eye, EyeOff, Lock, Mail, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Clock, Eye, EyeOff, KeyRound, Lock, Mail, ShieldAlert } from 'lucide-react';
 import AuthShell from './AuthShell';
 import { Button } from '../../components/ui/primitives';
 import { Input } from '../../components/ui/form';
@@ -11,6 +11,9 @@ import { useLoginMutation } from '../../services/api';
 import { setCredentials } from '../../features/authSlice';
 import { IDLE_LOGOUT_MESSAGE, clearLogoutReason, peekLogoutReason } from '../../services/sessionSync';
 import { errMsg } from '../../utils/format';
+
+// Passwords are reset by the Class In-Charge or an Admin — there is no email reset.
+const PASSWORD_HELP = 'Forgot your password? Contact your Class In-Charge or Admin to reset your password.';
 
 function formatCountdown(totalSecs) {
   if (totalSecs <= 0) return '00:00';
@@ -136,11 +139,7 @@ export default function Login() {
               <Clock className="h-6 w-6 animate-pulse" />
               <span>{formatCountdown(lockout.secondsLeft)}</span>
             </div>
-            <div className="mt-3 border-t border-rose-500/20 pt-2.5">
-              <Link to="/forgot-password" className="text-xs font-semibold text-primary-600 hover:underline dark:text-primary-300">
-                Need immediate access? Reset password →
-              </Link>
-            </div>
+            <p className="mt-3 border-t border-rose-500/20 pt-2.5 text-xs font-semibold text-ink-soft dark:text-ink-muted">{PASSWORD_HELP}</p>
           </div>
         )}
 
@@ -190,11 +189,10 @@ export default function Login() {
           </button>
         </div>
 
-        <div className="-mt-1 flex justify-end">
-          <Link to="/forgot-password" className="text-xs font-bold text-primary-600 hover:underline dark:text-primary-300">
-            Forgot password?
-          </Link>
-        </div>
+        <p className="-mt-1 flex items-start gap-1.5 text-xs font-medium text-ink-soft dark:text-ink-muted">
+          <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-500" aria-hidden />
+          <span>{PASSWORD_HELP}</span>
+        </p>
 
         <Button
           type="submit"

@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">JNN</string>
+
+    <color name="splashscreen_background">#EFF5FC</color>
+    <color name="iconBackground">#FFFFFF</color>
+    <color name="notification_icon_color">#CB0101</color>
+
+    <style name="Theme.Vexon" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/splashscreen_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="Theme.Vexon.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splashscreen_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splashscreen_logo</item>
+        <item name="postSplashScreenTheme">@style/Theme.Vexon</item>
+    </style>
+</resources>

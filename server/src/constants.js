@@ -19,9 +19,9 @@ export const ACADEMIC_READ_ONLY_ROLES = COLLEGE_WIDE_ROLES.filter((r) => r !== '
 export const ATTENDANCE_VIEW_ROLES = ['faculty', 'hod', ...COLLEGE_WIDE_ROLES];
 // Who sees the daily college/department headcount summary.
 export const ATTENDANCE_SUMMARY_ROLES = ['hod', ...COLLEGE_WIDE_ROLES];
-// Who can browse the People directory at all (students: no directory, only
-// single-profile lookups).
-export const PEOPLE_DIRECTORY_ROLES = ['faculty', 'hod', ...COLLEGE_WIDE_ROLES];
+// Who can browse the People directory at all. Students (and club admins) see
+// only their own class: classmates plus that class's faculty.
+export const PEOPLE_DIRECTORY_ROLES = ['student', 'club_admin', 'faculty', 'hod', ...COLLEGE_WIDE_ROLES];
 // Every role an admin can hand out credentials for from the admin panel.
 export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden'];
 // Roles with no department of their own (skip the "department required" rule).

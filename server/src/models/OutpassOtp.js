@@ -13,6 +13,8 @@ const outpassOtpSchema = new Schema(
     faculty: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     parentMobileMasked: { type: String, required: true },
     otpHash: { type: String, required: true, select: false },
+    // Server-encrypted copy for the admin-only OTP dashboard (never used to verify).
+    otpSealed: { type: String, select: false },
     expiresAt: { type: Date, required: true },
     attempts: { type: Number, default: 0 },
     maxAttempts: { type: Number, required: true },

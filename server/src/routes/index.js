@@ -57,6 +57,10 @@ import * as disc from '../controllers/discussionController.js';
 import * as reports from '../controllers/reportController.js';
 import * as notes from '../controllers/notificationController.js';
 import * as admin from '../controllers/adminController.js';
+import * as account from '../controllers/accountController.js';
+import * as security from '../controllers/securityController.js';
+import { SECURITY_EVENTS } from '../models/SecurityLog.js';
+import { OTP_STATUSES } from '../models/OutpassOtp.js';
 import * as chat from '../controllers/chatController.js';
 import * as attendance from '../controllers/attendanceController.js';
 import { REPORT_SCOPES, REPORT_TYPES } from '../services/attendanceReport.js';
@@ -113,6 +117,11 @@ const tagArray = (field) =>
     .isArray({ max: 25 })
     .withMessage(`${field} must be a list (max 25)`)
     .customSanitizer((arr) => arr.map((s) => String(s).trim().toLowerCase().slice(0, 40)).filter(Boolean));
+
+/** Phone numbers: digits with optional +, spaces, dashes and brackets — never free text. */
+const PHONE_CHARS = /^[0-9+\-\s()]*$/;
+const phoneRule = (chain, label = 'Phone number') =>
+  chain.trim().isLength({ max: 20 }).matches(PHONE_CHARS).withMessage(`${label} may contain only digits, +, spaces, - and brackets`);
 
 const isStudentRole = (_v, { req }) => STUDENT_ROLES.includes(req.body.role);
 const isFacultyRole = (_v, { req }) => req.body.role === 'faculty';
@@ -204,21 +213,10 @@ router.post(
 );
 router.post('/auth/refresh', auth.refresh);
 router.post('/auth/logout', auth.logout);
-router.post(
-  '/auth/forgot-password',
-  passwordResetLimiter,
-  body('email').trim().isEmail().withMessage('Enter a valid email').normalizeEmail({ gmail_remove_dots: false }),
-  validate,
-  auth.forgotPassword
-);
-router.post(
-  '/auth/reset-password',
-  passwordResetSubmitLimiter,
-  body('token').isString().isLength({ min: 20, max: 200 }).withMessage('This reset link is invalid or has expired'),
-  password('password'),
-  validate,
-  auth.resetPassword
-);
+// Email password reset is retired: both answer 410 with "contact your Class
+// In-Charge or Admin" and never touch an account (see authController).
+router.post('/auth/forgot-password', passwordResetLimiter, auth.forgotPassword);
+router.post('/auth/reset-password', passwordResetSubmitLimiter, auth.resetPassword);
 
 // Alumni public claim
 router.use('/auth/alumni-claim', alumniPublicRouter);
@@ -270,7 +268,7 @@ router.put(
   body('department').optional().trim().isLength({ max: 80 }),
   body('year').optional({ values: 'null' }).isInt({ min: 1, max: 6 }).toInt(),
   body('bio').optional().trim().isLength({ max: 500 }),
-  body('phone').optional().trim().isLength({ max: 20 }),
+  phoneRule(body('phone').optional()),
   tagArray('interests'),
   tagArray('skills'),
   tagArray('extracurriculars'),
@@ -583,7 +581,9 @@ router.post(
     .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
     .trim()
     .isLength({ min: 6, max: 20 })
-    .withMessage("Parent's mobile number is required"),
+    .withMessage("Parent's mobile number is required")
+    .matches(PHONE_CHARS)
+    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets"),
   // Faculty / HOD / Principal / Admin.
   body('employeeId')
     .if((_v, { req }) => STAFF_ROLES.includes(req.body.role))
@@ -598,7 +598,7 @@ router.post(
     .withMessage('Department is required'),
   // Staff "class in charge" section, optional.
   body('section').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' }).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
-  body('phone').optional({ values: 'falsy' }).trim().isLength({ max: 20 }),
+  phoneRule(body('phone').optional({ values: 'falsy' })),
   validate,
   admin.createUser
 );
@@ -606,6 +606,8 @@ router.patch(
   '/admin/users/:id',
   idParam('id'),
   authorize('admin'),
+  body('name').optional().isString().trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2–80 characters'),
+  body('email').optional().isString().trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
   body('role').optional().isIn(ROLES),
   body('isActive').optional().isBoolean(),
   body('department').optional({ values: 'null' }).trim().isLength({ max: 80 }),
@@ -617,13 +619,86 @@ router.patch(
   body('rollNo').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('employeeId').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('stayType').optional({ values: 'null' }).isIn(STAY_TYPES),
-  body('phone').optional({ values: 'null' }).trim().isLength({ max: 20 }),
-  body('parentPhone').optional({ values: 'null' }).trim().isLength({ max: 20 }),
+  phoneRule(body('phone').optional({ values: 'null' })),
+  phoneRule(body('parentPhone').optional({ values: 'null' }), "Parent's mobile number"),
   validate,
   admin.updateUser
 );
 router.delete('/admin/users/:id', idParam('id'), authorize('admin'), admin.deleteUser);
 router.get('/admin/activity', authorize('admin'), admin.listActivity);
+
+// ── Admin → Security & Logs (Admin only, read-only) ────────────────
+const securityRangeRules = [
+  query('range').optional().isIn(['today', 'yesterday', '7d', '30d', 'custom', 'all']).withMessage('Unknown date range'),
+  query('from').optional().isISO8601({ strict: true }).withMessage('Invalid "from" date'),
+  query('to').optional().isISO8601({ strict: true }).withMessage('Invalid "to" date'),
+];
+const securitySearch = query('q').optional().isString().trim().isLength({ max: 64 });
+router.get('/admin/security/summary', authorize('admin'), security.securitySummary);
+router.get(
+  '/admin/security/logs',
+  authorize('admin'),
+  securitySearch,
+  query('event').optional().isIn(SECURITY_EVENTS).withMessage('Unknown event'),
+  query('role').optional().isIn(ROLES).withMessage('Unknown role'),
+  query('success').optional().isIn(['true', 'false']),
+  query('client').optional().isIn(['web', 'mobile', 'system']),
+  ...securityRangeRules,
+  validate,
+  security.listSecurityLogs
+);
+router.get(
+  '/admin/security/otps',
+  authorize('admin'),
+  securitySearch,
+  query('department').optional().isIn(DEPARTMENTS).withMessage('Unknown department'),
+  query('year').optional().isIn(ACADEMIC_YEARS.map(String)).withMessage('Year must be 1–4'),
+  query('section').optional().trim().toUpperCase().isIn(SECTIONS).withMessage('Unknown section'),
+  query('status').optional().isIn(OTP_STATUSES).withMessage('Unknown status'),
+  ...securityRangeRules,
+  validate,
+  security.listOtps
+);
+
+// ── Class In-Charge: students of their own class ───────────────────
+// Faculty only; the class always comes from the faculty's own account and
+// the controller refuses any other department / year / section / semester.
+router.get('/class-students', authorize('faculty'), account.listClassStudents);
+router.post(
+  '/class-students',
+  authorize('faculty'),
+  writeLimiter,
+  body('name').isString().trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2–80 characters'),
+  body('email').isString().trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
+  password('password'),
+  body('rollNo').isString().trim().isLength({ min: 1, max: 30 }).withMessage('Roll number is required').toUpperCase(),
+  body('stayType').isIn(STAY_TYPES).withMessage('Select hosteler or day scholar'),
+  body('parentPhone')
+    .isString()
+    .trim()
+    .isLength({ min: 6, max: 20 })
+    .withMessage("Parent's mobile number is required")
+    .matches(PHONE_CHARS)
+    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets"),
+  phoneRule(body('phone').optional({ values: 'falsy' })),
+  validate,
+  account.createClassStudent
+);
+
+// ── Authorized password reset (no current password) ────────────────
+// Admin: any non-admin account. Faculty: students of their own Class
+// In-Charge class only. Enforced in the controller; other roles get 403.
+router.post(
+  '/users/:id/reset-password',
+  idParam('id'),
+  account.passwordResetRoles,
+  writeLimiter,
+  password('newPassword'),
+  body('confirmPassword').custom((v, { req }) => v === req.body.newPassword).withMessage('Passwords do not match'),
+  body('reason').optional({ values: 'falsy' }).isString().trim().isLength({ max: 200 }),
+  validate,
+  account.resetUserPassword
+);
 
 // ════════════════════════════════════════════════════════════════════
 //  NEW FEATURE ROUTES

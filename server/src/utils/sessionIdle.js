@@ -22,6 +22,7 @@
 import Session from '../models/Session.js';
 import { disconnectSessions } from '../config/socket.js';
 import { logActivity } from './activity.js';
+import { logSecurity } from './securityLog.js';
 
 export const WEB_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 // The activity endpoint writes at most once per this interval per session
@@ -63,6 +64,7 @@ export async function expireIdleSession(sessionId, userId, ip) {
   disconnectSessions([sessionId]);
   if (res.modifiedCount) {
     logActivity({ ip }, 'auth.idle_expired', { user: userId, entityType: 'session', entityId: sessionId, summary: 'web session idle > 2 min' });
+    logSecurity(ip ? { ip } : null, 'SESSION_EXPIRED', { actor: null, target: { _id: userId }, reason: 'idle_timeout_web', entityType: 'session', entityId: sessionId });
   }
 }
 

@@ -35,6 +35,7 @@ import { loggedOut, selectUser } from '../../features/authSlice';
 import { setSidebar } from '../../features/uiSlice';
 import { disconnectSocket } from '../../services/socket';
 import { PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
+import { displayName } from '../../utils/format';
 
 // Staff who can see the administrative nav section (Principal sees every staff screen).
 const STAFF_VIEW = [...STAFF, 'principal'];
@@ -203,7 +204,7 @@ export default function Sidebar() {
           <NavLink to="/profile" onClick={close} className="flex min-w-0 flex-1 items-center gap-3">
             <Avatar user={user} size="sm" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold">{user?.name}</p>
+              <p className="truncate text-sm font-bold">{displayName(user)}</p>
               <p className="truncate text-[11px] font-medium text-ink-soft dark:text-ink-muted">{ROLE_LABELS[user?.role]}</p>
             </div>
           </NavLink>

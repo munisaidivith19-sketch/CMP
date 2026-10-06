@@ -28,7 +28,7 @@ import { Avatar, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton,
 import { CategoryDonut, RoundedBars } from '../../components/charts';
 import { MiniStat, PercentBadge, PercentBars, PercentRing, PercentTrend, RangeFilter, StatusBadge, TrendArea, bucketLabel, rangeParams } from '../../components/insights';
 import { DEPARTMENTS } from '../../utils/constants';
-import { titleCase } from '../../utils/format';
+import { titleCase, displayName } from '../../utils/format';
 
 function Loading() {
   return (
@@ -162,7 +162,7 @@ function FacultyInsights({ params }) {
               <li key={`${b._id.student}-${b._id.subject}`} className="flex items-center gap-3 rounded-2xl bg-white/50 p-2.5 dark:bg-white/5">
                 <Avatar user={b.studentInfo} size="sm" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{b.studentInfo.name}</p>
+                  <p className="truncate text-sm font-semibold">{displayName(b.studentInfo)}</p>
                   <p className="text-xs muted">
                     {b.subjectInfo.code} · {b.present}/{b.total}
                   </p>

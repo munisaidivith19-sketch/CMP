@@ -5,7 +5,7 @@ import { useGetGatePassQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { Avatar, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui/primitives';
 import { StatusBadge } from '../../components/insights';
-import { fmtClassDay, fmtDateTime, titleCase } from '../../utils/format';
+import { fmtClassDay, fmtDateTime, titleCase, displayName } from '../../utils/format';
 import { GATE_PASS_REGARDING } from '../../utils/constants';
 import { PassQr, PassTimeline, ReviewCard, canReviewPass, isOuting, passStatusLabel } from './GatePass';
 import { AUTHORITY_LABELS, EmergencyBadge, EmergencyDetails, isEmergency } from './EmergencyGatePass';
@@ -48,7 +48,7 @@ export default function GatePassDetail() {
                 <div className="mb-4 flex items-center gap-3">
                   <Avatar user={pass.student} />
                   <div>
-                    <p className="font-bold">{pass.student?.name}</p>
+                    <p className="font-bold">{displayName(pass.student)}</p>
                     <p className="text-xs muted">
                       {pass.student?.rollNo} · {pass.student?.department}
                       {pass.student?.section ? ` · Sec ${pass.student.section}` : ''}
@@ -112,7 +112,7 @@ export default function GatePassDetail() {
                 {pass.principalReview?.by && (
                   <div>
                     <dt className="label">Approved by</dt>
-                    <dd>{pass.principalReview.by.name}</dd>
+                    <dd>{displayName(pass.principalReview.by)}</dd>
                   </div>
                 )}
                 {pass.rejectedReason && (
@@ -132,7 +132,7 @@ export default function GatePassDetail() {
               {isEmergency(pass) && pass.emergencyReview?.by && (
                 <p className="text-sm">
                   <span className="label">{pass.emergencyReview.action === 'rejected' ? 'Rejected by' : 'Approved by'}</span>
-                  {pass.emergencyReview.by.name} ({AUTHORITY_LABELS[pass.emergencyAuthority]})
+                  {displayName(pass.emergencyReview.by)} ({AUTHORITY_LABELS[pass.emergencyAuthority]})
                   {pass.rejectedReason ? ` — “${pass.rejectedReason}”` : ''}
                 </p>
               )}

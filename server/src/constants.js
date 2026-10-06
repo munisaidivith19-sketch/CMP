@@ -27,6 +27,10 @@ export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security', 
 // Roles with no department of their own (skip the "department required" rule).
 export const NO_DEPARTMENT_ROLES = ['principal', 'security', 'dean', 'ao', 'chairman', 'warden'];
 export const STAY_TYPES = ['hosteler', 'day_scholar'];
+// Honorific shown before a person's name (Ms. / Mr. / Dr.) and their gender.
+// Mr needs male and Ms needs female; Dr may be either.
+export const TITLES = ['Ms', 'Mr', 'Dr'];
+export const GENDERS = ['male', 'female'];
 
 // ── Academic structure ──────────────────────────────────────────────
 // A class is Department + Year + Section + Semester. The department string

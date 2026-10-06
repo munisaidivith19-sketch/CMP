@@ -11,7 +11,7 @@ import {
 import { Avatar, Badge, Button, Card, CardHeader, EmptyState, ErrorState, Skeleton, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtDateTime, timeAgo, titleCase } from '../../utils/format';
+import { errMsg, fmtDateTime, timeAgo, titleCase, displayName } from '../../utils/format';
 import { LF_STATUSES } from './LostFound';
 
 const CONTACT = { email: 'Email', phone: 'Phone', in_person: 'In person' };
@@ -179,7 +179,7 @@ export default function LostFoundDetail() {
                   <dt className="label">Resolution</dt>
                   <dd>
                     {item.resolutionNote}
-                    {item.resolvedBy ? ` — ${item.resolvedBy.name}` : ''}
+                    {item.resolvedBy ? ` — ${displayName(item.resolvedBy)}` : ''}
                   </dd>
                 </div>
               )}

@@ -50,7 +50,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
-import { safeHref } from '../../utils/format';
+import { safeHref, displayName } from '../../utils/format';
 
 const DOMAIN_LABELS = {
   software_engineering: 'Software Engineering',
@@ -363,7 +363,7 @@ export default function AlumniMentorshipTab() {
                         <div className="flex items-center gap-3">
                           <Avatar user={partner} size="md" />
                           <div>
-                            <h4 className="font-bold text-sm text-ink dark:text-white">{partner?.name}</h4>
+                            <h4 className="font-bold text-sm text-ink dark:text-white">{displayName(partner)}</h4>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
                               {partner?.department} • {partner?.designation || `Class of ${partner?.year}`}
                             </p>
@@ -589,7 +589,7 @@ export default function AlumniMentorshipTab() {
                       <div className="flex items-center gap-3">
                         <Avatar user={partner} size="md" />
                         <div>
-                          <h4 className="font-bold text-sm text-ink dark:text-white">{partner?.name}</h4>
+                          <h4 className="font-bold text-sm text-ink dark:text-white">{displayName(partner)}</h4>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {partner?.department} • {partner?.designation || `Class of ${partner?.year}`}
                           </p>
@@ -760,7 +760,7 @@ export default function AlumniMentorshipTab() {
           open={!!respondModalReq}
           onClose={() => setRespondModalReq(null)}
           title={respondStatus === 'accepted' ? 'Accept Mentorship Request' : 'Decline Request'}
-          subtitle={`Student: ${respondModalReq.student?.name} (${respondModalReq.student?.department})`}
+          subtitle={`Student: ${displayName(respondModalReq.student)} (${respondModalReq.student?.department})`}
           size="sm"
         >
           <form onSubmit={handleRespond} className="space-y-4">
@@ -799,7 +799,7 @@ export default function AlumniMentorshipTab() {
           open={!!bookingModalReq}
           onClose={() => setBookingModalReq(null)}
           title="Book Mentoring Session"
-          subtitle={`Select an available time slot with ${bookingModalReq.alumni?.name}`}
+          subtitle={`Select an available time slot with ${displayName(bookingModalReq.alumni)}`}
           size="md"
         >
           <form onSubmit={handleBookSession} className="space-y-4">
@@ -936,7 +936,7 @@ export default function AlumniMentorshipTab() {
           open={!!rateModalReq}
           onClose={() => setRateModalReq(null)}
           title="Rate Mentorship Experience"
-          subtitle={`Mentor: ${rateModalReq.alumni?.name}`}
+          subtitle={`Mentor: ${displayName(rateModalReq.alumni)}`}
           size="sm"
         >
           <form onSubmit={handleRate} className="space-y-4">

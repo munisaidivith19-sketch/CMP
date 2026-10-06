@@ -8,6 +8,7 @@ import { Avatar } from '../ui/primitives';
 import NotificationBell from './NotificationBell';
 import CalendarModal from '../CalendarModal';
 import { ROLE_LABELS } from '../../utils/constants';
+import { displayName } from '../../utils/format';
 
 function greeting() {
   const h = new Date().getHours();
@@ -67,7 +68,7 @@ export default function Topbar() {
       <Link to="/profile" className="hidden items-center gap-3 rounded-2xl py-1 pl-1 pr-3 transition-colors hover:bg-white/60 dark:hover:bg-white/5 sm:flex">
         <Avatar user={user} size="sm" />
         <div className="hidden leading-tight xl:block">
-          <p className="text-sm font-bold">{user?.name}</p>
+          <p className="text-sm font-bold">{displayName(user)}</p>
           <p className="text-[11px] muted">{ROLE_LABELS[user?.role]}</p>
         </div>
       </Link>

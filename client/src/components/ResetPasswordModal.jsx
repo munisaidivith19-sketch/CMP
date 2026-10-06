@@ -5,7 +5,7 @@ import { useResetUserPasswordMutation } from '../services/api';
 import { Button } from './ui/primitives';
 import { Modal } from './ui/Modal';
 import { Input } from './ui/form';
-import { errMsg } from '../utils/format';
+import { errMsg, displayName } from '../utils/format';
 
 /** Letters + digits, no look-alike characters — the server enforces the real rules. */
 export function suggestPassword() {
@@ -41,7 +41,7 @@ export default function ResetPasswordModal({ user, onClose }) {
     e.preventDefault();
     try {
       await reset({ id: user._id, ...v, reason: v.reason.trim() || undefined }).unwrap();
-      toast.success(`Password reset for ${user.name}. They have been signed out and must use the new password.`, { duration: 6000 });
+      toast.success(`Password reset for ${displayName(user)}. They have been signed out and must use the new password.`, { duration: 6000 });
       onClose();
     } catch (err) {
       const list = err?.data?.errors;
@@ -54,7 +54,7 @@ export default function ResetPasswordModal({ user, onClose }) {
     <Modal
       open
       onClose={onClose}
-      title={`Reset password · ${user.name}`}
+      title={`Reset password · ${displayName(user)}`}
       subtitle="Sets a new password without the old one. The user is signed out on every device."
       footer={
         <>

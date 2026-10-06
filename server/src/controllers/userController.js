@@ -9,7 +9,7 @@ import { chatContactFilter } from '../utils/chatScope.js';
 import { ownDepartment, STUDENT_ROLES } from '../utils/academicScope.js';
 import { ACADEMIC_YEARS, COLLEGE_WIDE_ROLES, DEPARTMENTS } from '../constants.js';
 
-const DIRECTORY_FIELDS = 'name role department year section semester avatar designation employeeId skills interests bio';
+const DIRECTORY_FIELDS = 'name title gender role department year section semester avatar designation employeeId skills interests bio';
 
 /**
  * Student / faculty directory with search and filters.

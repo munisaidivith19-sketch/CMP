@@ -6,7 +6,7 @@ import { Avatar, Button, Skeleton, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select, Textarea } from '../../components/ui/form';
 import { ROLE_LABELS, STUDENT_ROLES, YEAR_LABELS } from '../../utils/constants';
-import { errMsg } from '../../utils/format';
+import { errMsg, displayName } from '../../utils/format';
 
 const CATEGORIES = [
   { value: 'custom', label: 'CUSTOM', hint: 'Students of your department — pick from any years and sections into one group.' },
@@ -189,7 +189,7 @@ export default function HodGroupModal({ open, onClose }) {
                     className={cn('flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-white/70 dark:hover:bg-white/5', isPicked(u) && 'bg-primary-500/10')}
                   >
                     <span className="w-14 shrink-0 text-xs tabular-nums muted">{u.rollNo || '—'}</span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{u.name}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{displayName(u)}</span>
                     {isPicked(u) && <Check className="h-4 w-4 text-primary-500" />}
                   </button>
                 ))}
@@ -225,7 +225,7 @@ export default function HodGroupModal({ open, onClose }) {
                 >
                   <Avatar user={u} size="sm" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{u.name}</span>
+                    <span className="block truncate text-sm font-semibold">{displayName(u)}</span>
                     <span className="block truncate text-xs muted">
                       {ROLE_LABELS[u.role]}
                       {u.department ? ` · ${u.department}` : ''}
@@ -249,8 +249,8 @@ export default function HodGroupModal({ open, onClose }) {
           <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
             {picked.map((u) => (
               <span key={u._id} className="chip">
-                {u.name}
-                <button type="button" aria-label={`Remove ${u.name}`} onClick={() => toggle(u)}>
+                {displayName(u)}
+                <button type="button" aria-label={`Remove ${displayName(u)}`} onClick={() => toggle(u)}>
                   <X className="h-3 w-3" />
                 </button>
               </span>

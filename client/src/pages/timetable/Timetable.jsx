@@ -8,7 +8,7 @@ import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Sk
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import MySchedule from './MySchedule';
-import { errMsg, fmtClassDay } from '../../utils/format';
+import { errMsg, fmtClassDay, displayName } from '../../utils/format';
 import SlotModal from './SlotModal';
 import { HolidayBanner } from '../attendance/Holidays';
 
@@ -127,7 +127,7 @@ export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }
         {!compact && slot.faculty && (
           <span className="flex items-center gap-1">
             <User className="h-3.5 w-3.5" />
-            {slot.faculty.name}
+            {displayName(slot.faculty)}
           </span>
         )}
         {showSection && (

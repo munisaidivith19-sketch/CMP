@@ -22,7 +22,7 @@ import { Avatar, Button, Card, CardHeader, ErrorState, PageHeader, Skeleton } fr
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Select, Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtClassDay, timeAgo, titleCase } from '../../utils/format';
+import { errMsg, fmtClassDay, timeAgo, titleCase, displayName } from '../../utils/format';
 import { COMPLAINT_CATEGORY_LABELS, ROLE_LABELS } from '../../utils/constants';
 
 const sameId = (a, b) => Boolean(a && b) && String(a?._id || a) === String(b?._id || b);
@@ -135,7 +135,7 @@ export default function ComplaintDetail() {
           <div className="flex items-center gap-3 rounded-2xl bg-white/50 p-3 dark:bg-white/5">
             <Avatar user={complaint.student} size="sm" />
             <div>
-              <p className="text-sm font-bold">{complaint.student.name}</p>
+              <p className="text-sm font-bold">{displayName(complaint.student)}</p>
               <p className="text-xs muted">{complaint.student.rollNo} · {complaint.student.department}</p>
             </div>
           </div>

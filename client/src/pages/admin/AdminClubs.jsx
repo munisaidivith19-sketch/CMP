@@ -6,7 +6,7 @@ import { useGetClubsQuery, useReviewClubMutation } from '../../services/api';
 import { Avatar, Button, Card, CategoryBadge, EmptyState, PageHeader, PageLoader, Tabs } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Textarea } from '../../components/ui/form';
-import { errMsg, timeAgo } from '../../utils/format';
+import { errMsg, timeAgo, displayName } from '../../utils/format';
 
 export default function AdminClubs() {
   const [status, setStatus] = useState('pending');
@@ -59,7 +59,7 @@ export default function AdminClubs() {
                 </div>
                 <p className="mt-1 line-clamp-3 text-sm muted">{c.description}</p>
                 <p className="mt-2 text-xs muted">
-                  Requested by <b>{c.createdBy?.name}</b> · {timeAgo(c.createdAt)}
+                  Requested by <b>{displayName(c.createdBy)}</b> · {timeAgo(c.createdAt)}
                 </p>
                 {status === 'pending' && (
                   <div className="mt-4 flex gap-2">

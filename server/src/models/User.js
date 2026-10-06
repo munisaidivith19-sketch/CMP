@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { ROLES, STAY_TYPES, yearOfSemester } from '../constants.js';
+import { GENDERS, ROLES, STAY_TYPES, TITLES, yearOfSemester } from '../constants.js';
 
 const { Schema } = mongoose;
 
@@ -22,6 +22,9 @@ const tagList = {
 const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 80 },
+    // Honorific + gender chosen by the admin when the login is created.
+    title: { type: String, enum: TITLES },
+    gender: { type: String, enum: GENDERS },
     email: {
       type: String,
       required: true,
@@ -132,6 +135,23 @@ userSchema.pre('validate', function checkClassInCharge(next) {
   next();
 });
 
+userSchema.pre('validate', function checkTitleGender(next) {
+  if (this.title === 'Mr' && this.gender === 'female') this.invalidate('title', 'Mr cannot be used with gender Female');
+  if (this.title === 'Ms' && this.gender === 'male') this.invalidate('title', 'Ms cannot be used with gender Male');
+  next();
+});
+
+/**
+ * Whenever a query asks for a user's `name` (including every populate() that
+ * selects it) also fetch `title`, so each card and list can show "Dr. Mohan
+ * Babu" without editing every select string in the controllers.
+ */
+userSchema.pre(['find', 'findOne', 'findOneAndUpdate'], function includeTitle(next) {
+  const fields = this.projection();
+  if (fields && fields.name === 1 && fields.title === undefined && !Object.values(fields).includes(0)) this.select('title');
+  next();
+});
+
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 12);
@@ -156,6 +176,6 @@ userSchema.set('toJSON', {
   },
 });
 
-export const PUBLIC_USER_FIELDS = 'name email role department year section semester avatar designation employeeId';
+export const PUBLIC_USER_FIELDS = 'name title gender email role department year section semester avatar designation employeeId';
 
 export default mongoose.model('User', userSchema);

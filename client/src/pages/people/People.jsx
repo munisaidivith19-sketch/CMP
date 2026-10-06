@@ -4,6 +4,7 @@ import { GraduationCap, Search, ShieldCheck } from 'lucide-react';
 import { useGetPeopleFiltersQuery, useGetUsersQuery } from '../../services/api';
 import { Avatar, Badge, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, cn } from '../../components/ui/primitives';
 import { ACADEMIC_YEARS, ROLE_LABELS, YEAR_LABELS } from '../../utils/constants';
+import { displayName } from '../../utils/format';
 
 /**
  * The People directory.
@@ -136,7 +137,7 @@ export default function People() {
                   <Avatar user={u} size="lg" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate font-bold">{u.name}</p>
+                      <p className="truncate font-bold">{displayName(u)}</p>
                       {u.role !== 'student' && <Badge color={u.role === 'faculty' ? 'info' : 'primary'}>{ROLE_LABELS[u.role]}</Badge>}
                     </div>
                     <p className="truncate text-xs muted">

@@ -42,6 +42,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
+import { displayName } from '../../utils/format';
 
 const CHAPTER_TYPE_LABELS = {
   batch: 'Graduation Batch',
@@ -116,7 +117,7 @@ function PostItem({ post, chapterSlug, isModerator, currentUserId }) {
           <Avatar user={post.author} size="sm" />
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-xs sm:text-sm text-ink">{post.author?.name}</span>
+              <span className="font-bold text-xs sm:text-sm text-ink">{displayName(post.author)}</span>
               {post.kind === 'announcement' && (
                 <span className="flex items-center gap-0.5 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
                   <Megaphone className="h-3 w-3" /> Announcement
@@ -191,7 +192,7 @@ function PostItem({ post, chapterSlug, isModerator, currentUserId }) {
               <div className="flex items-start gap-2">
                 <Avatar user={c.author} size="xs" />
                 <div>
-                  <span className="font-bold text-slate-800 dark:text-slate-200">{c.author?.name}</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{displayName(c.author)}</span>
                   <span className="muted text-[10px] ml-1.5">
                     {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>

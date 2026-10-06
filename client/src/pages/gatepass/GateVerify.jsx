@@ -7,7 +7,7 @@ import { Avatar, Button, Card, PageHeader, cn } from '../../components/ui/primit
 import QrScannerModal from '../../components/QrScannerModal';
 import { scanProblem } from '../../utils/gateQr';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtClassDay, titleCase } from '../../utils/format';
+import { errMsg, fmtClassDay, titleCase, displayName } from '../../utils/format';
 import { GATE_PASS_REGARDING, YEAR_LABELS } from '../../utils/constants';
 
 const regardingLabel = (r) => GATE_PASS_REGARDING[r] || titleCase(r);
@@ -130,7 +130,7 @@ export default function GateVerify({ direction }) {
                   <div className="flex items-center gap-3">
                     <Avatar user={student} />
                     <div className="min-w-0 flex-1">
-                      <p className="break-words font-bold">{student?.name}</p>
+                      <p className="break-words font-bold">{displayName(student)}</p>
                       <p className="truncate text-xs muted">{student?.rollNo || '—'}</p>
                     </div>
                     {!isReturn && <StatusBadge status={result.pass.status} />}

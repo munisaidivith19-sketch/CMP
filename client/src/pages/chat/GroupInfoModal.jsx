@@ -13,7 +13,7 @@ import { Avatar, Badge, Button, Skeleton } from '../../components/ui/primitives'
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/form';
 import { ROLE_LABELS, YEAR_LABELS } from '../../utils/constants';
-import { errMsg } from '../../utils/format';
+import { errMsg, displayName } from '../../utils/format';
 
 const sameId = (a, b) => String(a?._id || a) === String(b?._id || b);
 const CATEGORY_LABEL = { custom: 'Custom', academic: 'Academics', faculty: 'Faculty' };
@@ -129,14 +129,14 @@ export default function GroupInfoModal({ open, onClose, conv, me }) {
                   <div key={u._id} className="flex items-center gap-3 rounded-xl p-2">
                     <Avatar user={u} size="sm" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">{u.name}</span>
+                      <span className="block truncate text-sm font-semibold">{displayName(u)}</span>
                       <span className="block truncate text-xs muted">
                         {ROLE_LABELS[u.role]}
                         {u.department ? ` · ${u.department}` : ''}
                         {u.section ? ` · Sec ${u.section}` : ''}
                       </span>
                     </span>
-                    <Button size="sm" variant="soft" icon={UserPlus} loading={adding} onClick={() => run(() => add({ id: conv._id, userIds: [u._id] }).unwrap(), `${u.name} added`)}>
+                    <Button size="sm" variant="soft" icon={UserPlus} loading={adding} onClick={() => run(() => add({ id: conv._id, userIds: [u._id] }).unwrap(), `${displayName(u)} added`)}>
                       Add
                     </Button>
                   </div>

@@ -43,7 +43,7 @@ import {
   rangeParams,
 } from '../../components/insights';
 import { DEPARTMENTS, SECTIONS } from '../../utils/constants';
-import { fmtClassDay } from '../../utils/format';
+import { fmtClassDay, displayName } from '../../utils/format';
 
 /* ── Skeleton placeholder ──────────────────────────────────────── */
 function Loading() {
@@ -168,7 +168,7 @@ function FacultyOverview({ params }) {
               <li key={`${b._id.student}-${b._id.subject}`} className="flex items-center gap-3 rounded-2xl bg-white/50 p-3 dark:bg-white/5">
                 <Avatar user={b.studentInfo} size="sm" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{b.studentInfo.name}</p>
+                  <p className="truncate text-sm font-semibold">{displayName(b.studentInfo)}</p>
                   <p className="text-xs muted">
                     {b.subjectInfo.code} · {b.present}/{b.total} periods
                   </p>
@@ -348,7 +348,7 @@ function LowAttendanceList({ params }) {
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2.5">
                         <Avatar user={r.student} size="sm" />
-                        <span className="truncate font-semibold">{r.student.name}</span>
+                        <span className="truncate font-semibold">{displayName(r.student)}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2.5 muted">{r.student.rollNo || '—'}</td>
@@ -407,7 +407,7 @@ function CorrectionsSummary() {
                 <Avatar user={c.student} size="sm" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">
-                    {c.student?.name} <span className="font-medium muted">· {c.student?.rollNo}</span>
+                    {displayName(c.student)} <span className="font-medium muted">· {c.student?.rollNo}</span>
                   </p>
                   <p className="text-xs muted">
                     {c.subject?.code} · {fmtClassDay(c.date, 'EEE, dd MMM')} · Period {c.period}

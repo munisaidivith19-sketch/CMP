@@ -42,7 +42,7 @@ import AnnouncementForm from '../announcements/AnnouncementForm';
 import { ClubInsights } from '../analytics/Insights';
 import { selectUser } from '../../features/authSlice';
 import { catStyle, ROLE_LABELS, STAFF_VIEW, STUDENT_ROLES } from '../../utils/constants';
-import { errMsg, friendlyDay, fmtTime, timeAgo } from '../../utils/format';
+import { errMsg, friendlyDay, fmtTime, timeAgo, displayName } from '../../utils/format';
 
 function Requests({ club }) {
   const { data = [], isLoading } = useGetClubRequestsQuery(club._id);
@@ -64,7 +64,7 @@ function Requests({ club }) {
           <Avatar user={r.user} />
           <div className="min-w-0 flex-1">
             <Link to={`/people/${r.user._id}`} className="font-bold hover:text-primary-600">
-              {r.user.name}
+              {displayName(r.user)}
             </Link>
             <p className="text-xs muted">
               {r.user.department} {r.user.year ? `· Year ${r.user.year}` : ''} · {timeAgo(r.requestedAt)}
@@ -294,7 +294,7 @@ export default function ClubDetail() {
                   <Link to={`/people/${club.facultyAdvisor._id}`} className="flex items-center gap-3 rounded-2xl p-1 hover:bg-white/50 dark:hover:bg-white/5">
                     <Avatar user={club.facultyAdvisor} size="sm" />
                     <div>
-                      <p className="text-sm font-bold">{club.facultyAdvisor.name}</p>
+                      <p className="text-sm font-bold">{displayName(club.facultyAdvisor)}</p>
                       <p className="text-[11px] muted">Faculty advisor</p>
                     </div>
                   </Link>

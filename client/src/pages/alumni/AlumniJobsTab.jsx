@@ -41,7 +41,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
-import { safeHref } from '../../utils/format';
+import { safeHref, displayName } from '../../utils/format';
 
 const JOB_TYPE_LABELS = {
   full_time: 'Full Time',
@@ -544,7 +544,7 @@ export default function AlumniJobsTab() {
               <div className="flex items-center gap-2">
                 <Avatar user={selectedJob.poster} size="sm" />
                 <div>
-                  <p className="font-bold">{selectedJob.poster?.name}</p>
+                  <p className="font-bold">{displayName(selectedJob.poster)}</p>
                   <p className="muted">Posted on {new Date(selectedJob.createdAt).toLocaleDateString()}</p>
                 </div>
               </div>
@@ -715,7 +715,7 @@ export default function AlumniJobsTab() {
                         <div className="flex items-center gap-3">
                           <Avatar user={app.student} size="sm" />
                           <div>
-                            <p className="font-bold text-sm text-ink dark:text-white">{app.student?.name}</p>
+                            <p className="font-bold text-sm text-ink dark:text-white">{displayName(app.student)}</p>
                             <p className="text-slate-500 dark:text-slate-400">
                               {app.student?.department} • Year {app.student?.year || '—'} • {app.student?.email}
                             </p>

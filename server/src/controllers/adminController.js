@@ -201,7 +201,7 @@ export const listUsers = asyncHandler(async (req, res) => {
 
   const [items, total] = await Promise.all([
     User.find(filter)
-      .select('name email role department year section semester teachingYears teachingSections inChargeYear inChargeSemester rollNo employeeId stayType phone parentPhone avatar isActive lastLogin createdAt')
+      .select('name title gender email role department year section semester teachingYears teachingSections inChargeYear inChargeSemester rollNo employeeId stayType phone parentPhone avatar isActive lastLogin createdAt')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -243,7 +243,7 @@ export const createUser = asyncHandler(async (req, res) => {
   }
 
   const data = pick(req.body, CREATE_FIELDS[role] || []);
-  const user = await User.create({ name: req.body.name, email, password: req.body.password, role, ...data });
+  const user = await User.create({ name: req.body.name, title: req.body.title, gender: req.body.gender, email, password: req.body.password, role, ...data });
 
   logActivity(req, 'admin.user_create', { entityType: 'user', entityId: user._id, summary: `${role}: ${user.email}` });
   logSecurity(req, 'USER_CREATED', {
@@ -274,6 +274,7 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   // Name and login email (the username). Email stays unique college-wide.
   if (req.body.name !== undefined && String(req.body.name).trim() !== user.name) user.name = String(req.body.name).trim();
+  for (const key of ['title', 'gender']) if (req.body[key] !== undefined && req.body[key] !== user[key]) user[key] = req.body[key];
   if (req.body.email !== undefined) {
     const email = String(req.body.email).toLowerCase().trim();
     if (email !== user.email) {

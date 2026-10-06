@@ -37,7 +37,7 @@ import { Avatar, Button, Card, EmptyState, ErrorState, IconButton, Skeleton, cn 
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/form';
 import { ROLE_LABELS } from '../../utils/constants';
-import { errMsg, fmtTime, timeAgo } from '../../utils/format';
+import { errMsg, fmtTime, timeAgo, displayName } from '../../utils/format';
 import HodGroupModal from './HodGroupModal';
 import GroupInfoModal from './GroupInfoModal';
 
@@ -177,8 +177,8 @@ function NewChatModal({ open, onClose, me, onHodGroup }) {
         <div className="mb-3 flex flex-wrap gap-1.5">
           {picked.map((u) => (
             <span key={u._id} className="chip">
-              {u.name}
-              <button aria-label={`Remove ${u.name}`} onClick={() => toggle(u)}>
+              {displayName(u)}
+              <button aria-label={`Remove ${displayName(u)}`} onClick={() => toggle(u)}>
                 <X className="h-3 w-3" />
               </button>
             </span>
@@ -200,7 +200,7 @@ function NewChatModal({ open, onClose, me, onHodGroup }) {
             >
               <Avatar user={u} size="sm" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold">{u.name}</p>
+                <p className="truncate text-sm font-bold">{displayName(u)}</p>
                 <p className="truncate text-xs muted">
                   {ROLE_LABELS[u.role]}
                   {u.department ? ` · ${u.department}` : ''}
@@ -315,7 +315,7 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, grou
     <div id={`msg-${m._id}`} className={cn('group flex gap-2', mine ? 'justify-end' : 'justify-start')}>
       {!mine && group && (showAuthor ? <Avatar user={m.sender} size="xs" className="mt-auto" /> : <span className="w-7 shrink-0" />)}
       <div className={cn('flex min-w-0 max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
-        {showAuthor && !mine && group && <span className="mb-0.5 px-2 text-[11px] font-bold text-primary-600 dark:text-primary-400">{m.sender?.name}</span>}
+        {showAuthor && !mine && group && <span className="mb-0.5 px-2 text-[11px] font-bold text-primary-600 dark:text-primary-400">{displayName(m.sender)}</span>}
         <div
           className={cn(
             'relative min-w-0 max-w-full rounded-3xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',

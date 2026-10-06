@@ -8,7 +8,7 @@ import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagina
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select, TagInput, Textarea } from '../../components/ui/form';
 import { DISCUSSION_CATEGORIES } from '../../utils/constants';
-import { errMsg, timeAgo } from '../../utils/format';
+import { errMsg, timeAgo, displayName } from '../../utils/format';
 
 function NewDiscussion({ open, onClose }) {
   const navigate = useNavigate();
@@ -167,7 +167,7 @@ export default function Discussions() {
                       <p className="mt-1 line-clamp-2 text-sm muted">{d.excerpt}</p>
                       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs muted">
                         <span className="flex items-center gap-2 font-semibold text-ink dark:text-slate-200">
-                          <Avatar user={d.author} size="xs" /> {d.author?.name}
+                          <Avatar user={d.author} size="xs" /> {displayName(d.author)}
                         </span>
                         <span>{timeAgo(d.lastActivityAt)}</span>
                         <span className="flex items-center gap-1">

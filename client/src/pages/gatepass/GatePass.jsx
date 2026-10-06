@@ -43,7 +43,7 @@ import { Avatar, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, P
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, Select, Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtClassDay, timeAgo, titleCase, todayKey } from '../../utils/format';
+import { errMsg, fmtClassDay, timeAgo, titleCase, todayKey, displayName } from '../../utils/format';
 import { GATE_PASS_REGARDING, INDIAN_STATES, STUDENT_ROLES } from '../../utils/constants';
 import { ParentVerification } from './ParentVerification';
 import QrScannerModal from '../../components/QrScannerModal';
@@ -548,7 +548,7 @@ function StudentLine({ student, extra, linkProfile = false }) {
         <Avatar user={student} size="sm" />
       )}
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold">{student?.name}</p>
+        <p className="truncate text-sm font-bold">{displayName(student)}</p>
         <p className="truncate text-xs muted">
           {student?.rollNo || '—'} · {student?.department}
           {student?.section ? ` · Sec ${student.section}` : ''}
@@ -639,7 +639,7 @@ export function ReviewCard({ pass, onDone }) {
           )}
           {pass.status === 'parent_verified' && (
             <p className="mt-1.5 flex items-center gap-1 text-xs font-bold text-emerald-600">
-              <ShieldCheck className="h-3.5 w-3.5" /> Parent verified by OTP{pass.parentVerifiedBy?.name ? ` · ${pass.parentVerifiedBy.name}` : ''}
+              <ShieldCheck className="h-3.5 w-3.5" /> Parent verified by OTP{pass.parentVerifiedBy?.name ? ` · ${displayName(pass.parentVerifiedBy)}` : ''}
             </p>
           )}
         </div>
@@ -661,7 +661,7 @@ export function ReviewCard({ pass, onDone }) {
         open={reject}
         onClose={() => setReject(false)}
         title="Reject gate pass"
-        subtitle={pass.student?.name}
+        subtitle={displayName(pass.student)}
         size="sm"
         footer={
           <>

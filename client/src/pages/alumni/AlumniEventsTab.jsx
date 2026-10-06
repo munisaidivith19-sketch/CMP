@@ -38,7 +38,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
-import { safeHref } from '../../utils/format';
+import { safeHref, displayName } from '../../utils/format';
 
 const EVENT_TYPE_LABELS = {
   reunion: 'Batch Reunion',
@@ -639,7 +639,7 @@ export default function AlumniEventsTab() {
                         <div className="flex items-center gap-2.5">
                           <Avatar user={item.user} size="xs" />
                           <div>
-                            <p className="font-bold">{item.user?.name}</p>
+                            <p className="font-bold">{displayName(item.user)}</p>
                             <p className="muted text-[11px]">
                               {item.user?.department} • {item.user?.role}
                             </p>

@@ -6,30 +6,39 @@ import { Button, cn } from './ui/primitives';
 import { Modal } from './ui/Modal';
 import { ChipMultiSelect, Input, Select } from './ui/form';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../utils/constants';
-import { errMsg } from '../utils/format';
+import { displayName, errMsg } from '../utils/format';
 
 /** Fields the admin fills in per role — mirrors the server's CREATE_FIELDS. */
 const FORMS = {
-  student: ['name', 'rollNo', 'department', 'year', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
+  student: ['title', 'gender', 'name', 'rollNo', 'department', 'year', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
   // Class In Charge = section + in-charge year + in-charge semester ("Our Class").
-  faculty: ['name', 'employeeId', 'department', 'teachingYears', 'section', 'inChargeYear', 'inChargeSemester', 'email', 'phone', 'password'],
-  hod: ['name', 'employeeId', 'department', 'email', 'phone', 'password'],
-  principal: ['name', 'employeeId', 'email', 'phone', 'password'],
-  security: ['name', 'employeeId', 'email', 'phone', 'password'],
-  dean: ['name', 'employeeId', 'email', 'phone', 'password'],
-  ao: ['name', 'employeeId', 'email', 'phone', 'password'],
-  chairman: ['name', 'employeeId', 'email', 'phone', 'password'],
-  warden: ['name', 'employeeId', 'email', 'phone', 'password'],
+  faculty: ['title', 'gender', 'name', 'employeeId', 'department', 'teachingYears', 'section', 'inChargeYear', 'inChargeSemester', 'email', 'phone', 'password'],
+  hod: ['title', 'gender', 'name', 'employeeId', 'department', 'email', 'phone', 'password'],
+  principal: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  security: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  dean: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  ao: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  chairman: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  warden: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
 };
 const REQUIRED = new Set([
-  'name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears', 'section',
+  'title', 'gender', 'name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears', 'section',
   'inChargeYear', 'inChargeSemester',
 ]);
 const isRequired = (k, role) => REQUIRED.has(k);
 const EMPTY = {
-  name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '',
+  title: '', gender: '', name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '',
   teachingYears: [], inChargeYear: '', inChargeSemester: '',
 };
+const TITLES = [
+  { value: 'Ms', label: 'Ms' },
+  { value: 'Mr', label: 'Mr' },
+  { value: 'Dr', label: 'Dr' },
+];
+const GENDERS = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+];
 const NUMERIC = new Set(['year', 'inChargeYear', 'inChargeSemester']);
 
 function suggestPassword() {
@@ -57,6 +66,9 @@ export default function CreateUserModal({ open, onClose }) {
   const set = (k) => (e) =>
     setV((s) => {
       const next = { ...s, [k]: e.target.value };
+      // Mr / Ms imply the gender; Dr leaves it to the admin.
+      if (k === 'title' && next.title === 'Mr') next.gender = 'male';
+      if (k === 'title' && next.title === 'Ms') next.gender = 'female';
       // The in-charge semester must belong to the in-charge year (year 3 → 5 or 6).
       if (k === 'inChargeYear' && !semestersOfYear(Number(next.inChargeYear)).includes(Number(next.inChargeSemester))) next.inChargeSemester = '';
       return next;
@@ -79,7 +91,7 @@ export default function CreateUserModal({ open, onClose }) {
     if (role === 'faculty' && body.section) body.teachingSections = [body.section];
     try {
       const user = await create(body).unwrap();
-      toast.success(`${ROLE_LABELS[role]} login created for ${user.name} — username: ${user.email}`, { duration: 6000 });
+      toast.success(`${ROLE_LABELS[role]} login created for ${displayName(user)} — username: ${user.email}`, { duration: 6000 });
       // Keep the class details so the next student of the same class is quick to add.
       setV((s) => ({ ...EMPTY, ...(role === 'student' ? { department: s.department, year: s.year, section: s.section } : {}) }));
       setErrors({});
@@ -105,6 +117,10 @@ export default function CreateUserModal({ open, onClose }) {
             error={errors[k]}
           />
         );
+      case 'title':
+        return <Select key={k} label="Title" placeholder="Select title" options={TITLES} {...common} />;
+      case 'gender':
+        return <Select key={k} label="Gender" placeholder="Select gender" options={GENDERS} {...common} />;
       case 'name':
         return <Input key={k} label="Full name" maxLength={80} autoComplete="off" {...common} />;
       case 'rollNo':

@@ -52,3 +52,6 @@ export const safeHref = (url) => {
   const s = String(url || '').trim();
   return /^https?:\/\//i.test(s) || /^\/(?!\/)/.test(s) ? s : undefined;
 };
+
+/** "Dr. Mohan Babu" — a person's name with their honorific, when one is on file. */
+export const displayName = (u) => (u?.name ? (u.title ? `${u.title}. ${u.name}` : u.name) : '');

@@ -8,7 +8,7 @@ import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagina
 import { Modal } from '../../components/ui/Modal';
 import { Textarea } from '../../components/ui/form';
 import { selectRole } from '../../features/authSlice';
-import { errMsg, timeAgo } from '../../utils/format';
+import { errMsg, timeAgo, displayName } from '../../utils/format';
 
 const ACTIONS = [
   { value: 'dismiss', label: 'Dismiss', icon: Check, variant: 'ghost', text: 'No rule was broken. The report will be closed.' },
@@ -78,7 +78,7 @@ export default function AdminReports() {
                   <div className="mt-3 flex flex-wrap items-center gap-4 text-xs muted">
                     {r.reporter && (
                       <span className="flex items-center gap-2">
-                        <Avatar user={r.reporter} size="xs" /> Reported by {r.reporter.name}
+                        <Avatar user={r.reporter} size="xs" /> Reported by {displayName(r.reporter)}
                       </span>
                     )}
                     {r.link && (
@@ -88,7 +88,7 @@ export default function AdminReports() {
                     )}
                     {r.resolution?.action && (
                       <span>
-                        Action: <b className="capitalize">{r.resolution.action}</b> by {r.resolution.by?.name}
+                        Action: <b className="capitalize">{r.resolution.action}</b> by {displayName(r.resolution.by)}
                         {r.resolution.note ? ` — “${r.resolution.note}”` : ''}
                       </span>
                     )}

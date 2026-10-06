@@ -37,7 +37,7 @@ import {
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
 import { MENTORSHIP_DOMAINS } from '../../utils/constants';
-import { safeHref } from '../../utils/format';
+import { safeHref, displayName } from '../../utils/format';
 
 const DOMAIN_LABELS = {
   software_engineering: 'Software Engineering',
@@ -454,7 +454,7 @@ export default function AlumniDirectoryTab() {
               <Avatar user={profileModalUser.user} size="xl" />
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-bold">{profileModalUser.user?.name}</h3>
+                  <h3 className="text-xl font-bold">{displayName(profileModalUser.user)}</h3>
                   {profileModalUser.isVerified && (
                     <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
                       <ShieldCheck className="h-3.5 w-3.5" /> Verified
@@ -574,7 +574,7 @@ export default function AlumniDirectoryTab() {
                     handleOpenRequest(m);
                   }}
                 >
-                  <Sparkles className="mr-2 h-4 w-4" /> Request Mentorship with {profileModalUser.user?.name}
+                  <Sparkles className="mr-2 h-4 w-4" /> Request Mentorship with {displayName(profileModalUser.user)}
                 </Button>
               </div>
             )}

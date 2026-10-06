@@ -9,20 +9,20 @@ import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, YEAR_LABELS, semest
 
 /** Fields per account type — mirrors the server's CREATE_FIELDS and the web form. */
 const FORMS = {
-  student: ['name', 'rollNo', 'department', 'year', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
+  student: ['title', 'gender', 'name', 'rollNo', 'department', 'year', 'section', 'stayType', 'email', 'phone', 'parentPhone', 'password'],
   // Class In Charge = section + in-charge year + in-charge semester ("Our Class").
-  faculty: ['name', 'employeeId', 'department', 'teachingYears', 'section', 'inChargeYear', 'inChargeSemester', 'email', 'phone', 'password'],
-  hod: ['name', 'employeeId', 'department', 'email', 'phone', 'password'],
-  principal: ['name', 'employeeId', 'email', 'phone', 'password'],
-  security: ['name', 'employeeId', 'email', 'phone', 'password'],
+  faculty: ['title', 'gender', 'name', 'employeeId', 'department', 'teachingYears', 'section', 'inChargeYear', 'inChargeSemester', 'email', 'phone', 'password'],
+  hod: ['title', 'gender', 'name', 'employeeId', 'department', 'email', 'phone', 'password'],
+  principal: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  security: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
 };
 const REQUIRED = new Set([
-  'name', 'email', 'password', 'rollNo', 'year', 'section', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears',
+  'title', 'gender', 'name', 'email', 'password', 'rollNo', 'year', 'section', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears',
   'inChargeYear', 'inChargeSemester',
 ]);
 const isRequired = (k) => REQUIRED.has(k);
 const EMPTY = {
-  name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '',
+  title: '', gender: '', name: '', rollNo: '', year: '', department: '', section: '', stayType: '', email: '', phone: '', parentPhone: '', employeeId: '', password: '',
   teachingYears: [], inChargeYear: '', inChargeSemester: '',
 };
 const LABELS = {
@@ -127,6 +127,8 @@ export default function CreateUser() {
   };
 
   const field = (k) => {
+    if (k === 'title') return chips(k, [['Ms', 'Ms'], ['Mr', 'Mr'], ['Dr', 'Dr']], 'Title');
+    if (k === 'gender') return chips(k, [['male', 'Male'], ['female', 'Female']], 'Gender');
     if (k === 'year') return chips(k, ACADEMIC_YEARS.map((y) => [String(y), YEAR_LABELS[y]]));
     if (k === 'section') return chips(k, SECTIONS.map((s) => [s, s]), role === 'faculty' ? 'Class in charge' : 'Section');
     if (k === 'teachingYears') return chips(k, ACADEMIC_YEARS.map((y) => [y, YEAR_LABELS[y]]));

@@ -17,14 +17,14 @@ import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, IconButton, Pa
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, SectionMultiSelect, Select } from '../../components/ui/form';
 import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, WEEKDAYS as DAYS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
-import { errMsg, titleCase } from '../../utils/format';
+import { errMsg, titleCase, displayName } from '../../utils/format';
 import SlotModal from '../timetable/SlotModal';
 
 /** Faculty picker: the generic People endpoint in "picker" mode (not the
  * People directory), so it works for HOD too, not just admin. */
 function useFacultyOptions(department) {
   const { data } = useGetUsersQuery({ role: 'faculty', limit: 50, context: 'picker', department });
-  return (data?.items || []).map((u) => ({ value: u._id, label: `${u.name}${u.department ? ` · ${u.department}` : ''}` }));
+  return (data?.items || []).map((u) => ({ value: u._id, label: `${displayName(u)}${u.department ? ` · ${u.department}` : ''}` }));
 }
 
 /* ── Subjects ───────────────────────────────────────────────────── */
@@ -268,7 +268,7 @@ function Slots() {
                         <span className="w-20 shrink-0 font-semibold muted">
                           {s.startTime}–{s.endTime}
                         </span>
-                        <span className="min-w-0 flex-1 truncate font-bold">{s.isBreak ? s.breakLabel || 'Break' : `${s.subject?.code} · ${s.faculty?.name}`}</span>
+                        <span className="min-w-0 flex-1 truncate font-bold">{s.isBreak ? s.breakLabel || 'Break' : `${s.subject?.code} · ${displayName(s.faculty)}`}</span>
                         {s.room && <span className="hidden shrink-0 muted sm:inline">{s.room}</span>}
                         <button className="rounded-lg p-1 hover:bg-white" aria-label="Edit slot" onClick={() => setEdit(s)}>
                           <Pencil className="h-3.5 w-3.5" />

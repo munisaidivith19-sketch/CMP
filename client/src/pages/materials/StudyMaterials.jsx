@@ -7,7 +7,7 @@ import { selectUser } from '../../features/authSlice';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS } from '../../utils/constants';
-import { errMsg, fmtClassDay, titleCase } from '../../utils/format';
+import { errMsg, fmtClassDay, titleCase, displayName } from '../../utils/format';
 import UploadMaterialModal from './UploadMaterialModal';
 import StudyAssistant from '../../components/StudyAssistant';
 
@@ -33,7 +33,7 @@ function MaterialCard({ material, canManage, onEdit, onDelete }) {
         <div className="flex min-w-0 items-center gap-2">
           <Avatar user={material.uploadedBy} size="xs" />
           <span className="truncate text-xs muted">
-            {material.uploadedBy?.name} · {fmtClassDay(material.createdAt, 'dd MMM yyyy')}
+            {displayName(material.uploadedBy)} · {fmtClassDay(material.createdAt, 'dd MMM yyyy')}
           </span>
         </div>
         <a href={material.file?.url} target="_blank" rel="noreferrer" className="btn btn-outline ml-auto !py-1.5 !text-xs">

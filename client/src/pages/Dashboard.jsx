@@ -30,7 +30,7 @@ import { AnnouncementItem } from '../components/domain';
 import { CategoryDonut, EngagementChart } from '../components/charts';
 import TodayStrip from '../components/TodayStrip';
 import { STAFF_VIEW, SUMMARY_VIEW, catStyle } from '../utils/constants';
-import { friendlyDay, fmtTime } from '../utils/format';
+import { friendlyDay, fmtTime, displayName } from '../utils/format';
 import AlumniDashboard from './alumni/AlumniDashboard';
 import AchievementCard from './achievements/AchievementCard';
 
@@ -219,7 +219,7 @@ function SecurityDashboard() {
               <li key={p._id} className="flex items-center gap-3 py-3">
                 <Avatar user={p.student} size="sm" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold">{p.student?.name}</p>
+                  <p className="truncate text-sm font-bold">{displayName(p.student)}</p>
                   <p className="truncate text-xs muted">
                     {p.student?.rollNo || '—'} · Year {p.student?.year || '—'} · {p.student?.department || '—'}
                   </p>

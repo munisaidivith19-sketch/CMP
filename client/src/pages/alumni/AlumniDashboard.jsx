@@ -46,7 +46,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
-import { safeHref } from '../../utils/format';
+import { safeHref, displayName } from '../../utils/format';
 
 export default function AlumniDashboard() {
   const currentUser = useSelector(selectUser);
@@ -188,7 +188,7 @@ export default function AlumniDashboard() {
             </div>
 
             <h1 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">
-              Welcome back, {currentUser?.name}!
+              Welcome back, {displayName(currentUser)}!
             </h1>
             <p className="mt-2 text-sm text-white/85 leading-relaxed">
               Stay connected with your alma mater, mentor aspiring juniors, share career
@@ -407,7 +407,7 @@ export default function AlumniDashboard() {
                         <Avatar user={req.student} size="sm" />
                         <div>
                           <p className="text-sm font-bold text-ink dark:text-white">
-                            {req.student?.name}
+                            {displayName(req.student)}
                           </p>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {req.student?.department} • Year {req.student?.year || '—'}
@@ -498,7 +498,7 @@ export default function AlumniDashboard() {
                         <Avatar user={sess.student} size="sm" />
                         <div>
                           <p className="text-sm font-bold text-ink dark:text-white">
-                            {sess.student?.name}
+                            {displayName(sess.student)}
                           </p>
                           <p className="text-xs text-slate-500 dark:text-slate-400">
                             {start.toLocaleDateString(undefined, {
@@ -630,7 +630,7 @@ export default function AlumniDashboard() {
                       <div className="flex items-center gap-2">
                         <Avatar user={post.author} size="xs" />
                         <span className="font-bold text-ink dark:text-white">
-                          {post.author?.name}
+                          {displayName(post.author)}
                         </span>
                         {post.chapter && (
                           <Badge color="primary" size="xs">
@@ -734,7 +734,7 @@ export default function AlumniDashboard() {
           open={!!respondModalReq}
           onClose={() => setRespondModalReq(null)}
           title={respondStatus === 'accepted' ? 'Accept Mentorship Request' : 'Decline Request'}
-          subtitle={`Student: ${respondModalReq.student?.name} (${respondModalReq.student?.department})`}
+          subtitle={`Student: ${displayName(respondModalReq.student)} (${respondModalReq.student?.department})`}
           size="sm"
         >
           <form onSubmit={handleRespond} className="space-y-4">

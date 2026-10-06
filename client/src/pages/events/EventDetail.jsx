@@ -8,7 +8,7 @@ import { ConfirmDialog } from '../../components/ui/Modal';
 import { RegisterButton, ReportButton } from '../../components/domain';
 import EventForm from './EventForm';
 import { catStyle } from '../../utils/constants';
-import { errMsg, eventRange, fmtDateTime } from '../../utils/format';
+import { errMsg, eventRange, fmtDateTime, displayName } from '../../utils/format';
 
 function Participants({ eventId, isPast }) {
   const { data = [], isLoading } = useGetParticipantsQuery(eventId);
@@ -47,7 +47,7 @@ function Participants({ eventId, isPast }) {
           <div key={r.user?._id} className="flex items-center gap-3 rounded-2xl p-2 table-row">
             <Avatar user={r.user} size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{r.user?.name}</p>
+              <p className="truncate text-sm font-semibold">{displayName(r.user)}</p>
               <p className="truncate text-[11px] muted">
                 {r.user?.department} {r.user?.year ? `· Y${r.user.year}` : ''}
               </p>

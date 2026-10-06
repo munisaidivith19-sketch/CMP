@@ -5,7 +5,7 @@ import { useGetSecurityLogsQuery, useGetSecurityOtpsQuery, useGetSecuritySummary
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, StatCard, Tabs, cn } from '../../components/ui/primitives';
 import { RangeFilter } from '../../components/insights';
 import { DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, YEAR_LABELS, ACADEMIC_YEARS } from '../../utils/constants';
-import { fmtDateTime } from '../../utils/format';
+import { fmtDateTime, displayName } from '../../utils/format';
 
 // Mirrors server/src/models/SecurityLog.js (the server validates the filter).
 const EVENTS = [
@@ -44,7 +44,7 @@ function Who({ user, role, fallback }) {
   if (!user) return <span className="muted">{fallback || '—'}</span>;
   return (
     <div className="min-w-0">
-      <p className="truncate font-semibold">{user.name}</p>
+      <p className="truncate font-semibold">{displayName(user)}</p>
       <p className="truncate text-[11px] muted">
         {ROLE_LABELS[role || user.role] || role || user.role}
         {user.rollNo || user.employeeId ? ` · ${user.rollNo || user.employeeId}` : ''}

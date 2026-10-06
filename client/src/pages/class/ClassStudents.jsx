@@ -7,7 +7,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input, Select } from '../../components/ui/form';
 import ResetPasswordModal, { suggestPassword } from '../../components/ResetPasswordModal';
 import { ACADEMIC_YEARS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
-import { errMsg, timeAgo } from '../../utils/format';
+import { errMsg, timeAgo, displayName } from '../../utils/format';
 
 const EMPTY = { name: '', rollNo: '', email: '', phone: '', parentPhone: '', stayType: '', password: '' };
 const REQUIRED = ['name', 'rollNo', 'email', 'parentPhone', 'stayType', 'password'];
@@ -52,7 +52,7 @@ function CreateStudentModal({ open, scope, onClose }) {
     const body = Object.fromEntries(Object.entries(v).map(([k, val]) => [k, String(val).trim()]).filter(([, val]) => val));
     try {
       const user = await create(body).unwrap();
-      toast.success(`Student login created for ${user.name} — username: ${user.email}`, { duration: 6000 });
+      toast.success(`Student login created for ${displayName(user)} — username: ${user.email}`, { duration: 6000 });
       setV(EMPTY);
       setErrors({});
       setShow(false);
@@ -203,7 +203,7 @@ function EditStudentModal({ studentId, scope, onClose }) {
       open={Boolean(studentId)}
       onClose={onClose}
       size="lg"
-      title={`Edit student${student?.name ? ` · ${student.name}` : ''}`}
+      title={`Edit student${student?.name ? ` · ${displayName(student)}` : ''}`}
       subtitle="Changes are saved to the student’s account and recorded in Security & Logs."
       footer={
         <>

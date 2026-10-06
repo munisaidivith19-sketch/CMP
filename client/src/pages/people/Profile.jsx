@@ -31,7 +31,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input, Select, TagInput, Textarea } from '../../components/ui/form';
 import { ReportButton } from '../../components/domain';
 import { ROLE_LABELS } from '../../utils/constants';
-import { errMsg, fmtDate, friendlyDay } from '../../utils/format';
+import { errMsg, fmtDate, friendlyDay, displayName } from '../../utils/format';
 
 function EditProfile({ open, onClose, user }) {
   const dispatch = useDispatch();
@@ -258,7 +258,7 @@ export default function Profile() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-extrabold tracking-tight">{user.name}</h1>
+              <h1 className="text-2xl font-extrabold tracking-tight">{displayName(user)}</h1>
               <Badge color={user.role === 'faculty' ? 'info' : 'primary'}>{ROLE_LABELS[user.role]}</Badge>
             </div>
             <p className="text-sm muted">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, KeyRound, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
+import { Ban, CheckCircle2, KeyRound, Pencil, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
 import { useDeleteAdminUserMutation, useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
@@ -11,17 +11,28 @@ import { selectUser } from '../../features/authSlice';
 import CreateUserModal from '../../components/CreateUserModal';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
-import { errMsg, fmtDate, timeAgo } from '../../utils/format';
+import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
+
+const TITLE_OPTIONS = ['Ms', 'Mr', 'Dr'].map((t) => ({ value: t, label: t }));
+const GENDER_OPTIONS = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+];
 
 /** The form's values for a user; every text field is a string, never undefined. */
 const classFormValues = (user) => ({
   department: user?.department || '', year: user?.year || '', section: user?.section || '', semester: user?.semester || '', rollNo: user?.rollNo || '',
+  title: user?.title || '', gender: user?.gender || '', employeeId: user?.employeeId || '',
   name: user?.name || '', email: user?.email || '', phone: user?.phone || '', parentPhone: user?.parentPhone || '', stayType: user?.stayType || '',
   teachingYears: user?.teachingYears || [], teachingSections: user?.teachingSections || [],
   inChargeYear: user?.inChargeYear || '', inChargeSemester: user?.inChargeSemester || '',
 });
 
-/** Department / section / semester decide which timetable and attendance roster a student belongs to. */
+/**
+ * Admin "Edit user": the account details (title, gender, name, email, mobile)
+ * for every role, plus only the academic fields that role actually has — a
+ * student's class, a faculty's teaching scope, an HOD's department.
+ */
 function ClassModal({ user, onClose }) {
   const [update, { isLoading }] = useUpdateAdminUserMutation();
   // Filled from the user on the very first render: the Save button reads
@@ -33,9 +44,14 @@ function ClassModal({ user, onClose }) {
   if (!user) return null;
   const isFaculty = user.role === 'faculty';
   const isStudent = STUDENT_ROLES.includes(user.role);
+  const isHod = user.role === 'hod';
+  const isStaff = !isStudent;
   const set = (k) => (e) =>
     setV((s) => {
       const next = { ...s, [k]: e.target.value };
+      // Mr / Ms imply the gender; Dr leaves it to the admin.
+      if (k === 'title' && next.title === 'Mr') next.gender = 'male';
+      if (k === 'title' && next.title === 'Ms') next.gender = 'female';
       if (k === 'year' && s.semester && !semestersOfYear(e.target.value).includes(Number(s.semester))) next.semester = '';
       // The in-charge semester must belong to the in-charge year.
       if (k === 'inChargeYear' && !semestersOfYear(Number(e.target.value)).includes(Number(s.inChargeSemester))) next.inChargeSemester = '';
@@ -45,31 +61,41 @@ function ClassModal({ user, onClose }) {
     try {
       await update({
         id: user._id,
-        department: v.department || null,
-        section: v.section ? v.section.toUpperCase() : null,
-        // A faculty's class in charge is also their (sole) section handled.
+        // Account details — every role.
+        name: v.name.trim(),
+        email: v.email.trim(),
+        phone: v.phone.trim() || null,
+        ...(v.title ? { title: v.title } : {}),
+        ...(v.gender ? { gender: v.gender } : {}),
+        ...(isStaff ? { employeeId: v.employeeId.trim().toUpperCase() || null } : {}),
+        // Academic placement — only the fields this role actually has.
+        ...(isStudent
+          ? {
+              department: v.department || null,
+              section: v.section ? v.section.toUpperCase() : null,
+              year: v.year ? Number(v.year) : undefined,
+              semester: v.semester ? Number(v.semester) : undefined,
+              rollNo: v.rollNo || null,
+              parentPhone: v.parentPhone.trim() || null,
+              ...(v.stayType ? { stayType: v.stayType } : {}),
+            }
+          : {}),
         ...(isFaculty
           ? {
+              department: v.department || null,
+              section: v.section ? v.section.toUpperCase() : null,
               teachingYears: v.teachingYears,
+              // A faculty's class in charge is also their (sole) section handled.
               teachingSections: v.section ? [v.section.toUpperCase()] : [],
               // "Our Class": section + in-charge year + in-charge semester. Clearing
               // the section clears the in-charge class with it.
               inChargeYear: v.section && v.inChargeYear ? Number(v.inChargeYear) : null,
               inChargeSemester: v.section && v.inChargeSemester ? Number(v.inChargeSemester) : null,
             }
-          : { year: v.year ? Number(v.year) : undefined, semester: v.semester ? Number(v.semester) : undefined, rollNo: v.rollNo || null }),
-        // Student account details (Admin edits students college-wide).
-        ...(isStudent
-          ? {
-              name: v.name.trim(),
-              email: v.email.trim(),
-              phone: v.phone.trim() || null,
-              parentPhone: v.parentPhone.trim() || null,
-              ...(v.stayType ? { stayType: v.stayType } : {}),
-            }
           : {}),
+        ...(isHod ? { department: v.department || null } : {}),
       }).unwrap();
-      toast.success('Class details saved');
+      toast.success('User details saved');
       onClose();
     } catch (e) {
       toast.error(errMsg(e));
@@ -79,8 +105,15 @@ function ClassModal({ user, onClose }) {
     <Modal
       open
       onClose={onClose}
-      title={`${isFaculty ? 'Teaching scope' : isStudent ? 'Edit student' : 'Class details'} · ${user.name}`}
-      subtitle={isFaculty ? 'Bounds which classes this faculty can be scheduled for in the timetable.' : 'Department, year, section and semester decide the timetable and attendance roster.'}
+      size="lg"
+      title={`Edit ${ROLE_LABELS[user.role] || 'user'} · ${displayName(user)}`}
+      subtitle={
+        isFaculty
+          ? 'Account details, and the classes this faculty can be scheduled for in the timetable.'
+          : isStudent
+            ? 'Account details, and the class that decides the timetable and attendance roster.'
+            : 'Account details for this login.'
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -89,7 +122,7 @@ function ClassModal({ user, onClose }) {
           <Button
             loading={isLoading}
             onClick={save}
-            disabled={(isFaculty && (!v.teachingYears?.length || !v.section || !v.inChargeYear !== !v.inChargeSemester)) || (isStudent && (!v.name.trim() || !v.email.trim()))}
+            disabled={!v.name.trim() || !v.email.trim() || (isFaculty && (!v.teachingYears?.length || !v.section || !v.inChargeYear !== !v.inChargeSemester))}
           >
             Save
           </Button>
@@ -97,16 +130,25 @@ function ClassModal({ user, onClose }) {
       }
     >
       <div className="grid gap-3 sm:grid-cols-2">
+        <p className="text-xs font-bold uppercase tracking-wide muted sm:col-span-2">Account</p>
+        <Select label="Title" placeholder="Select title" options={TITLE_OPTIONS} value={v.title} onChange={set('title')} />
+        <Select label="Gender" placeholder="Select gender" options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} />
+        <Input label="Full name" maxLength={80} value={v.name} onChange={set('name')} />
+        <Input label="College email (username)" type="email" value={v.email} onChange={set('email')} />
+        <Input label={isStudent ? 'Student mobile' : 'Mobile'} type="tel" maxLength={20} value={v.phone} onChange={set('phone')} />
+        {isStaff && <Input label="Employee ID" maxLength={30} className="uppercase" value={v.employeeId} onChange={set('employeeId')} />}
         {isStudent && (
           <>
-            <Input label="Full name" maxLength={80} value={v.name} onChange={set('name')} />
-            <Input label="College email (username)" type="email" value={v.email} onChange={set('email')} />
-            <Input label="Student mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} />
             <Input label="Parent mobile" type="tel" maxLength={20} hint="Gate-pass OTPs go only to this number." value={v.parentPhone} onChange={set('parentPhone')} />
             <Select label="Stay" placeholder="—" options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))} value={v.stayType} onChange={set('stayType')} />
           </>
         )}
-        <Select label="Department" placeholder="—" keepCase options={[...new Set([user.department, ...DEPARTMENTS].filter(Boolean))]} value={v.department} onChange={set('department')} />
+        {(isStudent || isFaculty || isHod) && (
+          <>
+            <p className="mt-2 text-xs font-bold uppercase tracking-wide muted sm:col-span-2">{isFaculty ? 'Teaching scope' : isHod ? 'Department' : 'Class'}</p>
+            <Select label="Department" placeholder="—" keepCase options={[...new Set([user.department, ...DEPARTMENTS].filter(Boolean))]} value={v.department} onChange={set('department')} />
+          </>
+        )}
         {isFaculty ? (
           <>
             <Select label="Class in charge" placeholder="Select section" options={SECTIONS} value={v.section} onChange={set('section')} />
@@ -134,7 +176,7 @@ function ClassModal({ user, onClose }) {
               onChange={(list) => setV((s) => ({ ...s, teachingYears: list }))}
             />
           </>
-        ) : (
+        ) : isStudent ? (
           <>
             <Input label="Roll number" maxLength={30} value={v.rollNo} onChange={set('rollNo')} />
             <Select label="Year" placeholder="—" options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))} value={String(v.year || '')} onChange={set('year')} />
@@ -148,7 +190,7 @@ function ClassModal({ user, onClose }) {
               onChange={set('semester')}
             />
           </>
-        )}
+        ) : null}
       </div>
     </Modal>
   );
@@ -248,7 +290,7 @@ export default function AdminUsers() {
                         <Link to={`/people/${u._id}`} className="flex items-center gap-3">
                           <Avatar user={u} size="sm" />
                           <div className="min-w-0">
-                            <p className="truncate font-bold">{u.name}</p>
+                            <p className="truncate font-bold">{displayName(u)}</p>
                             <p className="truncate text-xs muted">
                               {u.email}
                               {u.rollNo || u.employeeId ? ` · ${u.rollNo || u.employeeId}` : ''}
@@ -257,7 +299,7 @@ export default function AdminUsers() {
                         </Link>
                       </td>
                       <td className="px-3 py-3 text-xs muted">
-                        <button onClick={() => setClassEdit(u)} className="rounded-lg px-1.5 py-1 text-left hover:bg-white/70 hover:text-ink" title={u.role === 'faculty' ? 'Edit teaching scope' : STUDENT_ROLES.includes(u.role) ? 'Edit student' : 'Edit class details'}>
+                        <button onClick={() => setClassEdit(u)} disabled={self} className="rounded-lg px-1.5 py-1 text-left hover:bg-white/70 hover:text-ink" title={self ? undefined : 'Edit user'}>
                           {u.department || '—'}
                           {u.role === 'faculty' ? (
                             <>
@@ -300,6 +342,9 @@ export default function AdminUsers() {
                       <td className="px-5 py-3 text-right">
                         {!self && (
                           <div className="inline-flex items-center gap-2">
+                            <Button size="sm" variant="outline" icon={Pencil} onClick={() => setClassEdit(u)}>
+                              Edit
+                            </Button>
                             {u.role !== 'admin' && (
                               <Button size="sm" variant="outline" icon={KeyRound} onClick={() => setResetting(u)}>
                                 Reset password
@@ -337,7 +382,7 @@ export default function AdminUsers() {
       <ConfirmDialog
         open={Boolean(pending)}
         onClose={() => setPending(null)}
-        title={`Suspend ${pending?.name}?`}
+        title={`Suspend ${displayName(pending)}?`}
         text="They will be signed out immediately and cannot sign in until reactivated."
         confirmText="Suspend account"
         loading={saving}
@@ -349,7 +394,7 @@ export default function AdminUsers() {
       <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
-        title={`Delete ${deleting?.name}?`}
+        title={`Delete ${displayName(deleting)}?`}
         text="This permanently removes the account from the database. This cannot be undone."
         confirmText="Delete permanently"
         loading={deletingSaving}

@@ -18,7 +18,7 @@ import { Avatar, Badge, Button, Card, ErrorState, PageLoader, cn } from '../../c
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { ReportButton } from '../../components/domain';
 import { ROLE_LABELS, STAFF_VIEW } from '../../utils/constants';
-import { errMsg, timeAgo } from '../../utils/format';
+import { errMsg, timeAgo, displayName } from '../../utils/format';
 
 function Upvote({ active, count, onClick }) {
   return (
@@ -97,7 +97,7 @@ export default function DiscussionDetail() {
           <Avatar user={d.author} />
           <div>
             <Link to={`/people/${d.author._id}`} className="text-sm font-bold hover:text-primary-600">
-              {d.author.name}
+              {displayName(d.author)}
             </Link>
             <p className="text-xs muted">
               {ROLE_LABELS[d.author.role]} · {timeAgo(d.createdAt)} ·{' '}
@@ -149,7 +149,7 @@ export default function DiscussionDetail() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link to={`/people/${r.author?._id}`} className="text-sm font-bold hover:text-primary-600">
-                    {r.author?.name}
+                    {displayName(r.author)}
                   </Link>
                   {r.author?._id === d.author._id && <Badge>Author</Badge>}
                   {STAFF_VIEW.includes(r.author?.role) && <Badge color="info">{ROLE_LABELS[r.author.role]}</Badge>}

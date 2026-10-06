@@ -28,6 +28,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Field, Textarea } from '../../components/ui/form';
+import { displayName } from '../../utils/format';
 
 export default function AlumniVerificationTab() {
   const currentUser = useSelector(selectUser);
@@ -144,7 +145,7 @@ export default function AlumniVerificationTab() {
                         <div className="flex items-center gap-3">
                           <Avatar user={u} size="sm" />
                           <div>
-                            <p className="font-bold text-ink">{u.name}</p>
+                            <p className="font-bold text-ink">{displayName(u)}</p>
                             <p className="text-slate-400 text-[11px]">{u.email}</p>
                           </div>
                         </div>
@@ -208,7 +209,7 @@ export default function AlumniVerificationTab() {
           open={!!rejectModalItem}
           onClose={() => setRejectModalItem(null)}
           title="Reject Alumni Profile"
-          subtitle={`Member: ${rejectModalItem.user?.name} (${rejectModalItem.user?.email})`}
+          subtitle={`Member: ${displayName(rejectModalItem.user)} (${rejectModalItem.user?.email})`}
           size="sm"
         >
           <form onSubmit={handleReject} className="space-y-4">

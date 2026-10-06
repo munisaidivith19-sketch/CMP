@@ -3,7 +3,7 @@ import { CalendarDays, GraduationCap, Megaphone, MessagesSquare, Search as Searc
 import { useSearchQuery } from '../services/api';
 import { Avatar, Badge, Card, CardHeader, CategoryBadge, EmptyState, PageHeader, PageLoader } from '../components/ui/primitives';
 import { ROLE_LABELS } from '../utils/constants';
-import { fmtDate, friendlyDay, timeAgo } from '../utils/format';
+import { fmtDate, friendlyDay, timeAgo, displayName } from '../utils/format';
 
 function Section({ icon: Icon, title, items, render }) {
   if (!items?.length) return null;
@@ -96,7 +96,7 @@ export default function Search() {
               <Link key={u._id} to={`/people/${u._id}`} className={row}>
                 <Avatar user={u} size="sm" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold">{u.name}</p>
+                  <p className="truncate text-sm font-bold">{displayName(u)}</p>
                   <p className="text-[11px] muted">
                     {ROLE_LABELS[u.role]} · {u.department}
                   </p>

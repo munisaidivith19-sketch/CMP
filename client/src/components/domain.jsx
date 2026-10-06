@@ -10,7 +10,7 @@ import { Select, Textarea } from './ui/form';
 import { useCancelRegistrationMutation, useCreateReportMutation, useRegisterEventMutation } from '../services/api';
 import { selectUser } from '../features/authSlice';
 import { catStyle, REPORT_REASONS, STUDENT_ROLES } from '../utils/constants';
-import { errMsg, friendlyDay, fmtTime, timeAgo } from '../utils/format';
+import { errMsg, friendlyDay, fmtTime, timeAgo, displayName } from '../utils/format';
 
 /* ── Event registration button ──────────────────────────────────── */
 export function RegisterButton({ event, size = 'md', className }) {
@@ -199,7 +199,7 @@ export function AnnouncementItem({ a, compact, actions }) {
         {!compact && (
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <span className="flex items-center gap-2 text-xs font-semibold">
-              <Avatar user={a.author} size="xs" /> {a.author?.name}
+              <Avatar user={a.author} size="xs" /> {displayName(a.author)}
             </span>
             {a.deadline && (
               <Badge color="danger" icon={Clock}>

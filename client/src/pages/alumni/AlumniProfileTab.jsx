@@ -32,6 +32,7 @@ import {
 } from '../../components/ui/primitives';
 import { Field, Input, Select, Textarea } from '../../components/ui/form';
 import { MENTORSHIP_DOMAINS, PRIVACY_FIELDS, PRIVACY_LEVELS, DEFAULT_PRIVACY } from '../../utils/constants';
+import { displayName } from '../../utils/format';
 
 const DOMAIN_LABELS = {
   software_engineering: 'Software Engineering',
@@ -427,7 +428,7 @@ export default function AlumniProfileTab() {
           <div className="flex items-center gap-3">
             <Avatar user={currentUser} size="lg" />
             <div>
-              <h5 className="font-bold text-sm text-ink">{currentUser?.name}</h5>
+              <h5 className="font-bold text-sm text-ink">{displayName(currentUser)}</h5>
               <p className="text-xs text-primary-600 dark:text-primary-400 font-semibold">
                 {privacy.designation === 'hidden' ? '[Designation Hidden]' : designation || 'Role'} •{' '}
                 {privacy.company === 'hidden' ? '[Company Hidden]' : company || 'Company'}

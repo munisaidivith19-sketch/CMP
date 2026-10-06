@@ -88,7 +88,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { MiniStat, PercentBadge, PercentBars, RangeFilter, StatusBadge, rangeParams } from '../../components/insights';
-import { errMsg, fmtClassDay, fmtDateTime, todayKey } from '../../utils/format';
+import { errMsg, fmtClassDay, fmtDateTime, todayKey, displayName } from '../../utils/format';
 
 /** Faculty pick from subjects they teach, an HOD from their department's, admin from all. */
 const subjectScope = (me) =>
@@ -761,7 +761,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
                 <p className="text-xs text-ink-muted mt-1">
                   {fmtClassDay(roster.date, 'EEEE, dd MMMM yyyy')} · Period {roster.period}
                   {roster.slot && ` · ${to12h(roster.slot.startTime)} – ${to12h(roster.slot.endTime)}`}
-                  {roster.slot?.faculty?.name && ` · ${roster.slot.faculty.name}`}
+                  {roster.slot?.faculty?.name && ` · ${displayName(roster.slot.faculty)}`}
                 </p>
               </div>
 
@@ -1170,7 +1170,7 @@ function LowAttendance() {
         id: student._id,
         message: `Notice: Your attendance is currently ${student.percentage || 'below threshold'}%, which is below the mandatory ${threshold}% requirement. Please contact your department HOD / class advisor immediately.`,
       }).unwrap();
-      toast.success(`Warning notification sent to ${student.name}`);
+      toast.success(`Warning notification sent to ${displayName(student)}`);
     } catch (e) {
       toast.error(errMsg(e));
     }
@@ -1366,7 +1366,7 @@ function LowAttendance() {
                   <Avatar user={r.student} size="sm" />
                   <div className="min-w-0">
                     <p className="font-bold text-sm text-ink group-hover:text-primary-400 transition-colors truncate">
-                      {r.student?.name}
+                      {displayName(r.student)}
                     </p>
                     <p className="text-xs text-ink-muted truncate">
                       {r.student?.rollNo || '—'} · {r.student?.department}
@@ -1522,7 +1522,7 @@ function Corrections() {
                   <Avatar user={c.student} size="sm" />
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-ink truncate">
-                      {c.student?.name} <span className="font-normal text-xs text-ink-muted">· {c.student?.rollNo}</span>
+                      {displayName(c.student)} <span className="font-normal text-xs text-ink-muted">· {c.student?.rollNo}</span>
                     </p>
                     <p className="text-xs text-ink-muted">
                       {c.subject?.code} · {fmtClassDay(c.date, 'EEEE, dd MMM')} · Period {c.period}
@@ -1730,7 +1730,7 @@ function ClassOverview() {
                   {filteredStudents.map((s, index) => (
                     <tr key={s._id} className="transition-colors hover:bg-white/[0.03]">
                       <td className="px-5 py-3 text-xs font-mono text-ink-muted">{index + 1}</td>
-                      <td className="px-4 py-3 font-bold text-ink">{s.studentInfo.name}</td>
+                      <td className="px-4 py-3 font-bold text-ink">{displayName(s.studentInfo)}</td>
                       <td className="px-4 py-3 text-xs font-mono text-ink-muted">{s.studentInfo.rollNo || '—'}</td>
                       <td className="px-4 py-3 text-right text-xs">
                         <span className="font-bold text-emerald-700 dark:text-emerald-400">{s.presentPeriods}</span>

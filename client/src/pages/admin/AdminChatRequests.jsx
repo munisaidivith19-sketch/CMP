@@ -7,7 +7,7 @@ import { Avatar, AvatarStack, Badge, Button, Card, EmptyState, ErrorState, PageH
 import { Modal } from '../../components/ui/Modal';
 import { Textarea } from '../../components/ui/form';
 import { ROLE_LABELS, STUDENT_ROLES, YEAR_LABELS } from '../../utils/constants';
-import { errMsg, fmtDateTime, timeAgo } from '../../utils/format';
+import { errMsg, fmtDateTime, timeAgo, displayName } from '../../utils/format';
 import { selectUser } from '../../features/authSlice';
 
 const CATEGORY_LABEL = { custom: 'Custom', academic: 'Academics', faculty: 'Faculty' };
@@ -92,7 +92,7 @@ export default function AdminChatRequests() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-bold">{r.name}</p>
                     <p className="truncate text-xs muted">
-                      by {r.createdBy?.name} · {ROLE_LABELS[r.createdBy?.role]}
+                      by {displayName(r.createdBy)} · {ROLE_LABELS[r.createdBy?.role]}
                       {r.createdBy?.department ? ` · ${r.createdBy.department}` : ''} · {fmtDateTime(r.createdAt)}
                     </p>
                   </div>
@@ -158,7 +158,7 @@ export default function AdminChatRequests() {
         title={viewing?.name}
         subtitle={
           viewing
-            ? `Requested by ${viewing.createdBy?.name} (${ROLE_LABELS[viewing.createdBy?.role]}${viewing.createdBy?.department ? `, ${viewing.createdBy.department}` : ''}) · ${timeAgo(viewing.createdAt)}`
+            ? `Requested by ${displayName(viewing.createdBy)} (${ROLE_LABELS[viewing.createdBy?.role]}${viewing.createdBy?.department ? `, ${viewing.createdBy.department}` : ''}) · ${timeAgo(viewing.createdAt)}`
             : ''
         }
         footer={

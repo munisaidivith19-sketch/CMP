@@ -564,7 +564,12 @@ export const addMembers = asyncHandler(async (req, res) => {
   const requested = [...new Set(req.body.userIds.map(String))];
   const valid = await User.find({ _id: { $in: requested }, isActive: true }).distinct('_id');
   if (!valid.length) throw new ApiError(404, 'No valid users to add');
-  await assertMembersAllowed(req.user, valid, {
+  // A group's scope is its creator's: a member promoted to group admin (even a
+  // student) can only add people the creator could have added. Site admins are unrestricted.
+  const creator = req.user.role === 'admin' || !conv.createdBy || sameId(conv.createdBy, req.user)
+    ? null
+    : await User.findById(conv.createdBy._id || conv.createdBy).select('role department section year semester name').lean();
+  await assertMembersAllowed(creator || req.user, valid, {
     category: conv.category,
     linked: conv.category === 'academic' ? { department: conv.linkedDepartment, year: conv.linkedYear, section: conv.linkedSection } : undefined,
   });
@@ -583,6 +588,10 @@ export const removeMember = asyncHandler(async (req, res) => {
   // Anyone can leave; group admins (or a site admin) can remove others.
   if (!sameId(targetId, req.user) && !isGroupAdmin(conv, req.user)) {
     throw new ApiError(403, 'Only group admins can remove members');
+  }
+  // Promoted admins cannot push out the group's creator (they may leave themselves).
+  if (sameId(targetId, conv.createdBy) && !sameId(targetId, req.user) && req.user.role !== 'admin') {
+    throw new ApiError(403, 'The group creator cannot be removed');
   }
 
   const before = participantIds(conv);

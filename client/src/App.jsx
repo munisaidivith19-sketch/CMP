@@ -6,7 +6,7 @@ import AppLayout, { Backdrop } from './components/layout/AppLayout';
 import { PageLoader, Spinner } from './components/ui/primitives';
 import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
-import { PEOPLE_DIRECTORY, ROLES, STAFF_VIEW } from './utils/constants';
+import { HOSTEL_ROLES, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW } from './utils/constants';
 
 // The People directory: students see only their own class (classmates and
 // that class's faculty); staff see their academic scope. Security and Warden
@@ -61,6 +61,7 @@ const ComplaintDashboard = lazy(() => import('./pages/admin/ComplaintDashboard')
 const Alumni = lazy(() => import('./pages/alumni/Alumni'));
 const AlumniClaim = lazy(() => import('./pages/alumni/AlumniClaim'));
 const SOSAlerts = lazy(() => import('./pages/sos/SOSAlerts'));
+const Hostel = lazy(() => import('./pages/hostel/Hostel'));
 
 function RequireAuth({ children, roles }) {
   const user = useSelector((s) => s.auth.user);
@@ -176,6 +177,7 @@ export default function App() {
             <Route path="admin/complaints" element={<RequireAuth roles={['admin', 'chairman']}><ComplaintDashboard /></RequireAuth>} />
             <Route path="alumni" element={<Alumni />} />
             <Route path="sos" element={<SOSAlerts />} />
+            <Route path="hostel" element={<RequireAuth roles={HOSTEL_ROLES}><Hostel /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

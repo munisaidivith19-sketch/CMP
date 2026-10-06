@@ -3,7 +3,7 @@ import { Megaphone, Pin } from 'lucide-react-native';
 import { Avatar, Badge, Card, EmptyState, ErrorState, Header, Loading, Screen, T } from '../../components/ui';
 import { useGetAnnouncementsQuery } from '../../services/api';
 import { colors } from '../../theme';
-import { fmtDateTime, timeAgo } from '../../utils/format';
+import { fmtDateTime, timeAgo, displayName } from '../../utils/format';
 
 export default function Announcements() {
   const { data, isLoading, isFetching, error, refetch } = useGetAnnouncementsQuery({ limit: 40 });
@@ -40,7 +40,7 @@ export default function Announcements() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Avatar user={a.author} size={26} />
                 <T v="small">
-                  {a.author?.name} · {timeAgo(a.createdAt)}
+                  {displayName(a.author)} · {timeAgo(a.createdAt)}
                 </T>
               </View>
             </Card>

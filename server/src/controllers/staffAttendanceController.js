@@ -78,9 +78,9 @@ const studentFilter = (department, { section, year, semester } = {}, user) => {
     if (semester) f.semester = Number(semester);
   } else if (user && isBranchHod(user)) {
     f.department = user.department;
-    if (!year) {
-      f.year = { $in: [2, 3, 4] };
-    }
+    // 1st year belongs to the Science & Humanities HOD: asking for it matches no one.
+    if (Number(year) === 1) f._id = null;
+    else if (!year) f.year = { $in: [2, 3, 4] };
   }
   return f;
 };

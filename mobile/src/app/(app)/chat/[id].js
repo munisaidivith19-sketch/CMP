@@ -9,7 +9,7 @@ import { errMsg, useEditMessageMutation, useGetConversationQuery, useGetMessages
 import { emit, emitWithAck, useSocketEvent, useSocketRoom } from '../../../services/socket';
 import { selectUser } from '../../../store/authSlice';
 import { colors, fonts, gradients } from '../../../theme';
-import { fmtTime, sameId, timeAgo } from '../../../utils/format';
+import { fmtTime, sameId, timeAgo, displayName } from '../../../utils/format';
 import { describeConversation } from '../../../utils/chat';
 
 const dayLabel = (d) => {
@@ -170,8 +170,7 @@ export default function Thread() {
     );
   }
 
-  const d = describeConversation(conv, me);
-  const others = conv?.participants.filter((p) => !sameId(p, me)) || [];
+  const others =conv?.participants.filter((p) => !sameId(p, me)) || [];
   const isOnline = online ?? d.other?.online;
   const typingNames = typingIds.map((u) => conv?.participants.find((p) => sameId(p, u))?.name?.split(' ')[0]).filter(Boolean);
   const status = typingNames.length
@@ -221,14 +220,14 @@ export default function Thread() {
                   <Pressable onLongPress={() => onLongPress(m)} delayLongPress={300} style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
                     {!mine && d.group && (!prev || !sameId(prev.sender, m.sender) || newDay) ? (
                       <T v="small" style={{ color: colors.primary, marginLeft: 10, marginBottom: 2 }}>
-                        {m.sender?.name}
+                        {displayName(m.sender)}
                       </T>
                     ) : null}
                     <View style={{ maxWidth: '82%', borderRadius: 22, borderBottomRightRadius: mine ? 6 : 22, borderBottomLeftRadius: mine ? 22 : 6, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: mine ? colors.primary : '#fff', opacity: m.deletedAt ? 0.6 : 1 }}>
                       {m.replyTo && !m.deletedAt ? (
                         <View style={{ borderLeftWidth: 3, borderColor: mine ? 'rgba(255,255,255,0.7)' : colors.primary400, paddingLeft: 8, marginBottom: 4 }}>
                           <T v="small" style={{ color: mine ? '#fff' : colors.primary, fontFamily: fonts.bold }}>
-                            {m.replyTo.sender?.name || 'Message'}
+                            {displayName(m.replyTo.sender) || 'Message'}
                           </T>
                           <T v="small" numberOfLines={2} style={{ color: mine ? 'rgba(255,255,255,0.85)' : colors.soft }}>
                             {m.replyTo.body}
@@ -273,7 +272,7 @@ export default function Thread() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primarySoft, borderRadius: 14, padding: 8, marginBottom: 8 }}>
               <CornerUpLeft size={14} color={colors.primary} />
               <T v="small" numberOfLines={1} style={{ flex: 1 }}>
-                Replying to {sameId(replyTo.sender, me) ? 'yourself' : replyTo.sender?.name}: {replyTo.body}
+                Replying to {sameId(replyTo.sender, me) ? 'yourself' : displayName(replyTo.sender)}: {replyTo.body}
               </T>
               <Pressable onPress={() => setReplyTo(null)} accessibilityLabel="Cancel reply" hitSlop={8}>
                 <X size={16} color={colors.soft} />

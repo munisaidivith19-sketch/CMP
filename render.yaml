@@ -39,7 +39,7 @@ services:
       # Security & Logs → OTP. To go live set this to "true" with
       # OTP_PROVIDER=college_sms and the SMS_* secrets.
       - key: OTP_SMS_ENABLED
-        value: "false"
+        value: "true"
       # Legacy admin-only /dev/otp page (superseded by Security & Logs → OTP).
       - key: DEV_OTP_PORTAL
         value: "true"

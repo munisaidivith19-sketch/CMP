@@ -25,6 +25,7 @@ export async function generateProfilesPdfBuffer() {
   const facultyAndHod = users.filter((u) => ['hod', 'faculty'].includes(u.role));
   const students = users.filter((u) => ['student', 'club_admin'].includes(u.role));
   const alumni = users.filter((u) => u.role === 'alumni');
+  const firstYearHod = users.find((u) => u.role === 'hod' && u.department === 'Science & Humanities' && u.isActive !== false);
 
   doc.facts([
     ['Report Date', today],
@@ -33,8 +34,7 @@ export async function generateProfilesPdfBuffer() {
     ['HODs & Faculty Members', String(facultyAndHod.length)],
     ['Active Student Profiles', String(students.length)],
     ['Alumni Network Members', String(alumni.length)],
-    ['First Year Common HOD', 'Dr. K. Radhakrishnan (Science & Humanities)'],
-    ['Universal Account Password', 'Password@123'],
+    ['First Year Common HOD', firstYearHod ? `${firstYearHod.name} (Science & Humanities)` : 'Not assigned'],
   ]);
   doc.gap(4);
   doc.hr();

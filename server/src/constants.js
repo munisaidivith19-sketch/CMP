@@ -260,3 +260,7 @@ export const SOS_TYPES = ['medical', 'security', 'fire', 'ragging', 'other'];
 export const SOS_STATUSES = ['active', 'acknowledged', 'resolved', 'false_alarm'];
 export const SOS_RESPONDER_ROLES = ['security', 'admin', 'hod', 'principal', 'chairman'];
 export const SOS_BROADCAST_ROLES = ROLES;
+
+// ── Hostel dashboard ────────────────────────────────────────────────
+// Who sees the hostel overview (head-counts, who is inside / outside campus).
+export const HOSTEL_VIEW_ROLES = ['admin', 'principal', 'dean', 'ao', 'chairman', 'warden'];

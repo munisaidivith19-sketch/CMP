@@ -7,7 +7,7 @@ import { Avatar, Badge, Button, Card, ErrorState, Header, Input, Loading, Screen
 import { api, errMsg, useAddReplyMutation, useGetDiscussionQuery, useUpvoteDiscussionMutation } from '../../../services/api';
 import { useSocketEvent, useSocketRoom } from '../../../services/socket';
 import { colors } from '../../../theme';
-import { timeAgo } from '../../../utils/format';
+import { timeAgo, displayName } from '../../../utils/format';
 
 export default function DiscussionDetail() {
   const { id } = useLocalSearchParams();
@@ -49,7 +49,7 @@ export default function DiscussionDetail() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Avatar user={d.author} size={28} />
           <T v="small" style={{ flex: 1 }}>
-            {d.author?.name} · {timeAgo(d.createdAt)}
+            {displayName(d.author)} · {timeAgo(d.createdAt)}
           </T>
           <Pressable onPress={() => upvote(id)} accessibilityLabel="Upvote" style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: d.hasUpvoted ? colors.primary : colors.primarySoft }}>
             <ThumbsUp size={14} color={d.hasUpvoted ? '#fff' : colors.primary} />
@@ -63,7 +63,7 @@ export default function DiscussionDetail() {
         <Card key={r._id} style={{ gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Avatar user={r.author} size={26} />
-            <T v="strong" style={{ flex: 1 }}>{r.author?.name}</T>
+            <T v="strong" style={{ flex: 1 }}>{displayName(r.author)}</T>
             <T v="small" style={{ color: colors.muted }}>{timeAgo(r.createdAt)}</T>
           </View>
           <T v="body">{r.body}</T>

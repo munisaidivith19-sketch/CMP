@@ -38,6 +38,7 @@ import {
 } from '../../../../services/api';
 import { selectUser } from '../../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../../theme';
+import { displayName } from '../../../../utils/format';
 
 export default function MentorshipSessionsScreen() {
   const currentUser = useSelector(selectUser);
@@ -161,9 +162,9 @@ export default function MentorshipSessionsScreen() {
                 <Card style={{ gap: 10 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', flex: 1 }}>
-                      <Avatar user={counterpart} name={counterpart?.name} size={42} />
+                      <Avatar user={counterpart} name={displayName(counterpart)} size={42} />
                       <View style={{ flex: 1 }}>
-                        <T v="strong" numberOfLines={1}>{counterpart?.name || 'Counterpart'}</T>
+                        <T v="strong" numberOfLines={1}>{displayName(counterpart) || 'Counterpart'}</T>
                         <T v="small" style={{ color: colors.muted }}>
                           {isStudent ? (counterpart?.designation || 'Alumnus Mentor') : (counterpart?.department || 'Student Mentee')}
                         </T>

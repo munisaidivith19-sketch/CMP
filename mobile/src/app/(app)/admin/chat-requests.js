@@ -6,7 +6,7 @@ import { Avatar, Badge, Button, Card, EmptyState, ErrorState, Header, Input, Loa
 import { errMsg, useGetGroupRequestsQuery, useReviewGroupRequestMutation } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { ROLE_LABELS, STUDENT_ROLES, colors } from '../../../theme';
-import { sameId, timeAgo } from '../../../utils/format';
+import { sameId, timeAgo, displayName } from '../../../utils/format';
 
 const CATEGORY_LABEL = { custom: 'Custom', academic: 'Academics', faculty: 'Faculty' };
 const REVIEWERS = ['admin', 'principal'];
@@ -70,7 +70,7 @@ export default function ChatRequests() {
                     {r.name}
                   </T>
                   <T v="small" numberOfLines={1}>
-                    {r.createdBy?.name} · {ROLE_LABELS[r.createdBy?.role]} · {timeAgo(r.createdAt)}
+                    {displayName(r.createdBy)} · {ROLE_LABELS[r.createdBy?.role]} · {timeAgo(r.createdAt)}
                   </T>
                 </View>
                 <Badge label="pending" color="warning" />

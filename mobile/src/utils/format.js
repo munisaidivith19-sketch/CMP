@@ -19,3 +19,6 @@ export const to12h = (t = '') => {
   return Number.isNaN(h) ? t : `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 };
 export const sameId = (a, b) => String(a?._id || a) === String(b?._id || b);
+
+/** "Dr. Mohan Babu" — a person's name with their honorific, when one is on file. */
+export const displayName = (u) => (u?.name ? (u.title ? `${u.title}. ${u.name}` : u.name) : '');

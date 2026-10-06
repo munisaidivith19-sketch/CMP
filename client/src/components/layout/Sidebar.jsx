@@ -29,6 +29,7 @@ import {
   Users,
   UsersRound,
   X,
+  BedDouble,
 } from 'lucide-react';
 import { Avatar, cn } from '../ui/primitives';
 import { api, useGetChatUnreadQuery, useGetGroupRequestsQuery, useLogoutMutation } from '../../services/api';
@@ -37,7 +38,7 @@ import { loggedOut, selectUser } from '../../features/authSlice';
 import { setSidebar } from '../../features/uiSlice';
 import { disconnectSocket } from '../../services/socket';
 
-import { PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
+import { HOSTEL_ROLES, PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
 import { displayName } from '../../utils/format';
 import SOSModal from '../sos/SOSModal';
 
@@ -62,6 +63,8 @@ const CAMPUS = [
   { to: '/achievements', label: 'Achievements', icon: Trophy, excludeRoles: ['warden', 'security'] },
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
+  // Admin, principal, dean, AO, chairman and warden only; the server enforces the same.
+  { to: '/hostel', label: 'Hostel', icon: BedDouble, excludeRoles: ROLES.filter((r) => !HOSTEL_ROLES.includes(r)) },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
   { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning },
   { to: '/alumni', label: 'Alumni Network', icon: GraduationCap, excludeRoles: ['warden', 'security'] },

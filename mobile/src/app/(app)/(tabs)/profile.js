@@ -11,6 +11,7 @@ import { getPushToken } from '../../../services/push';
 import { loggedOut, selectUser, setUser } from '../../../store/authSlice';
 import { fetchWithTimeout, getApiUrl } from '../../../config';
 import { ROLE_LABELS, colors } from '../../../theme';
+import { displayName } from '../../../utils/format';
 
 const Row = ({ label, value }) => (
   <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 }}>
@@ -65,7 +66,7 @@ export default function Profile() {
       <Header title="Profile" right={<Button small variant="soft" icon={Pencil} title={editing ? 'Cancel' : 'Edit'} onPress={() => setEditing((e) => !e)} />} />
       <Card style={{ alignItems: 'center', gap: 8 }}>
         <Avatar user={user} size={84} />
-        <T v="h2">{user.name}</T>
+        <T v="h2">{displayName(user)}</T>
         <T v="small">{user.email}</T>
         <Badge label={ROLE_LABELS[user.role]} />
       </Card>

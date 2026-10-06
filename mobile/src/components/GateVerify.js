@@ -14,7 +14,7 @@ import {
   useVerifyReturnCredentialMutation,
 } from '../services/api';
 import { GATE_PASS_REGARDING, YEAR_LABELS, colors } from '../theme';
-import { fmtClassDay, titleCase } from '../utils/format';
+import { fmtClassDay, titleCase, displayName } from '../utils/format';
 
 const regardingLabel = (r) => GATE_PASS_REGARDING[r] || titleCase(r);
 
@@ -151,7 +151,7 @@ export default function GateVerify({ direction }) {
                 <Avatar user={student} size={40} />
                 <View style={{ flex: 1 }}>
                   <T v="strong" numberOfLines={2}>
-                    {student?.name}
+                    {displayName(student)}
                   </T>
                   <T v="small" numberOfLines={1}>
                     {student?.rollNo || '—'}

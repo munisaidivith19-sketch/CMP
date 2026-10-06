@@ -41,6 +41,7 @@ import {
 } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../theme';
+import { displayName } from '../../../utils/format';
 
 const DOMAINS = [
   { key: 'software_engineering', label: 'Software Eng' },
@@ -138,10 +139,10 @@ export default function AlumniProfileScreen() {
 
       {/* Profile Header Card */}
       <Card style={{ gap: 12, alignItems: 'center' }}>
-        <Avatar user={user} name={user.name} size={72} />
+        <Avatar user={user} name={displayName(user)} size={72} />
         <View style={{ alignItems: 'center', gap: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <T v="h2">{user.name}</T>
+            <T v="h2">{displayName(user)}</T>
             {isVerified ? (
               <Badge label="Verified" color="success" />
             ) : (
@@ -324,7 +325,7 @@ export default function AlumniProfileScreen() {
             </View>
 
             <T v="small">
-              Guidance request to <Text style={{ fontFamily: fonts.bold }}>{user.name}</Text>
+              Guidance request to <Text style={{ fontFamily: fonts.bold }}>{displayName(user)}</Text>
             </T>
 
             <View style={{ gap: 6 }}>

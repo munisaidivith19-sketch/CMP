@@ -6,7 +6,7 @@ import { Badge, Button, Card, Chip, EmptyState, ErrorState, Header, Loading, Scr
 import { useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../store/authSlice';
 import { DEPARTMENTS, STUDENT_ROLES, YEAR_LABELS, colors, isFirstYearHod } from '../../theme';
-import { to12h } from '../../utils/format';
+import { displayName, to12h } from '../../utils/format';
 import HolidayCard from '../../components/HolidayCard';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -156,7 +156,7 @@ export default function Timetable() {
                 {[
                   [Clock, `${to12h(s.startTime)} – ${to12h(s.endTime)}`],
                   s.room ? [MapPin, s.room] : null,
-                  STUDENT_ROLES.includes(me.role) || ourClass ? [User, s.faculty?.name] : null,
+                  STUDENT_ROLES.includes(me.role) || ourClass ? [User, displayName(s.faculty)] : null,
                   STUDENT_ROLES.includes(me.role) ? null : [GraduationCap, `${YEAR_LABELS[s.year] || `Year ${s.year}`} · Sec ${s.section} · Sem ${s.semester} · ${s.department}`],
                 ]
                   .filter(Boolean)

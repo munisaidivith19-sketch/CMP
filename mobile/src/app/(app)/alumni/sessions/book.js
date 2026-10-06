@@ -33,6 +33,7 @@ import {
 } from '../../../../services/api';
 import { selectUser } from '../../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../../theme';
+import { displayName } from '../../../../utils/format';
 
 export default function BookMentorshipSessionScreen() {
   const { mentor: queryMentorId } = useLocalSearchParams();
@@ -140,9 +141,9 @@ export default function BookMentorshipSessionScreen() {
       {/* Selected Mentor Card */}
       {activeReq && (
         <Card style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-          <Avatar user={activeReq.alumni} name={activeReq.alumni?.name} size={48} />
+          <Avatar user={activeReq.alumni} name={displayName(activeReq.alumni)} size={48} />
           <View style={{ flex: 1 }}>
-            <T v="strong">{activeReq.alumni?.name}</T>
+            <T v="strong">{displayName(activeReq.alumni)}</T>
             <T v="small" style={{ color: colors.muted }}>
               {activeReq.alumni?.designation || 'Alumnus Mentor'} · {activeReq.domain?.replace('_', ' ')}
             </T>

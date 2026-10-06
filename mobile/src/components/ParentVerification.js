@@ -4,6 +4,7 @@ import { RotateCw, Send, ShieldCheck } from 'lucide-react-native';
 import { Badge, Button, Input, Loading, T } from './ui';
 import { errMsg, useGetParentOtpQuery, useRequestParentOtpMutation, useVerifyParentOtpMutation } from '../services/api';
 import { YEAR_LABELS, colors, radius } from '../theme';
+import { displayName } from '../utils/format';
 
 function useNow(active) {
   const [now, setNow] = useState(() => Date.now());
@@ -72,7 +73,7 @@ export default function ParentVerification({ pass, onVerified }) {
 
   const student = pass.student || {};
   const details = [
-    ['Student', student.name],
+    ['Student', displayName(student)],
     ['Department', student.department || pass.department],
     ['Year', YEAR_LABELS[student.year] || (student.year ? `Year ${student.year}` : '—')],
     ['Section', student.section || pass.section],

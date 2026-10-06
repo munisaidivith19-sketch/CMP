@@ -45,6 +45,7 @@ import {
 } from '../../../../services/api';
 import { selectUser } from '../../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../../theme';
+import { displayName } from '../../../../utils/format';
 
 const APP_STATUSES = ['pending', 'referred', 'shortlisted', 'rejected', 'hired'];
 
@@ -168,9 +169,9 @@ export default function JobDetailScreen() {
           }}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12 }}
         >
-          <Avatar user={job.postedBy} name={job.postedBy?.name} size={36} />
+          <Avatar user={job.postedBy} name={displayName(job.postedBy)} size={36} />
           <View style={{ flex: 1 }}>
-            <T v="strong">{job.postedBy?.name || 'Alumnus'}</T>
+            <T v="strong">{displayName(job.postedBy) || 'Alumnus'}</T>
             <T v="small" style={{ color: colors.muted }}>
               {job.postedBy?.designation || 'Verified Alumnus'} · Tap to view profile
             </T>
@@ -246,9 +247,9 @@ export default function JobDetailScreen() {
                 <View key={app._id} style={styles.applicantCard}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', flex: 1 }}>
-                      <Avatar user={cand} name={cand.name} size={40} />
+                      <Avatar user={cand} name={displayName(cand)} size={40} />
                       <View style={{ flex: 1 }}>
-                        <T v="strong" numberOfLines={1}>{cand.name || 'Student'}</T>
+                        <T v="strong" numberOfLines={1}>{displayName(cand) || 'Student'}</T>
                         <T v="small" style={{ color: colors.muted }}>
                           {cand.department} · {cand.rollNo || cand.email}
                         </T>

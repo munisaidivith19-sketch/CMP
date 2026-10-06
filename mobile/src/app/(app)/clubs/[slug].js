@@ -5,7 +5,7 @@ import { Avatar, Badge, Button, Card, ErrorState, Header, Loading, Screen, Secti
 import { errMsg, useCancelJoinMutation, useGetClubQuery, useJoinClubMutation, useLeaveClubMutation } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { STUDENT_ROLES, colors } from '../../../theme';
-import { fmtDateTime, titleCase } from '../../../utils/format';
+import { fmtDateTime, titleCase, displayName } from '../../../utils/format';
 
 export default function ClubDetail() {
   const { slug } = useLocalSearchParams();
@@ -84,7 +84,7 @@ export default function ClubDetail() {
         {(c.admins || []).map((m) => (
           <View key={m._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Avatar user={m} size={34} />
-            <T v="strong" style={{ flex: 1 }}>{m.name}</T>
+            <T v="strong" style={{ flex: 1 }}>{displayName(m)}</T>
             <T v="small" style={{ color: colors.muted }}>{m.department}</T>
           </View>
         ))}

@@ -5,7 +5,7 @@ import { Card, EmptyState, ErrorState, Loading, Segmented, SectionTitle, T, pctC
 import DateField from './DateField';
 import { useGetOurClassAttendanceQuery } from '../services/api';
 import { YEAR_LABELS, colors, fonts } from '../theme';
-import { to12h } from '../utils/format';
+import { to12h, displayName } from '../utils/format';
 
 const RANGES = [
   { value: 'day', label: 'Today' },
@@ -111,7 +111,7 @@ export default function OurClassAttendance() {
             <Card key={s._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <T numberOfLines={1} style={{ fontFamily: fonts.bold }}>
-                  {s.name}
+                  {displayName(s)}
                 </T>
                 <T v="small" numberOfLines={1}>
                   {s.rollNo || '—'} · Y{s.year} · Sec {s.section} · Sem {s.semester ?? '—'}

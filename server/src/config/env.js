@@ -135,6 +135,8 @@ env.sms = {
   apiKey: (process.env.SMS_API_KEY || '').trim(),
   senderId: (process.env.SMS_SENDER_ID || '').trim(),
   otpTemplateId: (process.env.SMS_OTP_TEMPLATE_ID || '').trim(),
+  exitTemplateId: (process.env.SMS_EXIT_TEMPLATE_ID || '').trim(),
+  apiUrl: (process.env.SMS_API_URL || 'http://bulksms.2020sms.com/vb/apikey.php').trim(),
 };
 
 const decimal = (name, fallback, min, max) => {

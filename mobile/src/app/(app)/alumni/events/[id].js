@@ -37,6 +37,7 @@ import {
 } from '../../../../services/api';
 import { selectUser } from '../../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../../theme';
+import { displayName } from '../../../../utils/format';
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -170,9 +171,9 @@ export default function EventDetailScreen() {
             }}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 12, marginTop: 4 }}
           >
-            <Avatar user={event.organizer} name={event.organizer?.name} size={36} />
+            <Avatar user={event.organizer} name={displayName(event.organizer)} size={36} />
             <View style={{ flex: 1 }}>
-              <T v="strong">{event.organizer?.name || 'Organizer'}</T>
+              <T v="strong">{displayName(event.organizer) || 'Organizer'}</T>
               <T v="small" style={{ color: colors.muted }}>
                 {event.organizer?.designation || 'Host'} · Tap for profile
               </T>
@@ -227,9 +228,9 @@ export default function EventDetailScreen() {
               const checkedIn = att.status === 'attended';
               return (
                 <View key={att._id} style={styles.attendeeRow}>
-                  <Avatar user={u} name={u.name} size={38} />
+                  <Avatar user={u} name={displayName(u)} size={38} />
                   <View style={{ flex: 1 }}>
-                    <T v="strong" numberOfLines={1}>{u.name || 'Attendee'}</T>
+                    <T v="strong" numberOfLines={1}>{displayName(u) || 'Attendee'}</T>
                     <T v="small" style={{ color: colors.muted }}>
                       {u.department} · {att.status}
                     </T>

@@ -53,6 +53,7 @@ import {
 } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../theme';
+import { displayName } from '../../../utils/format';
 
 const TABS = [
   { value: 'directory', label: 'Directory' },
@@ -236,10 +237,10 @@ function DirectoryTab({ user, isStudent }) {
                 style={{ gap: 12 }}
               >
                 <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-                  <Avatar user={u} name={u.name} size={48} />
+                  <Avatar user={u} name={displayName(u)} size={48} />
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <T v="strong" numberOfLines={1}>{u.name || 'Alumnus'}</T>
+                      <T v="strong" numberOfLines={1}>{displayName(u) || 'Alumnus'}</T>
                       {item.isVerified && <Badge label="Verified" color="success" />}
                     </View>
                     <T v="small" numberOfLines={1} style={{ color: colors.ink }}>
@@ -319,7 +320,7 @@ function DirectoryTab({ user, isStudent }) {
             </View>
 
             <T v="small">
-              Request guidance from <Text style={{ fontFamily: fonts.bold }}>{reqModalMentor?.user?.name}</Text>
+              Request guidance from <Text style={{ fontFamily: fonts.bold }}>{displayName(reqModalMentor?.user)}</Text>
             </T>
 
             <View style={{ gap: 6 }}>
@@ -446,7 +447,7 @@ function JobsTab({ user, isAlumni, isStaff }) {
 
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderColor: colors.border, paddingTop: 8 }}>
                 <T v="small" style={{ color: colors.muted }}>
-                  Posted by {j.postedBy?.name || 'Alumnus'}
+                  Posted by {displayName(j.postedBy) || 'Alumnus'}
                 </T>
                 <T v="small" style={{ color: colors.primary600, fontFamily: fonts.bold }}>
                   View details →
@@ -666,9 +667,9 @@ function MentorshipTab({ user, isStudent, isAlumni }) {
             <Card key={r._id} style={{ gap: 10 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', flex: 1 }}>
-                  <Avatar user={counterpart} name={counterpart?.name} size={40} />
+                  <Avatar user={counterpart} name={displayName(counterpart)} size={40} />
                   <View style={{ flex: 1 }}>
-                    <T v="strong" numberOfLines={1}>{counterpart?.name || 'User'}</T>
+                    <T v="strong" numberOfLines={1}>{displayName(counterpart) || 'User'}</T>
                     <T v="small" style={{ color: colors.muted }}>
                       {r.domain ? r.domain.replace('_', ' ') : 'General'}
                     </T>
@@ -785,8 +786,8 @@ function MyProfileTab({ user, isAlumni }) {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 0, gap: 14, paddingBottom: 60 }}>
       <Card style={{ gap: 10, alignItems: 'center' }}>
-        <Avatar user={user} name={user?.name} size={64} />
-        <T v="h3">{user?.name}</T>
+        <Avatar user={user} name={displayName(user)} size={64} />
+        <T v="h3">{displayName(user)}</T>
         <T v="small">{user?.email} · {user?.department}</T>
         {profile?.isVerified ? (
           <Badge label="Verified Alumnus" color="success" />

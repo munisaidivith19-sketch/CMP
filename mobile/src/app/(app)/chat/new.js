@@ -7,7 +7,7 @@ import { Avatar, Button, Chip, EmptyState, Header, Input, Loading, Screen, T } f
 import { errMsg, useCreateConversationMutation, useGetGroupClassQuery, useGetPeopleFiltersQuery, useGetUsersQuery } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { GROUP_CREATORS, ROLE_LABELS, STUDENT_ROLES, YEAR_LABELS, colors } from '../../../theme';
-import { sameId } from '../../../utils/format';
+import { sameId, displayName } from '../../../utils/format';
 
 const GROUP_SCOPE = {
   admin: 'Add anyone on campus.',
@@ -199,7 +199,7 @@ export default function NewChat() {
               >
                 <Avatar user={u} size={44} />
                 <View style={{ flex: 1 }}>
-                  <T v="strong">{u.name}</T>
+                  <T v="strong">{displayName(u)}</T>
                   <T v="small">
                     {ROLE_LABELS[u.role]}
                     {u.department ? ` · ${u.department}` : ''}

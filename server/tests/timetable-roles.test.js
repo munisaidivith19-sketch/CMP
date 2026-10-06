@@ -127,13 +127,37 @@ test('subject catalogue syncs into real Subject records, idempotently, without o
   const { syncSubjects } = await import('../src/utils/syncSubjects.js');
   const added = await syncSubjects();
   assert.ok(added > 0);
-  const sem1 = await ctx.request('GET', '/subjects?department=CSE&semester=1', { token: hodCse.token });
+  const sem1 = await ctx.request('GET', '/subjects?department=CSE&semester=1', { token: admin.token });
   assert.ok(sem1.body.some((s) => s.code === 'MA101'), 'first-year subjects exist for CSE semester 1');
 
   await ctx.models.Subject.updateOne({ code: 'MA101', department: 'CSE', semester: 1 }, { name: 'Renamed by admin' });
   assert.equal(await syncSubjects(), 0, 'second run adds nothing');
   const kept = await ctx.models.Subject.findOne({ code: 'MA101', department: 'CSE', semester: 1 }).lean();
   assert.equal(kept.name, 'Renamed by admin', 'sync never overwrites existing subjects');
+});
+
+test('subject catalogue: first year belongs to the Science & Humanities HOD, and a requested semester is honoured', async () => {
+  // A branch HOD no longer sees 1st-year (semester 1–2) subjects, even when asking for them.
+  const cseSem1 = await ctx.request('GET', '/subjects?semester=1', { token: hodCse.token });
+  assert.equal(cseSem1.status, 200);
+  assert.deepEqual(cseSem1.body, [], 'branch HOD gets no first-year subjects');
+
+  // A requested semester narrows a branch HOD's list instead of being replaced by "every non-first-year semester".
+  const cseSem5 = await ctx.request('GET', '/subjects?semester=5', { token: hodCse.token });
+  assert.ok(cseSem5.body.length > 0);
+  assert.ok(cseSem5.body.every((s) => s.semester === 5 && s.department === 'CSE'), 'only CSE semester 5 subjects');
+
+  // The 1st-year HOD sees first-year subjects of any department, but never a later semester.
+  const fy = await ctx.createUser({ role: 'hod', name: 'HOD First Year', department: 'Science & Humanities', employeeId: 'E-HOD-FY' });
+  const fyHod = await ctx.loginWeb(fy);
+  const fyAll = await ctx.request('GET', '/subjects', { token: fyHod.token });
+  assert.ok(fyAll.body.some((s) => s.code === 'MA101'));
+  assert.ok(fyAll.body.every((s) => [1, 2].includes(s.semester) || s.department === 'Science & Humanities'));
+  const fyCse = await ctx.request('GET', '/subjects?department=CSE', { token: fyHod.token });
+  assert.ok(fyCse.body.some((s) => s.code === 'MA101' && s.department === 'CSE'));
+  assert.ok(fyCse.body.every((s) => [1, 2].includes(s.semester)), 'department filter cannot reach CSE semester 3–8 subjects');
+  const fySem5 = await ctx.request('GET', '/subjects?department=CSE&semester=5', { token: fyHod.token });
+  assert.deepEqual(fySem5.body, [], 'semester 5 is outside the 1st-year HOD scope');
 });
 
 test('faculty picker lists every active faculty college-wide with only name + department', async () => {

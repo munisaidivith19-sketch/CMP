@@ -6,6 +6,7 @@ import { Button, Card, Chip, EmptyState, Header, Input, Screen, T } from '../../
 import { errMsg, useCreateAdminUserMutation } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, YEAR_LABELS, semestersOfYear } from '../../../theme';
+import { displayName } from '../../../utils/format';
 
 /** Fields per account type — mirrors the server's CREATE_FIELDS and the web form. */
 const FORMS = {
@@ -50,6 +51,9 @@ export default function CreateUser() {
   const set = (k) => (val) =>
     setV((s) => {
       const next = { ...s, [k]: val };
+      // Mr / Ms imply the gender; Dr leaves it to the admin.
+      if (k === 'title' && next.title === 'Mr') next.gender = 'male';
+      if (k === 'title' && next.title === 'Ms') next.gender = 'female';
       // The in-charge semester must belong to the in-charge year (year 3 → 5 or 6).
       if (k === 'inChargeYear' && !semestersOfYear(next.inChargeYear).includes(Number(next.inChargeSemester))) next.inChargeSemester = '';
       return next;
@@ -87,7 +91,7 @@ export default function CreateUser() {
     if (role === 'faculty' && body.section) body.teachingSections = [body.section];
     try {
       const user = await create(body).unwrap();
-      Alert.alert('Login created', `${ROLE_LABELS[role]} ${user.name}\nUsername: ${user.email}`);
+      Alert.alert('Login created', `${ROLE_LABELS[role]} ${displayName(user)}\nUsername: ${user.email}`);
       // Keep class details so the next student of the same class is quick to add.
       setV((s) => ({ ...EMPTY, ...(role === 'student' ? { department: s.department, year: s.year, section: s.section } : {}) }));
       setErrors({});

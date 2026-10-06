@@ -154,16 +154,21 @@ export const listSubjects = asyncHandler(async (req, res) => {
     const scheduled = await TimetableSlot.find({ faculty: req.user._id, isActive: true, isBreak: { $ne: true } }).distinct('subject');
     filter.$and = [{ $or: [{ faculty: req.user._id }, { _id: { $in: scheduled } }] }];
   } else if (req.user.role === 'hod') {
+    // A requested semester only narrows the scope below; outside it the answer is empty.
+    const sem = filter.semester;
     if (isFirstYearHod(req.user)) {
+      if (sem !== undefined && ![1, 2].includes(sem)) return res.json([]);
+      const firstYear = sem ?? { $in: [1, 2] };
       if (req.query.department) {
-        filter.$or = [{ department: String(req.query.department) }, { department: FIRST_YEAR_HOD_DEPT }];
+        filter.$or = [{ department: String(req.query.department), semester: firstYear }, { department: FIRST_YEAR_HOD_DEPT }];
         delete filter.department;
       } else {
-        filter.$or = [{ department: FIRST_YEAR_HOD_DEPT }, { semester: { $in: [1, 2] } }];
+        filter.$or = [{ department: FIRST_YEAR_HOD_DEPT }, { semester: firstYear }];
       }
     } else {
+      if ([1, 2].includes(sem)) return res.json([]);
       filter.department = ownDepartment(req.user);
-      filter.semester = { $nin: [1, 2] };
+      filter.semester = sem ?? { $nin: [1, 2] };
     }
   } else if (!COLLEGE_WIDE_ROLES.includes(req.user.role)) {
     return res.json([]);

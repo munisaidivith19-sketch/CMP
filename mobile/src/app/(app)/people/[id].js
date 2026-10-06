@@ -6,7 +6,7 @@ import { Avatar, Badge, Button, Card, ErrorState, Header, Loading, Screen, T } f
 import { errMsg, useCreateConversationMutation, useGetUserQuery } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { ROLE_LABELS } from '../../../theme';
-import { sameId } from '../../../utils/format';
+import { sameId, displayName } from '../../../utils/format';
 
 export default function Person() {
   const { id } = useLocalSearchParams();
@@ -28,10 +28,10 @@ export default function Person() {
 
   return (
     <Screen>
-      <Header back title={u.name} subtitle={ROLE_LABELS[u.role]} />
+      <Header back title={displayName(u)} subtitle={ROLE_LABELS[u.role]} />
       <Card style={{ alignItems: 'center', gap: 8 }}>
         <Avatar user={u} size={84} />
-        <T v="h2">{u.name}</T>
+        <T v="h2">{displayName(u)}</T>
         <T v="small">
           {u.department || ''}
           {u.year ? ` · Year ${u.year}` : ''}

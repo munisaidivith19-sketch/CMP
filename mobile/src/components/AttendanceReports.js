@@ -7,7 +7,7 @@ import DateField from './DateField';
 import { errMsg, useGetAttendanceReportQuery, useGetReportOptionsQuery, useGetReportPeriodsQuery } from '../services/api';
 import { selectUser } from '../store/authSlice';
 import { YEAR_LABELS, colors, fonts } from '../theme';
-import { to12h } from '../utils/format';
+import { to12h, displayName } from '../utils/format';
 import HolidayCard from './HolidayCard';
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -37,7 +37,7 @@ function Names({ title, list, color }) {
       <T v="label" style={{ color }}>
         {title} ({list.length})
       </T>
-      {list.length ? list.map((s, i) => <T key={`${s.rollNo}-${i}`} v="small">{`${i + 1}. ${s.rollNo || '—'} · ${s.name}`}</T>) : <T v="small">None.</T>}
+      {list.length ? list.map((s, i) => <T key={`${s.rollNo}-${i}`} v="small">{`${i + 1}. ${s.rollNo || '—'} · ${displayName(s)}`}</T>) : <T v="small">None.</T>}
     </View>
   );
 }
@@ -277,7 +277,7 @@ export default function AttendanceReports() {
                 <Card key={`${s.rollNo}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <T numberOfLines={1} style={{ fontFamily: fonts.bold }}>
-                      {s.name}
+                      {displayName(s)}
                     </T>
                     <T v="small">
                       {s.rollNo || '—'} · {s.presentPeriods}/{s.totalPeriods} present · {s.absentPeriods} absent

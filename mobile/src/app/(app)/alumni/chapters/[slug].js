@@ -38,6 +38,7 @@ import {
 } from '../../../../services/api';
 import { selectUser } from '../../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../../theme';
+import { displayName } from '../../../../utils/format';
 
 export default function ChapterWallScreen() {
   const { slug } = useLocalSearchParams();
@@ -186,9 +187,9 @@ export default function ChapterWallScreen() {
                   {/* Author Header */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center', flex: 1 }}>
-                      <Avatar user={author} name={author.name} size={38} />
+                      <Avatar user={author} name={displayName(author)} size={38} />
                       <View style={{ flex: 1 }}>
-                        <T v="strong" numberOfLines={1}>{author.name || 'Alumnus'}</T>
+                        <T v="strong" numberOfLines={1}>{displayName(author) || 'Alumnus'}</T>
                         <T v="small" style={{ color: colors.muted }}>
                           {author.department || author.role} · {timeStr}
                         </T>
@@ -290,9 +291,9 @@ function CommentsModal({ post, onClose, onCommentAdded }) {
             }
             renderItem={({ item: c }) => (
               <View style={styles.commentItem}>
-                <Avatar user={c.author} name={c.author?.name} size={32} />
+                <Avatar user={c.author} name={displayName(c.author)} size={32} />
                 <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.03)', borderRadius: 12, padding: 8 }}>
-                  <T v="strong" style={{ fontSize: 13 }}>{c.author?.name || 'User'}</T>
+                  <T v="strong" style={{ fontSize: 13 }}>{displayName(c.author) || 'User'}</T>
                   <T v="body" style={{ fontSize: 13, color: colors.ink }}>{c.body}</T>
                 </View>
               </View>

@@ -20,7 +20,7 @@ import {
 } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { STUDENT_ROLES, SUMMARY_VIEW, colors, fonts, gradients } from '../../../theme';
-import { fmtClassDay, timeAgo, to12h } from '../../../utils/format';
+import { fmtClassDay, timeAgo, to12h, displayName } from '../../../utils/format';
 
 /** "Dr. Suresh Kumar" → "Suresh" — skip honorifics in the greeting. */
 const firstName = (name = '') => name.split(' ').find((w) => w && !/^(dr|prof|mr|mrs|ms|miss)[.]?$/i.test(w)) || name;
@@ -171,7 +171,7 @@ function SecurityHome({ user }) {
                 <Avatar user={p.student} size={40} />
                 <View style={{ flex: 1 }}>
                   <T v="strong" numberOfLines={1}>
-                    {p.student?.name}
+                    {displayName(p.student)}
                   </T>
                   <T v="small" numberOfLines={1}>
                     {p.student?.rollNo || '—'} · Year {p.student?.year || '—'} · {p.student?.department || '—'}
@@ -262,7 +262,7 @@ function GeneralHome({ user }) {
           <T v="small" style={{ color: 'rgba(255,255,255,0.85)' }}>
             {to12h(cls.startTime)} – {to12h(cls.endTime)}
             {cls.room ? ` · ${cls.room}` : ''}
-            {cls.faculty && isStudent ? ` · ${cls.faculty.name}` : ''}
+            {cls.faculty && isStudent ? ` · ${displayName(cls.faculty)}` : ''}
             {!isStudent && cls.section ? ` · Section ${cls.section}` : ''}
           </T>
         ) : null}
@@ -316,7 +316,7 @@ function GeneralHome({ user }) {
                   {a.content}
                 </T>
                 <T v="small" style={{ color: colors.muted }}>
-                  {a.author?.name} · {timeAgo(a.createdAt)}
+                  {displayName(a.author)} · {timeAgo(a.createdAt)}
                 </T>
               </Card>
             ))
@@ -640,7 +640,7 @@ function AlumniHome({ user }) {
           {pendingRequests.slice(0, 3).map((req) => (
             <Card key={req._id} onPress={() => router.push('/alumni')} style={{ gap: 6 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <T v="strong">{req.student?.name}</T>
+                <T v="strong">{displayName(req.student)}</T>
                 <Badge label="Pending" color="warning" />
               </View>
               <T v="small" style={{ color: colors.muted }}>
@@ -661,7 +661,7 @@ function AlumniHome({ user }) {
           {upcomingSessions.slice(0, 3).map((sess) => (
             <Card key={sess._id} onPress={() => router.push('/alumni/sessions')} style={{ gap: 6 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <T v="strong">{sess.student?.name}</T>
+                <T v="strong">{displayName(sess.student)}</T>
                 <Badge label="Confirmed" color="success" />
               </View>
               <T v="small" style={{ color: colors.muted }}>

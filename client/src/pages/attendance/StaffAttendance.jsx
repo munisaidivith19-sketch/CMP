@@ -50,6 +50,7 @@ import {
   useGetSubjectAttendanceQuery,
   useGetSubjectsQuery,
   useGetSummaryFacultyQuery,
+  useGetTimetableQuery,
   useMarkClassAttendanceMutation,
   useNotifyLowAttendanceStudentMutation,
   useReviewCorrectionMutation,
@@ -333,6 +334,9 @@ function ClassSelectionWizard({
   loadingSubjects,
   me,
 }) {
+  const isHod = me.role === 'hod';
+  // HOD and college-wide roles pick a timetable period instead of a subject.
+  const byPeriod = isHod || COLLEGE_WIDE.includes(me.role);
   const isFYH = isFirstYearHod(me);
   const isBrH = isBranchHod(me);
   const availableYears = isFYH ? [1] : isBrH ? [2, 3, 4] : ACADEMIC_YEARS;
@@ -351,24 +355,62 @@ function ClassSelectionWizard({
   const selectedSubject = subjects.find((s) => s._id === form.subjectId);
   const hasSections = (selectedSubject?.sections?.length || 0) > 0;
 
-  // Track active wizard step (1 to 5)
-  // 1: Department, 2: Year/Semester, 3: Subject, 4: Section, 5: Date & Period
+  // HOD / college-wide roles have no subject picker: they choose the class, and its timetable
+  // periods for the day (each already tied to its subject) are the choices.
+  const { data: classTimetable, isFetching: loadingPeriods } = useGetTimetableQuery(
+    { department: cls.department, year: cls.year, semester: cls.semester, section: form.section },
+    { skip: !byPeriod || !cls.department || !cls.semester || !form.section }
+  );
+  const weekday = form.date ? new Date(`${form.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() : '';
+  const dayPeriods = useMemo(
+    () =>
+      (classTimetable?.slots || [])
+        .filter((sl) => sl.dayOfWeek === weekday && !sl.isBreak && sl.subject)
+        .sort((a, b) => a.period - b.period),
+    [classTimetable, weekday]
+  );
+  const selectedSlot = dayPeriods.find((sl) => sl._id === form.slotId);
+
+  // Track active wizard step.
+  // Staff: 1 Department, 2 Year/Semester, 3 Subject, 4 Section, 5 Date & Period.
+  // HOD:   1 Department, 2 Year/Semester, 3 Section, 4 Date & Period.
   const currentStep = useMemo(() => {
     if (!cls.department) return 1;
     if (!cls.year || !cls.semester) return 2;
+    if (byPeriod) return form.section ? 4 : 3;
     if (!form.subjectId) return 3;
     if (hasSections && !form.section) return 4;
     return 5;
-  }, [cls, form, hasSections]);
+  }, [cls, form, hasSections, byPeriod]);
 
   const isStepComplete = (step) => {
     if (step === 1) return Boolean(cls.department);
     if (step === 2) return Boolean(cls.year && cls.semester);
+    if (byPeriod) {
+      if (step === 3) return Boolean(form.section);
+      if (step === 4) return Boolean(form.slotId);
+      return false;
+    }
     if (step === 3) return Boolean(form.subjectId);
     if (step === 4) return !hasSections || Boolean(form.section);
     if (step === 5) return Boolean(form.date && form.period);
     return false;
   };
+
+  const steps = byPeriod
+    ? [
+        { step: 1, title: 'Department', value: cls.department || 'Select' },
+        { step: 2, title: 'Year & Sem', value: cls.year ? `Y${cls.year} · Sem ${cls.semester || '?'}` : 'Select' },
+        { step: 3, title: 'Section', value: form.section ? `Sec ${form.section}` : 'Select' },
+        { step: 4, title: 'Period', value: selectedSlot ? `Period ${selectedSlot.period} · ${selectedSlot.subject.code}` : 'Select' },
+      ]
+    : [
+        { step: 1, title: 'Department', value: cls.department || 'Select' },
+        { step: 2, title: 'Year & Sem', value: cls.year ? `Y${cls.year} · Sem ${cls.semester || '?'}` : 'Select' },
+        { step: 3, title: 'Subject', value: selectedSubject ? selectedSubject.code : 'Select' },
+        { step: 4, title: 'Section', value: hasSections ? (form.section ? `Sec ${form.section}` : 'Select') : 'All Sections' },
+        { step: 5, title: 'Period', value: form.period ? `Period ${form.period}` : 'Select' },
+      ];
 
   return (
     <Card className="p-5 border border-white/10 shadow-lg backdrop-blur-md space-y-4">
@@ -381,12 +423,12 @@ function ClassSelectionWizard({
             <span>Class Selection Wizard</span>
           </h3>
           <p className="text-xs text-ink-muted">
-            Configure department, class, subject and period step-by-step
+            {byPeriod ? `Choose the class, then one of its timetable periods for ${isHod ? 'today' : 'the selected day'}` : 'Configure department, class, subject and period step-by-step'}
           </p>
         </div>
 
         {/* Reset Button */}
-        {(form.subjectId || cls.year) && (
+        {(form.subjectId || form.section || cls.year) && (
           <Button
             size="sm"
             variant="ghost"
@@ -403,14 +445,8 @@ function ClassSelectionWizard({
       </div>
 
       {/* Stepper Progress Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {[
-          { step: 1, title: 'Department', value: cls.department || 'Select' },
-          { step: 2, title: 'Year & Sem', value: cls.year ? `Y${cls.year} · Sem ${cls.semester || '?'}` : 'Select' },
-          { step: 3, title: 'Subject', value: selectedSubject ? selectedSubject.code : 'Select' },
-          { step: 4, title: 'Section', value: hasSections ? (form.section ? `Sec ${form.section}` : 'Select') : 'All Sections' },
-          { step: 5, title: 'Period', value: form.period ? `Period ${form.period}` : 'Select' },
-        ].map((item) => {
+      <div className={cn('grid grid-cols-2 gap-2', byPeriod ? 'sm:grid-cols-4' : 'sm:grid-cols-5')}>
+        {steps.map((item) => {
           const done = isStepComplete(item.step);
           const active = currentStep === item.step;
 
@@ -440,7 +476,7 @@ function ClassSelectionWizard({
       </div>
 
       {/* Wizard Step Controls */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 pt-1">
+      <div className={cn('grid gap-3 sm:grid-cols-2 pt-1', byPeriod ? 'lg:grid-cols-4' : 'lg:grid-cols-5')}>
         {/* Step 1: Department */}
         <div>
           <label className="text-xs font-bold uppercase tracking-wider text-ink-muted block mb-1.5" htmlFor="w-dept">
@@ -525,7 +561,8 @@ function ClassSelectionWizard({
           </div>
         </div>
 
-        {/* Step 3: Subject */}
+        {/* Step 3: Subject (not for HODs: the timetable period carries it) */}
+        {!byPeriod && (
         <div>
           <label className="text-xs font-bold uppercase tracking-wider text-ink-muted block mb-1.5" htmlFor="w-subject">
             3. Subject
@@ -553,21 +590,22 @@ function ClassSelectionWizard({
             ))}
           </select>
         </div>
+        )}
 
         {/* Step 4: Section */}
         <div>
           <label className="text-xs font-bold uppercase tracking-wider text-ink-muted block mb-1.5" htmlFor="w-sec">
-            4. Section
+            {byPeriod ? '3. Section' : '4. Section'}
           </label>
           <select
             id="w-sec"
             className="input w-full text-xs py-2 rounded-xl"
             value={form.section}
-            disabled={!form.subjectId || !hasSections}
-            onChange={(e) => onFormChange({ section: e.target.value })}
+            disabled={byPeriod ? !cls.semester : !form.subjectId || !hasSections}
+            onChange={(e) => onFormChange(byPeriod ? { section: e.target.value, subjectId: '', period: '' } : { section: e.target.value })}
           >
-            <option value="">{hasSections ? 'Select Section' : 'All Sections (Single)'}</option>
-            {selectedSubject?.sections?.map((sec) => (
+            <option value="">{byPeriod || hasSections ? 'Select Section' : 'All Sections (Single)'}</option>
+            {(byPeriod ? SECTIONS : selectedSubject?.sections || []).map((sec) => (
               <option key={sec} value={sec}>
                 Section {sec}
               </option>
@@ -579,7 +617,7 @@ function ClassSelectionWizard({
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-ink-muted block mb-1.5" htmlFor="w-date">
-              5. Date
+              {byPeriod ? '4. Date' : '5. Date'}
             </label>
             <input
               id="w-date"
@@ -596,20 +634,42 @@ function ClassSelectionWizard({
             <label className="text-xs font-bold uppercase tracking-wider text-ink-muted block mb-1.5" htmlFor="w-period">
               Period
             </label>
-            <select
-              id="w-period"
-              className="input w-full text-xs py-2 rounded-xl"
-              value={form.period}
-              disabled={!form.subjectId}
-              onChange={(e) => onFormChange({ period: e.target.value })}
-            >
-              <option value="">Period</option>
-              {Array.from({ length: 10 }, (_, i) => i + 1).map((p) => (
-                <option key={p} value={String(p)}>
-                  Period {p}
+            {byPeriod ? (
+              <select
+                id="w-period"
+                className="input w-full text-xs py-2 rounded-xl"
+                value={form.slotId}
+                disabled={!form.section || loadingPeriods}
+                onChange={(e) => {
+                  const sl = dayPeriods.find((x) => x._id === e.target.value);
+                  onFormChange(sl ? { slotId: sl._id, subjectId: sl.subject._id, period: String(sl.period) } : { subjectId: '', period: '' });
+                }}
+              >
+                <option value="">
+                  {!form.section ? 'Period' : loadingPeriods ? 'Loading...' : dayPeriods.length ? 'Period' : isHod ? 'No classes today' : 'No classes that day'}
                 </option>
-              ))}
-            </select>
+                {dayPeriods.map((sl) => (
+                  <option key={sl._id} value={sl._id}>
+                    P{sl.period} · {sl.subject.code}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                id="w-period"
+                className="input w-full text-xs py-2 rounded-xl"
+                value={form.period}
+                disabled={!form.subjectId}
+                onChange={(e) => onFormChange({ period: e.target.value })}
+              >
+                <option value="">Period</option>
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((p) => (
+                  <option key={p} value={String(p)}>
+                    Period {p}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
       </div>

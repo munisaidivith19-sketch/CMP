@@ -5,7 +5,7 @@ import { Search as SearchIcon } from 'lucide-react-native';
 import { Avatar, Card, EmptyState, Header, Input, Loading, Screen, SectionTitle, T } from '../../components/ui';
 import { useSearchQuery } from '../../services/api';
 import { ROLE_LABELS } from '../../theme';
-import { fmtDateTime } from '../../utils/format';
+import { fmtDateTime, displayName } from '../../utils/format';
 
 export default function Search() {
   const [text, setText] = useState('');
@@ -34,7 +34,7 @@ export default function Search() {
             <Card key={u._id} onPress={() => router.push(`/people/${u._id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Avatar user={u} size={38} />
               <View style={{ flex: 1 }}>
-                <T v="strong">{u.name}</T>
+                <T v="strong">{displayName(u)}</T>
                 <T v="small">
                   {ROLE_LABELS[u.role]}
                   {u.department ? ` · ${u.department}` : ''}

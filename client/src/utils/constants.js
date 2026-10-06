@@ -15,6 +15,8 @@ export const STAFF_VIEW = [...STAFF, 'principal'];
 // decide what the UI offers.
 /** The only roles with college-wide academic visibility (read-only bar admin). */
 export const COLLEGE_WIDE = ['admin', 'principal', 'chairman', 'dean', 'ao'];
+// Who sees the Hostel dashboard (mirrors the server's HOSTEL_VIEW_ROLES).
+export const HOSTEL_ROLES = ['admin', 'principal', 'dean', 'ao', 'chairman', 'warden'];
 /** Sees the staff Attendance console. */
 export const ATTENDANCE_VIEW = ['faculty', 'hod', ...COLLEGE_WIDE];
 /** In Attendance, these roles read but never mark or review. */

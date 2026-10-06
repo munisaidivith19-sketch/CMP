@@ -1,42 +1,71 @@
 import { env } from '../../../config/env.js';
 import { ApiError } from '../../../utils/http.js';
 
-/** DLT-registered parent OTP template supplied by the college. */
+/**
+ * DLT-registered templates. The vendor rejects any message whose text differs
+ * from the registered template, so these must match it character for character
+ * (the {#alp#} / {#num#} slots are filled by the render functions below).
+ */
 export const OTP_SMS_TEMPLATE =
-  'Dear Parent, {#studentName#} has requested a gate pass. For confirmation, your OTP is #OTP#. This OTP is valid for 10 minutes. Do not share this OTP with anyone except the authorized college faculty.';
+  'Dear Parent, {#alp#} has Requested a Gate Pass. For Confirmation, Your OTP is {#num#}. This OTP is valid for 10 minutes. Do not share this OTP with anyone except the authorized college faculty. J.N.N Institute of Engineering';
 
 export const renderOtpSms = ({ studentName, otp }) =>
-  OTP_SMS_TEMPLATE.replace('{#studentName#}', studentName).replace('#OTP#', otp);
+  OTP_SMS_TEMPLATE.replace('{#alp#}', () => studentName).replace('{#num#}', () => otp);
 
 /** Parent notice once security records the student leaving campus. */
 export const EXIT_SMS_TEMPLATE =
-  'Dear Parent, {#studentName#} has left the college campus on {#date#} at {#time#} with an approved gate pass. This is an automated notification from JNN INSTITUTE OF ENGINEERING.';
+  'Dear Parent, {#alp#} has left the college campus on {#alp#} at {#alp#} with an approved gate pass. This is an automated notification from J.N.N Institute of Engineering';
 
 export const renderExitSms = ({ studentName, date, time }) =>
-  EXIT_SMS_TEMPLATE.replace('{#studentName#}', studentName).replace('{#date#}', date).replace('{#time#}', time);
+  [studentName, date, time].reduce((text, value) => text.replace('{#alp#}', () => value), EXIT_SMS_TEMPLATE);
 
-export const isCollegeSmsConfigured = () => Boolean(env.sms.apiKey && env.sms.senderId && env.sms.otpTemplateId);
+export const isCollegeSmsConfigured = () =>
+  Boolean(env.sms.apiKey && env.sms.senderId && env.sms.otpTemplateId && env.sms.exitTemplateId);
 
-/**
- * Adapter for the college SMS vendor. Deliberately not wired to any endpoint:
- * implement `sendOtp` from the vendor's API documentation once it arrives,
- * using env.sms.apiKey / senderId / otpTemplateId and renderOtpSms().
- * Never log the OTP, the rendered message or the API key.
- */
+/** 10-digit Indian mobile → the form the vendor expects (country code 91). */
+export function normalizeMobile(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  const local = digits.length > 10 ? digits.slice(-10) : digits;
+  return local.length === 10 ? `91${local}` : null;
+}
+
+async function deliver({ to, message, templateId }) {
+  if (!isCollegeSmsConfigured()) {
+    throw new ApiError(503, 'The college SMS service is not configured yet. Ask an administrator.');
+  }
+  const number = normalizeMobile(to);
+  if (!number) throw new ApiError(422, 'The parent mobile number is not a valid 10-digit number.');
+
+  // The API key travels in the query string: never log the URL, the message or the response body.
+  const url = new URL(env.sms.apiUrl);
+  url.searchParams.set('apikey', env.sms.apiKey);
+  url.searchParams.set('senderid', env.sms.senderId);
+  url.searchParams.set('templateid', templateId);
+  url.searchParams.set('number', number);
+  url.searchParams.set('message', message);
+
+  let res;
+  try {
+    res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(10000) });
+  } catch {
+    throw new ApiError(502, 'Could not reach the SMS service. Please try again.');
+  }
+  if (!res.ok) throw new ApiError(502, 'The SMS service rejected the message. Please try again.');
+}
+
+/** Adapter for the college SMS vendor (HTTP API with API key). */
 export const collegeSmsProvider = {
   name: 'college_sms',
   devPortal: false,
   // A real sender: OTP_SENT is recorded when it accepts a message.
   delivers: true,
 
-  async sendOtp() {
-    if (!isCollegeSmsConfigured()) {
-      throw new ApiError(503, 'The college SMS service is not configured yet. Ask an administrator.');
-    }
-    throw new ApiError(503, 'The college SMS service is not connected yet. Ask an administrator.');
+  async sendOtp({ to, studentName, otp }) {
+    await deliver({ to, message: renderOtpSms({ studentName, otp }), templateId: env.sms.otpTemplateId });
   },
 
-  async sendMessage() {
-    throw new ApiError(503, 'The college SMS service is not connected yet.');
+  async sendMessage({ to, message, kind }) {
+    if (kind !== 'gate_pass_exit') throw new ApiError(400, 'Unsupported SMS type.');
+    await deliver({ to, message, templateId: env.sms.exitTemplateId });
   },
 };

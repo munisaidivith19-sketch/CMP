@@ -20,7 +20,7 @@ import { ATTENDANCE_READ_ONLY, COLLEGE_WIDE, DEPARTMENTS, SUMMARY_VIEW, colors, 
 import OurClassAttendance from './OurClassAttendance';
 import AttendanceReports from './AttendanceReports';
 import HolidayCard from './HolidayCard';
-import { fmtClassDay, to12h } from '../utils/format';
+import { fmtClassDay, to12h, displayName } from '../utils/format';
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const todayKey = () => ymd(new Date());
@@ -214,7 +214,7 @@ function MarkClass() {
               <View key={s._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: i ? 1 : 0, borderColor: 'rgba(29,111,235,0.1)' }}>
                 <View style={{ flex: 1 }}>
                   <T v="strong" numberOfLines={1}>
-                    {s.name}
+                    {displayName(s)}
                   </T>
                   <T v="small">{s.rollNo || '—'}</T>
                 </View>
@@ -330,7 +330,7 @@ function DailySummary() {
               <Avatar user={row} size={36} />
               <View style={{ flex: 1 }}>
                 <T v="strong" numberOfLines={1}>
-                  {row.name}
+                  {displayName(row)}
                 </T>
                 <T v="small" numberOfLines={1}>
                   {who === 'students' ? [row.rollNo, row.section && `Sec ${row.section}`].filter(Boolean).join(' · ') : [row.employeeId, row.department].filter(Boolean).join(' · ')}
@@ -339,7 +339,7 @@ function DailySummary() {
               </View>
               {row.status === 'unmarked' ? <Badge label="Not marked" color="neutral" /> : <StatusBadge status={row.status} />}
               {row.phone ? (
-                <Pressable onPress={() => Linking.openURL(`tel:${row.phone}`).catch(() => {})} hitSlop={8} accessibilityLabel={`Call ${row.name}`} style={{ padding: 6 }}>
+                <Pressable onPress={() => Linking.openURL(`tel:${row.phone}`).catch(() => {})} hitSlop={8} accessibilityLabel={`Call ${displayName(row)}`} style={{ padding: 6 }}>
                   <Phone size={18} color={colors.primary} />
                 </Pressable>
               ) : null}

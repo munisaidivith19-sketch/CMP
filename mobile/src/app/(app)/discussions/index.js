@@ -5,7 +5,7 @@ import { MessageSquare, MessagesSquare, Plus, ThumbsUp } from 'lucide-react-nati
 import { Badge, Button, Card, EmptyState, ErrorState, Header, Input, Loading, Screen, T } from '../../../components/ui';
 import { useGetDiscussionsQuery } from '../../../services/api';
 import { colors } from '../../../theme';
-import { timeAgo } from '../../../utils/format';
+import { timeAgo, displayName } from '../../../utils/format';
 
 export default function Discussions() {
   const [q, setQ] = useState('');
@@ -47,7 +47,7 @@ export default function Discussions() {
                   <T v="small">{d.replyCount ?? 0}</T>
                 </View>
                 <T v="small" style={{ color: colors.muted }}>
-                  {d.author?.name} · {timeAgo(d.lastActivityAt || d.createdAt)}
+                  {displayName(d.author)} · {timeAgo(d.lastActivityAt || d.createdAt)}
                 </T>
               </View>
             </Card>

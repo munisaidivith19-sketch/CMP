@@ -381,7 +381,7 @@ test('providers: test provider stores in memory only; college SMS provider is a 
   assert.equal(maskMobile('12'), '******');
   assert.equal(
     renderOtpSms({ studentName: 'Rahul Kumar', otp: '0427' }),
-    'Dear Parent, Rahul Kumar has requested a gate pass. For confirmation, your OTP is 0427. This OTP is valid for 10 minutes. Do not share this OTP with anyone except the authorized college faculty.'
+    'Dear Parent, Rahul Kumar has Requested a Gate Pass. For Confirmation, Your OTP is 0427. This OTP is valid for 10 minutes. Do not share this OTP with anyone except the authorized college faculty. J.N.N Institute of Engineering'
   );
 
   // SMS is off by default: even with the college provider configured, nothing is sent.

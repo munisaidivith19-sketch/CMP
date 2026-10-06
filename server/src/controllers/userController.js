@@ -178,6 +178,7 @@ export const exportProfilesPdf = asyncHandler(async (req, res) => {
   const buffer = await generateProfilesPdfBuffer();
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', 'attachment; filename="CampusConnect_Profiles_Directory.pdf"');
+  res.setHeader('Cache-Control', 'no-store');
   res.send(buffer);
 });
 

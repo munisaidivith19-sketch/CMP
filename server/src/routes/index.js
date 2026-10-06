@@ -51,10 +51,12 @@ import {
   SOS_TYPES,
   SOS_STATUSES,
   SOS_RESPONDER_ROLES,
+  HOSTEL_VIEW_ROLES,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
 import * as sos from '../controllers/sosController.js';
+import * as hostel from '../controllers/hostelController.js';
 
 import * as users from '../controllers/userController.js';
 import * as clubs from '../controllers/clubController.js';
@@ -1444,24 +1446,47 @@ router.use('/mentorship', mentorshipRouter);
 // ── Campus SOS ──────────────────────────────────────────────────────
 router.post(
   '/sos',
-  body('type').isIn(SOS_TYPES).withMessage('Valid SOS type is required'),
-  body('note').optional().trim().isLength({ max: 300 }),
-  body('location.lat').optional().isNumeric(),
-  body('location.lng').optional().isNumeric(),
-  body('location.accuracy').optional().isNumeric(),
+  writeLimiter,
+  body('type').isString().isIn(SOS_TYPES).withMessage('Valid SOS type is required'),
+  body('note').optional().isString().trim().isLength({ max: 300 }),
+  body('location').optional().isObject(),
+  body('location.lat').optional().isFloat({ min: -90, max: 90 }).toFloat(),
+  body('location.lng').optional().isFloat({ min: -180, max: 180 }).toFloat(),
+  body('location.accuracy').optional().isFloat({ min: 0 }).toFloat(),
   validate,
   sos.createAlert
 );
-router.get('/sos', authorize(...SOS_RESPONDER_ROLES), query('status').optional().isIn(SOS_STATUSES), validate, sos.listAlerts);
-router.patch('/sos/:id/ack', idParam('id'), authorize(...SOS_RESPONDER_ROLES), sos.acknowledgeAlert);
+router.get(
+  '/sos',
+  authorize(...SOS_RESPONDER_ROLES),
+  query('status').optional().isString().isIn(SOS_STATUSES),
+  query('type').optional().isString().isIn(SOS_TYPES),
+  validate,
+  sos.listAlerts
+);
+router.patch('/sos/:id/ack', writeLimiter, idParam('id'), authorize(...SOS_RESPONDER_ROLES), sos.acknowledgeAlert);
 router.patch(
   '/sos/:id/resolve',
+  writeLimiter,
   idParam('id'),
   authorize(...SOS_RESPONDER_ROLES),
   body('status').optional().isIn(['resolved', 'false_alarm']),
-  body('resolutionNote').optional().trim().isLength({ max: 500 }),
+  body('resolutionNote').optional().isString().trim().isLength({ max: 500 }),
   validate,
   sos.resolveAlert
+);
+
+// ── Hostel dashboard ────────────────────────────────────────────────
+router.get('/hostel/summary', authorize(...HOSTEL_VIEW_ROLES), hostel.summary);
+router.get(
+  '/hostel/students',
+  authorize(...HOSTEL_VIEW_ROLES),
+  query('gender').optional({ values: 'falsy' }).isString().isIn(['male', 'female']),
+  query('status').optional({ values: 'falsy' }).isString().isIn(['all', 'inside', 'outside']),
+  query('q').optional().isString().trim().isLength({ max: 60 }),
+  query('limit').optional().isInt({ min: 1, max: 500 }).toInt(),
+  validate,
+  hostel.listStudents
 );
 
 export default router;

@@ -15,7 +15,7 @@ import {
 import { assetUrl } from '../../../config';
 import { selectUser } from '../../../store/authSlice';
 import { COMPLAINT_CATEGORY_LABELS, ROLE_LABELS, colors } from '../../../theme';
-import { fmtDateTime, sameId, timeAgo, titleCase } from '../../../utils/format';
+import { fmtDateTime, sameId, timeAgo, titleCase, displayName } from '../../../utils/format';
 
 const CANCELLABLE = ['SUBMITTED', 'IN_REVIEW', 'IN_PROGRESS'];
 const ESCALATABLE = ['SUBMITTED', 'IN_REVIEW', 'IN_PROGRESS', 'ESCALATED', 'RESOLVED'];
@@ -167,7 +167,7 @@ export default function ComplaintDetail() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 16, padding: 10 }}>
             <Avatar user={c.student} size={36} />
             <View>
-              <T v="strong">{c.student.name}</T>
+              <T v="strong">{displayName(c.student)}</T>
               <T v="small">
                 {c.student.rollNo} · {c.student.department}
               </T>

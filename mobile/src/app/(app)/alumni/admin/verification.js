@@ -34,6 +34,7 @@ import {
 } from '../../../../services/api';
 import { selectUser } from '../../../../store/authSlice';
 import { colors, fonts, gradients, radius, shadow } from '../../../../theme';
+import { displayName } from '../../../../utils/format';
 
 export default function VerificationQueueScreen() {
   const currentUser = useSelector(selectUser);
@@ -103,9 +104,9 @@ export default function VerificationQueueScreen() {
               return (
                 <Card style={{ gap: 12 }}>
                   <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-                    <Avatar user={u} name={u.name} size={48} />
+                    <Avatar user={u} name={displayName(u)} size={48} />
                     <View style={{ flex: 1 }}>
-                      <T v="strong" numberOfLines={1}>{u.name || 'Alumnus'}</T>
+                      <T v="strong" numberOfLines={1}>{displayName(u) || 'Alumnus'}</T>
                       <T v="small" style={{ color: colors.ink }}>
                         {item.designation ? `${item.designation}` : ''}
                         {item.designation && item.company ? ' at ' : ''}
@@ -181,7 +182,7 @@ export default function VerificationQueueScreen() {
             </View>
 
             <T v="small">
-              Rejecting profile for <Text style={{ fontFamily: fonts.bold }}>{rejectingItem?.user?.name}</Text>
+              Rejecting profile for <Text style={{ fontFamily: fonts.bold }}>{displayName(rejectingItem?.user)}</Text>
             </T>
 
             <Input

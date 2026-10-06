@@ -25,7 +25,7 @@ import {
 } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
 import { GATE_PASS_REGARDING, STUDENT_ROLES, colors } from '../../../theme';
-import { fmtClassDay, timeAgo, titleCase } from '../../../utils/format';
+import { fmtClassDay, timeAgo, titleCase, displayName } from '../../../utils/format';
 
 const OPEN = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active'];
 const PENDING = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority'];
@@ -125,7 +125,7 @@ function StudentLine({ student, extra }) {
       <Avatar user={student} size={40} />
       <View style={{ flex: 1 }}>
         <T v="strong" numberOfLines={1}>
-          {student?.name}
+          {displayName(student)}
         </T>
         <T v="small" numberOfLines={1}>
           {student?.rollNo || '—'} · {student?.department}
@@ -200,7 +200,7 @@ function ReviewCard({ pass, onDone }) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <ShieldCheck size={13} color={colors.success} />
           <T v="small" style={{ color: '#059669' }}>
-            Parent verified by OTP{pass.parentVerifiedBy?.name ? ` · ${pass.parentVerifiedBy.name}` : ''}
+            Parent verified by OTP{pass.parentVerifiedBy?.name ? ` · ${displayName(pass.parentVerifiedBy)}` : ''}
           </T>
         </View>
       ) : null}

@@ -61,3 +61,12 @@ test('Profiles Directory PDF: principal returns 200 OK with application/pdf', as
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /application\/pdf/);
 });
+
+test('Profiles Directory PDF: never prints an account password, and is not cached', async () => {
+  const res = await fetch(`${ctx.base}/api/users/export-pdf`, { headers: { Authorization: `Bearer ${admin.token}` } });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('cache-control') || '', /no-store/);
+  const text = Buffer.from(await res.arrayBuffer()).toString('latin1');
+  assert.ok(!text.includes('Password@123'), 'the seed password must not be in the directory');
+  assert.ok(!/Universal Account Password/i.test(text));
+});

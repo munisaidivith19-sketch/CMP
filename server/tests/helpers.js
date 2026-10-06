@@ -10,6 +10,10 @@ process.env.MONGO_URI = process.env.TEST_MONGO_URI || 'mongodb://127.0.0.1:27017
 process.env.JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'test_access_secret_'.padEnd(48, 'x');
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test_refresh_secret_'.padEnd(48, 'y');
 process.env.SMTP_HOST = '';
+// Never send real SMS from tests, whatever the local .env holds: OTPs go to the
+// in-memory test provider unless a test switches SMS on itself.
+process.env.OTP_SMS_ENABLED = 'false';
+process.env.SMS_API_KEY = '';
 
 const { default: mongoose } = await import('mongoose');
 const { connectDB } = await import('../src/config/db.js');

@@ -835,6 +835,8 @@ export const api = createApi({
     }),
 
     // ── Campus SOS ──
+    getHostelSummary: b.query({ query: () => '/hostel/summary', providesTags: ['GatePass'] }),
+    getHostelStudents: b.query({ query: (params) => ({ url: '/hostel/students', params }), providesTags: ['GatePass'] }),
     getSOSAlerts: b.query({ query: (params) => ({ url: '/sos', params }), providesTags: ['SOSAlert'] }),
     createSOSAlert: b.mutation({ query: (body) => ({ url: '/sos', method: 'POST', body }), invalidatesTags: ['SOSAlert'] }),
     ackSOSAlert: b.mutation({ query: (id) => ({ url: `/sos/${id}/ack`, method: 'PATCH' }), invalidatesTags: ['SOSAlert'] }),
@@ -967,6 +969,8 @@ export const {
   useRequestCorrectionMutation,
   useReviewCorrectionMutation,
   useGetTimetableQuery,
+  useGetHostelSummaryQuery,
+  useGetHostelStudentsQuery,
   useGetCurrentClassQuery,
   useGetTimetableFacultyOptionsQuery,
   useGetStudyMaterialsQuery,

@@ -139,12 +139,14 @@ test('replying to a message from another conversation is rejected', async () => 
   assert.equal(bad.status, 422);
 });
 
-test('only the sender can delete; deletion is pushed live', async () => {
+test('message deletion is disabled for all users in both private and group chats', async () => {
   const sent = await ctx.request('POST', `/chat/conversations/${convId}/messages`, { token: A.token, body: { body: 'oops' } });
+  // Non-sender cannot delete (403)
   assert.equal((await ctx.request('DELETE', `/chat/conversations/${convId}/messages/${sent.body._id}`, { token: B.token })).status, 403);
-  const gone = nextEvent(B.socket, 'chat:messageDeleted', (p) => p.messageId === sent.body._id);
-  assert.equal((await ctx.request('DELETE', `/chat/conversations/${convId}/messages/${sent.body._id}`, { token: A.token })).status, 200);
-  await gone;
+  // Sender also cannot delete (403)
+  const delSender = await ctx.request('DELETE', `/chat/conversations/${convId}/messages/${sent.body._id}`, { token: A.token });
+  assert.equal(delSender.status, 403);
+  assert.equal(delSender.body.message, 'Message deletion is not allowed');
 });
 
 test('message search is limited to your own conversations', async () => {
@@ -174,7 +176,7 @@ test('groups: students cannot create groups; admin groups start at once and memb
   await added;
 });
 
-test('groups: faculty groups wait for the admin, HOD groups for the principal; both limited to their scope', async () => {
+test('groups: faculty and HOD create groups directly without approval; creator is group admin and scope is enforced', async () => {
   const [admin, fac, hod, cseA, cseB, ece, principal] = await Promise.all([
     ctx.createUser({ role: 'admin', name: 'Admin Two' }),
     ctx.createUser({ role: 'faculty', name: 'Fac', department: 'CSE', section: 'A' }),
@@ -194,27 +196,18 @@ test('groups: faculty groups wait for the admin, HOD groups for the principal; b
   const wrongDept = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { ...hodBody, name: 'Y', participantIds: [String(ece._id)] } });
   assert.equal(wrongDept.status, 403);
   const hodGroup = await ctx.request('POST', '/chat/conversations', { token: h.token, body: { ...hodBody, name: 'CSE all', participantIds: [String(cseA._id), String(cseB._id)] } });
-  assert.equal(hodGroup.status, 202, 'HOD groups wait for the principal');
-  const approved = await ctx.request('PATCH', `/chat/requests/${hodGroup.body._id}`, { token: p.token, body: { action: 'approve' } });
-  assert.equal(approved.body.status, 'active');
+  assert.equal(hodGroup.status, 201, 'HOD groups start directly without approval');
+  assert.equal(hodGroup.body.status, 'active');
+  assert.ok(hodGroup.body.admins.some((adm) => String(adm._id || adm) === String(hod._id)));
 
-  // Faculty class group → pending, invisible to members until approved.
+  // Faculty class group → active immediately, visible and messageable to members without waiting for approval.
   const req = await ctx.request('POST', '/chat/conversations', { token: f.token, body: { type: 'group', name: 'CSE-A class', participantIds: [String(cseA._id)] } });
-  assert.equal(req.status, 202);
-  assert.equal(req.body.pending, true);
-  assert.equal((await ctx.request('GET', `/chat/conversations/${req.body._id}`, { token: s.token })).status, 404);
-  assert.equal((await ctx.request('POST', `/chat/conversations/${req.body._id}/messages`, { token: f.token, body: { body: 'hi' } })).status, 404);
-
-  const queue = await ctx.request('GET', '/chat/requests', { token: a.token });
-  assert.ok(queue.body.some((r) => r._id === req.body._id));
-  const note = await ctx.request('GET', '/notifications', { token: a.token });
-  assert.ok(note.body.items.some((n) => n.link === '/admin/chat-requests'));
-
-  assert.equal((await ctx.request('PATCH', `/chat/requests/${req.body._id}`, { token: f.token, body: { action: 'approve' } })).status, 403);
-  const ok = await ctx.request('PATCH', `/chat/requests/${req.body._id}`, { token: a.token, body: { action: 'approve' } });
-  assert.equal(ok.body.status, 'active');
+  assert.equal(req.status, 201);
+  assert.equal(req.body.status, 'active');
+  assert.equal(req.body.isActive, true);
+  assert.ok(req.body.admins.some((adm) => String(adm._id || adm) === String(fac._id)));
   assert.equal((await ctx.request('GET', `/chat/conversations/${req.body._id}`, { token: s.token })).status, 200);
-  assert.equal((await ctx.request('PATCH', `/chat/requests/${req.body._id}`, { token: a.token, body: { action: 'reject' } })).status, 404, 'cannot review twice');
+  assert.equal((await ctx.request('POST', `/chat/conversations/${req.body._id}/messages`, { token: f.token, body: { body: 'hi' } })).status, 201);
 });
 
 test('chat messages are stored encrypted and read back as plain text', async () => {

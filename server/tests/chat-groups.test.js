@@ -32,12 +32,11 @@ const ids = (...people) => people.map((x) => String(x.u._id));
 const review = (actor, id, action, extra = {}) => ctx.request('PATCH', `/chat/requests/${id}`, { token: actor.token, body: { action, ...extra } });
 const OUTSIDERS_OF_A1 = ['Rahul B', 'Rahul Y2', 'Rahul Sem6', 'Rahul Ece'];
 
-/** An approved HOD group. */
+/** A created HOD group. */
 async function approvedGroup(body) {
   const req = await group(hod, { reason: 'Coordination group', ...body });
-  assert.equal(req.status, 202, JSON.stringify(req.body));
-  const ok = await review(principal, req.body._id, 'approve');
-  assert.equal(ok.body.status, 'active', JSON.stringify(ok.body));
+  assert.equal(req.status, 201, JSON.stringify(req.body));
+  assert.equal(req.body.status, 'active');
   return req.body._id;
 }
 
@@ -88,28 +87,50 @@ after(async () => {
 
 // ── HOD group requests ─────────────────────────────────────────────
 
-test('A group request is pending, not a group; the principal sees who, what and why', async () => {
+test('Direct group creation goes live immediately, while legacy pending requests remain reviewable', async () => {
   assert.equal((await group(hod, { name: 'No type', reason: 'Because', participantIds: ids(stuA1) })).status, 422);
-  assert.equal((await group(hod, { name: 'No reason', category: 'custom', participantIds: ids(stuA1) })).status, 422);
 
   const req = await group(hod, { name: 'CY project', category: 'custom', reason: 'Coordinate the inter-section project', participantIds: ids(stuA1, stuB, stuY2) });
-  assert.equal(req.status, 202, JSON.stringify(req.body));
+  assert.equal(req.status, 201, JSON.stringify(req.body));
+  assert.equal(req.body.status, 'active');
   const id = req.body._id;
-  assert.equal((await ctx.request('GET', `/chat/conversations/${id}`, { token: stuA1.token })).status, 404, 'no active group yet');
-  assert.equal((await ctx.request('POST', `/chat/conversations/${id}/messages`, { token: hod.token, body: { body: 'early' } })).status, 404);
+  assert.equal((await ctx.request('GET', `/chat/conversations/${id}`, { token: stuA1.token })).status, 200, 'active group accessible');
+  assert.equal((await ctx.request('POST', `/chat/conversations/${id}/messages`, { token: hod.token, body: { body: 'hello' } })).status, 201);
 
-  const r = (await ctx.request('GET', '/chat/requests', { token: principal.token })).body.find((x) => x._id === id);
-  assert.ok(r, 'the principal sees the request');
+  // Seed a pending request in db to verify review endpoint continues to function for legacy/admin requests
+  const pendingReq = await ctx.models.Conversation.create({
+    name: 'Pending CY Group',
+    type: 'group',
+    category: 'custom',
+    reason: 'Coordinate the inter-section project',
+    participants: [hod.u._id, stuA1.u._id, stuB.u._id, stuY2.u._id],
+    admins: [hod.u._id],
+    createdBy: hod.u._id,
+    status: 'pending',
+    isActive: false,
+  });
+
+  const r = (await ctx.request('GET', '/chat/requests', { token: principal.token })).body.find((x) => x._id === String(pendingReq._id));
+  assert.ok(r, 'the principal sees the pending request');
   assert.deepEqual([r.status, r.category, r.reason, r.createdBy.name, r.createdBy.department], ['pending', 'custom', 'Coordinate the inter-section project', 'HOD CY', CY]);
   const a1 = r.participants.find((p) => p.name === 'Rahul A1');
   assert.deepEqual([a1.rollNo, a1.department, a1.year, a1.section], ['A1', CY, 3, 'A'], 'student details for the review');
   assert.equal(r.participants.length - 1, 3, 'member count');
-  assert.ok((await ctx.request('GET', '/notifications', { token: principal.token })).body.items.some((n) => n.link === '/admin/chat-requests'));
 });
 
 test('Approve creates the group once; the HOD owns it; the HOD is told', async () => {
-  const req = await group(hod, { name: 'Approve me', category: 'custom', reason: 'Testing approval', participantIds: ids(stuA1, stuB) });
-  const id = req.body._id;
+  const req = await ctx.models.Conversation.create({
+    name: 'Approve me',
+    type: 'group',
+    category: 'custom',
+    reason: 'Testing approval',
+    participants: [hod.u._id, stuA1.u._id, stuB.u._id],
+    admins: [hod.u._id],
+    createdBy: hod.u._id,
+    status: 'pending',
+    isActive: false,
+  });
+  const id = String(req._id);
   assert.equal((await review(hod, id, 'approve')).status, 403, 'an HOD cannot approve');
   assert.equal((await review(facIC, id, 'approve')).status, 403, 'faculty cannot approve');
   assert.equal((await review(stuA1, id, 'approve')).status, 403);
@@ -125,40 +146,61 @@ test('Approve creates the group once; the HOD owns it; the HOD is told', async (
 });
 
 test('Reject leaves no group; the reason reaches the HOD', async () => {
-  const req = await group(hod, { name: 'Reject me', category: 'faculty', reason: 'Staff coordination', participantIds: ids(facEce) });
-  const rej = await review(principal, req.body._id, 'reject', { reason: 'Use the department group' });
+  const req = await ctx.models.Conversation.create({
+    name: 'Reject me',
+    type: 'group',
+    category: 'faculty',
+    reason: 'Staff coordination',
+    participants: [hod.u._id, facEce.u._id],
+    admins: [hod.u._id],
+    createdBy: hod.u._id,
+    status: 'pending',
+    isActive: false,
+  });
+  const id = String(req._id);
+  const rej = await review(principal, id, 'reject', { reason: 'Use the department group' });
   assert.equal(rej.body.status, 'rejected');
-  assert.equal((await ctx.request('GET', `/chat/conversations/${req.body._id}`, { token: facEce.token })).status, 404, 'no group exists for members');
+  assert.equal((await ctx.request('GET', `/chat/conversations/${id}`, { token: facEce.token })).status, 404, 'no group exists for members');
   const mine = await ctx.request('GET', '/chat/requests', { token: hod.token });
-  assert.ok(mine.body.some((x) => x._id === req.body._id && x.status === 'rejected' && x.rejectReason === 'Use the department group'));
+  assert.ok(mine.body.some((x) => x._id === id && x.status === 'rejected' && x.rejectReason === 'Use the department group'));
   assert.ok((await ctx.request('GET', '/notifications', { token: hod.token })).body.items.some((n) => /not approved/.test(n.title)));
 });
 
 test('Approval re-validates members: a member who left the department since the request blocks it', async () => {
   const mover = await ctx.createUser({ name: 'Mover', department: CY, section: 'A', year: 3, semester: 5, rollNo: 'MV' });
-  const req = await group(hod, { name: 'Revalidate', category: 'custom', reason: 'Testing revalidation', participantIds: [String(mover._id)] });
-  assert.equal(req.status, 202);
+  const req = await ctx.models.Conversation.create({
+    name: 'Revalidate',
+    type: 'group',
+    category: 'custom',
+    reason: 'Testing revalidation',
+    participants: [hod.u._id, mover._id],
+    admins: [hod.u._id],
+    createdBy: hod.u._id,
+    status: 'pending',
+    isActive: false,
+  });
+  const id = String(req._id);
   await ctx.models.User.updateOne({ _id: mover._id }, { $set: { department: 'ECE' } });
-  const res = await review(principal, req.body._id, 'approve');
+  const res = await review(principal, id, 'approve');
   assert.equal(res.status, 403, JSON.stringify(res.body));
-  assert.equal((await ctx.models.Conversation.findById(req.body._id).lean()).status, 'pending', 'still pending, not approved');
+  assert.equal((await ctx.models.Conversation.findById(id).lean()).status, 'pending', 'still pending, not approved');
 });
 
-test('Only an HOD sends Custom / Academics / Faculty requests; faculty groups still go to the admin', async () => {
+test('Only an HOD creates Custom / Academics / Faculty groups; faculty creates class groups directly without approval', async () => {
   const fake = await group(facIC, { name: 'Sneaky', category: 'custom', reason: 'I am not an HOD', participantIds: ids(stuA1) });
   assert.equal(fake.status, 403);
   assert.equal((await group(stuA1, { name: 'No', category: 'custom', reason: 'Student', participantIds: ids(stuA2) })).status, 403);
 
   const facReq = await group(facIC, { name: 'Our class', participantIds: ids(stuA1) });
-  assert.equal(facReq.status, 202);
-  assert.ok(!(await ctx.request('GET', '/chat/requests', { token: principal.token })).body.some((x) => x._id === facReq.body._id), 'not the principal’s');
-  assert.equal((await review(principal, facReq.body._id, 'approve')).status, 404);
-  assert.equal((await review(admin, facReq.body._id, 'approve')).body.status, 'active');
+  assert.equal(facReq.status, 201);
+  assert.equal(facReq.body.status, 'active');
+  assert.equal(facReq.body.isActive, true);
+  assert.ok(facReq.body.admins.some((a) => String(a._id || a) === String(facIC.u._id)));
 });
 
 test('Custom: own-department students from several classes — no other department, no staff', async () => {
   const body = (participantIds) => ({ name: 'Custom', category: 'custom', reason: 'Custom group test', participantIds });
-  assert.equal((await group(hod, body(ids(stuA1, stuB, stuY2, stuSem6)))).status, 202, 'several years / sections / semesters of CY');
+  assert.equal((await group(hod, body(ids(stuA1, stuB, stuY2, stuSem6)))).status, 201, 'several years / sections / semesters of CY');
   assert.equal((await group(hod, body(ids(stuEce)))).status, 403, 'another department — even a class the HOD teaches there');
   assert.equal((await group(hod, body(ids(stuA1, facEce)))).status, 422, 'no staff in a Custom group');
 });
@@ -170,14 +212,14 @@ test('Academics: one class of the HOD’s department, students only', async () =
   assert.equal((await academic(ids(stuA1, facEce))).status, 422, 'no staff');
   assert.equal((await academic(ids(stuEce))).status, 403, 'another department');
   const ok = await academic(ids(stuA1, stuA2));
-  assert.equal(ok.status, 202, JSON.stringify(ok.body));
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
   const stored = await ctx.models.Conversation.findById(ok.body._id).lean();
   assert.deepEqual([stored.category, stored.linkedDepartment, stored.linkedYear, stored.linkedSection], ['academic', CY, 3, 'A']);
 });
 
 test('Faculty group: faculty from the whole campus, no students, no other roles', async () => {
   const fg = (participantIds) => group(hod, { name: 'Staff', category: 'faculty', reason: 'Staff coordination', participantIds });
-  assert.equal((await fg(ids(facEce, facIC, facH))).status, 202, 'faculty from any department');
+  assert.equal((await fg(ids(facEce, facIC, facH))).status, 201, 'faculty from any department');
   assert.equal((await fg(ids(facEce, stuA1))).status, 422, 'no students');
   assert.equal((await fg(ids(principal))).status, 403, 'not the principal or other roles');
 });

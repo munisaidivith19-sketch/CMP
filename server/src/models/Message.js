@@ -21,6 +21,8 @@ const messageSchema = new Schema(
     pinnedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     pinnedAt: Date,
 
+    editedAt: Date,
+
     deletedAt: Date,
     deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },

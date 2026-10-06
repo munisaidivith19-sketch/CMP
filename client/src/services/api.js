@@ -347,6 +347,7 @@ export const api = createApi({
       providesTags: (_r, _e, { id }) => [{ type: 'ChatMessages', id }],
     }),
     sendMessage: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/conversations/${id}/messages`, method: 'POST', body }) }),
+    editMessage: b.mutation({ query: ({ id, msgId, body }) => ({ url: `/chat/conversations/${id}/messages/${msgId}`, method: 'PATCH', body: { body } }) }),
     deleteMessage: b.mutation({ query: ({ id, msgId }) => ({ url: `/chat/conversations/${id}/messages/${msgId}`, method: 'DELETE' }) }),
     markConversationRead: b.mutation({ query: (id) => ({ url: `/chat/conversations/${id}/read`, method: 'PATCH' }), invalidatesTags: ['Chat'] }),
     searchMessages: b.query({ query: (q) => ({ url: '/chat/search', params: { q } }) }),
@@ -366,6 +367,10 @@ export const api = createApi({
     // Group admin (the creator) only: rename / delete a group.
     updateGroup: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/conversations/${id}`, method: 'PATCH', body }), invalidatesTags: ['Chat'] }),
     deleteGroup: b.mutation({ query: (id) => ({ url: `/chat/conversations/${id}`, method: 'DELETE' }), invalidatesTags: ['Chat'] }),
+    toggleGroupAdmin: b.mutation({
+      query: ({ id, userId }) => ({ url: `/chat/conversations/${id}/admins/${userId}`, method: 'PATCH' }),
+      invalidatesTags: ['Chat'],
+    }),
     // HOD group builder: every student of one class in the HOD's department.
     getGroupClass: b.query({ query: (params) => ({ url: '/chat/group-class', params }), providesTags: ['User'] }),
 
@@ -938,12 +943,14 @@ export const {
   useGetMessagesQuery,
   useLazyGetMessagesQuery,
   useSendMessageMutation,
+  useEditMessageMutation,
   useDeleteMessageMutation,
   useMarkConversationReadMutation,
   useSearchMessagesQuery,
   useAddChatMembersMutation,
   useUpdateGroupMutation,
   useDeleteGroupMutation,
+  useToggleGroupAdminMutation,
   useGetGroupClassQuery,
   useLeaveConversationMutation,
   useGetMyAttendanceQuery,

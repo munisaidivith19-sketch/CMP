@@ -11,8 +11,8 @@ import { sameId } from '../../../utils/format';
 
 const GROUP_SCOPE = {
   admin: 'Add anyone on campus.',
-  hod: 'Sent to the principal for approval, with your reason.',
-  faculty: 'Add students of your sections. An admin approves the group before it goes live.',
+  hod: 'Create department or faculty groups. You will be the group admin.',
+  faculty: 'Add students of your sections. You will be the group admin.',
 };
 /** Who a private chat can reach — the server enforces exactly this. */
 const PRIVATE_SCOPE = {
@@ -100,20 +100,15 @@ export default function NewChat() {
         type: 'group',
         name: name.trim(),
         participantIds: picked.map((u) => u._id),
-        ...(isHod ? { category, reason: reason.trim() } : {}),
+        ...(isHod ? { category, reason: reason.trim() || undefined } : {}),
       }).unwrap();
-      if (conv.pending) {
-        Alert.alert('Request sent', `Your group goes live as soon as ${isHod ? 'the principal' : 'an admin'} approves it. You’ll get a notification.`);
-        router.back();
-        return;
-      }
       router.replace(`/chat/${conv._id}`);
     } catch (e) {
       Alert.alert('Could not create group', errMsg(e));
     }
   };
 
-  const ready = picked.length > 0 && name.trim().length >= 2 && (!isHod || reason.trim().length >= 5);
+  const ready = picked.length > 0 && name.trim().length >= 2;
 
   return (
     <Screen scroll={false}>
@@ -136,7 +131,7 @@ export default function NewChat() {
                     <Chip key={v} label={l} active={category === v} onPress={() => pickCategory(v)} />
                   ))}
                 </View>
-                <Input placeholder="Reason for the principal" value={reason} onChangeText={setReason} maxLength={500} multiline />
+                <Input placeholder="Description / Note (optional)" value={reason} onChangeText={setReason} maxLength={500} multiline />
                 {category !== 'faculty' ? (
                   <>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -168,8 +163,8 @@ export default function NewChat() {
               </T>
             ) : null}
             <Button
-              title={isHod ? 'Send request to Principal' : me.role === 'faculty' ? 'Request group' : 'Create group'}
-              icon={isHod ? Send : Users}
+              title="Create group"
+              icon={Users}
               onPress={createGroup}
               loading={isLoading}
               disabled={!ready}

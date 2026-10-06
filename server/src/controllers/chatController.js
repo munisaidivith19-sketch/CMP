@@ -17,12 +17,14 @@ const isParticipant = (conv, userId) => conv.participants.some((p) => sameId(p._
 const participantIds = (conv) => conv.participants.map((p) => String(p._id || p));
 // Who may start a group / class channel at all. Students only have private chats.
 const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
-// Faculty-created class groups wait for an admin; HOD-created groups wait for
-// the principal. Admin groups start at once.
-const NEEDS_APPROVAL = ['faculty', 'hod'];
+// Faculty and HOD group creations go live directly without requiring approval.
+const NEEDS_APPROVAL = [];
 const APPROVER = { faculty: 'admin', hod: 'principal' };
 // Who an HOD may put in a Faculty group: teaching staff from anywhere on campus.
 const GROUP_STAFF_ROLES = ['faculty', 'hod'];
+// Check whether a user is an admin of the conversation (or a system admin)
+export const isGroupAdmin = (conv, user) =>
+  (conv?.admins || []).some((a) => sameId(a, user)) || sameId(conv?.createdBy, user) || user?.role === 'admin';
 // How many recent messages a text search scans (bodies are encrypted, so it runs in memory).
 const SEARCH_WINDOW = 3000;
 
@@ -228,12 +230,11 @@ export const createConversation = asyncHandler(async (req, res) => {
 
   if (!name?.trim()) throw new ApiError(422, 'Group conversations need a name');
   const isHod = req.user.role === 'hod';
-  // Custom / Academics / Faculty requests go to the principal and are HOD-only.
-  if (req.body.category && !isHod) throw new ApiError(403, 'Only an HOD can request a Custom, Academics or Faculty group');
+  // Custom / Academics / Faculty groups are HOD-only.
+  if (req.body.category && !isHod) throw new ApiError(403, 'Only an HOD can create a Custom, Academics or Faculty group');
   const category = isHod ? req.body.category : undefined;
   const reason = String(req.body.reason || '').trim();
   if (isHod && !GROUP_CATEGORIES.includes(category)) throw new ApiError(422, 'Choose the group type: Custom, Academics or Faculty');
-  if (isHod && reason.length < 5) throw new ApiError(422, 'Give the principal a reason for this group');
   const academicClass = await assertMembersAllowed(req.user, others, { category });
 
   const pending = NEEDS_APPROVAL.includes(req.user.role);
@@ -457,32 +458,55 @@ export const searchMessages = asyncHandler(async (req, res) => {
   res.json(recent.map(openMsg).filter((m) => String(m.body).toLowerCase().includes(q)).slice(0, 30));
 });
 
-// ── Delete message ─────────────────────────────────────────────────
+// ── Delete message (disabled) ──────────────────────────────────────
 
 export const deleteMessage = asyncHandler(async (req, res) => {
-  const conv = await loadMemberConversation(req.params.id, req.user);
-  const msg = await Message.findOne({ _id: req.params.msgId, conversation: conv._id });
-  if (!msg) throw new ApiError(404, 'Message not found');
-  if (msg.deletedAt) return res.json({ message: 'Message deleted' });
+  throw new ApiError(403, 'Message deletion is not allowed');
+});
 
-  if (!sameId(msg.sender, req.user) && req.user.role !== 'admin') {
-    throw new ApiError(403, 'You can only delete your own messages');
+// ── Edit message (group chats only, sender only, within 5 minutes) ─
+
+export const editMessage = asyncHandler(async (req, res) => {
+  const conv = await loadMemberConversation(req.params.id, req.user);
+  if (conv.type === 'private') {
+    throw new ApiError(403, 'Messages cannot be edited in private chats');
   }
 
-  msg.deletedAt = new Date();
-  msg.deletedBy = req.user._id;
-  msg.body = 'This message was deleted';
-  msg.attachment = undefined;
+  const msg = await Message.findOne({ _id: req.params.msgId, conversation: conv._id });
+  if (!msg) throw new ApiError(404, 'Message not found');
+  if (msg.deletedAt) throw new ApiError(422, 'Cannot edit a deleted message');
+
+  if (!sameId(msg.sender, req.user)) {
+    throw new ApiError(403, 'You can only edit your own messages');
+  }
+
+  const EDIT_WINDOW_MS = 5 * 60 * 1000;
+  const elapsed = Date.now() - new Date(msg.createdAt).getTime();
+  if (elapsed > EDIT_WINDOW_MS) {
+    throw new ApiError(403, 'Messages can only be edited within 5 minutes of sending');
+  }
+
+  const newText = String(req.body.body || '').trim();
+  if (!newText) throw new ApiError(422, 'Message cannot be empty');
+
+  msg.body = seal(newText);
+  msg.editedAt = new Date();
   await msg.save();
 
   if (conv.lastMessage?.sentAt && conv.lastMessage.sentAt.getTime() === msg.createdAt.getTime()) {
-    await Conversation.updateOne({ _id: conv._id }, { $set: { 'lastMessage.body': msg.body } });
+    await Conversation.updateOne(
+      { _id: conv._id },
+      { $set: { 'lastMessage.body': seal(newText.slice(0, 200)) } }
+    );
   }
-  emitToUsers(participantIds(conv), 'chat:messageDeleted', {
+
+  const populated = openMsg(await populateMessage(Message.findById(msg._id)));
+  emitToUsers(participantIds(conv), 'chat:messageEdited', {
     conversationId: String(conv._id),
-    messageId: String(msg._id),
+    message: populated,
   });
-  res.json({ message: 'Message deleted' });
+
+  res.json(populated);
 });
 
 // ── Pin / unpin message ────────────────────────────────────────────
@@ -533,8 +557,8 @@ export const getOnlineUsers = asyncHandler(async (req, res) => {
 export const addMembers = asyncHandler(async (req, res) => {
   const conv = await loadMemberConversation(req.params.id, req.user);
   if (conv.type === 'private') throw new ApiError(422, 'Cannot add members to a private conversation');
-  if (!conv.admins.some((a) => sameId(a, req.user)) && req.user.role !== 'admin') {
-    throw new ApiError(403, 'Only group admins can add members');
+  if (!isGroupAdmin(conv, req.user)) {
+    throw new ApiError(403, 'Only group admins can add members to this group');
   }
 
   const requested = [...new Set(req.body.userIds.map(String))];
@@ -557,7 +581,7 @@ export const removeMember = asyncHandler(async (req, res) => {
 
   const targetId = req.params.userId;
   // Anyone can leave; group admins (or a site admin) can remove others.
-  if (!sameId(targetId, req.user) && !conv.admins.some((a) => sameId(a, req.user)) && req.user.role !== 'admin') {
+  if (!sameId(targetId, req.user) && !isGroupAdmin(conv, req.user)) {
     throw new ApiError(403, 'Only group admins can remove members');
   }
 
@@ -576,14 +600,44 @@ export const removeMember = asyncHandler(async (req, res) => {
   res.json({ message: 'Member removed' });
 });
 
-// ── Edit / delete a group (its creator / group admins only) ────────
+// ── Edit / delete a group / manage admins ───────────────────────────
 
 const assertGroupAdmin = (conv, user) => {
   if (conv.type === 'private') throw new ApiError(422, 'Private conversations cannot be edited');
-  if (!conv.admins.some((a) => sameId(a, user)) && user.role !== 'admin') {
+  if (!isGroupAdmin(conv, user)) {
     throw new ApiError(403, 'Only the group admin can edit or delete this group');
   }
 };
+
+export const toggleGroupAdmin = asyncHandler(async (req, res) => {
+  const conv = await loadMemberConversation(req.params.id, req.user);
+  if (conv.type === 'private') throw new ApiError(422, 'Private conversations cannot have group admins');
+  if (!isGroupAdmin(conv, req.user)) {
+    throw new ApiError(403, 'Only group admins can manage group admin roles');
+  }
+
+  const targetId = req.params.userId || req.body.userId;
+  if (!targetId) throw new ApiError(422, 'Target user is required');
+  if (!conv.participants.some((p) => sameId(p, targetId))) {
+    throw new ApiError(404, 'User is not a member of this conversation');
+  }
+
+  const currentAdmins = (conv.admins || []).map((a) => String(a._id || a));
+  const isTargetAdmin = currentAdmins.includes(String(targetId));
+
+  if (isTargetAdmin) {
+    if (currentAdmins.length <= 1) {
+      throw new ApiError(422, 'A group must have at least one group admin');
+    }
+    await Conversation.updateOne({ _id: conv._id }, { $pull: { admins: targetId } });
+  } else {
+    await Conversation.updateOne({ _id: conv._id }, { $addToSet: { admins: targetId } });
+  }
+
+  const updated = await Conversation.findById(conv._id).populate('participants', CHAT_USER_FIELDS);
+  emitToUsers(participantIds(updated), 'chat:conversation', { conversationId: String(conv._id) });
+  res.json(withPresence(updated, req.user._id));
+});
 
 export const updateGroup = asyncHandler(async (req, res) => {
   const conv = await loadMemberConversation(req.params.id, req.user);

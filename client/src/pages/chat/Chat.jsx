@@ -13,16 +13,16 @@ import {
   CornerUpLeft,
   Loader2,
   MessageCircle,
+  Pencil,
   Plus,
   Search,
   Send,
-  Trash2,
   Users,
   X,
 } from 'lucide-react';
 import {
   useCreateConversationMutation,
-  useDeleteMessageMutation,
+  useEditMessageMutation,
   useGetConversationQuery,
   useGetConversationsQuery,
   useGetGroupRequestsQuery,
@@ -45,7 +45,7 @@ import GroupInfoModal from './GroupInfoModal';
 const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
 const GROUP_SCOPE = {
   admin: 'Add anyone on campus.',
-  faculty: 'Class groups can include students of your sections. An admin approves the group before it goes live.',
+  faculty: 'Class groups can include students of your sections. You will be the group admin.',
 };
 /** Who a private chat can reach — the server enforces exactly this. */
 const PRIVATE_SCOPE = {
@@ -150,7 +150,7 @@ function NewChatModal({ open, onClose, me, onHodGroup }) {
               Cancel
             </Button>
             <Button loading={isLoading} disabled={!picked.length || name.trim().length < 2} onClick={() => start(picked.map((p) => p._id))}>
-              {me.role === 'faculty' ? 'Request group' : 'Create group'}
+              Create group
             </Button>
           </>
         )
@@ -309,8 +309,10 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
 }
 
 /* ── Thread ─────────────────────────────────────────────────────── */
-function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, group }) {
+function MessageBubble({ m, mine, showAuthor, readState, onReply, onEdit, group }) {
   const deleted = Boolean(m.deletedAt);
+  // In group chats only, the sender can edit their message within 5 minutes of sending
+  const canEdit = mine && group && !deleted && Date.now() - new Date(m.createdAt).getTime() <= 5 * 60 * 1000;
   return (
     <div id={`msg-${m._id}`} className={cn('group flex gap-2', mine ? 'justify-end' : 'justify-start')}>
       {!mine && group && (showAuthor ? <Avatar user={m.sender} size="xs" className="mt-auto" /> : <span className="w-7 shrink-0" />)}
@@ -332,6 +334,7 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, grou
           {/* overflow-wrap:anywhere also lowers the bubble's minimum width, so a long URL wraps instead of widening it. */}
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{m.body}</p>
           <span className={cn('mt-0.5 flex items-center justify-end gap-1 text-[10px]', mine ? 'text-white/75' : 'text-ink-muted')}>
+            {m.editedAt && <span className="opacity-80">edited ·</span>}
             {fmtTime(m.createdAt)}
             {mine && !deleted && (readState === 'read' ? <CheckCheck className="h-3.5 w-3.5" aria-label="Read" /> : <Check className="h-3.5 w-3.5" aria-label="Sent" />)}
           </span>
@@ -342,9 +345,9 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onDelete, grou
           <button onClick={() => onReply(m)} className="rounded-lg p-1.5 text-ink-muted hover:bg-white/70 hover:text-ink dark:hover:bg-white/10 dark:hover:text-ink" aria-label="Reply">
             <CornerUpLeft className="h-3.5 w-3.5" />
           </button>
-          {mine && (
-            <button onClick={() => onDelete(m)} className="rounded-lg p-1.5 text-ink-muted hover:bg-rose-500/10 hover:text-rose-500" aria-label="Delete message">
-              <Trash2 className="h-3.5 w-3.5" />
+          {canEdit && (
+            <button onClick={() => onEdit(m)} className="rounded-lg p-1.5 text-ink-muted hover:bg-white/70 hover:text-ink dark:hover:bg-white/10 dark:hover:text-ink" aria-label="Edit message">
+              <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -359,11 +362,12 @@ function Thread({ id, me, presence, typingUsers }) {
   const { data: first, isLoading, error } = useGetMessagesQuery({ id, limit: 40 }, { refetchOnMountOrArgChange: true });
   const [loadOlder, { isFetching: loadingOlder }] = useLazyGetMessagesQuery();
   const [send, { isLoading: sending }] = useSendMessageMutation();
-  const [remove] = useDeleteMessageMutation();
+  const [editMsg, { isLoading: editing }] = useEditMessageMutation();
   const [messages, setMessages] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -378,6 +382,12 @@ function Thread({ id, me, presence, typingUsers }) {
   const typingSent = useRef(false);
 
   useSocketRoom('chat:join', 'chat:leave', id);
+
+  useEffect(() => {
+    setEditingMessage(null);
+    setReplyTo(null);
+    setText('');
+  }, [id]);
 
   useEffect(() => {
     if (first) {
@@ -399,6 +409,10 @@ function Thread({ id, me, presence, typingUsers }) {
     const nearBottom = scrollRef.current && scrollRef.current.scrollHeight - scrollRef.current.scrollTop - scrollRef.current.clientHeight < 200;
     if (nearBottom || sameId(message.sender, me)) requestAnimationFrame(() => scrollToBottom('smooth'));
     if (!sameId(message.sender, me) && document.visibilityState === 'visible') markRead();
+  });
+  useSocketEvent('chat:messageEdited', ({ conversationId, message }) => {
+    if (conversationId !== id) return;
+    setMessages((prev) => prev.map((m) => (m._id === message._id ? { ...m, body: message.body, editedAt: message.editedAt } : m)));
   });
   useSocketEvent('chat:messageDeleted', ({ conversationId, messageId }) => {
     if (conversationId !== id) return;
@@ -429,8 +443,19 @@ function Thread({ id, me, presence, typingUsers }) {
   const submit = async (e) => {
     e?.preventDefault();
     const body = text.trim();
-    if (!body || sending) return;
+    if (!body || sending || editing) return;
     stopTyping();
+    if (editingMessage) {
+      try {
+        const updated = await editMsg({ id, msgId: editingMessage._id, body }).unwrap();
+        setMessages((prev) => prev.map((m) => (m._id === updated._id ? { ...m, ...updated } : m)));
+        setEditingMessage(null);
+        setText('');
+      } catch (err) {
+        toast.error(errMsg(err, 'Failed to edit message'));
+      }
+      return;
+    }
     try {
       const msg = await send({ id, body, replyTo: replyTo?._id }).unwrap();
       setMessages((prev) => (prev.some((x) => x._id === msg._id) ? prev : [...prev, msg]));
@@ -453,14 +478,6 @@ function Thread({ id, me, presence, typingUsers }) {
     requestAnimationFrame(() => {
       if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight - prevHeight;
     });
-  };
-
-  const del = async (m) => {
-    try {
-      await remove({ id, msgId: m._id }).unwrap();
-    } catch (err) {
-      toast.error(errMsg(err));
-    }
   };
 
   const d = describe(conv, me);
@@ -560,13 +577,40 @@ function Thread({ id, me, presence, typingUsers }) {
                   <span className="glass rounded-full px-3 py-1 text-[11px] font-bold muted">{dayDivider(m.createdAt)}</span>
                 </div>
               )}
-              <MessageBubble m={m} mine={mine} group={d.group} showAuthor={showAuthor} readState={mine ? readStateOf(m) : null} onReply={setReplyTo} onDelete={del} />
+              <MessageBubble
+                m={m}
+                mine={mine}
+                group={d.group}
+                showAuthor={showAuthor}
+                readState={mine ? readStateOf(m) : null}
+                onReply={(target) => {
+                  setEditingMessage(null);
+                  setReplyTo(target);
+                }}
+                onEdit={(target) => {
+                  setReplyTo(null);
+                  setEditingMessage(target);
+                  setText(target.body);
+                }}
+              />
             </div>
           );
         })}
       </div>
 
       <form onSubmit={submit} className="border-t border-white/60 p-3 dark:border-white/10">
+        {editingMessage && (
+          <div className="mb-2 flex items-start gap-2 rounded-2xl bg-amber-500/10 px-3 py-2 text-xs">
+            <Pencil className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-amber-800 dark:text-amber-300">Editing message</p>
+              <p className="truncate muted">{editingMessage.body}</p>
+            </div>
+            <button type="button" onClick={() => { setEditingMessage(null); setText(''); }} aria-label="Cancel edit">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         {replyTo && (
           <div className="mb-2 flex items-start gap-2 rounded-2xl bg-primary-500/10 px-3 py-2 text-xs">
             <CornerUpLeft className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-500" />
@@ -588,12 +632,12 @@ function Thread({ id, me, presence, typingUsers }) {
             }}
             rows={1}
             maxLength={5000}
-            placeholder="Type a message…"
+            placeholder={editingMessage ? 'Edit your message…' : 'Type a message…'}
             aria-label="Message"
             className="input max-h-40 min-h-[46px] min-w-0 flex-1 resize-none rounded-3xl"
           />
-          <Button type="submit" loading={sending} disabled={!text.trim()} className="h-[46px] w-[46px] shrink-0 rounded-full p-0" aria-label="Send">
-            {!sending && <Send className="h-4 w-4" />}
+          <Button type="submit" loading={sending || editing} disabled={!text.trim()} className="h-[46px] w-[46px] shrink-0 rounded-full p-0" aria-label={editingMessage ? 'Save changes' : 'Send'}>
+            {!sending && !editing && <Send className="h-4 w-4" />}
           </Button>
         </div>
       </form>

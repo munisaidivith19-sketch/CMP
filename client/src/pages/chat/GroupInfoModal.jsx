@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Check, LogOut, Pencil, Search, Trash2, UserMinus, UserPlus } from 'lucide-react';
+import { Check, LogOut, Pencil, Search, ShieldAlert, ShieldCheck, Trash2, UserMinus, UserPlus } from 'lucide-react';
 import {
   useAddChatMembersMutation,
   useDeleteGroupMutation,
   useGetUsersQuery,
   useLeaveConversationMutation,
+  useToggleGroupAdminMutation,
   useUpdateGroupMutation,
 } from '../../services/api';
-import { Avatar, Badge, Button, Skeleton } from '../../components/ui/primitives';
+import { Avatar, Badge, Button, Skeleton, cn } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/form';
 import { ROLE_LABELS, YEAR_LABELS } from '../../utils/constants';
@@ -19,20 +20,20 @@ const sameId = (a, b) => String(a?._id || a) === String(b?._id || b);
 const CATEGORY_LABEL = { custom: 'Custom', academic: 'Academics', faculty: 'Faculty' };
 
 /**
- * Group details. The group admin (its creator — the HOD for an HOD group) can
- * rename it, add and remove members and delete it; everyone else sees the
- * members and can leave. The server enforces the same rules, including who may
- * be added to the group's type.
+ * Group details. The group admin (its creator / designated group admins) can
+ * rename it, add and remove members, manage group admin roles, and delete it;
+ * everyone else sees the members and can leave.
  */
 export default function GroupInfoModal({ open, onClose, conv, me }) {
   const navigate = useNavigate();
-  const isAdmin = me.role === 'admin' || (conv?.admins || []).some((a) => sameId(a, me));
+  const isAdmin = me.role === 'admin' || (conv?.admins || []).some((a) => sameId(a, me)) || sameId(conv?.createdBy, me);
   const [name, setName] = useState('');
   const [q, setQ] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [update, { isLoading: renaming }] = useUpdateGroupMutation();
   const [add, { isLoading: adding }] = useAddChatMembersMutation();
   const [removeMember] = useLeaveConversationMutation();
+  const [toggleAdmin, { isLoading: togglingAdmin }] = useToggleGroupAdminMutation();
   const [del, { isLoading: deleting }] = useDeleteGroupMutation();
   // An HOD group adds only what its type allows: students for Custom /
   // Academics, faculty for Faculty. (The server enforces it either way.)
@@ -146,12 +147,18 @@ export default function GroupInfoModal({ open, onClose, conv, me }) {
           </div>
         )}
 
+        {!isAdmin && (
+          <div className="mb-4 rounded-xl border border-sky-500/20 bg-sky-50/50 p-2.5 text-xs text-sky-700 dark:border-sky-500/10 dark:bg-sky-500/5 dark:text-sky-300">
+            Only group admins can add or remove members.
+          </div>
+        )}
+
         <p className="label">Members</p>
         <ul className="max-h-72 space-y-1 overflow-y-auto">
           {members.map((m) => {
-            const groupAdmin = (conv.admins || []).some((a) => sameId(a, m));
+            const groupAdmin = (conv.admins || []).some((a) => sameId(a, m)) || sameId(conv.createdBy, m);
             return (
-              <li key={m._id} className="flex items-center gap-3 rounded-xl p-2">
+              <li key={m._id} className="flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-black/5 dark:hover:bg-white/5">
                 <Avatar user={m} size="sm" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">
@@ -165,16 +172,38 @@ export default function GroupInfoModal({ open, onClose, conv, me }) {
                   </span>
                 </span>
                 {groupAdmin && <Badge color="primary">Group admin</Badge>}
-                {isAdmin && !groupAdmin && (
-                  <button
-                    type="button"
-                    className="btn-icon btn-ghost hover:!text-rose-500"
-                    aria-label={`Remove ${m.name}`}
-                    title="Remove from group"
-                    onClick={() => run(() => removeMember({ id: conv._id, userId: m._id }).unwrap(), `${m.name} removed`)}
-                  >
-                    <UserMinus className="h-4 w-4" />
-                  </button>
+                {isAdmin && !sameId(m, me) && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className={cn(
+                        'btn-icon btn-ghost',
+                        groupAdmin ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400' : 'text-ink-muted hover:text-primary-600'
+                      )}
+                      aria-label={groupAdmin ? `Dismiss ${m.name} as group admin` : `Make ${m.name} group admin`}
+                      title={groupAdmin ? 'Dismiss as group admin' : 'Make group admin'}
+                      disabled={togglingAdmin}
+                      onClick={() =>
+                        run(
+                          () => toggleAdmin({ id: conv._id, userId: m._id }).unwrap(),
+                          groupAdmin ? `${m.name} is no longer a group admin` : `${m.name} is now a group admin`
+                        )
+                      }
+                    >
+                      {groupAdmin ? <ShieldAlert className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+                    </button>
+                    {!groupAdmin && (
+                      <button
+                        type="button"
+                        className="btn-icon btn-ghost hover:!text-rose-500"
+                        aria-label={`Remove ${m.name}`}
+                        title="Remove from group"
+                        onClick={() => run(() => removeMember({ id: conv._id, userId: m._id }).unwrap(), `${m.name} removed`)}
+                      >
+                        <UserMinus className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 )}
                 {!isAdmin && sameId(m, me) && <Check className="h-4 w-4 text-primary-500" />}
               </li>

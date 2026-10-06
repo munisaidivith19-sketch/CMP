@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Check, Search, Send, X } from 'lucide-react';
+import { Check, Search, Users, X } from 'lucide-react';
 import { useCreateConversationMutation, useGetGroupClassQuery, useGetPeopleFiltersQuery, useGetUsersQuery } from '../../services/api';
 import { Avatar, Button, Skeleton, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
@@ -17,15 +18,14 @@ const STAFF = ['faculty', 'hod'];
 const sameId = (a, b) => String(a?._id || a) === String(b?._id || b);
 
 /**
- * HOD group builder. The group is a REQUEST: it goes to the principal with the
- * reason given here, and only goes live once approved.
+ * HOD group builder.
  *   CUSTOM    — students of the HOD's department, from several classes
  *   ACADEMICS — the students of ONE class of the HOD's department
  *   FACULTY   — faculty from anywhere on campus
- * The server re-checks every member against these rules (and again when the
- * principal approves) — these lists only offer what it accepts.
+ * The creator is the Group Admin and can add members or manage the group.
  */
 export default function HodGroupModal({ open, onClose }) {
+  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('custom');
   const [reason, setReason] = useState('');
@@ -90,21 +90,24 @@ export default function HodGroupModal({ open, onClose }) {
     students: picked.filter((u) => STUDENT_ROLES.includes(u.role)).length,
     staff: picked.filter((u) => STAFF.includes(u.role)).length,
   };
-  const ready = name.trim().length >= 2 && reason.trim().length >= 5 && picked.length > 0;
+  const ready = name.trim().length >= 2 && picked.length > 0;
 
   const submit = async () => {
     try {
-      await create({
+      const conv = await create({
         type: 'group',
         name: name.trim(),
         category,
-        reason: reason.trim(),
+        reason: reason.trim() || undefined,
         participantIds: picked.map((u) => u._id),
       }).unwrap();
-      toast.success('Request sent to the principal — the group goes live once approved');
+      toast.success('Group created successfully');
       onClose();
+      if (conv?._id) {
+        navigate(`/chat/${conv._id}`);
+      }
     } catch (e) {
-      toast.error(errMsg(e, 'Could not send the request'));
+      toast.error(errMsg(e, 'Could not create the group'));
     }
   };
 
@@ -117,14 +120,14 @@ export default function HodGroupModal({ open, onClose }) {
       onClose={onClose}
       size="lg"
       title="New group"
-      subtitle="Your group is sent to the principal for approval, with your reason. Only you can edit or delete it afterwards."
+      subtitle="Create a group for your department or faculty. You will be the group admin and can add members or manage the group."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button icon={Send} loading={isLoading} disabled={!ready} onClick={submit}>
-            Send request to Principal
+          <Button icon={Users} loading={isLoading} disabled={!ready} onClick={submit}>
+            Create group
           </Button>
         </>
       }
@@ -140,13 +143,13 @@ export default function HodGroupModal({ open, onClose }) {
           hint={CATEGORIES.find((c) => c.value === category)?.hint}
         />
         <Textarea
-          label="Reason (shown to the principal)"
+          label="Description / Purpose (optional)"
           className="sm:col-span-2"
           rows={2}
           maxLength={500}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          placeholder="Why is this group needed?"
+          placeholder="What is this group for?"
         />
       </div>
 

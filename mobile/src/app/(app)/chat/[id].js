@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { Check, CheckCheck, CornerUpLeft, Send, Users, X } from 'lucide-react-native';
+import { Check, CheckCheck, CornerUpLeft, Pencil, Send, Users, X } from 'lucide-react-native';
 import { isSameDay, isToday, isYesterday, format } from 'date-fns';
 import { Avatar, ErrorState, Header, IconTile, Loading, Screen, T } from '../../../components/ui';
-import { errMsg, useDeleteMessageMutation, useGetConversationQuery, useGetMessagesQuery, useLazyGetMessagesQuery, useSendMessageMutation } from '../../../services/api';
+import { errMsg, useEditMessageMutation, useGetConversationQuery, useGetMessagesQuery, useLazyGetMessagesQuery, useSendMessageMutation } from '../../../services/api';
 import { emit, emitWithAck, useSocketEvent, useSocketRoom } from '../../../services/socket';
 import { selectUser } from '../../../store/authSlice';
 import { colors, fonts, gradients } from '../../../theme';
@@ -26,17 +26,26 @@ export default function Thread() {
   const { data: first, isLoading } = useGetMessagesQuery({ id, limit: 40 }, { refetchOnMountOrArgChange: true });
   const [loadOlder, { isFetching: loadingOlder }] = useLazyGetMessagesQuery();
   const [send, { isLoading: sending }] = useSendMessageMutation();
-  const [remove] = useDeleteMessageMutation();
+  const [editMsg, { isLoading: editing }] = useEditMessageMutation();
   const [messages, setMessages] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
   const [typingIds, setTypingIds] = useState([]);
   const [online, setOnline] = useState(null);
   const typingSent = useRef(false);
   const typingTimer = useRef(null);
 
+  const d = describeConversation(conv, me);
+
   useSocketRoom('chat:join', 'chat:leave', id);
+
+  useEffect(() => {
+    setEditingMessage(null);
+    setReplyTo(null);
+    setText('');
+  }, [id]);
 
   useEffect(() => {
     if (first) {
@@ -56,6 +65,9 @@ export default function Thread() {
     setTypingIds((t) => t.filter((u) => !sameId(u, message.sender)));
     if (!sameId(message.sender, me)) markRead();
   });
+  useSocketEvent('chat:messageEdited', ({ conversationId, message }) => {
+    if (conversationId === id) setMessages((prev) => prev.map((m) => (m._id === message._id ? { ...m, body: message.body, editedAt: message.editedAt } : m)));
+  });
   useSocketEvent('chat:messageDeleted', ({ conversationId, messageId }) => {
     if (conversationId === id) setMessages((prev) => prev.map((m) => (m._id === messageId ? { ...m, body: 'This message was deleted', deletedAt: new Date().toISOString(), replyTo: null } : m)));
   });
@@ -68,7 +80,6 @@ export default function Thread() {
     setTypingIds((t) => (isTyping ? [...new Set([...t, userId])] : t.filter((u) => u !== userId)));
   });
   useSocketEvent('presence:update', ({ userId, online: on }) => {
-    const d = describeConversation(conv, me);
     if (d.other && sameId(d.other, userId)) setOnline(on);
   });
 
@@ -91,8 +102,19 @@ export default function Thread() {
 
   const submit = async () => {
     const body = text.trim();
-    if (!body || sending) return;
+    if (!body || sending || editing) return;
     stopTyping();
+    if (editingMessage) {
+      try {
+        const updated = await editMsg({ id, msgId: editingMessage._id, body }).unwrap();
+        setMessages((prev) => prev.map((m) => (m._id === updated._id ? { ...m, ...updated } : m)));
+        setEditingMessage(null);
+        setText('');
+      } catch (e) {
+        Alert.alert('Could not edit message', errMsg(e));
+      }
+      return;
+    }
     try {
       const msg = await send({ id, body, replyTo: replyTo?._id }).unwrap();
       setMessages((prev) => (prev.some((m) => m._id === msg._id) ? prev : [...prev, msg]));
@@ -114,11 +136,29 @@ export default function Thread() {
   const onLongPress = (m) => {
     if (m.deletedAt) return;
     const mine = sameId(m.sender, me);
-    Alert.alert('Message', m.body.slice(0, 80), [
-      { text: 'Reply', onPress: () => setReplyTo(m) },
-      ...(mine ? [{ text: 'Delete', style: 'destructive', onPress: () => remove({ id, msgId: m._id }).unwrap().catch((e) => Alert.alert('Could not delete', errMsg(e))) }] : []),
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    // In group chats only, the sender can edit their message within 5 minutes of sending
+    const canEdit = mine && d.group && Date.now() - new Date(m.createdAt).getTime() <= 5 * 60 * 1000;
+    const buttons = [
+      {
+        text: 'Reply',
+        onPress: () => {
+          setEditingMessage(null);
+          setReplyTo(m);
+        },
+      },
+    ];
+    if (canEdit) {
+      buttons.push({
+        text: 'Edit',
+        onPress: () => {
+          setReplyTo(null);
+          setEditingMessage(m);
+          setText(m.body);
+        },
+      });
+    }
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Message', m.body.slice(0, 80), buttons);
   };
 
   if (convError) {
@@ -199,6 +239,11 @@ export default function Thread() {
                         {m.body}
                       </T>
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 2 }}>
+                        {m.editedAt ? (
+                          <T v="small" style={{ fontSize: 10, color: mine ? 'rgba(255,255,255,0.75)' : colors.muted }}>
+                            edited ·
+                          </T>
+                        ) : null}
                         <T v="small" style={{ fontSize: 10, color: mine ? 'rgba(255,255,255,0.75)' : colors.muted }}>
                           {fmtTime(m.createdAt)}
                         </T>
@@ -213,6 +258,17 @@ export default function Thread() {
         )}
 
         <View style={{ padding: 10, borderTopWidth: 1, borderColor: 'rgba(29,111,235,0.1)', backgroundColor: 'rgba(255,255,255,0.7)' }}>
+          {editingMessage ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(245, 158, 11, 0.15)', borderRadius: 14, padding: 8, marginBottom: 8 }}>
+              <Pencil size={14} color="#d97706" />
+              <T v="small" numberOfLines={1} style={{ flex: 1, color: '#b45309' }}>
+                Editing: {editingMessage.body}
+              </T>
+              <Pressable onPress={() => { setEditingMessage(null); setText(''); }} accessibilityLabel="Cancel edit" hitSlop={8}>
+                <X size={16} color={colors.soft} />
+              </Pressable>
+            </View>
+          ) : null}
           {replyTo ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primarySoft, borderRadius: 14, padding: 8, marginBottom: 8 }}>
               <CornerUpLeft size={14} color={colors.primary} />
@@ -228,14 +284,14 @@ export default function Thread() {
             <TextInput
               value={text}
               onChangeText={onType}
-              placeholder="Type a message…"
+              placeholder={editingMessage ? 'Edit your message…' : 'Type a message…'}
               placeholderTextColor={colors.muted}
               multiline
               maxLength={5000}
               accessibilityLabel="Message"
               style={{ flex: 1, maxHeight: 120, backgroundColor: '#fff', borderRadius: 22, paddingHorizontal: 16, paddingVertical: 10, fontFamily: fonts.regular, fontSize: 15, color: colors.ink }}
             />
-            <Pressable onPress={submit} disabled={!text.trim() || sending} accessibilityLabel="Send" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: text.trim() ? colors.primary : colors.primary300, alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable onPress={submit} disabled={!text.trim() || sending || editing} accessibilityLabel={editingMessage ? 'Save' : 'Send'} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: text.trim() ? colors.primary : colors.primary300, alignItems: 'center', justifyContent: 'center' }}>
               <Send size={18} color="#fff" />
             </Pressable>
           </View>

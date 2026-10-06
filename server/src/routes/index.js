@@ -837,6 +837,14 @@ router.post(
   chat.sendMessage
 );
 router.delete('/chat/conversations/:id/messages/:msgId', idParam('id', 'msgId'), chat.deleteMessage);
+router.patch(
+  '/chat/conversations/:id/messages/:msgId',
+  writeLimiter,
+  idParam('id', 'msgId'),
+  body('body').trim().isLength({ min: 1, max: 5000 }).withMessage('Message cannot be empty'),
+  validate,
+  chat.editMessage
+);
 router.patch('/chat/conversations/:id/messages/:msgId/pin', idParam('id', 'msgId'), chat.togglePinMessage);
 router.patch('/chat/conversations/:id/read', idParam('id'), chat.markRead);
 router.post(
@@ -848,6 +856,8 @@ router.post(
   chat.addMembers
 );
 router.delete('/chat/conversations/:id/members/:userId', idParam('id', 'userId'), chat.removeMember);
+router.patch('/chat/conversations/:id/admins/:userId', idParam('id', 'userId'), chat.toggleGroupAdmin);
+router.patch('/chat/conversations/:id/admins', idParam('id'), body('userId').isMongoId(), validate, chat.toggleGroupAdmin);
 
 // ── Attendance ─────────────────────────────────────────────────────
 const dateField = (field, where = body) =>

@@ -781,8 +781,9 @@ function problemsFor(pass) {
   };
   if (messages[pass.status]) problems.push(messages[pass.status]);
   if (pass.verificationExpiry && now > pass.verificationExpiry) problems.push('The verification window has closed');
-  if (pass.status === 'approved' && now < new Date(new Date(pass.fromDate).getTime() - EARLY_EXIT_MS)) {
-    problems.push(`Exit is allowed from ${new Date(new Date(pass.fromDate).getTime() - EARLY_EXIT_MS).toLocaleString('en-IN')}`);
+  const start = pass.leaveAt || pass.fromDate;
+  if (pass.status === 'approved' && start && now < new Date(new Date(start).getTime() - EARLY_EXIT_MS)) {
+    problems.push(`Exit is allowed from ${new Date(new Date(start).getTime() - EARLY_EXIT_MS).toLocaleString('en-IN')}`);
   }
   return problems;
 }
@@ -1033,9 +1034,64 @@ async function dashboardGuard(user) {
   };
 }
 
+export async function getGatePassUserScopeFilter(user) {
+  const { role } = user;
+  if (['admin', 'principal', 'dean', 'ao', 'chairman'].includes(role)) {
+    return {};
+  }
+  if (role === 'hod') {
+    const firstYearStudents = await User.find({ year: 1, role: { $in: STUDENT_ROLES } }).distinct('_id');
+    if (isFirstYearHod(user)) {
+      return {
+        $or: [
+          { student: { $in: firstYearStudents } },
+          { department: FIRST_YEAR_HOD_DEPT },
+        ],
+      };
+    }
+    return {
+      department: user.department,
+      student: { $nin: firstYearStudents },
+    };
+  }
+  if (role === 'faculty') {
+    if (user.section) {
+      if (user.inChargeYear) {
+        const classStudents = await User.find({
+          role: { $in: STUDENT_ROLES },
+          department: user.department,
+          section: user.section,
+          year: user.inChargeYear,
+        }).distinct('_id');
+        return { student: { $in: classStudents } };
+      }
+      return { department: user.department, section: user.section };
+    }
+    return { department: user.department };
+  }
+  if (STUDENT_ROLES.includes(role)) {
+    return { student: user._id };
+  }
+  return {};
+}
+
+const stageTitle = (s) => (s ? String(s).replace(/^pending_/, 'Waiting on ').replace(/_/g, ' ') : 'Pending');
+
+export function getPendingStageLabel(pass) {
+  if (!pass) return 'Pending';
+  if (pass.status === 'pending_faculty') return 'Waiting for Class In-Charge review';
+  if (pass.status === 'parent_verified') return 'Parent verified · Waiting for Class In-Charge to forward';
+  if (pass.status === 'pending_hod') return 'Waiting for HOD approval';
+  if (pass.status === 'pending_principal') return 'Waiting for Principal approval';
+  if (pass.status === 'pending_authority') {
+    return `Waiting for ${AUTHORITY_LABELS[pass.emergencyAuthority] || 'Authority'} approval`;
+  }
+  return stageTitle(pass.status);
+}
+
 /**
  * One past campus day: exits and returns recorded that day, requests raised
- * that day, and who was still outside when the day ended — all read from the
+ * that day, and who was still outside when the day ended - all read from the
  * recorded exit / return timestamps, never recomputed from anything the
  * client sends beyond the day itself.
  */
@@ -1047,11 +1103,19 @@ async function gateHistory(req, res, day) {
   // A day scholar's Outing ends at the exit, so it is never "outside".
   const outsideFilter = { dayScholarOuting: { $ne: true }, actualExit: { $lt: endOfDay }, $or: [{ actualReturn: null }, { actualReturn: { $gte: endOfDay } }] };
 
-  const [exits, returns, requests, outside] = await Promise.all([
-    GatePass.find({ actualExit: dayTs }).populate('student', STUDENT_FIELDS).sort({ actualExit: 1 }).lean(),
-    GatePass.find({ actualReturn: dayTs }).populate('student', STUDENT_FIELDS).sort({ actualReturn: 1 }).lean(),
+  const [exits, returns, requests, outside, pendingPasses] = await Promise.all([
+    GatePass.find({ actualExit: dayTs }).populate('student', STUDENT_FIELDS).populate('exitVerifiedBy', 'name').sort({ actualExit: 1 }).lean(),
+    GatePass.find({ actualReturn: dayTs }).populate('student', STUDENT_FIELDS).populate('returnVerifiedBy', 'name').sort({ actualReturn: 1 }).lean(),
     GatePass.countDocuments({ createdAt: dayTs }),
-    GatePass.find(outsideFilter).populate('student', STUDENT_FIELDS).sort({ toDate: 1 }).lean(),
+    GatePass.find(outsideFilter).populate('student', STUDENT_FIELDS).populate('exitVerifiedBy', 'name').sort({ toDate: 1 }).lean(),
+    GatePass.find({ createdAt: dayTs, status: { $in: GATE_PASS_PENDING_STATUSES } })
+      .populate('student', STUDENT_FIELDS)
+      .populate('facultyReview.by', REVIEWER_FIELDS)
+      .populate('hodReview.by', REVIEWER_FIELDS)
+      .populate('principalReview.by', REVIEWER_FIELDS)
+      .populate('emergencyReview.by', REVIEWER_FIELDS)
+      .sort({ createdAt: -1 })
+      .lean(),
   ]);
   const overdueAt = (p) => dueByMs(p.toDate) < endOfDay.getTime();
   const view = (p) => ({ ...guard(withFlags(p)), overdue: overdueAt(p) });
@@ -1067,6 +1131,9 @@ async function gateHistory(req, res, day) {
     outsideStudents: outside.map(view),
     exits: exits.map(view),
     returns: returns.map(view),
+    pendingStudents: pendingPasses.map((p) => ({ ...view(p), stageLabel: getPendingStageLabel(p) })),
+    todayExitsList: exits.map(view),
+    todayReturnsList: returns.map(view),
   });
 }
 
@@ -1081,17 +1148,71 @@ export const gateDashboard = asyncHandler(async (req, res) => {
   const todayTs = timestampFilter({ from: day, to: day });
   const now = new Date();
   const guard = await dashboardGuard(req.user);
+  const scopeFilter = await getGatePassUserScopeFilter(req.user);
 
-  const [studentsOutside, overdue, todayExits, todayReturns, pending, approvedToday, rejectedToday, outsideStudents] = await Promise.all([
-    GatePass.countDocuments({ status: 'active' }),
-    GatePass.countDocuments({ status: 'active', toDate: { $lt: new Date(now.getTime() - DAY - GRACE_AFTER_RETURN_MS) } }),
-    GatePass.countDocuments({ actualExit: todayTs }),
-    GatePass.countDocuments({ actualReturn: todayTs }),
-    GatePass.countDocuments({ status: { $in: GATE_PASS_PENDING_STATUSES } }),
-    GatePass.countDocuments({ status: 'approved', updatedAt: todayTs }),
-    GatePass.countDocuments({ status: 'rejected', updatedAt: todayTs }),
-    GatePass.find({ status: 'active' }).populate('student', STUDENT_FIELDS).sort({ toDate: 1 }).lean(),
+  const merge = (base) => {
+    if (!scopeFilter || Object.keys(scopeFilter).length === 0) return base;
+    return { $and: [scopeFilter, base] };
+  };
+
+  const [
+    studentsOutside,
+    overdue,
+    todayExits,
+    todayReturns,
+    pending,
+    approvedToday,
+    rejectedToday,
+    outsideStudents,
+    pendingStudents,
+    todayExitsList,
+    todayReturnsList,
+  ] = await Promise.all([
+    GatePass.countDocuments(merge({ status: 'active' })),
+    GatePass.countDocuments(merge({ status: 'active', toDate: { $lt: new Date(now.getTime() - DAY - GRACE_AFTER_RETURN_MS) } })),
+    GatePass.countDocuments(merge({ actualExit: todayTs })),
+    GatePass.countDocuments(merge({ actualReturn: todayTs })),
+    GatePass.countDocuments(merge({ status: { $in: GATE_PASS_PENDING_STATUSES } })),
+    GatePass.countDocuments(merge({ status: 'approved', updatedAt: todayTs })),
+    GatePass.countDocuments(merge({ status: 'rejected', updatedAt: todayTs })),
+    GatePass.find(merge({ status: 'active' })).populate('student', STUDENT_FIELDS).populate('exitVerifiedBy', 'name').sort({ toDate: 1 }).lean(),
+    GatePass.find(merge({ status: { $in: GATE_PASS_PENDING_STATUSES } }))
+      .populate('student', STUDENT_FIELDS)
+      .populate('facultyReview.by', REVIEWER_FIELDS)
+      .populate('hodReview.by', REVIEWER_FIELDS)
+      .populate('principalReview.by', REVIEWER_FIELDS)
+      .populate('emergencyReview.by', REVIEWER_FIELDS)
+      .sort({ createdAt: -1 })
+      .lean(),
+    GatePass.find(merge({ actualExit: todayTs })).populate('student', STUDENT_FIELDS).populate('exitVerifiedBy', 'name').sort({ actualExit: -1 }).lean(),
+    GatePass.find(merge({ actualReturn: todayTs })).populate('student', STUDENT_FIELDS).populate('returnVerifiedBy', 'name').sort({ actualReturn: -1 }).lean(),
   ]);
+
+  let hostelSummary = null;
+  if (['principal', 'admin'].includes(req.user.role)) {
+    const totalHostelers = await User.countDocuments({ role: { $in: STUDENT_ROLES }, isActive: true, stayType: 'hosteler' });
+    const outsideHostelers = (
+      await GatePass.distinct('student', {
+        status: 'active',
+        actualExit: { $ne: null },
+        dayScholarOuting: { $ne: true },
+        student: { $in: await User.find({ role: { $in: STUDENT_ROLES }, isActive: true, stayType: 'hosteler' }).distinct('_id') },
+      })
+    ).length;
+    hostelSummary = {
+      total: totalHostelers,
+      inside: Math.max(0, totalHostelers - outsideHostelers),
+      outside: outsideHostelers,
+    };
+  }
+
+  const formatPending = (p) => {
+    const formatted = guard(withFlags(p));
+    return {
+      ...formatted,
+      stageLabel: getPendingStageLabel(p),
+    };
+  };
 
   res.json({
     studentsOutside,
@@ -1102,6 +1223,148 @@ export const gateDashboard = asyncHandler(async (req, res) => {
     approvedToday,
     rejectedToday,
     outsideStudents: outsideStudents.map((p) => guard(withFlags(p))),
+    pendingStudents: pendingStudents.map(formatPending),
+    todayExitsList: todayExitsList.map((p) => guard(withFlags(p))),
+    todayReturnsList: todayReturnsList.map((p) => guard(withFlags(p))),
+    hostelSummary,
+  });
+});
+
+// ── Principal: Institutional Mass Outpass Authorization ─────────────
+
+export const massApproveGatePass = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'principal' && req.user.role !== 'admin') {
+    throw new ApiError(403, 'Only the principal can authorize institutional mass outpasses');
+  }
+
+  const { fromDate, toDate, description, regarding = 'home', destination: reqDest } = req.body;
+  const from = new Date(fromDate);
+  const to = new Date(toDate);
+
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+    throw new ApiError(422, 'Invalid departure or return date');
+  }
+  if (to < from) {
+    throw new ApiError(422, 'Return date cannot be before the departure date');
+  }
+  if (to.getTime() - from.getTime() > MAX_DURATION_MS) {
+    throw new ApiError(422, 'A gate pass can cover at most 30 days');
+  }
+  if (!description || description.trim().length < 3) {
+    throw new ApiError(422, 'Description must be at least 3 characters');
+  }
+
+  const destination = {
+    state: reqDest?.state?.trim() || 'Tamil Nadu',
+    district: reqDest?.district?.trim() || 'Home District',
+    area: reqDest?.area?.trim() || 'Native / Home Town',
+  };
+
+  // Find all active hostellers
+  const hostellers = await User.find({
+    role: { $in: STUDENT_ROLES },
+    stayType: 'hosteler',
+    isActive: true,
+  })
+    .select('name rollNo department year section parentPhone')
+    .lean();
+
+  if (!hostellers.length) {
+    throw new ApiError(422, 'No active hostellers found in the institution');
+  }
+
+  // Find students who already have an active pass (currently outside) or an approved pass
+  const activeOrApprovedStudentIds = await GatePass.find({
+    status: { $in: ['active', 'approved'] },
+  }).distinct('student');
+  const excludedSet = new Set(activeOrApprovedStudentIds.map(String));
+
+  // Eligible hostellers: active hostellers currently inside campus with no active/approved pass
+  const eligibleHostellers = hostellers.filter((h) => !excludedSet.has(String(h._id)));
+
+  if (!eligibleHostellers.length) {
+    return res.json({
+      success: true,
+      message: 'All hostellers already have an active or approved gate pass',
+      count: 0,
+      totalHostelers: hostellers.length,
+      skippedCount: hostellers.length,
+    });
+  }
+
+  // Cancel any existing pending requests for these eligible hostellers so the mass outpass cleanly supersedes them
+  const eligibleIds = eligibleHostellers.map((h) => h._id);
+  await GatePass.updateMany(
+    { student: { $in: eligibleIds }, status: { $in: GATE_PASS_PENDING_STATUSES } },
+    { $set: { status: 'cancelled', cancelledAt: new Date() } }
+  );
+
+  // Guarantee 100% collision-free, non-duplicated verification codes
+  const activeCodesInDb = await GatePass.find({ verificationCode: { $ne: null } })
+    .select('+verificationCode')
+    .distinct('verificationCode');
+  const usedCodes = new Set(activeCodesInDb.filter(Boolean));
+
+  const generatedCodes = [];
+  for (let i = 0; i < eligibleHostellers.length; i += 1) {
+    let code;
+    do {
+      code = generateGatePassSecurityCode();
+    } while (usedCodes.has(code));
+    usedCodes.add(code);
+    generatedCodes.push(code);
+  }
+
+  const now = new Date();
+  const expiry = new Date(to.getTime() + DAY + GRACE_AFTER_RETURN_MS);
+  const passesToInsert = eligibleHostellers.map((student, idx) => ({
+    student: student._id,
+    department: student.department,
+    section: student.section,
+    passType: 'normal',
+    regarding,
+    description: description.trim(),
+    fromDate: from,
+    toDate: to,
+    parentPhone: student.parentPhone || '9876543210',
+    destination,
+    status: 'approved',
+    principalReview: {
+      by: req.user._id,
+      at: now,
+      action: 'approved',
+      reason: description.trim() || 'Institutional Mass Outpass',
+    },
+    verificationCode: generatedCodes[idx],
+    verificationExpiry: expiry,
+  }));
+
+  const inserted = await GatePass.insertMany(passesToInsert);
+
+  logActivity(req, 'gate_pass.mass_approve', {
+    entityType: 'gate_pass',
+    summary: `Authorized institutional mass outpass for ${inserted.length} hosteller(s): ${description.trim()}`,
+  });
+  passSecurity(req, 'GATE_PASS_MASS_APPROVED', null, {
+    details: { count: inserted.length, description: description.trim(), fromDate: from, toDate: to },
+  });
+
+  await notifyUsers(eligibleIds, {
+    type: 'gate_pass',
+    title: 'Institutional Mass Outpass Authorized',
+    message: `${description.trim()} · Your gate pass has been approved. Show your QR / code at the gate.`,
+    link: '/gate-pass',
+  });
+
+  emitToUsers(eligibleIds, 'gatepass:updated', { massOutpass: true, status: 'approved' });
+  emitToRoles(GATE_STAFF, 'gatepass:updated', { massOutpass: true });
+
+  res.status(201).json({
+    success: true,
+    message: `Successfully issued ${inserted.length} institutional mass outpass(es)`,
+    count: inserted.length,
+    totalHostelers: hostellers.length,
+    skippedCount: hostellers.length - inserted.length,
   });
 });
 

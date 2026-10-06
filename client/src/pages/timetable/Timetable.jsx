@@ -8,6 +8,8 @@ import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Sk
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { ACADEMIC_YEARS, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS, YEAR_LABELS, currentSemesterOfYear, isBranchHod, isFirstYearHod, semestersOfYear } from '../../utils/constants';
 import MySchedule from './MySchedule';
+import MasterTimetable from './MasterTimetable';
+import FacultyAvailability from './FacultyAvailability';
 import { errMsg, fmtClassDay, displayName } from '../../utils/format';
 import SlotModal from './SlotModal';
 import { HolidayBanner } from '../attendance/Holidays';
@@ -151,13 +153,13 @@ export default function Timetable() {
   const me = useSelector(selectUser);
   const isStudent = STUDENT_ROLES.includes(me.role);
   const now = useClock();
-  const [view, setView] = useState('today');
-  const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   const isHod = me.role === 'hod';
   const isFYH = isFirstYearHod(me);
   const isBrH = isBranchHod(me);
   const isFaculty = me.role === 'faculty';
   const isEditor = TIMETABLE_EDITORS.includes(me.role);
+  const [view, setView] = useState(isHod ? 'master' : 'today');
+  const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   // Faculty and HOD accounts get a "My Schedule" view of their own teaching
   // periods. A faculty member has no department / year / section selector at
   // all: that scope comes from their teaching assignments, which the server
@@ -195,7 +197,7 @@ export default function Timetable() {
           semester: applied.semester || undefined,
         }
       : undefined;
-  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params, { skip: view === 'mine' });
+  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params, { skip: view === 'mine' || view === 'master' });
   // The semesters a faculty member actually teaches, so the one dropdown they
   // have never offers a semester they are not assigned to. Taken from the
   // unfiltered schedule, so choosing one does not shrink the list.
@@ -272,11 +274,15 @@ export default function Timetable() {
               : facultyScope === 'class'
                 ? 'Our Class'
                 : 'Handling Class · the periods you teach'
-            : applied?.section
-              ? [isHod ? me.department : applied.department, YEAR_LABELS[applied.year], `Section ${applied.section}`, applied.semester && `Semester ${applied.semester}`]
-                  .filter(Boolean)
-                  .join(' · ')
-              : 'Class schedules'
+            : view === 'master' && isHod
+              ? `Master Timetable · ${isFYH ? 'First Year (All Departments)' : me.department || 'Department'}`
+              : view === 'faculty-availability' && isHod
+                ? `Faculty Availability · ${isFYH ? 'First Year (All Departments)' : me.department || 'Department'}`
+              : applied?.section
+                ? [isHod ? me.department : applied.department, YEAR_LABELS[applied.year], `Section ${applied.section}`, applied.semester && `Semester ${applied.semester}`]
+                    .filter(Boolean)
+                    .join(' · ')
+                : 'Class schedules'
       }
       actions={
         <>
@@ -287,6 +293,8 @@ export default function Timetable() {
           )}
           <Tabs
             tabs={[
+              ...(isHod ? [{ value: 'master', label: 'Master Timetable' }] : []),
+              ...(isHod ? [{ value: 'faculty-availability', label: 'Faculty Availability' }] : []),
               { value: 'today', label: 'Today' },
               { value: 'week', label: 'Week' },
               ...(hasMySchedule ? [{ value: 'mine', label: 'My Schedule' }] : []),
@@ -322,6 +330,22 @@ export default function Timetable() {
     </>
   );
 
+  if (view === 'master') {
+    return (
+      <div className="space-y-5">
+        {header}
+        <MasterTimetable />
+      </div>
+    );
+  }
+  if (view === 'faculty-availability') {
+    return (
+      <div className="space-y-5">
+        {header}
+        <FacultyAvailability />
+      </div>
+    );
+  }
   if (view === 'mine') {
     return (
       <div className="space-y-5">

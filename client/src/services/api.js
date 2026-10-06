@@ -427,6 +427,8 @@ export const api = createApi({
 
     // ── Timetable / subjects ──────────────────────────
     getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
+    getMasterTimetable: b.query({ query: (params) => ({ url: '/timetable/master', params }), providesTags: ['Timetable'] }),
+    getFacultyAvailability: b.query({ query: (params) => ({ url: '/timetable/faculty-availability', params }), providesTags: ['Timetable'] }),
     getCurrentClass: b.query({ query: () => '/timetable/current', providesTags: ['Timetable'] }),
     getTimetableFacultyOptions: b.query({ query: () => '/timetable/faculty-options', providesTags: ['User'] }),
     // "My Schedule": always the authenticated user's own teaching periods.
@@ -474,6 +476,7 @@ export const api = createApi({
     getDevOtps: b.query({ query: () => '/dev/otp', keepUnusedDataFor: 0 }),
     hodReviewGatePass: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/${id}/hod-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
     principalReviewGatePass: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/${id}/principal-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
+    massApproveGatePass: b.mutation({ query: (body) => ({ url: '/gate-pass/mass-approve', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
     cancelGatePass: b.mutation({ query: (id) => ({ url: `/gate-pass/${id}/cancel`, method: 'PATCH' }), invalidatesTags: ['GatePass'] }),
     revokeGatePass: b.mutation({ query: ({ id, reason }) => ({ url: `/gate-pass/${id}/revoke`, method: 'PATCH', body: { reason } }), invalidatesTags: ['GatePass'] }),
     verifyGatePass: b.mutation({ query: (code) => ({ url: '/gate-pass/verify', method: 'POST', body: { code } }) }),
@@ -971,6 +974,8 @@ export const {
   useGetTimetableQuery,
   useGetHostelSummaryQuery,
   useGetHostelStudentsQuery,
+  useGetMasterTimetableQuery,
+  useGetFacultyAvailabilityQuery,
   useGetCurrentClassQuery,
   useGetTimetableFacultyOptionsQuery,
   useGetStudyMaterialsQuery,
@@ -1007,6 +1012,7 @@ export const {
   useVerifyParentOtpMutation,
   useGetDevOtpsQuery,
   usePrincipalReviewGatePassMutation,
+  useMassApproveGatePassMutation,
   useCancelGatePassMutation,
   useRevokeGatePassMutation,
   useVerifyGatePassMutation,

@@ -226,9 +226,22 @@ export function PageHeader({ title, subtitle, actions, icon: Icon }) {
 }
 
 /* ── Stat card (dashboard) ──────────────────────────────────────── */
-export function StatCard({ icon: Icon, label, value, hint, gradient = 'from-primary-400 to-primary-600', delay = 0 }) {
+export function StatCard({ icon: Icon, label, value, hint, gradient = 'from-primary-400 to-primary-600', delay = 0, onClick, className, ...props }) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <Card hover className="group relative overflow-hidden animate-fade-up" style={{ animationDelay: `${delay}ms` }}>
+    <Card
+      as={Tag}
+      type={onClick ? 'button' : undefined}
+      hover
+      onClick={onClick}
+      className={cn(
+        'group relative overflow-hidden animate-fade-up text-left w-full',
+        onClick && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 transition-transform active:scale-[0.98]',
+        className
+      )}
+      style={{ animationDelay: `${delay}ms` }}
+      {...props}
+    >
       <div className={cn('absolute -right-8 -top-8 h-28 w-28 rounded-full bg-gradient-to-br opacity-20 blur-2xl transition-opacity duration-500 group-hover:opacity-40', gradient)} />
       <div className="relative flex items-start justify-between">
         <div>

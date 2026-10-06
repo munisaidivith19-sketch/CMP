@@ -135,6 +135,8 @@ export const api = createApi({
     // Faculty may pass { scope: 'class' } (Our Class) or { scope: 'handling' };
     // the server derives both scopes from the account.
     getTimetable: b.query({ query: (params) => ({ url: '/timetable', params }), providesTags: ['Timetable'] }),
+    getMasterTimetable: b.query({ query: (params) => ({ url: '/timetable/master', params }), providesTags: ['Timetable'] }),
+    getFacultyAvailability: b.query({ query: (params) => ({ url: '/timetable/faculty-availability', params }), providesTags: ['Timetable'] }),
     // Holidays that apply to this account — the server decides which (read-only on mobile).
     getHolidays: b.query({ query: (params) => ({ url: '/holidays', params }), providesTags: ['Holiday'] }),
     getOurClassAttendance: b.query({ query: (params) => ({ url: '/attendance/our-class', params }), providesTags: ['Attendance'] }),
@@ -541,6 +543,8 @@ export const {
   useEditMessageMutation,
   useDeleteMessageMutation,
   useGetTimetableQuery,
+  useGetMasterTimetableQuery,
+  useGetFacultyAvailabilityQuery,
   useGetCurrentClassQuery,
   useGetMyAttendanceQuery,
   useGetAttendanceRecordsQuery,

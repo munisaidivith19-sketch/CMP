@@ -1084,6 +1084,46 @@ router.get(
   validate,
   timetable.getMyTimetable
 );
+// Master Timetable: accessible exclusively to HODs.
+router.get(
+  '/timetable/master',
+  authorize('hod'),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4'),
+  query('semester').optional({ values: 'falsy' }).isIn(SEMESTERS).withMessage('Semester must be 1–8'),
+  query('department').optional({ values: 'falsy' }).trim(),
+  query('dayOfWeek').optional({ values: 'falsy' }).isIn(WEEKDAYS).withMessage('Invalid day of week'),
+  validate,
+  timetable.getMasterTimetable
+);
+router.get(
+  '/timetable/master/pdf',
+  authorize('hod'),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4'),
+  query('semester').optional({ values: 'falsy' }).isIn(SEMESTERS).withMessage('Semester must be 1–8'),
+  query('department').optional({ values: 'falsy' }).trim(),
+  query('dayOfWeek').optional({ values: 'falsy' }).isIn(WEEKDAYS).withMessage('Invalid day of week'),
+  validate,
+  timetable.exportMasterTimetablePdf
+);
+// Faculty Availability Schedule: accessible exclusively to HODs.
+router.get(
+  '/timetable/faculty-availability',
+  authorize('hod'),
+  query('dayOfWeek').optional({ values: 'falsy' }).isIn(WEEKDAYS).withMessage('Invalid day of week'),
+  query('department').optional({ values: 'falsy' }).trim(),
+  query('period').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
+  validate,
+  timetable.getFacultyAvailability
+);
+router.get(
+  '/timetable/faculty-availability/pdf',
+  authorize('hod'),
+  query('dayOfWeek').optional({ values: 'falsy' }).isIn(WEEKDAYS).withMessage('Invalid day of week'),
+  query('department').optional({ values: 'falsy' }).trim(),
+  query('period').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
+  validate,
+  timetable.exportFacultyAvailabilityPdf
+);
 router.get('/timetable/current', authorize(...TIMETABLE_VIEW_ROLES), timetable.getCurrentClass);
 // "My Schedule": the authenticated user's own weekly teaching periods. There
 // is no faculty parameter — it is always the caller's own assignments.
@@ -1299,6 +1339,18 @@ router.post(
 router.patch('/gate-pass/:id/faculty-review', authorize(...GATE_FACULTY), ...gateReviewRules(['forward', 'reject']), gatePass.facultyReview);
 router.patch('/gate-pass/:id/hod-review', authorize(...GATE_HOD), ...gateReviewRules(['forward', 'reject']), gatePass.hodReview);
 router.patch('/gate-pass/:id/principal-review', authorize(...GATE_PRINCIPAL), ...gateReviewRules(['approve', 'reject']), gatePass.principalReview);
+// Principal: Institutional Mass Outpass Authorization
+router.post(
+  '/gate-pass/mass-approve',
+  writeLimiter,
+  authorize('principal'),
+  body('fromDate').isISO8601().withMessage('Valid departure date is required'),
+  body('toDate').isISO8601().withMessage('Valid return date is required'),
+  body('description').isString().trim().isLength({ min: 3, max: 500 }).withMessage('Description must be 3–500 characters'),
+  body('regarding').optional().isIn(GATE_PASS_REGARDING).withMessage('Select a valid regarding category'),
+  validate,
+  gatePass.massApproveGatePass
+);
 router.patch('/gate-pass/:id/cancel', idParam('id'), gatePass.cancelGatePass);
 // Only the authority the student chose may decide (checked in the controller).
 router.patch('/gate-pass/:id/emergency-review', authorize(...EMERGENCY_AUTHORITIES), ...gateReviewRules(['approve', 'reject']), gatePass.emergencyReview);

@@ -119,10 +119,13 @@ function loadLogo() {
  * report of any length lays out without the caller tracking coordinates.
  */
 export class PdfDocument {
-  constructor({ title = 'Report', margin = 42, footer = '' } = {}) {
+  constructor({ title = 'Report', margin = 42, footer = '', orientation = 'portrait' } = {}) {
     this.title = title;
     this.margin = margin;
     this.footer = footer;
+    this.orientation = orientation;
+    this.pageWidth = orientation === 'landscape' ? A4.height : A4.width;
+    this.pageHeight = orientation === 'landscape' ? A4.width : A4.height;
     this.pages = [];
     this.ops = null;
     this.y = 0;
@@ -132,13 +135,13 @@ export class PdfDocument {
   }
 
   get contentWidth() {
-    return A4.width - this.margin * 2;
+    return this.pageWidth - this.margin * 2;
   }
 
   addPage() {
     this.ops = [];
     this.pages.push(this.ops);
-    this.y = A4.height - this.margin;
+    this.y = this.pageHeight - this.margin;
   }
 
   /** Space left above the footer area. */
@@ -170,7 +173,7 @@ export class PdfDocument {
     const w = img.width * scale;
     const h = img.height * scale;
     this.ensure(h + spaceAfter);
-    const x = (A4.width - w) / 2;
+    const x = (this.pageWidth - w) / 2;
     this.y -= h;
     this.ops.push(`q
 ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${this.y.toFixed(2)} cm
@@ -257,7 +260,7 @@ Q`);
    * A table. `columns` is [{ header, width (share of content width), align }].
    * The header row repeats automatically on every page the table spills onto.
    */
-  table({ columns, rows, size = 9, headerSize = 8.5, zebra = true }) {
+  table({ columns, rows, size = 9, headerSize = 8.5, zebra = true, grid = false, minRowHeight = null }) {
     const totalShare = columns.reduce((a, c) => a + (c.width || 1), 0);
     const widths = columns.map((c) => ((c.width || 1) / totalShare) * this.contentWidth);
     const xs = [];
@@ -265,16 +268,47 @@ Q`);
       xs.push(x);
       return x + w;
     }, this.margin);
-    const rowHeight = size + 7;
+
+    const parseLines = (val) => {
+      if (val === null || val === undefined) return [];
+      if (typeof val === 'object' && !Array.isArray(val) && val.lines) {
+        return val.lines.map((l) => (typeof l === 'object' ? l : { text: String(l) }));
+      }
+      if (Array.isArray(val)) {
+        return val.map((l) => (typeof l === 'object' ? l : { text: String(l) }));
+      }
+      return String(val)
+        .split('\n')
+        .map((l) => ({ text: l }));
+    };
+
+    const headerLinesList = columns.map((c) => parseLines(c.header));
+    const maxHeaderLines = Math.max(1, ...headerLinesList.map((l) => l.length));
+    const headerRowHeight = Math.max(size + 7, maxHeaderLines * (headerSize + 2.5) + 6);
 
     const header = () => {
-      this.ensure(rowHeight + 4);
-      this.y -= rowHeight;
-      this.rect(this.margin, this.y - 2, this.contentWidth, rowHeight, [0.93, 0.93, 0.96]);
+      this.ensure(headerRowHeight + 4);
+      this.y -= headerRowHeight;
+      this.rect(this.margin, this.y - 2, this.contentWidth, headerRowHeight, [0.93, 0.93, 0.96]);
+      if (grid) {
+        this.rect(this.margin, this.y - 2, this.contentWidth, 0.5, [0.75, 0.75, 0.8]);
+        this.rect(this.margin, this.y - 2 + headerRowHeight, this.contentWidth, 0.5, [0.75, 0.75, 0.8]);
+        xs.forEach((x) => this.rect(x, this.y - 2, 0.5, headerRowHeight, [0.75, 0.75, 0.8]));
+        this.rect(this.margin + this.contentWidth, this.y - 2, 0.5, headerRowHeight, [0.75, 0.75, 0.8]);
+      }
       columns.forEach((c, i) => {
-        const text = fit(c.header, widths[i] - 8, headerSize, true);
-        if (c.align === 'right') this.drawRight(text, { size: headerSize, bold: true, right: xs[i] + widths[i] - 4, y: this.y + 2 });
-        else this.draw(text, { size: headerSize, bold: true, x: xs[i] + 4, y: this.y + 2 });
+        const lines = headerLinesList[i];
+        const lineSpacing = headerSize + 2;
+        const startY = this.y + headerRowHeight - 4 - headerSize;
+        lines.forEach((lineObj, lIdx) => {
+          const text = fit(lineObj.text, widths[i] - 6, headerSize, true);
+          const drawY = startY - lIdx * lineSpacing;
+          if (c.align === 'right') {
+            this.drawRight(text, { size: headerSize, bold: true, right: xs[i] + widths[i] - 3, y: drawY });
+          } else {
+            this.draw(text, { size: headerSize, bold: true, x: xs[i] + 3, y: drawY });
+          }
+        });
       });
     };
 
@@ -283,13 +317,48 @@ Q`);
     this.repeatOnBreak = header;
 
     rows.forEach((row, index) => {
+      const parsedRow = row.map((cell) => ({
+        lines: parseLines(cell),
+        bg: typeof cell === 'object' && !Array.isArray(cell) && cell?.bg ? cell.bg : null,
+      }));
+      const maxLines = Math.max(1, ...parsedRow.map((c) => c.lines.length));
+      const rowHeight = minRowHeight || (maxLines > 1 ? maxLines * (size + 2.5) + 6 : size + 7);
+
       this.ensure(rowHeight);
       this.y -= rowHeight;
-      if (zebra && index % 2 === 1) this.rect(this.margin, this.y - 2, this.contentWidth, rowHeight, [0.97, 0.97, 0.98]);
+
+      if (zebra && index % 2 === 1) {
+        this.rect(this.margin, this.y - 2, this.contentWidth, rowHeight, [0.97, 0.97, 0.98]);
+      }
+
+      parsedRow.forEach((c, i) => {
+        if (c.bg) {
+          this.rect(xs[i], this.y - 2, widths[i], rowHeight, c.bg);
+        }
+      });
+
+      if (grid) {
+        this.rect(this.margin, this.y - 2, this.contentWidth, 0.5, [0.82, 0.82, 0.86]);
+        xs.forEach((x) => this.rect(x, this.y - 2, 0.5, rowHeight, [0.82, 0.82, 0.86]));
+        this.rect(this.margin + this.contentWidth, this.y - 2, 0.5, rowHeight, [0.82, 0.82, 0.86]);
+      }
+
       columns.forEach((c, i) => {
-        const text = fit(row[i], widths[i] - 8, size, Boolean(c.bold));
-        if (c.align === 'right') this.drawRight(text, { size, bold: Boolean(c.bold), right: xs[i] + widths[i] - 4, y: this.y + 2 });
-        else this.draw(text, { size, bold: Boolean(c.bold), x: xs[i] + 4, y: this.y + 2 });
+        const { lines } = parsedRow[i];
+        const lineSpacing = size + 2;
+        const startY = this.y + rowHeight - 4 - size;
+        lines.forEach((lineObj, lIdx) => {
+          const lSize = lineObj.size || (lIdx === 0 ? size : Math.max(size - 1, 6.5));
+          const lBold = lineObj.bold ?? (lIdx === 0 ? Boolean(c.bold) : false);
+          const lColor = lineObj.color || (lIdx === 0 ? null : [0.35, 0.35, 0.4]);
+          const text = fit(lineObj.text, widths[i] - 6, lSize, lBold);
+          const drawY = startY - lIdx * lineSpacing;
+          if (c.align === 'right') {
+            this.drawRight(text, { size: lSize, bold: lBold, right: xs[i] + widths[i] - 3, y: drawY, color: lColor });
+          } else {
+            this.draw(text, { size: lSize, bold: lBold, x: xs[i] + 3, y: drawY, color: lColor });
+          }
+        });
       });
     });
 
@@ -307,7 +376,7 @@ Q`);
       this.ops = ops;
       this.rect(this.margin, y + 14, this.contentWidth, 0.5, [0.85, 0.85, 0.88]);
       if (this.footer) this.draw(fit(this.footer, this.contentWidth - 120, 8), { size: 8, x: this.margin, y, color: [0.42, 0.42, 0.48] });
-      this.drawRight(label, { size: 8, right: A4.width - this.margin, y, color: [0.42, 0.42, 0.48] });
+      this.drawRight(label, { size: 8, right: this.pageWidth - this.margin, y, color: [0.42, 0.42, 0.48] });
       this.ops = saved;
     });
 
@@ -340,7 +409,7 @@ endstream`);
       const contentNo = add(`<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`);
       pageNos.push(
         add(
-          `<< /Type /Page /Parent ${pagesNo} 0 R /MediaBox [0 0 ${A4.width.toFixed(2)} ${A4.height.toFixed(2)}] ` +
+          `<< /Type /Page /Parent ${pagesNo} 0 R /MediaBox [0 0 ${this.pageWidth.toFixed(2)} ${this.pageHeight.toFixed(2)}] ` +
             `/Resources << /Font << /F1 ${fontReg} 0 R /F2 ${fontBold} 0 R >>${this.logoPages.has(pageIndex) ? ` /XObject << /Im1 ${imageNo} 0 R >>` : ''} >> /Contents ${contentNo} 0 R >>`
         )
       );

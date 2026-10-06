@@ -266,6 +266,405 @@ export const getMyTimetable = asyncHandler(async (req, res) => {
   res.json(body);
 });
 
+async function resolveMasterTimetableData(user, query = {}) {
+  const filter = { isActive: true };
+  const isFYH = isFirstYearHod(user);
+
+  if (isFYH) {
+    filter.year = 1;
+    if (query.department) {
+      filter.department = String(query.department);
+    }
+  } else {
+    filter.department = ownDepartment(user);
+    if (query.year) {
+      const qYear = Number(query.year);
+      if (qYear === 1) {
+        return { slots: [], classes: [], periods: [], faculties: [], department: user.department, isFirstYearHod: false, week: {} };
+      }
+      filter.year = qYear;
+    } else {
+      filter.year = { $in: [2, 3, 4] };
+    }
+  }
+
+  if (query.dayOfWeek) {
+    filter.dayOfWeek = String(query.dayOfWeek).toLowerCase();
+  }
+  if (query.semester) {
+    filter.semester = Number(query.semester);
+  }
+
+  const slots = await populateSlot(TimetableSlot.find(filter)).lean();
+  const week = await annotateWeek(slots);
+  const sorted = sortSlots(slots);
+
+  // Group and derive distinct classes: { department, year, section, semester, label }
+  const classMap = new Map();
+  sorted.forEach((s) => {
+    if (!s.section) return;
+    const key = `${s.department}-${s.year}-${s.section}-${s.semester}`;
+    if (!classMap.has(key)) {
+      classMap.set(key, {
+        department: s.department,
+        year: s.year,
+        section: s.section,
+        semester: s.semester,
+        label: `${s.department} · Year ${s.year} · Sec ${s.section} (Sem ${s.semester})`,
+      });
+    }
+  });
+
+  const classes = [...classMap.values()].sort(
+    (a, b) =>
+      (a.department || '').localeCompare(b.department || '') ||
+      a.year - b.year ||
+      (a.section || '').localeCompare(b.section || '') ||
+      a.semester - b.semester
+  );
+
+  // Distinct periods across the day: { period, startTime, endTime, isBreak, breakLabel }
+  const periodMap = new Map();
+  sorted.forEach((s) => {
+    const key = `${s.startTime}-${s.endTime}`;
+    if (!periodMap.has(key)) {
+      periodMap.set(key, {
+        period: s.period,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        isBreak: Boolean(s.isBreak),
+        breakLabel: s.breakLabel || '',
+      });
+    }
+  });
+
+  const periods = [...periodMap.values()].sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  // Distinct faculty list for filtering
+  const facultyMap = new Map();
+  sorted.forEach((s) => {
+    if (s.faculty && s.faculty._id) {
+      facultyMap.set(String(s.faculty._id), {
+        _id: s.faculty._id,
+        name: s.faculty.name,
+        email: s.faculty.email,
+        avatar: s.faculty.avatar,
+        designation: s.faculty.designation,
+      });
+    }
+  });
+
+  const faculties = [...facultyMap.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  return {
+    slots: sorted,
+    classes,
+    periods,
+    faculties,
+    department: isFYH ? (query.department || FIRST_YEAR_HOD_DEPT) : user.department,
+    isFirstYearHod: isFYH,
+    week,
+  };
+}
+
+/**
+ * Master Timetable: available exclusively to HODs. Combines all class timetables
+ * of their department (Years 2-4 for Branch HODs, Year 1 across branch departments
+ * for First-Year S&H HOD) into a single master schedule.
+ */
+export const getMasterTimetable = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'hod') {
+    throw new ApiError(403, 'Master timetable is only accessible to HODs');
+  }
+  if (req.query.format === 'pdf') {
+    return exportMasterTimetablePdf(req, res);
+  }
+  const result = await resolveMasterTimetableData(req.user, req.query);
+  res.json(result);
+});
+
+/**
+ * Export Master Timetable as official PDF in landscape A4.
+ */
+export const exportMasterTimetablePdf = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'hod') {
+    throw new ApiError(403, 'Master timetable is only accessible to HODs');
+  }
+  const { generateMasterTimetablePdfBuffer } = await import('../services/masterTimetablePdf.js');
+  const dayOfWeek = req.query.dayOfWeek ? String(req.query.dayOfWeek).toLowerCase() : 'monday';
+  const data = await resolveMasterTimetableData(req.user, { ...req.query, dayOfWeek });
+
+  const buffer = await generateMasterTimetablePdfBuffer({
+    ...data,
+    dayOfWeek,
+    year: req.query.year ? Number(req.query.year) : null,
+  });
+
+  const deptSlug = (data.department || 'Department').replace(/[^a-zA-Z0-9]+/g, '_');
+  const dayCap = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1);
+  const filename = `Master_Timetable_${deptSlug}_${dayCap}.pdf`;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(buffer);
+});
+
+/**
+ * Helper to compute faculty teaching vs free matrix for a selected day.
+ */
+async function resolveFacultyAvailabilityData(user, query = {}) {
+  const isFYH = isFirstYearHod(user);
+  const { weekday: currentWeekday, time: currentTime } = campusParts(new Date());
+  const dayOfWeek = query.dayOfWeek ? String(query.dayOfWeek).toLowerCase() : currentWeekday || 'monday';
+
+  // 1. Fetch faculties for this HOD
+  let facultyFilter = { role: 'faculty', isActive: true };
+  if (isFYH) {
+    if (query.department) {
+      const branchSlotsFaculty = await TimetableSlot.find({
+        department: String(query.department),
+        year: 1,
+        isActive: true,
+      }).distinct('faculty');
+      facultyFilter.$or = [
+        { department: FIRST_YEAR_HOD_DEPT },
+        { _id: { $in: branchSlotsFaculty } },
+      ];
+    } else {
+      facultyFilter.department = FIRST_YEAR_HOD_DEPT;
+    }
+  } else {
+    facultyFilter.department = ownDepartment(user);
+  }
+
+  const faculties = await User.find(facultyFilter)
+    .select('name email avatar department designation employeeId')
+    .sort('name')
+    .lean();
+
+  const facultyIds = faculties.map((f) => f._id);
+
+  // 2. Fetch distinct periods on dayOfWeek
+  let periodFilter = { dayOfWeek, isActive: true };
+  if (isFYH) {
+    if (query.department) {
+      periodFilter.department = String(query.department);
+      periodFilter.year = 1;
+    } else {
+      periodFilter.$or = [{ department: FIRST_YEAR_HOD_DEPT }, { year: 1 }];
+    }
+  } else {
+    periodFilter.department = ownDepartment(user);
+  }
+
+  let dayDeptSlots = await TimetableSlot.find(periodFilter).lean();
+  if (dayDeptSlots.length === 0) {
+    dayDeptSlots = await TimetableSlot.find({ dayOfWeek, isActive: true }).lean();
+  }
+
+  const periodMap = new Map();
+  dayDeptSlots.forEach((s) => {
+    const key = `${s.startTime}-${s.endTime}`;
+    if (!periodMap.has(key)) {
+      periodMap.set(key, {
+        period: s.period,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        isBreak: Boolean(s.isBreak),
+        breakLabel: s.breakLabel || '',
+      });
+    }
+  });
+
+  const periods = [...periodMap.values()].sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  // 3. Fetch all teaching slots for these faculties on dayOfWeek (college-wide)
+  const facSlotsRaw = await populateSlot(
+    TimetableSlot.find({
+      faculty: { $in: facultyIds },
+      dayOfWeek,
+      isActive: true,
+      isBreak: { $ne: true },
+    })
+  ).lean();
+  await annotateWeek(facSlotsRaw);
+
+  // 4. Map each faculty member across each period
+  let freeNowCount = 0;
+  let busyNowCount = 0;
+  const isToday = dayOfWeek === currentWeekday;
+
+  const facultyMatrix = faculties.map((f) => {
+    const fSlots = facSlotsRaw.filter((s) => String(s.faculty?._id || s.faculty) === String(f._id));
+
+    let freePeriods = 0;
+    let busyPeriods = 0;
+    let isFreeNow = true;
+
+    const periodResults = periods.map((p) => {
+      if (p.isBreak) {
+        return {
+          period: p.period,
+          startTime: p.startTime,
+          endTime: p.endTime,
+          isBreak: true,
+          status: 'break',
+          breakLabel: p.breakLabel || 'Break',
+        };
+      }
+
+      const matchingSlot = fSlots.find(
+        (s) =>
+          s.period === p.period ||
+          (s.startTime <= p.startTime && s.endTime > p.startTime) ||
+          (s.startTime >= p.startTime && s.startTime < p.endTime)
+      );
+
+      if (matchingSlot) {
+        if (matchingSlot.holiday) {
+          return {
+            period: p.period,
+            startTime: p.startTime,
+            endTime: p.endTime,
+            isBreak: false,
+            status: 'holiday',
+            title: matchingSlot.holiday.title,
+            holiday: matchingSlot.holiday,
+          };
+        }
+
+        busyPeriods += 1;
+        if (isToday && currentTime >= p.startTime && currentTime < p.endTime) {
+          isFreeNow = false;
+        }
+
+        return {
+          period: p.period,
+          startTime: p.startTime,
+          endTime: p.endTime,
+          isBreak: false,
+          status: 'busy',
+          slot: {
+            _id: matchingSlot._id,
+            subject: matchingSlot.subject,
+            room: matchingSlot.room,
+            department: matchingSlot.department,
+            year: matchingSlot.year,
+            section: matchingSlot.section,
+            semester: matchingSlot.semester,
+            period: matchingSlot.period,
+            startTime: matchingSlot.startTime,
+            endTime: matchingSlot.endTime,
+          },
+        };
+      }
+
+      freePeriods += 1;
+      return {
+        period: p.period,
+        startTime: p.startTime,
+        endTime: p.endTime,
+        isBreak: false,
+        status: 'free',
+      };
+    });
+
+    if (isToday) {
+      if (isFreeNow) freeNowCount += 1;
+      else busyNowCount += 1;
+    }
+
+    return {
+      _id: f._id,
+      name: f.name,
+      email: f.email,
+      avatar: f.avatar,
+      department: f.department,
+      designation: f.designation || 'Faculty',
+      employeeId: f.employeeId || '',
+      freePeriods,
+      busyPeriods,
+      totalPeriods: freePeriods + busyPeriods,
+      isFreeNow,
+      periods: periodResults,
+    };
+  });
+
+  // Filter if period parameter provided
+  let filteredFaculties = facultyMatrix;
+  if (query.period) {
+    const targetPeriod = Number(query.period);
+    filteredFaculties = filteredFaculties.filter((f) => {
+      const p = f.periods.find((item) => item.period === targetPeriod && !item.isBreak);
+      return p && p.status === 'free';
+    });
+  }
+
+  if (query.freeNow === 'true' && isToday) {
+    filteredFaculties = filteredFaculties.filter((f) => f.isFreeNow);
+  }
+
+  return {
+    faculties: filteredFaculties,
+    allFacultiesCount: facultyMatrix.length,
+    periods,
+    dayOfWeek,
+    department: isFYH ? (query.department || FIRST_YEAR_HOD_DEPT) : user.department,
+    isFirstYearHod: isFYH,
+    isToday,
+    stats: {
+      totalFaculties: facultyMatrix.length,
+      freeNow: freeNowCount,
+      busyNow: busyNowCount,
+    },
+  };
+}
+
+/**
+ * Faculty Availability Schedule: exclusively for HODs.
+ * Shows which periods each department faculty member is teaching vs free on a specific day.
+ */
+export const getFacultyAvailability = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'hod') {
+    throw new ApiError(403, 'Faculty availability schedule is only accessible to HODs');
+  }
+  if (req.query.format === 'pdf') {
+    return exportFacultyAvailabilityPdf(req, res);
+  }
+  const result = await resolveFacultyAvailabilityData(req.user, req.query);
+  res.json(result);
+});
+
+/**
+ * Export Faculty Availability Schedule as official PDF in landscape A4.
+ */
+export const exportFacultyAvailabilityPdf = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'hod') {
+    throw new ApiError(403, 'Faculty availability schedule is only accessible to HODs');
+  }
+  const { generateFacultyAvailabilityPdfBuffer } = await import('../services/facultyAvailabilityPdf.js');
+  const { weekday: currentWeekday } = campusParts(new Date());
+  const dayOfWeek = req.query.dayOfWeek ? String(req.query.dayOfWeek).toLowerCase() : currentWeekday || 'monday';
+  const data = await resolveFacultyAvailabilityData(req.user, { ...req.query, dayOfWeek });
+
+  const buffer = await generateFacultyAvailabilityPdfBuffer({
+    ...data,
+    dayOfWeek,
+  });
+
+  const deptSlug = (data.department || 'Department').replace(/[^a-zA-Z0-9]+/g, '_');
+  const dayCap = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1);
+  const filename = `Faculty_Availability_${deptSlug}_${dayCap}.pdf`;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(buffer);
+});
+
 /**
  * "My Schedule": the classes the authenticated user personally teaches,
  * across the week, with their full academic context. Always the caller's own

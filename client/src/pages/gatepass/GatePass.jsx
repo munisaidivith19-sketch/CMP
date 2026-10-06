@@ -50,6 +50,8 @@ import QrScannerModal from '../../components/QrScannerModal';
 import { scanProblem } from '../../utils/gateQr';
 import { ReturnStatus } from './ReturnStatus';
 import { AUTHORITY_LABELS, EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, EmergencyRequestForm, isEmergency } from './EmergencyGatePass';
+import GatePassListModal from './GatePassListModal';
+import MassOutpassModal from './MassOutpassModal';
 
 const OPEN = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active'];
 const PENDING = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority'];
@@ -890,6 +892,8 @@ function AllPasses() {
 function StaffGatePass() {
   const me = useSelector(selectUser);
   const [params, setParams] = useSearchParams();
+  const [listModalType, setListModalType] = useState(null);
+  const [massModalOpen, setMassModalOpen] = useState(false);
   // AO / Dean / Chairman decide only the emergency requests sent to them, and
   // see the same read-only campus overview as the principal.
   const authorityOnly = AUTHORITY_ONLY.includes(me.role);
@@ -909,7 +913,6 @@ function StaffGatePass() {
       ]
     : [
         { value: 'review', label: 'Review' },
-        { value: 'outside', label: 'Outside now', count: dash?.studentsOutside || undefined },
         ...(hasRequests ? [{ value: 'requests', label: authorityOnly ? 'My requests' : 'Requests' }] : []),
         ...(me.role === 'admin' ? [{ value: 'all', label: 'All passes' }] : []),
       ];
@@ -943,7 +946,26 @@ function StaffGatePass() {
                   ? 'Emergency requests students send to you, plus who is in and out of campus.'
                   : 'Review requests at any stage and see who is outside.'
         }
-        actions={canHistory && <HistoryPicker date={historyDate} onChange={(d) => setQuery({ date: d, tab: d ? 'outside' : 'review' })} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {me.role === 'principal' && (
+              <Button
+                variant="primary"
+                icon={DoorOpen}
+                onClick={() => setMassModalOpen(true)}
+                className="gap-2 shadow-soft"
+              >
+                <span>Institutional Mass Outpass</span>
+                {dash?.hostelSummary && (
+                  <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold text-white">
+                    Inside: {dash.hostelSummary.inside} · Outside: {dash.hostelSummary.outside}
+                  </span>
+                )}
+              </Button>
+            )}
+            {canHistory && <HistoryPicker date={historyDate} onChange={(d) => setQuery({ date: d, tab: d ? 'outside' : 'review' })} />}
+          </div>
+        }
       />
       {inHistory && (
         <p className="flex items-center gap-2 rounded-2xl border border-primary-500/20 bg-primary-500/5 px-4 py-2.5 text-sm">
@@ -959,17 +981,79 @@ function StaffGatePass() {
         <ErrorState error={error} onRetry={refetch} />
       ) : inHistory ? (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard icon={Clock} label="Requests" value={dash.requests} hint={`Raised on ${dayLabel}`} gradient="from-amber-400 to-orange-500" />
-          <StatCard icon={Users} label="Outside at day end" value={dash.studentsOutside} hint={dash.overdue ? `${dash.overdue} overdue` : 'None overdue'} gradient="from-sky-400 to-blue-500" delay={60} />
-          <StatCard icon={LogOut} label="Exits" value={dash.todayExits} hint={dayLabel} gradient="from-violet-400 to-indigo-500" delay={120} />
-          <StatCard icon={LogIn} label="Returns" value={dash.todayReturns} hint={dayLabel} gradient="from-emerald-400 to-teal-500" delay={180} />
+          <StatCard
+            icon={Clock}
+            label="Requests"
+            value={dash.requests}
+            hint={`Raised on ${dayLabel} · Click to view`}
+            gradient="from-amber-400 to-orange-500"
+            onClick={() => setListModalType('pending')}
+          />
+          <StatCard
+            icon={Users}
+            label="Outside at day end"
+            value={dash.studentsOutside}
+            hint={dash.overdue ? `${dash.overdue} overdue · Click to view` : 'Click to view'}
+            gradient="from-sky-400 to-blue-500"
+            delay={60}
+            onClick={() => setListModalType('outside')}
+          />
+          <StatCard
+            icon={LogOut}
+            label="Exits"
+            value={dash.todayExits}
+            hint={`${dayLabel} · Click to view`}
+            gradient="from-violet-400 to-indigo-500"
+            delay={120}
+            onClick={() => setListModalType('exits')}
+          />
+          <StatCard
+            icon={LogIn}
+            label="Returns"
+            value={dash.todayReturns}
+            hint={`${dayLabel} · Click to view`}
+            gradient="from-emerald-400 to-teal-500"
+            delay={180}
+            onClick={() => setListModalType('returns')}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard icon={Clock} label="Pending" value={dash.pending} hint="Across all stages" gradient="from-amber-400 to-orange-500" />
-          <StatCard icon={Users} label="Outside now" value={dash.studentsOutside} hint={dash.overdue ? `${dash.overdue} overdue` : 'None overdue'} gradient="from-sky-400 to-blue-500" delay={60} />
-          <StatCard icon={LogOut} label="Exits today" value={dash.todayExits} gradient="from-violet-400 to-indigo-500" delay={120} />
-          <StatCard icon={LogIn} label="Returns today" value={dash.todayReturns} gradient="from-emerald-400 to-teal-500" delay={180} />
+          <StatCard
+            icon={Clock}
+            label="Pending"
+            value={dash.pending}
+            hint="Click to view requests & stages"
+            gradient="from-amber-400 to-orange-500"
+            onClick={() => setListModalType('pending')}
+          />
+          <StatCard
+            icon={Users}
+            label="Outside now"
+            value={dash.studentsOutside}
+            hint={dash.overdue ? `${dash.overdue} overdue · Click to view` : 'Click to view students outside'}
+            gradient="from-sky-400 to-blue-500"
+            delay={60}
+            onClick={() => setListModalType('outside')}
+          />
+          <StatCard
+            icon={LogOut}
+            label="Exits today"
+            value={dash.todayExits}
+            hint="Click to view today's exits"
+            gradient="from-violet-400 to-indigo-500"
+            delay={120}
+            onClick={() => setListModalType('exits')}
+          />
+          <StatCard
+            icon={LogIn}
+            label="Returns today"
+            value={dash.todayReturns}
+            hint="Click to view today's returns"
+            gradient="from-emerald-400 to-teal-500"
+            delay={180}
+            onClick={() => setListModalType('returns')}
+          />
         </div>
       )}
       <Tabs tabs={tabs} value={tab} onChange={(t) => setQuery({ tab: t })} />
@@ -981,6 +1065,34 @@ function StaffGatePass() {
       {tab === 'returns' && view?.returns && <PassList passes={view.returns} when="returned" linkProfile={linkProfile} emptyTitle="No returns recorded that day" />}
       {tab === 'requests' && <MyRequests date={historyDate} linkProfile={linkProfile} />}
       {tab === 'all' && <AllPasses />}
+
+      {/* 4 Dashboard Stat Cards Popup Modal */}
+      <GatePassListModal
+        type={listModalType}
+        open={Boolean(listModalType)}
+        onClose={() => setListModalType(null)}
+        passes={
+          listModalType === 'pending'
+            ? view?.pendingStudents || []
+            : listModalType === 'outside'
+              ? view?.outsideStudents || []
+              : listModalType === 'exits'
+                ? view?.todayExitsList || view?.exits || []
+                : listModalType === 'returns'
+                  ? view?.todayReturnsList || view?.returns || []
+                  : []
+        }
+        linkProfile={linkProfile}
+      />
+
+      {/* Principal Institutional Mass Outpass Modal */}
+      {me.role === 'principal' && (
+        <MassOutpassModal
+          open={massModalOpen}
+          onClose={() => setMassModalOpen(false)}
+          hostelSummary={view?.hostelSummary}
+        />
+      )}
     </div>
   );
 }

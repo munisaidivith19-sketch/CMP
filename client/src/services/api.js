@@ -76,6 +76,7 @@ const TAGS = [
   'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation', 'Holiday',
   'Security', 'ClassStudents',
   'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics', 'Achievement',
+  'SOSAlert',
 ];
 
 export const api = createApi({
@@ -827,6 +828,12 @@ export const api = createApi({
       query: () => '/alumni/dashboard',
       providesTags: ['AlumniProfile', 'MentorshipRequest', 'MentorshipSession', 'AlumniJob', 'AlumniEvent', 'ChapterPost'],
     }),
+
+    // ── Campus SOS ──
+    getSOSAlerts: b.query({ query: (params) => ({ url: '/sos', params }), providesTags: ['SOSAlert'] }),
+    createSOSAlert: b.mutation({ query: (body) => ({ url: '/sos', method: 'POST', body }), invalidatesTags: ['SOSAlert'] }),
+    ackSOSAlert: b.mutation({ query: (id) => ({ url: `/sos/${id}/ack`, method: 'PATCH' }), invalidatesTags: ['SOSAlert'] }),
+    resolveSOSAlert: b.mutation({ query: ({ id, ...body }) => ({ url: `/sos/${id}/resolve`, method: 'PATCH', body }), invalidatesTags: ['SOSAlert'] }),
   }),
 });
 
@@ -1109,4 +1116,8 @@ export const {
   useCreateHolidayMutation,
   useUpdateHolidayMutation,
   useDeleteHolidayMutation,
+  useGetSOSAlertsQuery,
+  useCreateSOSAlertMutation,
+  useAckSOSAlertMutation,
+  useResolveSOSAlertMutation,
 } = api;

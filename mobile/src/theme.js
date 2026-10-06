@@ -74,7 +74,10 @@ export const ATTENDANCE_READ_ONLY = ['principal', 'chairman', 'dean', 'ao'];
 export const SUMMARY_VIEW = ['hod', ...COLLEGE_WIDE];
 /** May start a group chat; faculty groups wait for admin approval. */
 export const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
-export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
+export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical', 'Science & Humanities'];
+export const FIRST_YEAR_HOD_DEPT = 'Science & Humanities';
+export const isFirstYearHod = (u) => u?.role === 'hod' && u?.department === FIRST_YEAR_HOD_DEPT;
+export const isBranchHod = (u) => u?.role === 'hod' && u?.department !== FIRST_YEAR_HOD_DEPT;
 // A class is Department + Year + Section + Semester (same rule as the server).
 export const SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'];
 export const ACADEMIC_YEARS = [1, 2, 3, 4];
@@ -132,3 +135,9 @@ export const INDIAN_STATES = [
   'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi',
   'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
 ];
+
+// ── Campus SOS ──────────────────────────────────────────────────────
+export const SOS_TYPES = ['medical', 'security', 'fire', 'ragging', 'other'];
+export const SOS_STATUSES = ['active', 'acknowledged', 'resolved', 'false_alarm'];
+export const SOS_RESPONDER_ROLES = ['security', 'admin', 'hod', 'principal', 'chairman'];
+

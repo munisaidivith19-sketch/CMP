@@ -172,3 +172,12 @@ export const uploadAvatar = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).populate('clubs', 'name slug logo');
   res.json(user);
 });
+
+export const exportProfilesPdf = asyncHandler(async (req, res) => {
+  const { generateProfilesPdfBuffer } = await import('../services/profilesPdfService.js');
+  const buffer = await generateProfilesPdfBuffer();
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="CampusConnect_Profiles_Directory.pdf"');
+  res.send(buffer);
+});
+

@@ -125,7 +125,10 @@ val ATTENDANCE_READ_ONLY = setOf("principal", "chairman", "dean", "ao")
 val SUMMARY_VIEW = setOf("hod") + COLLEGE_WIDE
 /** May start a group chat; faculty groups wait for admin approval. */
 val GROUP_CREATORS = setOf("admin", "hod", "faculty")
-val DEPARTMENTS = listOf("CSE (Cyber Security)", "CSE", "AI & DS", "ECE", "VLSI", "Robotics", "Agri", "Bio Medical")
+val DEPARTMENTS = listOf("CSE (Cyber Security)", "CSE", "AI & DS", "ECE", "VLSI", "Robotics", "Agri", "Bio Medical", "Science & Humanities")
+const val FIRST_YEAR_HOD_DEPT = "Science & Humanities"
+fun isFirstYearHod(role: String?, department: String?) = role == "hod" && department == FIRST_YEAR_HOD_DEPT
+fun isBranchHod(role: String?, department: String?) = role == "hod" && department != FIRST_YEAR_HOD_DEPT
 // A class is Department + Year + Section + Semester (same rule as the server).
 val SECTIONS = listOf("A", "B", "C", "D", "E", "F", "G", "H", "J")
 val ACADEMIC_YEARS = listOf(1, 2, 3, 4)

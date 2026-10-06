@@ -5,7 +5,7 @@ import { useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, Briefcase, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, Clock, Compass, DoorOpen, LogIn, LogOut, Megaphone, MessageCircle, Radio, Search, Shapes, ShieldCheck, Sparkles, Star, Users } from 'lucide-react-native';
+import { AlertTriangle, ArrowRight, Briefcase, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, Clock, Compass, DoorOpen, LogIn, LogOut, Megaphone, MessageCircle, Radio, Search, Shapes, ShieldCheck, Sparkles, Star, Users } from 'lucide-react-native';
 import { Avatar, Badge, Card, EmptyState, ErrorState, IconButton, IconTile, Loading, Screen, SectionTitle, T } from '../../../components/ui';
 import { assetUrl } from '../../../config';
 import {
@@ -240,6 +240,7 @@ function GeneralHome({ user }) {
             {firstName(user.name)} 👋
           </T>
         </View>
+        <IconButton icon={AlertTriangle} label="Emergency SOS" color={colors.danger} onPress={() => router.push('/sos')} />
         <IconButton icon={CalendarDays} label="Calendar" onPress={() => router.push('/calendar')} />
         <IconButton icon={Search} label="Search" onPress={() => router.push('/search')} />
       </View>
@@ -465,6 +466,12 @@ function AlumniHome({ user }) {
             {firstName(user.name)} 🎓
           </T>
         </View>
+        <IconButton
+          icon={AlertTriangle}
+          label="Emergency SOS"
+          color={colors.danger}
+          onPress={() => router.push('/sos')}
+        />
         <IconButton
           icon={Compass}
           label="Alumni Network"

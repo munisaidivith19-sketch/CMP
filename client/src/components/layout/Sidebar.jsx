@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Activity,
+  AlertOctagon,
   BadgeCheck,
   BarChart3,
   Bell,
@@ -34,8 +36,10 @@ import { broadcastSession } from '../../services/sessionSync';
 import { loggedOut, selectUser } from '../../features/authSlice';
 import { setSidebar } from '../../features/uiSlice';
 import { disconnectSocket } from '../../services/socket';
+
 import { PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
 import { displayName } from '../../utils/format';
+import SOSModal from '../sos/SOSModal';
 
 // Staff who can see the administrative nav section (Principal sees every staff screen).
 const STAFF_VIEW = [...STAFF, 'principal'];
@@ -61,6 +65,7 @@ const CAMPUS = [
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
   { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning },
   { to: '/alumni', label: 'Alumni Network', icon: GraduationCap, excludeRoles: ['warden', 'security'] },
+  { to: '/sos', label: 'Emergency SOS', icon: AlertOctagon, excludeRoles: ['student', 'club_admin'] },
   { to: '/analytics', label: 'Insights', icon: LineChart },
 ];
 
@@ -119,6 +124,7 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const user = useSelector(selectUser);
   const open = useSelector((s) => s.ui.sidebarOpen);
+  const [sosOpen, setSosOpen] = useState(false);
   const [logout] = useLogoutMutation();
   const close = () => dispatch(setSidebar(false));
   const isSecurity = user?.role === 'security';
@@ -200,7 +206,16 @@ export default function Sidebar() {
           )}
         </nav>
 
-        <div className="mt-3 flex items-center gap-3 rounded-2xl p-2">
+        <button
+          type="button"
+          onClick={() => setSosOpen(true)}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-400/40 bg-rose-500/10 py-2.5 text-xs font-bold text-rose-600 transition hover:bg-rose-500 hover:text-white dark:border-rose-400/30 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-600 dark:hover:text-white"
+        >
+          <AlertOctagon className="h-4 w-4" />
+          <span>Emergency SOS</span>
+        </button>
+
+        <div className="mt-2 flex items-center gap-3 rounded-2xl p-2">
           <NavLink to="/profile" onClick={close} className="flex min-w-0 flex-1 items-center gap-3">
             <Avatar user={user} size="sm" />
             <div className="min-w-0">
@@ -215,6 +230,7 @@ export default function Sidebar() {
             <LogOut className="h-[18px] w-[18px]" />
           </button>
         </div>
+        <SOSModal open={sosOpen} onClose={() => setSosOpen(false)} />
       </aside>
     </>
   );

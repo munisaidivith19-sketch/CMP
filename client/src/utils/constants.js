@@ -27,7 +27,10 @@ export const SUMMARY_VIEW = ['hod', ...COLLEGE_WIDE];
 export const GATE_APPROVAL_ROLES = ['faculty', 'hod', 'principal'];
 export const STAY_TYPES = { hosteler: 'Hosteler', day_scholar: 'Day Scholar' };
 
-export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
+export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical', 'Science & Humanities'];
+export const FIRST_YEAR_HOD_DEPT = 'Science & Humanities';
+export const isFirstYearHod = (u) => u?.role === 'hod' && u?.department === FIRST_YEAR_HOD_DEPT;
+export const isBranchHod = (u) => u?.role === 'hod' && u?.department !== FIRST_YEAR_HOD_DEPT;
 
 // Section letter skips "I" (easily confused with "1"), matching the college's
 // own section-naming convention. Every section entry field across the app
@@ -40,6 +43,8 @@ export const YEAR_LABELS = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4t
 export const yearOfSemester = (semester) => Math.ceil(Number(semester) / 2);
 /** The two semesters of a year (year 3 → [5, 6]); all eight when no year is chosen. */
 export const semestersOfYear = (year) => (year ? [Number(year) * 2 - 1, Number(year) * 2] : [1, 2, 3, 4, 5, 6, 7, 8]);
+/** The current ongoing semester for a given academic year (Odd semester cycle: 1 -> 1, 2 -> 3, 3 -> 5, 4 -> 7). */
+export const currentSemesterOfYear = (year) => (year ? Number(year) * 2 - 1 : '');
 
 export const STUDY_MATERIAL_CATEGORY_LABELS = {
   notes: 'Notes',
@@ -277,3 +282,9 @@ export const ACHIEVEMENT_GRADIENTS = {
   certification: 'from-cyan-700 to-teal-900',
   other: 'from-slate-600 to-slate-800',
 };
+
+// ── Campus SOS ──────────────────────────────────────────────────────
+export const SOS_TYPES = ['medical', 'security', 'fire', 'ragging', 'other'];
+export const SOS_STATUSES = ['active', 'acknowledged', 'resolved', 'false_alarm'];
+export const SOS_RESPONDER_ROLES = ['security', 'admin', 'hod', 'principal', 'chairman'];
+

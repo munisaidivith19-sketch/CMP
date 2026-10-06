@@ -2,7 +2,7 @@ import QRCode from 'qrcode';
 import GatePass, { generateGatePassSecurityCode, normalizeGateCode } from '../models/GatePass.js';
 import User from '../models/User.js';
 import Activity from '../models/Activity.js';
-import { EMERGENCY_AUTHORITIES, GATE_PASS_PENDING_STATUSES } from '../constants.js';
+import { EMERGENCY_AUTHORITIES, FIRST_YEAR_HOD_DEPT, GATE_PASS_PENDING_STATUSES, isBranchHod, isFirstYearHod } from '../constants.js';
 import { ApiError, asyncHandler, paginate, pageMeta, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { logSecurity } from '../utils/securityLog.js';
@@ -329,7 +329,22 @@ export const listGatePasses = asyncHandler(async (req, res) => {
     const scope = req.user.section ? { department: req.user.department, section: req.user.section } : { department: req.user.department };
     filter = { $or: [{ 'facultyReview.by': req.user._id }, { status: { $in: FACULTY_STAGE }, ...scope }] };
   } else if (role === 'hod') {
-    filter = { $or: [{ 'hodReview.by': req.user._id }, { status: 'pending_hod', department: req.user.department }] };
+    const firstYearStudents = await User.find({ year: 1, role: { $in: STUDENT_ROLES } }).distinct('_id');
+    if (isFirstYearHod(req.user)) {
+      filter = {
+        $or: [
+          { 'hodReview.by': req.user._id },
+          { status: 'pending_hod', student: { $in: firstYearStudents } },
+        ],
+      };
+    } else {
+      filter = {
+        $or: [
+          { 'hodReview.by': req.user._id },
+          { status: 'pending_hod', department: req.user.department, student: { $nin: firstYearStudents } },
+        ],
+      };
+    }
   } else if (role === 'principal') {
     filter = { $or: [{ 'principalReview.by': req.user._id }, { status: 'pending_principal' }, { passType: 'emergency', emergencyAuthority: 'principal' }] };
   } else if (EMERGENCY_AUTHORITIES.includes(role)) {
@@ -380,7 +395,11 @@ function canView(pass, user) {
   // has actually left (for "outside now" and the return notice).
   if (pass.passType === 'emergency' && ['faculty', 'hod'].includes(user.role) && !pass.actualExit) return false;
   if (user.role === 'faculty') return pass.department === user.department && (!user.section || pass.section === user.section);
-  if (user.role === 'hod') return pass.department === user.department;
+  if (user.role === 'hod') {
+    const isFirstYear = pass.student?.year === 1;
+    if (isFirstYearHod(user)) return Boolean(isFirstYear);
+    return Boolean(isBranchHod(user) && pass.department === user.department && !isFirstYear);
+  }
   if (user.role === 'principal') return true;
   if (EMERGENCY_AUTHORITIES.includes(user.role)) return pass.passType === 'emergency' && pass.emergencyAuthority === user.role;
   return false;
@@ -506,7 +525,19 @@ export const facultyReview = asyncHandler((req, res) =>
     reviewField: 'facultyReview',
     canAct: isClassFaculty,
     forwardTitle: 'Gate pass forwarded to HOD',
-    forwardNotify: (pass) => notifyStage(hodFilter(pass.department), { type: 'gate_pass', title: 'Gate pass needs your review', message: `Forwarded by class faculty · ${pass.department}`, link: '/gate-pass?tab=review' }),
+    forwardNotify: async (pass) => {
+      const student = await User.findById(pass.student?._id || pass.student).select('year department').lean();
+      const isFirstYear = student?.year === 1;
+      const filter = isFirstYear
+        ? { role: 'hod', department: FIRST_YEAR_HOD_DEPT, isActive: true }
+        : hodFilter(pass.department);
+      return notifyStage(filter, {
+        type: 'gate_pass',
+        title: 'Gate pass needs your review',
+        message: `Forwarded by class faculty · ${pass.department}${isFirstYear ? ' (1st Year)' : ''}`,
+        link: '/gate-pass?tab=review',
+      });
+    },
   })
 );
 
@@ -516,7 +547,15 @@ export const hodReview = asyncHandler((req, res) =>
     from: 'pending_hod',
     to: 'pending_principal',
     reviewField: 'hodReview',
-    canAct: (pass, user) => isAdmin(user) || (user.role === 'hod' && pass.department === user.department),
+    canAct: async (pass, user) => {
+      if (isAdmin(user)) return true;
+      if (user.role !== 'hod') return false;
+      const student = await User.findById(pass.student?._id || pass.student).select('year department').lean();
+      if (isFirstYearHod(user)) {
+        return student?.year === 1;
+      }
+      return isBranchHod(user) && pass.department === user.department && student?.year !== 1;
+    },
     forwardTitle: 'Gate pass forwarded to the principal',
     forwardNotify: (pass) => notifyStage(principalFilter(), { type: 'gate_pass', title: 'Gate pass needs your review', message: `Forwarded by HOD · ${pass.department}`, link: '/gate-pass?tab=review' }),
   })

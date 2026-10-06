@@ -27,7 +27,7 @@ import {
   STUDENT_ROLES,
 } from '../utils/academicScope.js';
 import { env } from '../config/env.js';
-import { COLLEGE_WIDE_ROLES, yearOfSemester } from '../constants.js';
+import { COLLEGE_WIDE_ROLES, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
 import { fullHolidayOn, reportHolidays } from './holidays.js';
 
 // `current` = today's completed periods only; `custom` = an explicit from/to range.
@@ -110,17 +110,40 @@ export async function resolveReportScope(user, query = {}) {
   }
 
   if (user.role === 'hod') {
+    if (isFirstYearHod(user)) {
+      const department = query.department ? String(query.department) : undefined;
+      let subject = null;
+      if (query.subjectId) {
+        subject = await Subject.findById(query.subjectId).select('name code department semester year').lean();
+        if (!subject) throw new ApiError(404, 'Subject not found');
+        const isFY = [1, 2].includes(Number(subject.semester)) || subject.year === 1;
+        if (!isFY) throw new ApiError(403, 'First Year HOD can only generate reports for 1st year subjects');
+      }
+      return {
+        department: department || subject?.department,
+        year: 1,
+        section: upper(query.section),
+        semester: num(query.semester) && [1, 2].includes(num(query.semester)) ? num(query.semester) : undefined,
+        subject,
+        forFaculty: false,
+      };
+    }
+
     const department = ownDepartment(user);
+    const qYear = num(query.year);
+    if (qYear === 1) throw new ApiError(403, '1st year attendance reports are managed by Science & Humanities HOD');
     let subject = null;
     if (query.subjectId) {
       subject = await Subject.findById(query.subjectId).select('name code department semester year').lean();
       if (!subject) throw new ApiError(404, 'Subject not found');
-      // A subject id from another department never widens the HOD's scope.
       if (subject.department !== department) throw new ApiError(403, 'This subject is outside your department');
+      if ([1, 2].includes(Number(subject.semester)) || subject.year === 1) {
+        throw new ApiError(403, '1st year subjects are managed by Science & Humanities HOD');
+      }
     }
     return {
       department,
-      year: num(query.year),
+      year: qYear,
       section: upper(query.section),
       semester: num(query.semester),
       subject,

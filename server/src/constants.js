@@ -35,7 +35,10 @@ export const GENDERS = ['male', 'female'];
 // ── Academic structure ──────────────────────────────────────────────
 // A class is Department + Year + Section + Semester. The department string
 // already carries the program (e.g. 'CSE (Cyber Security)').
-export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
+export const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical', 'Science & Humanities'];
+export const FIRST_YEAR_HOD_DEPT = 'Science & Humanities';
+export const isFirstYearHod = (u) => u?.role === 'hod' && u?.department === FIRST_YEAR_HOD_DEPT;
+export const isBranchHod = (u) => u?.role === 'hod' && u?.department !== FIRST_YEAR_HOD_DEPT;
 export const ACADEMIC_YEARS = [1, 2, 3, 4];
 // Human label for a year, used in generated reports.
 export const YEAR_LABEL = { 1: '1st Year', 2: '2nd Year', 3: '3rd Year', 4: '4th Year' };
@@ -107,7 +110,7 @@ export const REPORT_ACTIONS = ['dismiss', 'hide', 'delete', 'warn', 'suspend'];
 
 export const NOTIFICATION_TYPES = [
   'announcement', 'event', 'club', 'discussion', 'report', 'system',
-  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint', 'alumni', 'achievement',
+  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint', 'alumni', 'achievement', 'sos',
 ];
 
 // ── Gate Pass ───────────────────────────────────────────────────────
@@ -251,3 +254,9 @@ export const ACHIEVEMENT_LEVELS = ['college', 'state', 'national', 'internationa
 export const ACHIEVEMENT_POSITIONS = [
   'winner', 'first', 'second', 'third', 'runner_up', 'finalist', 'participant', 'selected', 'published', 'other',
 ];
+
+// ── Campus SOS ──────────────────────────────────────────────────────
+export const SOS_TYPES = ['medical', 'security', 'fire', 'ragging', 'other'];
+export const SOS_STATUSES = ['active', 'acknowledged', 'resolved', 'false_alarm'];
+export const SOS_RESPONDER_ROLES = ['security', 'admin', 'hod', 'principal', 'chairman'];
+export const SOS_BROADCAST_ROLES = ROLES;

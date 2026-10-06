@@ -81,6 +81,15 @@ async function seed() {
     designation: 'Professor & Head, CSE',
     phone: '9840012345',
   });
+  const hodSH = mk({
+    name: 'Dr. K. Radhakrishnan',
+    email: 'hod.sh@campus.edu',
+    role: 'hod',
+    department: 'Science & Humanities',
+    employeeId: 'EMP-HOD-SH',
+    designation: 'Professor & Head, Science & Humanities (First Year)',
+    phone: '9840011999',
+  });
   const principal = mk({
     name: 'Dr. Ramesh Babu',
     email: 'principal@campus.edu',
@@ -165,6 +174,8 @@ async function seed() {
     ['Aditya Joshi', 'aditya@campus.edu', 'Robotics', 1, ['c++', 'dsa'], ['technical', 'hackathon']],
     ['Nisha Patel', 'nisha@campus.edu', 'AI & DS', 2, ['sql', 'tableau'], ['career', 'seminar']],
     ['Siddharth Rao', 'siddharth@campus.edu', 'CSE (Cyber Security)', 3, ['pentesting', 'bash'], ['security', 'technical']],
+    ['Athira.R', 'athira.r@campus.edu', 'AI & DS', 1, ['python', 'c', 'data science'], ['technical', 'ai', 'workshop']],
+    ['Siddharth V', 'siddharth.v@campus.edu', 'CSE', 1, ['c', 'python'], ['technical', 'hackathon']],
   ];
   const students = studentSeed.map(([name, email, department, year, skills, interests], i) =>
     mk({
@@ -183,7 +194,7 @@ async function seed() {
     })
   );
 
-  const allUsers = [admin, faculty, faculty2, hod, principal, security, dean, ao, chairman, warden, clubAdmin, clubAdmin2, ...students];
+  const allUsers = [admin, faculty, faculty2, hod, hodSH, principal, security, dean, ao, chairman, warden, clubAdmin, clubAdmin2, ...students];
   for (const u of allUsers) await u.save();
   console.log(`[seed] ${allUsers.length} users`);
 

@@ -40,7 +40,7 @@ import {
   cn,
 } from '../../components/ui/primitives';
 import { StatusBadge } from '../../components/insights';
-import { ACADEMIC_YEARS, DEPARTMENTS, YEAR_LABELS } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, YEAR_LABELS, isFirstYearHod } from '../../utils/constants';
 import { errMsg, fmtClassDay, todayKey } from '../../utils/format';
 
 // Roles that also get the Year / Section / Semester filters.
@@ -176,9 +176,10 @@ const STATUS_CHIPS = [
 /* ── Today: counts + full student / faculty lists ─────────────────── */
 export function DailySummary() {
   const me = useSelector(selectUser);
-  const canPick = me.role !== 'hod';
+  const isFYH = isFirstYearHod(me);
+  const canPick = me.role !== 'hod' || isFYH;
   const classFilters = CLASS_FILTER_ROLES.includes(me.role);
-  const [filters, setFilters] = useState({ date: todayKey(), department: '', year: '', section: '', semester: '' });
+  const [filters, setFilters] = useState({ date: todayKey(), department: '', year: isFYH ? '1' : '', section: '', semester: '' });
   const [who, setWho] = useState('students');
   const [status, setStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');

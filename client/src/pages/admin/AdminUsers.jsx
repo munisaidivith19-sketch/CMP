@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, KeyRound, Pencil, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
+import { Ban, CheckCircle2, Download, KeyRound, Pencil, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
 import { useDeleteAdminUserMutation, useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
@@ -12,6 +12,7 @@ import CreateUserModal from '../../components/CreateUserModal';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
+import { downloadProfilesPdf } from '../../services/reports';
 
 const TITLE_OPTIONS = ['Ms', 'Mr', 'Dr'].map((t) => ({ value: t, label: t }));
 const GENDER_OPTIONS = [
@@ -207,9 +208,22 @@ export default function AdminUsers() {
   const [classEdit, setClassEdit] = useState(null);
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState(null);
+  const [downloading, setDownloading] = useState(false);
   const { data, isLoading } = useGetAdminUsersQuery({ q: q || undefined, role: role || undefined, status: status || undefined, page });
   const [update, { isLoading: saving }] = useUpdateAdminUserMutation();
   const [removeUser, { isLoading: deletingSaving }] = useDeleteAdminUserMutation();
+
+  const handleExportPdf = async () => {
+    setDownloading(true);
+    try {
+      const filename = await downloadProfilesPdf();
+      toast.success(`Downloaded ${filename}`);
+    } catch (e) {
+      toast.error(e?.message || errMsg(e));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const apply = async (id, body, msg) => {
     try {
@@ -227,9 +241,14 @@ export default function AdminUsers() {
         title="User management"
         subtitle="Create logins for students, faculty, HODs and the principal; assign roles and suspend or reactivate accounts."
         actions={
-          <Button icon={UserPlus} onClick={() => setCreating(true)}>
-            Create login
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" icon={Download} loading={downloading} onClick={handleExportPdf}>
+              Export Directory (PDF)
+            </Button>
+            <Button icon={UserPlus} onClick={() => setCreating(true)}>
+              Create login
+            </Button>
+          </div>
         }
       />
       <CreateUserModal open={creating} onClose={() => setCreating(false)} />

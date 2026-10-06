@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Pressable, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, View } from 'react-native';
 import { useSelector } from 'react-redux';
 import { Check, ClipboardList, Lock, Phone, Plane, Save, Users, X } from 'lucide-react-native';
 import { Avatar, Badge, Button, Card, Chip, EmptyState, ErrorState, Header, Loading, Screen, Segmented, SectionTitle, StatusBadge, T } from './ui';
@@ -16,7 +16,7 @@ import {
   useMarkFacultyAttendanceMutation,
 } from '../services/api';
 import { selectUser } from '../store/authSlice';
-import { ATTENDANCE_READ_ONLY, COLLEGE_WIDE, SUMMARY_VIEW, colors, fonts } from '../theme';
+import { ATTENDANCE_READ_ONLY, COLLEGE_WIDE, DEPARTMENTS, SUMMARY_VIEW, colors, fonts, isBranchHod, isFirstYearHod } from '../theme';
 import OurClassAttendance from './OurClassAttendance';
 import AttendanceReports from './AttendanceReports';
 import HolidayCard from './HolidayCard';
@@ -85,7 +85,7 @@ function LockNote({ text }) {
 /* ── Mark a class ─────────────────────────────────────────────── */
 function MarkClass() {
   const me = useSelector(selectUser);
-  const scope = me.role === 'faculty' ? { mine: 'true' } : me.role === 'hod' ? { department: me.department } : undefined;
+  const scope = me.role === 'faculty' ? { mine: 'true' } : me.role === 'hod' ? (isFirstYearHod(me) ? {} : { department: me.department }) : undefined;
   const subjects = useGetSubjectsQuery(scope);
   const now = useGetCurrentClassQuery();
   const [form, setForm] = useState({ subjectId: '', section: '', period: '', date: todayKey() });
@@ -245,11 +245,15 @@ function Stat({ label, value, tone }) {
 }
 
 function DailySummary() {
+  const me = useSelector(selectUser);
+  const canPickDept = isFirstYearHod(me) || COLLEGE_WIDE.includes(me.role);
+  const [selectedDept, setSelectedDept] = useState('');
   const [date, setDate] = useState(todayKey());
   const [who, setWho] = useState('students');
   const [status, setStatus] = useState('absent');
-  const params = { date, ...(status ? { status } : {}) };
-  const summary = useGetAttendanceSummaryQuery({ date });
+  const queryDept = selectedDept || undefined;
+  const params = { date, ...(status ? { status } : {}), ...(queryDept ? { department: queryDept } : {}) };
+  const summary = useGetAttendanceSummaryQuery({ date, ...(queryDept ? { department: queryDept } : {}) });
   const students = useGetSummaryStudentsQuery(params, { skip: who !== 'students' });
   const faculty = useGetSummaryFacultyQuery(params, { skip: who !== 'faculty' });
   const list = who === 'students' ? students : faculty;
@@ -263,13 +267,21 @@ function DailySummary() {
         <Chip label="Today" active={date === todayKey()} onPress={() => setDate(todayKey())} />
         <Chip label="Yesterday" active={date === yesterdayKey()} onPress={() => setDate(yesterdayKey())} />
       </View>
+      {canPickDept ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
+          <Chip label={isFirstYearHod(me) ? 'All (Year 1)' : 'All Departments'} active={!selectedDept} onPress={() => setSelectedDept('')} />
+          {DEPARTMENTS.filter((d) => d !== 'Science & Humanities').map((d) => (
+            <Chip key={d} label={d} active={selectedDept === d} onPress={() => setSelectedDept(d)} />
+          ))}
+        </ScrollView>
+      ) : null}
       {summary.isLoading ? (
         <Loading />
       ) : summary.error ? (
         <ErrorState error={summary.error} onRetry={summary.refetch} />
       ) : (
         <>
-          <T v="small">{summary.data.department}</T>
+          <T v="small">{summary.data?.department || (isFirstYearHod(me) ? 'All First-Year Students' : 'Whole College')}</T>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
             <Stat label="Students" value={s.total} />
             <Stat label="Present" value={s.present} tone={colors.success} />
@@ -418,7 +430,19 @@ export default function StaffAttendance() {
 
   return (
     <Screen>
-      <Header back title="Attendance" subtitle={me.role === 'hod' ? `${me.department} department` : me.role === 'faculty' ? 'Your classes' : 'Whole college'} />
+      <Header
+        back
+        title="Attendance"
+        subtitle={
+          isFirstYearHod(me)
+            ? 'First Year (All Departments)'
+            : me.role === 'hod'
+              ? `${me.department} department`
+              : me.role === 'faculty'
+                ? 'Your classes'
+                : 'Whole college'
+        }
+      />
       {tabs.length > 1 ? <Segmented value={tab} onChange={setTab} options={tabs} /> : null}
       {tab === 'mark' && <MarkClass />}
       {tab === 'today' && <DailySummary />}

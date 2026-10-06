@@ -219,6 +219,7 @@ const STATUS_COLOR = {
   registered: 'success', waitlisted: 'warning', attended: 'primary',
   SUBMITTED: 'warning', IN_REVIEW: 'primary', IN_PROGRESS: 'info', RESOLVED: 'success', NOT_RESOLVED: 'danger',
   ESCALATED: 'warning', CANCELLED: 'neutral', CLOSED: 'neutral',
+  acknowledged: 'warning', resolved: 'success', false_alarm: 'neutral',
 };
 export const StatusBadge = ({ status, label }) => <Badge label={label || String(status).replace(/_/g, ' ')} color={STATUS_COLOR[status] || 'neutral'} />;
 

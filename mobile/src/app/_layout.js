@@ -37,6 +37,8 @@ const LIVE_TAGS = {
   'chat:conversation': ['Chat'],
   'chat:read': ['Chat'],
   'chat:messageDeleted': ['Chat'],
+  'sos:new': ['SOSAlert', 'Dashboard'],
+  'sos:updated': ['SOSAlert', 'Dashboard'],
 };
 
 /**

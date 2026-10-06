@@ -48,9 +48,14 @@ import {
   HOLIDAY_MANAGE_ROLES,
   HOLIDAY_TYPES,
   yearOfSemester,
+  SOS_TYPES,
+  SOS_STATUSES,
+  SOS_RESPONDER_ROLES,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
+import * as sos from '../controllers/sosController.js';
+
 import * as users from '../controllers/userController.js';
 import * as clubs from '../controllers/clubController.js';
 import * as events from '../controllers/eventController.js';
@@ -273,6 +278,7 @@ router.get('/users', query('context').optional().isIn(['picker']), validate, use
 // The People filter dropdowns this account may use, derived from its own role
 // and department — so the UI can never offer an out-of-scope option.
 router.get('/users/people-filters', authorize(...PEOPLE_DIRECTORY_ROLES), users.peopleFilters);
+router.get('/users/export-pdf', authorize('admin', 'principal'), users.exportProfilesPdf);
 router.put(
   '/users/me',
   writeLimiter,
@@ -1424,5 +1430,28 @@ router.get('/analytics/club/:id', param('id').isString().isLength({ min: 1, max:
 router.use('/alumni', alumniRouter);
 router.use('/mentorship-requests', mentorshipRequestsRouter);
 router.use('/mentorship', mentorshipRouter);
+
+// ── Campus SOS ──────────────────────────────────────────────────────
+router.post(
+  '/sos',
+  body('type').isIn(SOS_TYPES).withMessage('Valid SOS type is required'),
+  body('note').optional().trim().isLength({ max: 300 }),
+  body('location.lat').optional().isNumeric(),
+  body('location.lng').optional().isNumeric(),
+  body('location.accuracy').optional().isNumeric(),
+  validate,
+  sos.createAlert
+);
+router.get('/sos', authorize(...SOS_RESPONDER_ROLES), query('status').optional().isIn(SOS_STATUSES), validate, sos.listAlerts);
+router.patch('/sos/:id/ack', idParam('id'), authorize(...SOS_RESPONDER_ROLES), sos.acknowledgeAlert);
+router.patch(
+  '/sos/:id/resolve',
+  idParam('id'),
+  authorize(...SOS_RESPONDER_ROLES),
+  body('status').optional().isIn(['resolved', 'false_alarm']),
+  body('resolutionNote').optional().trim().isLength({ max: 500 }),
+  validate,
+  sos.resolveAlert
+);
 
 export default router;

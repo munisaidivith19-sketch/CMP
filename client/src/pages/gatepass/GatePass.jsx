@@ -551,6 +551,7 @@ function StudentLine({ student, extra, linkProfile = false }) {
         <p className="truncate text-sm font-bold">{displayName(student)}</p>
         <p className="truncate text-xs muted">
           {student?.rollNo || '—'} · {student?.department}
+          {student?.year ? ` · Y${student.year}` : ''}
           {student?.section ? ` · Sec ${student.section}` : ''}
           {extra}
         </p>

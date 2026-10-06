@@ -51,6 +51,7 @@ export default function GatePassDetail() {
                     <p className="font-bold">{displayName(pass.student)}</p>
                     <p className="text-xs muted">
                       {pass.student?.rollNo} · {pass.student?.department}
+                      {pass.student?.year ? ` · Y${pass.student.year}` : ''}
                       {pass.student?.section ? ` · Sec ${pass.student.section}` : ''}
                     </p>
                   </div>

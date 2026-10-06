@@ -60,9 +60,13 @@ import {
   ATTENDANCE_READ_ONLY,
   COLLEGE_WIDE,
   DEPARTMENTS,
+  FIRST_YEAR_HOD_DEPT,
   SECTIONS,
   SUMMARY_VIEW,
   YEAR_LABELS,
+  currentSemesterOfYear,
+  isBranchHod,
+  isFirstYearHod,
   semestersOfYear,
   yearOfSemester,
 } from '../../utils/constants';
@@ -92,7 +96,13 @@ import { errMsg, fmtClassDay, fmtDateTime, todayKey, displayName } from '../../u
 
 /** Faculty pick from subjects they teach, an HOD from their department's, admin from all. */
 const subjectScope = (me) =>
-  me.role === 'faculty' ? { mine: 'true' } : me.role === 'hod' ? { department: me.department } : undefined;
+  me.role === 'faculty'
+    ? { mine: 'true' }
+    : me.role === 'hod'
+      ? isFirstYearHod(me)
+        ? {}
+        : { department: me.department }
+      : undefined;
 
 const to12h = (t) => {
   if (!t) return '';
@@ -124,7 +134,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
   // 3. Today's summary (Health score)
   const summaryParams = {
     date: todayKey(),
-    ...(isHod && me.department ? { department: me.department } : {}),
+    ...(isBranchHod(me) && me.department ? { department: me.department } : {}),
   };
   const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams);
 
@@ -323,19 +333,20 @@ function ClassSelectionWizard({
   loadingSubjects,
   me,
 }) {
-  const isHod = me.role === 'hod';
-  const availableYears = ACADEMIC_YEARS;
+  const isFYH = isFirstYearHod(me);
+  const isBrH = isBranchHod(me);
+  const availableYears = isFYH ? [1] : isBrH ? [2, 3, 4] : ACADEMIC_YEARS;
   const availableSemesters = cls.year ? semestersOfYear(cls.year) : [];
 
   // Filter subjects based on selected department, year, semester
   const filteredSubjects = useMemo(() => {
     return subjects.filter((s) => {
-      const matchDept = !cls.department || s.department === cls.department;
+      const matchDept = !cls.department || s.department === cls.department || (isFYH && s.department === FIRST_YEAR_HOD_DEPT);
       const matchYear = !cls.year || yearOfSemester(s.semester) === Number(cls.year);
       const matchSem = !cls.semester || s.semester === Number(cls.semester);
       return matchDept && matchYear && matchSem;
     });
-  }, [subjects, cls]);
+  }, [subjects, cls, isFYH]);
 
   const selectedSubject = subjects.find((s) => s._id === form.subjectId);
   const hasSections = (selectedSubject?.sections?.length || 0) > 0;
@@ -439,13 +450,18 @@ function ClassSelectionWizard({
             id="w-dept"
             className="input w-full text-xs py-2 rounded-xl"
             value={cls.department}
-            disabled={isHod}
+            disabled={isBrH}
             onChange={(e) => {
-              onClassChange({ department: e.target.value });
+              const dept = e.target.value;
+              if (dept === FIRST_YEAR_HOD_DEPT) {
+                onClassChange({ department: dept, year: 1, semester: 1 });
+              } else {
+                onClassChange({ department: dept });
+              }
               onFormChange({ subjectId: '', section: '' });
             }}
           >
-            {isHod ? (
+            {isBrH ? (
               <option value={me.department}>{me.department}</option>
             ) : (
               <>
@@ -472,7 +488,8 @@ function ClassSelectionWizard({
               value={cls.year}
               disabled={!cls.department}
               onChange={(e) => {
-                onClassChange({ year: e.target.value });
+                const year = e.target.value ? Number(e.target.value) : '';
+                onClassChange({ year, semester: year ? currentSemesterOfYear(year) : '' });
                 onFormChange({ subjectId: '', section: '' });
               }}
             >
@@ -605,11 +622,13 @@ function MarkAttendance({ preset, onPresetUsed }) {
   const me = useSelector(selectUser);
   const isFaculty = me.role === 'faculty';
   const isHod = me.role === 'hod';
+  const isFYH = isFirstYearHod(me);
+  const isBrH = isBranchHod(me);
 
   const { data: subjects = [], isLoading: loadingSubjects } = useGetSubjectsQuery(subjectScope(me), { skip: isFaculty });
 
   const [form, setForm] = useState({ slotId: '', subjectId: '', section: '', date: todayKey(), period: '' });
-  const [cls, setCls] = useState({ department: isHod ? me.department : '', year: '', semester: '' });
+  const [cls, setCls] = useState({ department: isBrH ? me.department : '', year: isFYH ? 1 : '', semester: '' });
   const [marks, setMarks] = useState({});
   const [rosterSearch, setRosterSearch] = useState('');
   const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'list'

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { CalendarDays, Menu, Moon, Search, Sun } from 'lucide-react';
+import { AlertOctagon, CalendarDays, Menu, Moon, Search, Sun } from 'lucide-react';
 import { selectUser } from '../../features/authSlice';
 import { setSidebar, toggleTheme } from '../../features/uiSlice';
 import { Avatar } from '../ui/primitives';
 import NotificationBell from './NotificationBell';
 import CalendarModal from '../CalendarModal';
+import SOSModal from '../sos/SOSModal';
 import { ROLE_LABELS } from '../../utils/constants';
 import { displayName } from '../../utils/format';
 
@@ -24,6 +25,7 @@ export default function Topbar() {
   const theme = useSelector((s) => s.ui.theme);
   const [q, setQ] = useState('');
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [sosOpen, setSosOpen] = useState(false);
 
   const submit = (e) => {
     e.preventDefault();
@@ -55,6 +57,16 @@ export default function Topbar() {
           />
         </div>
       </form>
+
+      <button
+        onClick={() => setSosOpen(true)}
+        className="btn-icon shrink-0 border border-rose-400/40 bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white dark:border-rose-400/30 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-600 dark:hover:text-white"
+        aria-label="Campus SOS emergency alert"
+        title="Campus SOS Alert"
+      >
+        <AlertOctagon className="h-[18px] w-[18px]" />
+      </button>
+      <SOSModal open={sosOpen} onClose={() => setSosOpen(false)} />
 
       <button onClick={() => dispatch(toggleTheme())} className="btn-icon btn-outline shrink-0" aria-label="Toggle theme">
         {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}

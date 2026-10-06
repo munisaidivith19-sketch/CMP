@@ -1,12 +1,13 @@
 import { View } from 'react-native';
 import { router } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { BookOpen, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, GraduationCap, Megaphone, MessageSquareWarning, MessagesSquare, PackageSearch, Search, Shapes, ShieldCheck, UserPlus, UsersRound } from 'lucide-react-native';
+import { AlertTriangle, BookOpen, CalendarClock, CalendarDays, ClipboardCheck, DoorOpen, GraduationCap, Megaphone, MessageSquareWarning, MessagesSquare, PackageSearch, Search, Shapes, ShieldCheck, UserPlus, UsersRound } from 'lucide-react-native';
 import { Card, Header, IconTile, Screen, T } from '../../../components/ui';
 import { STUDENT_ROLES, gradients } from '../../../theme';
 import { selectUser } from '../../../store/authSlice';
 
 const ITEMS = [
+  { href: '/sos', label: 'Emergency SOS', hint: 'Instant alert', icon: AlertTriangle, g: gradients.rose },
   { href: '/timetable', label: 'Timetable', hint: 'Today & this week', icon: CalendarClock, g: gradients.violet },
   { href: '/attendance', label: 'Attendance', hint: 'Subject-wise %', icon: ClipboardCheck, g: gradients.emerald },
   { href: '/study-materials', label: 'Study Materials', hint: 'Notes & AI assistant', icon: BookOpen, g: gradients.sky },

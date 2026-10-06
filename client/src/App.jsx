@@ -60,6 +60,7 @@ const ComplaintDetail = lazy(() => import('./pages/complaints/ComplaintDetail'))
 const ComplaintDashboard = lazy(() => import('./pages/admin/ComplaintDashboard'));
 const Alumni = lazy(() => import('./pages/alumni/Alumni'));
 const AlumniClaim = lazy(() => import('./pages/alumni/AlumniClaim'));
+const SOSAlerts = lazy(() => import('./pages/sos/SOSAlerts'));
 
 function RequireAuth({ children, roles }) {
   const user = useSelector((s) => s.auth.user);
@@ -174,6 +175,7 @@ export default function App() {
             <Route path="complaints/:id" element={<ComplaintDetail />} />
             <Route path="admin/complaints" element={<RequireAuth roles={['admin', 'chairman']}><ComplaintDashboard /></RequireAuth>} />
             <Route path="alumni" element={<Alumni />} />
+            <Route path="sos" element={<SOSAlerts />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

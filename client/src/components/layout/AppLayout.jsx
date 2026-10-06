@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { NotificationIcon } from './NotificationBell';
+import SOSBroadcastPopup from '../sos/SOSBroadcastPopup';
 import { api, refreshSession } from '../../services/api';
 import { connectSocket, disconnectSocket } from '../../services/socket';
 import { loggedOut, setCredentials } from '../../features/authSlice';
@@ -43,6 +44,8 @@ const LIVE_TAGS = {
   'alumni:job_application': ['JobApplication', 'AlumniJob'],
   'alumni:event': ['AlumniEvent'],
   'alumni:chapter_post': ['ChapterPost'],
+  'sos:new': ['SOSAlert'],
+  'sos:updated': ['SOSAlert'],
 };
 
 /** Live notifications over Socket.io → toast + refresh cached data. */
@@ -121,6 +124,7 @@ function useRealtime() {
       if (n.type === 'lost_found') tags.push('LostFound');
       if (n.type === 'system') tags.push('Session', 'Me');
       if (n.type === 'alumni') tags.push('AlumniProfile', 'MentorshipRequest', 'AlumniJob', 'AlumniEvent', 'Chapter');
+      if (n.type === 'sos') tags.push('SOSAlert');
       dispatch(api.util.invalidateTags(tags));
     };
     socket.on('notification', onNotification);
@@ -146,6 +150,7 @@ export default function AppLayout() {
   return (
     <div className="relative min-h-screen">
       <Backdrop />
+      <SOSBroadcastPopup />
       <div className="mx-auto flex max-w-[1600px] gap-6 p-3">
         <Sidebar />
         <main className="min-w-0 flex-1 pb-10">

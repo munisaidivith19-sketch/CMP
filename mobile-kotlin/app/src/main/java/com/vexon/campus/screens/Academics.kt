@@ -115,6 +115,7 @@ import com.vexon.campus.ui.Tone
 import com.vexon.campus.ui.Type
 import com.vexon.campus.ui.Variant
 import com.vexon.campus.ui.YEAR_LABELS
+import com.vexon.campus.ui.isFirstYearHod
 import com.vexon.campus.ui.pctColor
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonElement
@@ -693,7 +694,7 @@ private fun StaffAttendance(route: Route?) {
     var tab by rememberSaveable { mutableStateOf(tabs.firstOrNull { it.value == requested }?.value ?: tabs.firstOrNull()?.value) }
     var preset by remember { mutableStateOf<MarkPreset?>(null) }
     Screen {
-        Header("Attendance", if (role == "hod") "${me["department"].str ?: ""} department" else if (role == "faculty") "Your classes" else "Whole college", back = true,
+        Header("Attendance", if (isFirstYearHod(role, me["department"].str)) "First Year (All Departments)" else if (role == "hod") "${me["department"].str ?: ""} department" else if (role == "faculty") "Your classes" else "Whole college", back = true,
             right = { Button("Holidays", { Nav.push("/holidays") }, variant = Variant.Danger, icon = Icons.Rounded.EventBusy, small = true) })
         if (tabs.size > 1) Segmented(tabs, tab ?: "", { tab = it })
         when (tab) {

@@ -216,6 +216,9 @@ const STATUS_COLORS = {
   ESCALATED: 'warning',
   CANCELLED: 'neutral',
   CLOSED: 'neutral',
+  acknowledged: 'warning',
+  resolved: 'success',
+  false_alarm: 'neutral',
 };
 export function StatusBadge({ status, label }) {
   return <Badge color={STATUS_COLORS[status] || 'neutral'}>{label || String(status).replace(/_/g, ' ')}</Badge>;

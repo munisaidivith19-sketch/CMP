@@ -28,7 +28,7 @@ import { buildReport, byRollNo, reportFilename, reportPeriods } from '../service
 import { renderReportPdf } from '../services/attendanceReportPdf.js';
 import { safeFilename } from '../utils/pdf.js';
 import { appliesTo, assertNotHoliday, findHoliday, holidayMessage, holidaysBetween, toApi as toHolidayApi } from '../services/holidays.js';
-import { ACADEMIC_READ_ONLY_ROLES, COLLEGE_WIDE_ROLES, yearOfSemester } from '../constants.js';
+import { ACADEMIC_READ_ONLY_ROLES, COLLEGE_WIDE_ROLES, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
 
 export const LOW_ATTENDANCE_THRESHOLD = 75;
 // Club admins are students with extra club permissions.
@@ -63,7 +63,7 @@ const isAssigned = (subject, user) => subject.faculty?.some((f) => sameId(f, use
  *   a subject, those exact sections are the scope; a subject they are listed
  *   on but have no timetable row for falls back to that subject's own declared
  *   sections, which is still an explicit assignment, never a department.
- * - HOD: their own department, from the account.
+ * - HOD: their own department (years 2–4 for branch HOD; all 1st year for Science & Humanities HOD).
  *
  * A faculty member's READ scope is the union of their two legitimate scopes:
  * Handling Class (above) and Our Class — the complete attendance of the one
@@ -74,7 +74,13 @@ const isAssigned = (subject, user) => subject.faculty?.some((f) => sameId(f, use
  */
 async function staffScope(user) {
   if (COLLEGE_WIDE_ROLES.includes(user.role)) return {};
-  if (user.role === 'hod') return { department: ownDepartment(user) };
+  if (user.role === 'hod') {
+    const fySubjects = await Subject.find({ semester: { $in: [1, 2] }, isActive: true }).distinct('_id');
+    if (isFirstYearHod(user)) {
+      return { subject: { $in: fySubjects } };
+    }
+    return { department: ownDepartment(user), subject: { $nin: fySubjects } };
+  }
 
   if (user.role === 'faculty') {
     const [assignments, listed, ourClass] = await Promise.all([
@@ -1124,7 +1130,41 @@ export const getReportOptions = asyncHandler(async (req, res) => {
       ourClass: ourClass[0] ? { ...ourClass[0], classInCharge: req.user.name } : null,
     });
   }
-  const department = req.user.role === 'hod' ? ownDepartment(req.user) : req.query.department ? String(req.query.department) : undefined;
+  if (req.user.role === 'hod') {
+    if (isFirstYearHod(req.user)) {
+      const department = req.query.department ? String(req.query.department) : undefined;
+      const filter = { isActive: true, isBreak: { $ne: true }, year: 1, ...(department ? { department } : {}) };
+      const [sections, subjects] = await Promise.all([
+        TimetableSlot.find(filter).distinct('section'),
+        Subject.find({ isActive: true, semester: { $in: [1, 2] }, ...(department ? { department } : {}) }).select('name code semester year sections').sort('code').lean(),
+      ]);
+      return res.json({
+        scope: 'first_year',
+        department: department || null,
+        years: [1],
+        sections: sections.filter(Boolean).sort(),
+        semesters: [1, 2],
+        subjects,
+      });
+    }
+    const department = ownDepartment(req.user);
+    const filter = { isActive: true, isBreak: { $ne: true }, department, year: { $in: [2, 3, 4] } };
+    const [years, sections, semesters, subjects] = await Promise.all([
+      TimetableSlot.find(filter).distinct('year'),
+      TimetableSlot.find(filter).distinct('section'),
+      TimetableSlot.find(filter).distinct('semester'),
+      Subject.find({ isActive: true, department, semester: { $nin: [1, 2] } }).select('name code semester year sections').sort('code').lean(),
+    ]);
+    return res.json({
+      scope: 'department',
+      department: department || null,
+      years: years.filter(Boolean).sort((a, b) => a - b),
+      sections: sections.filter(Boolean).sort(),
+      semesters: semesters.filter(Boolean).sort((a, b) => a - b),
+      subjects,
+    });
+  }
+  const department = req.query.department ? String(req.query.department) : undefined;
   const filter = { isActive: true, isBreak: { $ne: true }, ...(department ? { department } : {}) };
   const [years, sections, semesters, subjects] = await Promise.all([
     TimetableSlot.find(filter).distinct('year'),
@@ -1133,7 +1173,7 @@ export const getReportOptions = asyncHandler(async (req, res) => {
     Subject.find({ isActive: true, ...(department ? { department } : {}) }).select('name code semester year sections').sort('code').lean(),
   ]);
   res.json({
-    scope: req.user.role === 'hod' ? 'department' : 'college',
+    scope: 'college',
     department: department || null,
     years: years.filter(Boolean).sort((a, b) => a - b),
     sections: sections.filter(Boolean).sort(),
@@ -1194,8 +1234,11 @@ export const listCorrections = asyncHandler(async (req, res) => {
     if (req.user.role === 'faculty') {
       filter.subject = { $in: await Subject.find({ faculty: req.user._id }).distinct('_id') };
     } else if (req.user.role === 'hod') {
-      // ownDepartment refuses an HOD with no department rather than widening to all.
-      filter.subject = { $in: await Subject.find({ department: ownDepartment(req.user) }).distinct('_id') };
+      if (isFirstYearHod(req.user)) {
+        filter.subject = { $in: await Subject.find({ semester: { $in: [1, 2] }, isActive: true }).distinct('_id') };
+      } else {
+        filter.subject = { $in: await Subject.find({ department: ownDepartment(req.user), semester: { $nin: [1, 2] }, isActive: true }).distinct('_id') };
+      }
     } else if (!COLLEGE_WIDE_ROLES.includes(req.user.role)) {
       throw new ApiError(403, 'You cannot view attendance corrections');
     }
@@ -1228,9 +1271,15 @@ export const reviewCorrection = asyncHandler(async (req, res) => {
     const subject = await Subject.findById(request.subject).select('faculty');
     if (!subject || !isAssigned(subject, req.user)) throw new ApiError(403, 'You are not assigned to this subject');
   } else if (req.user.role === 'hod') {
-    const subject = await Subject.findById(request.subject).select('department');
-    if (!subject || subject.department !== req.user.department) {
-      throw new ApiError(403, 'You can only review corrections for your own department');
+    const subject = await Subject.findById(request.subject).select('department semester year');
+    if (!subject) throw new ApiError(404, 'Subject not found');
+    const isFirstYear = [1, 2].includes(Number(subject.semester)) || subject.year === 1;
+    if (isFirstYearHod(req.user)) {
+      if (!isFirstYear) throw new ApiError(403, 'First Year HOD can only review corrections for 1st year subjects');
+    } else {
+      if (subject.department !== req.user.department || isFirstYear) {
+        throw new ApiError(403, 'You can only review corrections for your own department (years 2–4)');
+      }
     }
   }
 

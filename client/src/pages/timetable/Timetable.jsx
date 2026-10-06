@@ -6,7 +6,7 @@ import { useDeleteSlotMutation, useGetMyScheduleQuery, useGetTimetableQuery } fr
 import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, SECTIONS, TIMETABLE_EDITORS, WEEKDAYS, YEAR_LABELS, currentSemesterOfYear, isBranchHod, isFirstYearHod, semestersOfYear } from '../../utils/constants';
 import MySchedule from './MySchedule';
 import { errMsg, fmtClassDay, displayName } from '../../utils/format';
 import SlotModal from './SlotModal';
@@ -154,6 +154,8 @@ export default function Timetable() {
   const [view, setView] = useState('today');
   const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   const isHod = me.role === 'hod';
+  const isFYH = isFirstYearHod(me);
+  const isBrH = isBranchHod(me);
   const isFaculty = me.role === 'faculty';
   const isEditor = TIMETABLE_EDITORS.includes(me.role);
   // Faculty and HOD accounts get a "My Schedule" view of their own teaching
@@ -166,7 +168,12 @@ export default function Timetable() {
   // teach. The server derives both from the account.
   const [facultyScope, setFacultyScope] = useState('class');
   const scopeChosen = useRef(false);
-  const [lookup, setLookup] = useState({ department: me.department || '', year: '', section: '', semester: '' });
+  const [lookup, setLookup] = useState({
+    department: isHod ? (isFYH ? '' : me.department || '') : (me.department || ''),
+    year: isFYH ? 1 : '',
+    section: '',
+    semester: isFYH ? 1 : '',
+  });
   const [applied, setApplied] = useState(null);
   const [edit, setEdit] = useState(undefined); // undefined = closed, null = new period, object = existing
   const [preset, setPreset] = useState(null);
@@ -175,12 +182,18 @@ export default function Timetable() {
 
   // A faculty account sends nothing but the semester; an HOD sends year,
   // section and semester, never a department (it is their own by definition).
+  // First-year HOD (S&H) specifies which department they are inspecting.
   const params = isFaculty
     ? facultyScope === 'class'
       ? { scope: 'class' }
       : { scope: 'handling', semester: lookup.semester || undefined }
     : applied?.section
-      ? { department: isHod ? undefined : applied.department || undefined, year: applied.year, section: applied.section, semester: applied.semester || undefined }
+      ? {
+          department: isBrH ? undefined : applied.department || undefined,
+          year: applied.year,
+          section: applied.section,
+          semester: applied.semester || undefined,
+        }
       : undefined;
   const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params, { skip: view === 'mine' });
   // The semesters a faculty member actually teaches, so the one dropdown they
@@ -206,12 +219,15 @@ export default function Timetable() {
   // Editing needs one concrete class: department + year + section + semester. If no
   // semester was picked, fall back to the one semester every loaded period shares.
   const semesters = [...new Set(slots.map((s) => s.semester))];
-  const department = isHod ? me.department : applied?.department;
+  const department = isBrH ? me.department : applied?.department;
   const klass =
     applied?.section && department
       ? { ...applied, department, semester: applied.semester || (semesters.length === 1 ? semesters[0] : '') }
       : null;
-  const canEditClass = isEditor && klass?.semester && (!isHod || klass.department === me.department);
+  const canEditClass =
+    isEditor &&
+    klass?.semester &&
+    (!isHod || (isFYH ? Number(klass.year) === 1 : klass.department === me.department && Number(klass.year) !== 1));
   const openNew = (p = null) => {
     setPreset(p);
     setEdit(null);
@@ -381,11 +397,23 @@ export default function Timetable() {
 
       {!isStudent && !isFaculty && (
         <Card className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          {!isHod && (
+          {(!isHod || isFYH) && (
             <div className="w-full sm:min-w-[12rem] sm:flex-1">
               <label className="label" htmlFor="tt-dept">Department</label>
-              <select id="tt-dept" className="input" value={lookup.department} onChange={(e) => setLookup((l) => ({ ...l, department: e.target.value }))}>
-                <option value="">Any</option>
+              <select
+                id="tt-dept"
+                className="input"
+                value={lookup.department}
+                onChange={(e) => {
+                  const dept = e.target.value;
+                  if (dept === FIRST_YEAR_HOD_DEPT) {
+                    setLookup((l) => ({ ...l, department: dept, year: 1, semester: 1 }));
+                  } else {
+                    setLookup((l) => ({ ...l, department: dept }));
+                  }
+                }}
+              >
+                <option value="">{isFYH ? 'Choose department' : 'Any'}</option>
                 {[...new Set([me.department, ...DEPARTMENTS].filter(Boolean))].map((d) => (
                   <option key={d}>{d}</option>
                 ))}
@@ -398,13 +426,18 @@ export default function Timetable() {
               id="tt-year"
               className="input"
               value={lookup.year}
+              disabled={isFYH}
               onChange={(e) => {
                 const year = e.target.value ? Number(e.target.value) : '';
-                setLookup((l) => ({ ...l, year, semester: semestersOfYear(year).includes(l.semester) ? l.semester : '' }));
+                setLookup((l) => ({
+                  ...l,
+                  year,
+                  semester: year ? currentSemesterOfYear(year) : '',
+                }));
               }}
             >
-              <option value="">Choose year</option>
-              {ACADEMIC_YEARS.map((y) => (
+              {!isFYH && <option value="">Choose year</option>}
+              {(isFYH ? [1] : isBrH ? [2, 3, 4] : ACADEMIC_YEARS).map((y) => (
                 <option key={y} value={y}>
                   {YEAR_LABELS[y]}
                 </option>
@@ -432,7 +465,7 @@ export default function Timetable() {
             </select>
           </div>
           <div className="flex w-full gap-2 sm:w-auto">
-            <Button icon={Search} loading={isFetching} disabled={!lookup.section || !lookup.year} onClick={() => setApplied({ ...lookup })}>
+            <Button icon={Search} loading={isFetching} disabled={!lookup.section || !lookup.year || (isFYH && !lookup.department)} onClick={() => setApplied({ ...lookup })}>
               View class
             </Button>
             {applied && (
@@ -450,7 +483,7 @@ export default function Timetable() {
           <span className="muted">
             {applied?.section && !klass?.semester
               ? 'Choose a semester and press View class to add or edit periods.'
-              : `To add or edit periods, choose ${isHod ? 'a year, section' : 'a department, year, section'} and semester, then press View class.`}
+              : `To add or edit periods, choose ${isBrH ? 'a year, section' : 'a department, year, section'} and semester, then press View class.`}
           </span>
         </Card>
       )}

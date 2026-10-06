@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { GraduationCap, Search, ShieldCheck } from 'lucide-react';
+import { useSelector } from 'react-redux';
+import toast from 'react-hot-toast';
+import { Download, GraduationCap, Search, ShieldCheck } from 'lucide-react';
 import { useGetPeopleFiltersQuery, useGetUsersQuery } from '../../services/api';
-import { Avatar, Badge, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, cn } from '../../components/ui/primitives';
+import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, cn } from '../../components/ui/primitives';
 import { ACADEMIC_YEARS, ROLE_LABELS, YEAR_LABELS } from '../../utils/constants';
 import { displayName } from '../../utils/format';
+import { selectUser } from '../../features/authSlice';
+import { downloadProfilesPdf } from '../../services/reports';
 
 /**
  * The People directory.
@@ -17,6 +21,10 @@ import { displayName } from '../../utils/format';
  * the server, so an out-of-scope value simply returns nothing.
  */
 export default function People() {
+  const me = useSelector(selectUser);
+  const canDownloadPdf = me?.role === 'admin' || me?.role === 'principal';
+  const [downloading, setDownloading] = useState(false);
+
   const { data: config, isLoading: loadingConfig } = useGetPeopleFiltersQuery();
   const [q, setQ] = useState('');
   const [department, setDepartment] = useState('');
@@ -40,6 +48,18 @@ export default function People() {
     setPage(1);
   };
 
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const filename = await downloadProfilesPdf();
+      toast.success(`Downloaded ${filename}`);
+    } catch (err) {
+      toast.error(err?.message || 'Could not download profile directory');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // The filter row wraps rather than using a fixed grid, so one filter (faculty)
   // or four (HOD) both lay out, down to a 320 px screen, without side-scrolling.
   const selectClass = 'input w-full sm:w-auto sm:min-w-[9.5rem]';
@@ -59,6 +79,20 @@ export default function People() {
             : config?.scope === 'department'
               ? `${config.department} — students and faculty of your department.`
               : 'Find students and faculty by name, department or skill.'
+        }
+        actions={
+          canDownloadPdf ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Download}
+              loading={downloading}
+              onClick={handleDownload}
+              title="Download complete institutional directory PDF"
+            >
+              Download Profiles (PDF)
+            </Button>
+          ) : null
         }
       />
 

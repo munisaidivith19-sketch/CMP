@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useSelector } from 'react-redux';
 import { CalendarClock, Clock, Coffee, GraduationCap, MapPin, User } from 'lucide-react-native';
-import { Badge, Button, Card, EmptyState, ErrorState, Header, Loading, Screen, Segmented, T } from '../../components/ui';
+import { Badge, Button, Card, Chip, EmptyState, ErrorState, Header, Loading, Screen, Segmented, T } from '../../components/ui';
 import { useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../store/authSlice';
-import { STUDENT_ROLES, YEAR_LABELS, colors } from '../../theme';
+import { DEPARTMENTS, STUDENT_ROLES, YEAR_LABELS, colors, isFirstYearHod } from '../../theme';
 import { to12h } from '../../utils/format';
 import HolidayCard from '../../components/HolidayCard';
 
@@ -19,12 +19,15 @@ const hhmm = () => {
 export default function Timetable() {
   const me = useSelector(selectUser);
   const isFaculty = me.role === 'faculty';
+  const isFYH = isFirstYearHod(me);
+  const [selectedDept, setSelectedDept] = useState('');
   // Faculty: "Our Class" = the complete timetable of their Class In-Charge
   // class; "Handling Class" = only the periods they teach. Same server scope
   // as the web app — the client only names which one it wants.
   const [scope, setScope] = useState('class');
   const chosen = useRef(false);
-  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(isFaculty ? { scope } : undefined);
+  const queryParams = isFaculty ? { scope } : isFYH && selectedDept ? { department: selectedDept } : undefined;
+  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(queryParams);
   useEffect(() => {
     if (!isFaculty || chosen.current || !data || scope !== 'class') return;
     chosen.current = true;
@@ -60,13 +63,23 @@ export default function Timetable() {
             ? me.section
               ? `${me.department} · ${YEAR_LABELS[me.year] || ''} · Section ${me.section}${me.semester ? ` · Sem ${me.semester}` : ''}`
               : 'Your class schedule'
-            : ourClass
-              ? `Our Class · ${YEAR_LABELS[ourClass.year]} · Sec ${ourClass.section} · Sem ${ourClass.semester}`
-              : isFaculty && scope === 'handling'
-                ? 'Handling Class · the periods you teach'
-                : 'Your teaching schedule'
+            : isFYH
+              ? `First Year${selectedDept ? ` · ${selectedDept}` : ' · All Departments'}`
+              : ourClass
+                ? `Our Class · ${YEAR_LABELS[ourClass.year]} · Sec ${ourClass.section} · Sem ${ourClass.semester}`
+                : isFaculty && scope === 'handling'
+                  ? 'Handling Class · the periods you teach'
+                  : 'Your teaching schedule'
         }
       />
+      {isFYH ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
+          <Chip label="All Departments" active={!selectedDept} onPress={() => setSelectedDept('')} />
+          {DEPARTMENTS.filter((d) => d !== 'Science & Humanities').map((d) => (
+            <Chip key={d} label={d} active={selectedDept === d} onPress={() => setSelectedDept(d)} />
+          ))}
+        </ScrollView>
+      ) : null}
       {isFaculty ? (
         <Segmented
           value={scope}

@@ -129,6 +129,7 @@ function StudentLine({ student, extra }) {
         </T>
         <T v="small" numberOfLines={1}>
           {student?.rollNo || '—'} · {student?.department}
+          {student?.year ? ` · Y${student.year}` : ''}
           {student?.section ? ` · Sec ${student.section}` : ''}
           {extra}
         </T>

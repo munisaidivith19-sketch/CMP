@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Bell, CalendarClock, CalendarDays, CheckCheck, ClipboardCheck, DoorOpen, Info, Megaphone, MessageCircle, MessagesSquare, PackageSearch, ShieldAlert, Shapes } from 'lucide-react';
+import { AlertOctagon, Bell, CalendarClock, CalendarDays, CheckCheck, ClipboardCheck, DoorOpen, Info, Megaphone, MessageCircle, MessagesSquare, PackageSearch, ShieldAlert, Shapes } from 'lucide-react';
 import { useGetNotificationsQuery, useMarkAllNotificationsReadMutation, useMarkNotificationReadMutation } from '../../services/api';
 import { cn } from '../ui/primitives';
 import { timeAgo } from '../../utils/format';
@@ -17,6 +17,7 @@ export const NOTIF_ICONS = {
   gate_pass: { icon: DoorOpen, cls: 'from-cyan-400 to-sky-500' },
   lost_found: { icon: PackageSearch, cls: 'from-orange-400 to-amber-500' },
   timetable: { icon: CalendarClock, cls: 'from-indigo-400 to-violet-500' },
+  sos: { icon: AlertOctagon, cls: 'from-rose-500 to-red-600' },
 };
 
 export function NotificationIcon({ type }) {

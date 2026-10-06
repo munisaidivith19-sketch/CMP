@@ -57,7 +57,8 @@ export const api = createApi({
     'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Notification', 'Session', 'Chat',
     'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin',
     'StudyMaterial', 'Complaint', 'Holiday',
-    'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics'
+    'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics',
+    'SOSAlert',
   ],
   endpoints: (b) => ({
     // ── Auth / account ────────────────────────────────
@@ -486,6 +487,12 @@ export const api = createApi({
       query: () => '/alumni/dashboard',
       providesTags: ['AlumniProfile', 'MentorshipRequest', 'MentorshipSession', 'AlumniJob', 'AlumniEvent', 'ChapterPost'],
     }),
+
+    // ── Campus SOS ──
+    getSOSAlerts: b.query({ query: (params) => ({ url: '/sos', params }), providesTags: ['SOSAlert'] }),
+    createSOSAlert: b.mutation({ query: (body) => ({ url: '/sos', method: 'POST', body }), invalidatesTags: ['SOSAlert', 'Dashboard'] }),
+    ackSOSAlert: b.mutation({ query: (id) => ({ url: `/sos/${id}/ack`, method: 'PATCH' }), invalidatesTags: ['SOSAlert', 'Dashboard'] }),
+    resolveSOSAlert: b.mutation({ query: ({ id, ...body }) => ({ url: `/sos/${id}/resolve`, method: 'PATCH', body }), invalidatesTags: ['SOSAlert', 'Dashboard'] }),
   }),
 });
 
@@ -665,6 +672,10 @@ export const {
   useRevokeInviteMutation,
   useGetAlumniAnalyticsQuery,
   useGetAlumniDashboardQuery,
+  useGetSOSAlertsQuery,
+  useCreateSOSAlertMutation,
+  useAckSOSAlertMutation,
+  useResolveSOSAlertMutation,
 } = api;
 
 export const errMsg = (err, fallback = 'Something went wrong') =>

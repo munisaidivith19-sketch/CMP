@@ -1,8 +1,9 @@
 import TimetableSlot from '../models/TimetableSlot.js';
 import AttendanceSession from '../models/AttendanceSession.js';
 import { ApiError } from './http.js';
-import { yearOfSemester } from '../constants.js';
+import { FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
 
+export { FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod };
 export const STUDENT_ROLES = ['student', 'club_admin'];
 
 const norm = (s) => String(s || '').trim().toUpperCase();

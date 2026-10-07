@@ -27,6 +27,8 @@ const eventSchema = new Schema(
     poster: String,
     tags: [{ type: String, trim: true, lowercase: true, maxlength: 40 }],
 
+    facultyCoordinators: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+
     // Participation limit (0 = unlimited). `registeredCount` is maintained
     // atomically so concurrent registrations can never exceed capacity.
     capacity: { type: Number, default: 0, min: 0, max: 100000 },
@@ -40,6 +42,7 @@ const eventSchema = new Schema(
 
 eventSchema.index({ startDate: 1, category: 1 });
 eventSchema.index({ club: 1, startDate: 1 });
+eventSchema.index({ facultyCoordinators: 1 });
 eventSchema.index({ 'registrations.user': 1 });
 eventSchema.index(
   { title: 'text', description: 'text', tags: 'text', venue: 'text' },

@@ -171,6 +171,7 @@ export const api = createApi({
     // ── Events ────────────────────────────────────────
     getEvents: b.query({ query: (params) => ({ url: '/events', params }), providesTags: ['Event'] }),
     getEvent: b.query({ query: (id) => `/events/${id}`, providesTags: ['Event'] }),
+    getFacultyCoordinators: b.query({ query: () => '/events/faculty-coordinators', providesTags: ['User'] }),
     createEvent: b.mutation({ query: (body) => ({ url: '/events', method: 'POST', body }), invalidatesTags: ['Event', 'Dashboard'] }),
     updateEvent: b.mutation({
       query: ({ id, ...body }) => ({ url: `/events/${id}`, method: 'PUT', body }),
@@ -892,6 +893,7 @@ export const {
   useSetClubMemberRoleMutation,
   useGetEventsQuery,
   useGetEventQuery,
+  useGetFacultyCoordinatorsQuery,
   useCreateEventMutation,
   useUpdateEventMutation,
   useDeleteEventMutation,

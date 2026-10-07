@@ -245,3 +245,45 @@ export async function downloadFacultyAvailabilityPdf(params = {}) {
   return a.download;
 }
 
+/**
+ * Export Event Participants List to PDF with official college logo.
+ */
+export async function downloadEventParticipantsPdf(eventId) {
+  const send = () =>
+    fetch(`/api/events/${eventId}/participants-pdf`, {
+      credentials: 'include',
+      headers: {
+        accept: 'application/pdf',
+        ...(store.getState().auth.accessToken ? { authorization: `Bearer ${store.getState().auth.accessToken}` } : {}),
+      },
+    });
+
+  let res = await send();
+  if (res.status === 401) {
+    const session = await refreshSession();
+    if (!session?.accessToken) {
+      store.dispatch(loggedOut());
+      throw Object.assign(new Error('Your session has expired. Please sign in again.'), { status: 401 });
+    }
+    store.dispatch(setCredentials(session));
+    res = await send();
+  }
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw Object.assign(new Error(data?.message || 'Could not export event participants PDF'), { status: res.status });
+  }
+
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = match ? match[1] : `event-participants-${eventId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return a.download;
+}
+

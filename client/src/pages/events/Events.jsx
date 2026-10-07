@@ -35,7 +35,7 @@ export default function Events() {
   };
   const { data, isFetching, error, refetch } = useGetEventsQuery(params);
   const { data: clubs } = useGetClubsQuery({ limit: 50 });
-  const canCreate = ['admin', 'faculty', 'club_admin'].includes(user.role) || user.clubs?.length > 0;
+  const canCreate = ['admin', 'principal', 'hod'].includes(user.role);
 
   const set = (fn) => (v) => {
     fn(v);

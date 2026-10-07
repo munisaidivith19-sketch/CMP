@@ -5,6 +5,7 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '.
 import { canManageClub, canManageEvent, sameId } from '../utils/permissions.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
+import { generateEventParticipantsPdfBuffer } from '../services/eventParticipantsPdf.js';
 
 const EDITABLE = [
   'title',
@@ -17,7 +18,40 @@ const EDITABLE = [
   'poster',
   'tags',
   'capacity',
+  'facultyCoordinators',
 ];
+
+const PARTICIPANT_VIEW_ROLES = ['faculty', 'hod', 'principal', 'ao', 'dean', 'chairman', 'admin'];
+
+export function canEditEvent(user, event, club) {
+  if (!user || !event) return false;
+  if (['admin', 'principal'].includes(user.role)) return true;
+  if (user.role === 'hod' && sameId(event.organizer, user._id)) return true;
+  return false;
+}
+
+export function canMarkEventAttendance(user, event) {
+  if (!user || !event) return false;
+  if (user.role === 'hod' && sameId(event.organizer, user._id)) return true;
+  if (event.facultyCoordinators?.some((fc) => sameId(fc, user._id))) return true;
+  return false;
+}
+
+export function canViewParticipants(user, event, club) {
+  if (!user || !event) return false;
+  if (PARTICIPANT_VIEW_ROLES.includes(user.role)) return true;
+  if (sameId(event.organizer, user._id)) return true;
+  if (event.facultyCoordinators?.some((fc) => sameId(fc, user._id))) return true;
+  return club ? canManageClub(user, club) : false;
+}
+
+export const getFacultyCoordinatorsList = asyncHandler(async (req, res) => {
+  const faculties = await User.find({ role: 'faculty', isActive: true })
+    .select('name email avatar department designation employeeId')
+    .sort({ department: 1, name: 1 })
+    .lean();
+  res.json(faculties);
+});
 
 /** Strip the registrations array and expose counts + the viewer's own status. */
 function shapeEvent(ev, user, { includeRegistrations = false } = {}) {
@@ -87,19 +121,33 @@ export const getEvent = asyncHandler(async (req, res) => {
   const event = await Event.findById(req.params.id)
     .populate('club', 'name slug logo admins facultyAdvisor')
     .populate('organizer', 'name avatar role department')
+    .populate('facultyCoordinators', 'name email avatar department designation')
     .lean();
   if (!event) throw new ApiError(404, 'Event not found');
 
-  const canManage = canManageEvent(req.user, event, event.club);
+  const canEdit = canEditEvent(req.user, event, event.club);
+  const canMarkAttendance = canMarkEventAttendance(req.user, event);
+  const canViewParticipantsList = canViewParticipants(req.user, event, event.club);
   const shaped = shapeEvent(event, req.user);
   if (shaped.club) {
     delete shaped.club.admins;
     delete shaped.club.facultyAdvisor;
   }
-  res.json({ ...shaped, canManage });
+  res.json({
+    ...shaped,
+    canEdit,
+    canMarkAttendance,
+    canViewParticipants: canViewParticipantsList,
+    canManage: canEdit,
+  });
 });
 
 export const createEvent = asyncHandler(async (req, res) => {
+  // Only Principal, Admin, and all department HODs can create events (not faculties)
+  if (!['hod', 'principal', 'admin'].includes(req.user.role)) {
+    throw new ApiError(403, 'Only the Principal, Admin, and Department HODs can create events');
+  }
+
   const data = pick(req.body, EDITABLE);
   let club = null;
 
@@ -107,12 +155,16 @@ export const createEvent = asyncHandler(async (req, res) => {
     club = await Club.findOne({ _id: req.body.club, status: 'approved' });
     if (!club) throw new ApiError(400, 'Club not found');
     if (!canManageClub(req.user, club)) throw new ApiError(403, 'Only admins of this club can create its events');
-  } else if (!['faculty', 'hod', 'principal', 'admin'].includes(req.user.role)) {
-    throw new ApiError(403, 'Select one of your clubs to host this event');
+  }
+
+  let facultyCoordinators = [];
+  if (Array.isArray(req.body.facultyCoordinators)) {
+    facultyCoordinators = req.body.facultyCoordinators.filter(Boolean);
   }
 
   const event = await Event.create({
     ...data,
+    facultyCoordinators,
     club: club?._id,
     organizer: req.user._id,
     isFeatured: req.user.role === 'admin' ? Boolean(req.body.isFeatured) : false,
@@ -142,12 +194,15 @@ export const createEvent = asyncHandler(async (req, res) => {
 
 export const updateEvent = asyncHandler(async (req, res) => {
   const { event, club } = await loadEvent(req.params.id);
-  if (!canManageEvent(req.user, event, club)) throw new ApiError(403, 'You cannot edit this event');
+  if (!canEditEvent(req.user, event, club)) throw new ApiError(403, 'You cannot edit this event');
 
   const before = { start: String(event.startDate), venue: event.venue };
   const updates = pick(req.body, EDITABLE);
   if (updates.capacity !== undefined && updates.capacity > 0 && updates.capacity < event.registeredCount) {
     throw new ApiError(400, `Capacity cannot be lower than current registrations (${event.registeredCount})`);
+  }
+  if (req.body.facultyCoordinators !== undefined) {
+    updates.facultyCoordinators = Array.isArray(req.body.facultyCoordinators) ? req.body.facultyCoordinators.filter(Boolean) : [];
   }
   Object.assign(event, updates);
   if (req.user.role === 'admin' && req.body.isFeatured !== undefined) event.isFeatured = Boolean(req.body.isFeatured);
@@ -168,13 +223,16 @@ export const updateEvent = asyncHandler(async (req, res) => {
     );
   }
   logActivity(req, 'event.update', { entityType: 'event', entityId: event._id, summary: event.title });
-  const fresh = await Event.findById(event._id).populate('club', 'name slug logo').lean();
+  const fresh = await Event.findById(event._id)
+    .populate('club', 'name slug logo')
+    .populate('facultyCoordinators', 'name email avatar department designation')
+    .lean();
   res.json(shapeEvent(fresh, req.user));
 });
 
 export const deleteEvent = asyncHandler(async (req, res) => {
   const { event, club } = await loadEvent(req.params.id);
-  if (!canManageEvent(req.user, event, club)) throw new ApiError(403, 'You cannot delete this event');
+  if (!canEditEvent(req.user, event, club)) throw new ApiError(403, 'You cannot delete this event');
   await event.deleteOne();
   notifyUsers(
     event.registrations.map((r) => r.user),
@@ -287,14 +345,37 @@ async function promoteWaitlist(eventId) {
 
 export const getParticipants = asyncHandler(async (req, res) => {
   const { event, club } = await loadEvent(req.params.id);
-  if (!canManageEvent(req.user, event, club)) throw new ApiError(403, 'Only organisers can view participants');
+  if (!canViewParticipants(req.user, event, club)) throw new ApiError(403, 'You do not have permission to view participants');
   await event.populate('registrations.user', 'name email avatar department year rollNo');
   res.json(event.registrations);
 });
 
-export const markAttendance = asyncHandler(async (req, res) => {
+export const getEventParticipantsPdf = asyncHandler(async (req, res) => {
   const { event, club } = await loadEvent(req.params.id);
-  if (!canManageEvent(req.user, event, club)) throw new ApiError(403, 'Only organisers can mark attendance');
+  if (!canViewParticipants(req.user, event, club)) {
+    throw new ApiError(403, 'You do not have permission to view or export participants');
+  }
+
+  await event.populate([
+    { path: 'organizer', select: 'name email role department' },
+    { path: 'facultyCoordinators', select: 'name email department designation' },
+    { path: 'club', select: 'name' },
+    { path: 'registrations.user', select: 'name email avatar department year rollNo section phone' },
+  ]);
+
+  const pdfBuffer = await generateEventParticipantsPdfBuffer(event);
+  const safeTitle = (event.title || 'Event').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40);
+  const filename = `Event_Participants_${safeTitle}.pdf`;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', pdfBuffer.length);
+  res.send(pdfBuffer);
+});
+
+export const markAttendance = asyncHandler(async (req, res) => {
+  const { event } = await loadEvent(req.params.id);
+  if (!canMarkEventAttendance(req.user, event)) throw new ApiError(403, 'Only assigned faculty coordinators and the hosting HOD can mark attendance');
   const reg = event.registrations.find((r) => sameId(r.user, req.params.userId));
   if (!reg || reg.status === 'waitlisted') throw new ApiError(400, 'User is not a confirmed participant');
   reg.status = req.body.attended ? 'attended' : 'registered';

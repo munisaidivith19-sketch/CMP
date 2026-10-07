@@ -364,6 +364,8 @@ const eventRules = (optional = false) => {
     body('capacity').optional().isInt({ min: 0, max: 100000 }).toInt(),
     body('club').optional({ values: 'falsy' }).isMongoId(),
     body('isFeatured').optional().isBoolean().toBoolean(),
+    body('facultyCoordinators').optional().isArray(),
+    body('facultyCoordinators.*').optional().isMongoId().withMessage('Invalid faculty coordinator ID'),
     tagArray('tags'),
     safeUrl('poster'),
     validate,
@@ -377,13 +379,15 @@ router.get(
   validate,
   events.listEvents
 );
-router.post('/events', writeLimiter, ...eventRules(), events.createEvent);
+router.get('/events/faculty-coordinators', authorize('admin', 'principal', 'hod'), events.getFacultyCoordinatorsList);
+router.post('/events', authorize('admin', 'principal', 'hod'), writeLimiter, ...eventRules(), events.createEvent);
 router.get('/events/:id', idParam('id'), events.getEvent);
-router.put('/events/:id', idParam('id'), ...eventRules(true), events.updateEvent);
-router.delete('/events/:id', idParam('id'), events.deleteEvent);
+router.put('/events/:id', authorize('admin', 'principal', 'hod'), idParam('id'), ...eventRules(true), events.updateEvent);
+router.delete('/events/:id', authorize('admin', 'principal', 'hod'), idParam('id'), events.deleteEvent);
 router.post('/events/:id/register', idParam('id'), authorize(...STUDENT_ROLES), events.registerForEvent);
 router.delete('/events/:id/register', idParam('id'), events.cancelRegistration);
 router.get('/events/:id/participants', idParam('id'), events.getParticipants);
+router.get('/events/:id/participants-pdf', idParam('id'), events.getEventParticipantsPdf);
 router.patch(
   '/events/:id/attendance/:userId',
   idParam('id', 'userId'),

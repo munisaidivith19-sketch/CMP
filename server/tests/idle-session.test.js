@@ -26,7 +26,7 @@ async function webUser(role, extra = {}) {
 
 // ── Who the rule applies to ────────────────────────────────────────
 
-for (const role of ['student', 'faculty', 'hod', 'dean', 'ao', 'warden']) {
+for (const role of ['student']) {
   test(`${role}: web session ends after 2 minutes without activity — server-side`, async () => {
     const w = await webUser(role);
     assert.equal((await ctx.request('GET', '/auth/me', { token: w.token })).status, 200);
@@ -47,7 +47,7 @@ for (const role of ['student', 'faculty', 'hod', 'dean', 'ao', 'warden']) {
   });
 }
 
-for (const role of ['chairman', 'security', 'admin', 'principal']) {
+for (const role of ['faculty', 'hod', 'dean', 'ao', 'warden', 'chairman', 'security', 'admin', 'principal']) {
   test(`${role} is exempt: web session survives long inactivity`, async () => {
     const w = await webUser(role);
     await age(w.sid, 60 * 60 * 1000);
@@ -95,7 +95,7 @@ test('ordinary API requests and polling never extend the session', async () => {
 });
 
 test('reported activity keeps the session alive, with at most one write per ~25 s', async () => {
-  const w = await webUser('faculty');
+  const w = await webUser('student');
   await age(w.sid, 100 * 1000);
   const r1 = await ctx.request('POST', '/auth/activity', { token: w.token });
   assert.equal(r1.status, 200);

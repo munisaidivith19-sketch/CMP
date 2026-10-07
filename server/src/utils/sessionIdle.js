@@ -31,7 +31,7 @@ export const ACTIVITY_WRITE_THROTTLE_MS = 25 * 1000;
 // How often the server sweeps for idle web sessions (socket clean-up).
 export const IDLE_SWEEP_INTERVAL_MS = 30 * 1000;
 // Roles whose web sessions keep the existing behaviour.
-export const WEB_IDLE_EXEMPT_ROLES = ['chairman', 'security', 'admin', 'principal'];
+export const WEB_IDLE_EXEMPT_ROLES = ['faculty', 'hod', 'admin', 'principal', 'ao', 'dean', 'chairman', 'warden', 'security'];
 
 export const IDLE_MESSAGE = 'Your session expired due to inactivity. Please log in again.';
 

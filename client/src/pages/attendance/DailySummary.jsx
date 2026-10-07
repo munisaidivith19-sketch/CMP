@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import {
   useGetReportOptionsQuery,
+  useGetAttendanceBreakdownQuery,
   useGetAttendanceSummaryQuery,
   useGetFacultyRosterQuery,
   useGetSummaryFacultyQuery,
@@ -48,10 +49,10 @@ const CLASS_FILTER_ROLES = ['admin', 'principal', 'ao', 'dean', 'chairman'];
 const SEMESTER_LIST = [1, 2, 3, 4, 5, 6, 7, 8];
 
 /** Date + (admin/principal only) department filter shared by both tabs. */
-function Filters({ value, onChange, canPickDepartment, classFilters = false }) {
+function Filters({ value, onChange, canPickDepartment, classFilters = false, yearOnly = false }) {
   // Sections that exist in the chosen department (or college-wide), from the server.
   const { data: options } = useGetReportOptionsQuery(value.department ? { department: value.department } : undefined, {
-    skip: !classFilters,
+    skip: !classFilters || yearOnly,
   });
   const sections = options?.sections || [];
   const selectCls = 'input w-full py-1.5 px-3 text-sm rounded-xl font-medium sm:w-auto sm:min-w-[140px]';
@@ -134,6 +135,7 @@ function Filters({ value, onChange, canPickDepartment, classFilters = false }) {
               ))}
             </select>
           </div>
+          {!yearOnly && (
           <div className="flex items-center gap-2">
             <label htmlFor="ds-section" className="text-xs font-bold uppercase tracking-wider text-ink-muted">Section:</label>
             <select id="ds-section" className={selectCls} value={value.section || ''} onChange={(e) => onChange({ ...value, section: e.target.value })}>
@@ -143,6 +145,8 @@ function Filters({ value, onChange, canPickDepartment, classFilters = false }) {
               ))}
             </select>
           </div>
+          )}
+          {!yearOnly && (
           <div className="flex items-center gap-2">
             <label htmlFor="ds-sem" className="text-xs font-bold uppercase tracking-wider text-ink-muted">Semester:</label>
             <select id="ds-sem" className={selectCls} value={value.semester} onChange={(e) => onChange({ ...value, semester: e.target.value })}>
@@ -152,6 +156,7 @@ function Filters({ value, onChange, canPickDepartment, classFilters = false }) {
               ))}
             </select>
           </div>
+          )}
         </div>
       )}
     </Card>
@@ -174,7 +179,88 @@ const STATUS_CHIPS = [
 ];
 
 /* ── Today: counts + full student / faculty lists ─────────────────── */
+/**
+ * Principal: the day's headcount department by department (total / present /
+ * absent / not marked), optionally for one department or one year — no
+ * per-student list. Read from the same scoped breakdown as the cards above.
+ */
+function PrincipalDailySummary() {
+  const [filters, setFilters] = useState({ date: todayKey(), department: '', year: '' });
+  const { data, isLoading, isFetching, error, refetch } = useGetAttendanceBreakdownQuery({ date: filters.date });
+  const year = filters.year ? Number(filters.year) : null;
+  const tallyOf = (g) => (year ? g.years?.find((y) => y.year === year)?.students : g.students) || { total: 0, present: 0, absent: 0, unmarked: 0 };
+  const rows = (data?.groups || []).filter((g) => !filters.department || g.department === filters.department).map((g) => ({ department: g.department || '—', ...tallyOf(g) }));
+  const total = rows.reduce((t, r) => ({ total: t.total + r.total, present: t.present + r.present, absent: t.absent + r.absent, unmarked: t.unmarked + r.unmarked }), { total: 0, present: 0, absent: 0, unmarked: 0 });
+  const cell = 'px-3 py-2.5 text-right tabular-nums';
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <Filters value={filters} onChange={setFilters} canPickDepartment classFilters yearOnly />
+      <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-white/[0.02] p-4">
+          <div>
+            <h3 className="text-sm font-extrabold">Department-wise attendance</h3>
+            <p className="text-xs muted">
+              {fmtClassDay(filters.date, 'EEEE, dd MMM yyyy')}
+              {year ? ` · ${YEAR_LABELS[year]}` : ' · All years'}
+            </p>
+          </div>
+          {isFetching && !isLoading && <span className="text-xs muted">Updating…</span>}
+        </div>
+        {isLoading ? (
+          <div className="p-4"><Skeleton className="h-48" /></div>
+        ) : error ? (
+          <div className="p-4"><ErrorState error={error} onRetry={refetch} /></div>
+        ) : !rows.length ? (
+          <EmptyState icon={GraduationCap} title="No departments" text="No students match these filters." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[34rem] text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-ink-muted">
+                  <th className="px-3 py-2.5 text-left">Department</th>
+                  <th className="px-3 py-2.5 text-right">Total students</th>
+                  <th className="px-3 py-2.5 text-right">Present</th>
+                  <th className="px-3 py-2.5 text-right">Absent</th>
+                  <th className="px-3 py-2.5 text-right">Not marked</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/60 dark:divide-white/5">
+                {rows.map((r) => (
+                  <tr key={r.department}>
+                    <td className="px-3 py-2.5 font-semibold">{r.department}</td>
+                    <td className={cn(cell, 'font-bold')}>{r.total}</td>
+                    <td className={cn(cell, 'font-bold text-emerald-700 dark:text-emerald-300')}>{r.present}</td>
+                    <td className={cn(cell, 'font-bold text-rose-700 dark:text-rose-300')}>{r.absent}</td>
+                    <td className={cn(cell, 'text-ink-soft dark:text-ink-muted')}>{r.unmarked}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {rows.length > 1 && (
+                <tfoot>
+                  <tr className="border-t border-white/60 bg-primary-500/5 font-extrabold dark:border-white/10">
+                    <td className="px-3 py-2.5">College total</td>
+                    <td className={cell}>{total.total}</td>
+                    <td className={cn(cell, 'text-emerald-700 dark:text-emerald-300')}>{total.present}</td>
+                    <td className={cn(cell, 'text-rose-700 dark:text-rose-300')}>{total.absent}</td>
+                    <td className={cn(cell, 'text-ink-soft dark:text-ink-muted')}>{total.unmarked}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export function DailySummary() {
+  const me = useSelector(selectUser);
+  return me.role === 'principal' ? <PrincipalDailySummary /> : <StaffDailySummary />;
+}
+
+function StaffDailySummary() {
   const me = useSelector(selectUser);
   const isFYH = isFirstYearHod(me);
   const canPick = me.role !== 'hod' || isFYH;

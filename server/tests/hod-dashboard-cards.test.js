@@ -2,7 +2,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer } from './helpers.js';
 
-// HOD attendance cards (per-year present / low attendance / hostellers),
+// HOD / Principal attendance cards (per-year or per-department present,
+// low attendance and hostellers),
 // and the study-material upload status (HOD + Principal) — and that none of
 // them reach past the caller's scope.
 
@@ -125,6 +126,42 @@ test('breakdown: an On Duty period counts as present, not absent / low attendanc
   assert.equal(y4.lowAttendance.length, 0);
   await ctx.models.AttendanceRecord.deleteMany({ student: od._id });
   await ctx.models.User.deleteOne({ _id: od._id });
+});
+
+test('breakdown: principal sees the whole college — departments with their years', async () => {
+  const r = await get('principal', '/attendance/summary/breakdown');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.groupBy, 'department');
+  assert.equal(r.body.department, 'All departments');
+  const cyber = r.body.groups.find((g) => g.department === 'CSE (Cyber Security)');
+  const ece = r.body.groups.find((g) => g.department === 'ECE');
+  assert.ok(r.body.groups.find((g) => g.department === 'AI & DS'), 'departments with no students still get a row');
+  assert.ok(!r.body.groups.find((g) => g.department === 'Science & Humanities'));
+  // Cyber: Y1 hosteller (unmarked), Y2 ×3 (present, absent, unmarked), Y3 hosteller (absent).
+  assert.deepEqual(cyber.students, { total: 5, present: 1, absent: 2, unmarked: 2 });
+  assert.deepEqual(cyber.years.map((y) => y.year), [1, 2, 3, 4]);
+  assert.deepEqual(cyber.years.find((y) => y.year === 1).hostellers, { total: 1, present: 0, absent: 0, unmarked: 1 });
+  assert.equal(cyber.years.find((y) => y.year === 2).lowCount, 1);
+  assert.equal(cyber.lowCount, 2);
+  assert.deepEqual(ece.students, { total: 1, present: 0, absent: 1, unmarked: 0 });
+  assert.equal(ece.lowCount, 1);
+  assert.equal(r.body.totals.students.total, 6, 'every department, every year');
+  assert.equal(r.body.totals.lowAttendance, 3);
+  assert.equal(cyber.lowAttendance, undefined, 'the college overview carries counts, not student lists');
+});
+
+test('breakdown: principal drill-down into one department lists years 1–4 with students', async () => {
+  const r = await get('principal', '/attendance/summary/breakdown?department=ECE');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.groupBy, 'year');
+  assert.deepEqual(r.body.groups.map((g) => g.year), [1, 2, 3, 4]);
+  const y2 = r.body.groups.find((g) => g.year === 2);
+  assert.deepEqual(y2.lowAttendance.map((s) => s.rollNo), ['E-001']);
+  assert.equal(y2.lowAttendance[0].parentPhone, '9811111111');
+  assert.ok(!JSON.stringify(r.body).includes('Y2-001'), 'only the chosen department');
+
+  const host = await get('principal', '/attendance/summary/students?stayType=hosteler&department=ECE&year=2');
+  assert.deepEqual(host.body.students.map((s) => s.rollNo), ['E-001']);
 });
 
 test('summary students: stayType=hosteler narrows the drill-down list within scope', async () => {

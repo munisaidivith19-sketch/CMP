@@ -126,9 +126,11 @@ function AttendanceHeroDashboard({ onQuickMark }) {
   const isHod = me.role === 'hod';
   const isAdmin = me.role === 'admin';
   const isFaculty = me.role === 'faculty';
+  // HOD: their department; Principal: the whole college (department → year → students).
+  const deptCards = isHod || me.role === 'principal';
 
   // 1. Low attendance count
-  const { data: lowData } = useGetLowAttendanceQuery({ range: 'semester' }, { skip: isHod });
+  const { data: lowData } = useGetLowAttendanceQuery({ range: 'semester' }, { skip: deptCards });
   const atRiskCount = lowData?.students?.length ?? 0;
 
   // 2. Pending corrections
@@ -140,7 +142,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
     date: todayKey(),
     ...(isBranchHod(me) && me.department ? { department: me.department } : {}),
   };
-  const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams, { skip: isHod });
+  const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams, { skip: deptCards });
 
   // 4. Today's periods (for faculty or HOD quick view)
   const { data: periodsData } = useGetMyPeriodsQuery(undefined, { pollingInterval: 30000 });
@@ -163,7 +165,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
     <div className="space-y-4">
       {/* 4 KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {isHod ? (
+        {deptCards ? (
           <HodDepartmentCards
             me={me}
             extraCard={
@@ -1954,11 +1956,13 @@ export default function StaffAttendance() {
     ...(canReviewODLeave ? [{ value: 'od-leave', label: 'OD / Leave Approvals', badge: pendingODLeaveCount }] : []),
   ];
 
+  // The Principal reads attendance college-wide: no per-class overview and no correction review.
+  const isPrincipal = me.role === 'principal';
   const secondaryTabs = [
     { value: 'sessions', label: 'History' },
-    { value: 'overview', label: me.role === 'faculty' ? 'Our Class' : 'Class Overview' },
+    ...(isPrincipal ? [] : [{ value: 'overview', label: me.role === 'faculty' ? 'Our Class' : 'Class Overview' }]),
     { value: 'low', label: 'Low Attendance' },
-    { value: 'corrections', label: 'Corrections' },
+    ...(isPrincipal ? [] : [{ value: 'corrections', label: 'Corrections' }]),
     ...(canViewReports ? [{ value: 'reports', label: 'Reports' }] : []),
     ...(isHodOrAdmin ? [{ value: 'faculty', label: 'Faculty Attendance' }] : []),
   ];

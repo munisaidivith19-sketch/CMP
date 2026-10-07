@@ -7,7 +7,7 @@ import { logActivity } from '../utils/activity.js';
 import { emitToUsers } from '../config/socket.js';
 import { dayFilter, dayKey, resolveRange, toDay, today } from '../utils/dates.js';
 import { LOW_ATTENDANCE_THRESHOLD, STUDENT_ROLES, percentage } from './attendanceController.js';
-import { DEPARTMENTS, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod } from '../constants.js';
+import { COLLEGE_WIDE_ROLES, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod } from '../constants.js';
 
 // Staff whose daily attendance is tracked.
 const TRACKED_STAFF = ['faculty', 'hod'];
@@ -174,7 +174,11 @@ const BREAKDOWN_FIELDS = 'name title rollNo section department year semester par
 export const departmentBreakdown = asyncHandler(async (req, res) => {
   const department = scopedDepartment(req.user, req.query.department);
   const day = dayOf(req.query.date);
-  const byDepartment = isFirstYearHod(req.user);
+  // Principal & the other college-wide roles, no department picked: the whole
+  // college, one row per department with its years inside (counts only — the
+  // student lists come from the per-department call, made on drill-down).
+  const collegeOverview = COLLEGE_WIDE_ROLES.includes(req.user.role) && !department;
+  const byDepartment = isFirstYearHod(req.user) || collegeOverview;
 
   const students = await User.find(studentFilter(department, {}, req.user)).select(BREAKDOWN_FIELDS).lean();
   const ids = students.map((s) => s._id);
@@ -194,23 +198,35 @@ export const departmentBreakdown = asyncHandler(async (req, res) => {
   const groupOf = (s) => {
     const key = byDepartment ? s.department || '—' : String(s.year || '—');
     if (!groups.has(key)) {
-      groups.set(key, { key, year: byDepartment ? 1 : s.year || null, department: byDepartment ? s.department || null : department, students: emptyTally(), hostellers: emptyTally(), lowAttendance: [] });
+      groups.set(key, {
+        key,
+        year: collegeOverview ? null : byDepartment ? 1 : s.year || null,
+        department: byDepartment ? s.department || null : department,
+        students: emptyTally(),
+        hostellers: emptyTally(),
+        lowAttendance: [],
+        ...(collegeOverview ? { years: new Map([1, 2, 3, 4].map((y) => [y, { year: y, students: emptyTally(), hostellers: emptyTally(), lowCount: 0 }])) } : {}),
+      });
     }
     return groups.get(key);
   };
 
   for (const s of students) {
     const g = groupOf(s);
+    const yr = g.years?.get(s.year);
     const st = status.get(String(s._id))?.status || 'unmarked';
-    g.students.total += 1;
-    g.students[st] += 1;
-    if (s.stayType === 'hosteler') {
-      g.hostellers.total += 1;
-      g.hostellers[st] += 1;
+    for (const t of yr ? [g, yr] : [g]) {
+      t.students.total += 1;
+      t.students[st] += 1;
+      if (s.stayType === 'hosteler') {
+        t.hostellers.total += 1;
+        t.hostellers[st] += 1;
+      }
     }
     const p = periods.get(String(s._id));
     const pct = p ? percentage(p.present, p.total) : null;
     if (p && pct < threshold) {
+      if (yr) yr.lowCount += 1;
       g.lowAttendance.push({
         _id: s._id, name: s.name, title: s.title, rollNo: s.rollNo, section: s.section, department: s.department, year: s.year,
         parentPhone: s.parentPhone || null, presentPeriods: p.present, totalPeriods: p.total, percentage: pct,
@@ -223,17 +239,26 @@ export const departmentBreakdown = asyncHandler(async (req, res) => {
     const years = isBranchHod(req.user) ? [2, 3, 4] : [1, 2, 3, 4];
     years.forEach((y) => groupOf({ year: y }));
   }
+  // …and, college-wide, every teaching department (Science & Humanities owns no students).
+  if (collegeOverview) DEPARTMENTS.filter((d) => d !== FIRST_YEAR_HOD_DEPT).forEach((d) => groupOf({ department: d }));
   const rows = [...groups.values()]
-    .map((g) => ({ ...g, lowAttendance: g.lowAttendance.sort((a, b) => a.percentage - b.percentage) }))
+    .map((g) => {
+      const row = { ...g, lowCount: g.lowAttendance.length, lowAttendance: g.lowAttendance.sort((a, b) => a.percentage - b.percentage) };
+      if (collegeOverview) {
+        row.years = [...g.years.values()];
+        delete row.lowAttendance;
+      }
+      return row;
+    })
     .sort((a, b) => (byDepartment ? String(a.key).localeCompare(String(b.key)) : (a.year || 99) - (b.year || 99)));
 
   const sum = (pick) => rows.reduce((t, g) => ({ total: t.total + pick(g).total, present: t.present + pick(g).present, absent: t.absent + pick(g).absent, unmarked: t.unmarked + pick(g).unmarked }), emptyTally());
   res.json({
     date: dayKey(day),
-    department: department || (byDepartment ? '1st Year (All Departments)' : 'All departments'),
+    department: department || (isFirstYearHod(req.user) ? '1st Year (All Departments)' : 'All departments'),
     groupBy: byDepartment ? 'department' : 'year',
     threshold,
-    totals: { students: sum((g) => g.students), hostellers: sum((g) => g.hostellers), lowAttendance: rows.reduce((t, g) => t + g.lowAttendance.length, 0) },
+    totals: { students: sum((g) => g.students), hostellers: sum((g) => g.hostellers), lowAttendance: rows.reduce((t, g) => t + g.lowCount, 0) },
     groups: rows,
   });
 });

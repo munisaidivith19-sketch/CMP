@@ -101,9 +101,9 @@ const DAY_STATUS = {
   unmarked: 'bg-slate-500/10 text-ink-soft',
 };
 
-/** Hostellers of one year (or one department's 1st year) with today's status. */
-function HostellerList({ group, groupBy, date }) {
-  const params = { date, stayType: 'hosteler', ...(groupBy === 'department' ? { department: group.department } : { year: group.year }) };
+/** Hostellers of one class group (year and/or department) with today's status. */
+function HostellerList({ department, year, date }) {
+  const params = { date, stayType: 'hosteler', ...(department ? { department } : {}), ...(year ? { year } : {}) };
   const { data, isLoading, error, refetch } = useGetSummaryStudentsQuery(params);
   if (isLoading) return <Skeleton className="h-40" />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
@@ -120,44 +120,120 @@ function HostellerList({ group, groupBy, date }) {
   );
 }
 
+const lowExtra = {
+  label: 'Attendance',
+  render: (s) => (
+    <span className="font-bold text-rose-600 dark:text-rose-300">
+      {s.percentage}% <span className="font-normal muted">({s.presentPeriods}/{s.totalPeriods})</span>
+    </span>
+  ),
+};
+
+/** College view: one department's low-attendance students of one year (fetched on drill-down). */
+function DepartmentLowList({ department, year, date }) {
+  const { data, isLoading, error, refetch } = useGetAttendanceBreakdownQuery({ date, department });
+  if (isLoading) return <Skeleton className="h-40" />;
+  if (error) return <ErrorState error={error} onRetry={refetch} />;
+  return <StudentTable students={data.groups.find((g) => g.year === year)?.lowAttendance || []} extra={lowExtra} />;
+}
+
+/**
+ * HOD: their department (or, for the Science & Humanities HOD, every
+ * department's 1st year). Principal / college-wide roles: the whole college,
+ * department → year → students.
+ */
 export default function HodDepartmentCards({ me, extraCard }) {
   const date = todayKey();
   const { data, isLoading, error, refetch } = useGetAttendanceBreakdownQuery({ date }, { pollingInterval: 60000 });
   const [open, setOpen] = useState(null); // 'present' | 'low' | 'hostel'
-  const [drill, setDrill] = useState(null); // a group, inside the low / hostel popup
+  const [dept, setDept] = useState(null); // college view: the department opened
+  const [drill, setDrill] = useState(null); // the year / group whose students are listed
 
   const show = (which) => {
+    setDept(null);
     setDrill(null);
     setOpen(which);
   };
   const close = () => {
     setOpen(null);
+    setDept(null);
     setDrill(null);
   };
+  const back = () => (drill ? setDrill(null) : setDept(null));
 
   const groupBy = data?.groupBy || 'year';
   const groups = data?.groups || [];
+  const college = groups.some((g) => Array.isArray(g.years));
   const t = data?.totals;
-  const scopeName = data?.department || me.department || 'Department';
+  const scopeName = college ? 'Whole college' : data?.department || me.department || 'Department';
   const dash = (v) => (isLoading ? '…' : error ? '—' : v);
+  const threshold = data?.threshold ?? 75;
+
+  // The rows on screen at this level, and how each one is named.
+  const rows = college && dept ? dept.years : groups;
+  const rowBy = college && dept ? 'year' : groupBy;
+  const lowOf = (g) => g.lowCount ?? g.lowAttendance?.length ?? 0;
+  const where = [dept?.department, drill && groupLabel(drill, rowBy)].filter(Boolean).join(' · ');
+  const breakdownWord = college || groupBy === 'department' ? 'department-wise' : 'year-wise';
+  const day = fmtClassDay(date, 'EEEE, dd MMM');
 
   const titles = {
-    present: { title: 'Total Department Present', subtitle: `${scopeName} · ${fmtClassDay(date, 'EEEE, dd MMM')}` },
-    low: drill
-      ? { title: `${groupLabel(drill, groupBy)} — Low Attendance`, subtitle: `Below ${data?.threshold ?? 75}% this semester · ${drill.lowAttendance.length} student${drill.lowAttendance.length === 1 ? '' : 's'}` }
-      : { title: 'Low Attendance', subtitle: `${scopeName} · below ${data?.threshold ?? 75}% this semester` },
-    hostel: drill
-      ? { title: `${groupLabel(drill, groupBy)} — Hostellers`, subtitle: `${drill.hostellers.present} present · ${drill.hostellers.absent} absent today` }
-      : { title: 'Total Hostellers', subtitle: `${scopeName} · today's attendance` },
+    present: { title: `Total ${college ? 'College' : 'Department'} Present`, subtitle: `${where || scopeName} · ${day}` },
+    low: { title: where ? `${where} — Low Attendance` : 'Low Attendance', subtitle: `${where || scopeName} · below ${threshold}% this semester` },
+    hostel: { title: where ? `${where} — Hostellers` : 'Total Hostellers', subtitle: `${where || scopeName} · attendance on ${day}` },
   };
+
+  // College "present" drills department → years; low / hostel always drill down to students.
+  const level = college && !dept ? 'dept' : 'year';
+  const rowOpens = open === 'present' ? college && level === 'dept' : true;
+  const openRow = (g) => (level === 'dept' ? setDept(g) : setDrill(g));
+
+  let body;
+  if (isLoading) body = <Skeleton className="h-40" />;
+  else if (error) body = <ErrorState error={error} onRetry={refetch} />;
+  else if (drill) {
+    body =
+      open === 'low' ? (
+        college ? (
+          <DepartmentLowList department={dept.department} year={drill.year} date={date} />
+        ) : (
+          <StudentTable students={drill.lowAttendance} extra={lowExtra} />
+        )
+      ) : (
+        <HostellerList
+          date={date}
+          department={college ? dept.department : groupBy === 'department' ? drill.department : undefined}
+          year={college || groupBy !== 'department' ? drill.year : undefined}
+        />
+      );
+  } else if (!rows.length) {
+    body = <EmptyState icon={Users} title="No students" text="No students are in your scope yet." />;
+  } else {
+    body = (
+      <div className="space-y-2">
+        {rows.map((g) => (
+          <GroupRow key={g.key || g.year} title={groupLabel(g, rowBy)} onClick={rowOpens ? () => openRow(g) : undefined}>
+            {open === 'present' && <Tallies t={g.students} />}
+            {open === 'hostel' && <Tallies t={g.hostellers} />}
+            {open === 'low' && <Count label="Low attendance" value={lowOf(g)} tone="bg-rose-500/10 text-rose-700 dark:text-rose-300" />}
+          </GroupRow>
+        ))}
+        {open === 'present' && (dept || t) && (
+          <GroupRow title={dept ? `${dept.department} total` : `${college ? 'College' : 'Department'} total`}>
+            <Tallies t={dept ? dept.students : t.students} />
+          </GroupRow>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
       <StatCard
         icon={UserCheck}
-        label="Total Dept Present"
+        label={college ? 'Total College Present' : 'Total Dept Present'}
         value={dash(t ? `${t.students.present} / ${t.students.total}` : '0 / 0')}
-        hint={t ? `${t.students.absent} absent${t.students.unmarked ? ` · ${t.students.unmarked} not marked` : ''} · tap for year-wise` : 'Present today / total students'}
+        hint={t ? `${t.students.absent} absent${t.students.unmarked ? ` · ${t.students.unmarked} not marked` : ''} · tap for ${breakdownWord}` : 'Present today / total students'}
         gradient="from-violet-500 to-indigo-600"
         onClick={() => show('present')}
       />
@@ -165,7 +241,7 @@ export default function HodDepartmentCards({ me, extraCard }) {
         icon={AlertTriangle}
         label="Low Attendance"
         value={dash(t?.lowAttendance ?? 0)}
-        hint={`Below ${data?.threshold ?? 75}% · tap for year-wise`}
+        hint={`Below ${threshold}% · tap for ${breakdownWord}`}
         gradient="from-rose-500 to-pink-600"
         onClick={() => show('low')}
       />
@@ -173,53 +249,21 @@ export default function HodDepartmentCards({ me, extraCard }) {
         icon={BedDouble}
         label="Total Hostellers"
         value={dash(t?.hostellers.total ?? 0)}
-        hint={t ? `${t.hostellers.present} present · ${t.hostellers.absent} absent today` : 'Hostellers in the department'}
+        hint={t ? `${t.hostellers.present} present · ${t.hostellers.absent} absent today` : `Hostellers in the ${college ? 'college' : 'department'}`}
         gradient="from-emerald-400 to-teal-600"
         onClick={() => show('hostel')}
       />
       {extraCard}
 
       <Modal open={Boolean(open)} onClose={close} size="lg" title={open ? titles[open].title : ''} subtitle={open ? titles[open].subtitle : ''}>
-        {isLoading ? (
-          <Skeleton className="h-40" />
-        ) : error ? (
-          <ErrorState error={error} onRetry={refetch} />
-        ) : drill ? (
-          <div className="space-y-3">
-            <button type="button" onClick={() => setDrill(null)} className="inline-flex items-center gap-1.5 text-xs font-bold text-primary-600 hover:underline dark:text-primary-300">
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to {groupBy === 'department' ? 'departments' : 'years'}
+        <div className="space-y-3">
+          {(drill || dept) && !isLoading && !error && (
+            <button type="button" onClick={back} className="inline-flex items-center gap-1.5 text-xs font-bold text-primary-600 hover:underline dark:text-primary-300">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to {drill && (college || groupBy === 'year') ? 'years' : 'departments'}
             </button>
-            {open === 'low' ? (
-              <StudentTable
-                students={drill.lowAttendance}
-                extra={{ label: 'Attendance', render: (s) => <span className="font-bold text-rose-600 dark:text-rose-300">{s.percentage}% <span className="font-normal muted">({s.presentPeriods}/{s.totalPeriods})</span></span> }}
-              />
-            ) : (
-              <HostellerList group={drill} groupBy={groupBy} date={date} />
-            )}
-          </div>
-        ) : !groups.length ? (
-          <EmptyState icon={Users} title="No students" text="No students are in your scope yet." />
-        ) : (
-          <div className="space-y-2">
-            {groups.map((g) => (
-              <GroupRow
-                key={g.key}
-                title={groupLabel(g, groupBy)}
-                onClick={open === 'present' ? undefined : () => setDrill(g)}
-              >
-                {open === 'present' && <Tallies t={g.students} />}
-                {open === 'hostel' && <Tallies t={g.hostellers} />}
-                {open === 'low' && <Count label="Low attendance" value={g.lowAttendance.length} tone="bg-rose-500/10 text-rose-700 dark:text-rose-300" />}
-              </GroupRow>
-            ))}
-            {open === 'present' && t && (
-              <GroupRow title="Department total">
-                <Tallies t={t.students} />
-              </GroupRow>
-            )}
-          </div>
-        )}
+          )}
+          {body}
+        </div>
       </Modal>
     </>
   );

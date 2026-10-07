@@ -19,7 +19,7 @@ import {
 import { Modal } from '../../components/ui/Modal';
 import { Avatar, Button, EmptyState, cn } from '../../components/ui/primitives';
 import { StatusBadge } from '../../components/insights';
-import { fmtClassDay, timeAgo, displayName, titleCase } from '../../utils/format';
+import { fmtClassDay, fmtStamp, timeAgo, displayName, titleCase } from '../../utils/format';
 import { GATE_PASS_REGARDING } from '../../utils/constants';
 import { EmergencyBadge, isEmergency } from './EmergencyGatePass';
 
@@ -258,7 +258,7 @@ export default function GatePassListModal({ type, open, onClose, passes = [], li
                       <>
                         <div className="flex items-center gap-1.5 text-ink-soft dark:text-ink-muted">
                           <LogOut className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                          <span>Left campus: <strong>{p.actualExit ? fmtClassDay(p.actualExit, 'dd MMM, h:mm a') : '—'}</strong> ({timeAgo(p.actualExit)})</span>
+                          <span>Left campus: <strong>{p.actualExit ? fmtStamp(p.actualExit) : '—'}</strong> ({timeAgo(p.actualExit)})</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-ink-soft dark:text-ink-muted">
                           <Calendar className="h-3.5 w-3.5 shrink-0 text-sky-500" />
@@ -271,7 +271,7 @@ export default function GatePassListModal({ type, open, onClose, passes = [], li
                       <>
                         <div className="flex items-center gap-1.5 text-ink-soft dark:text-ink-muted">
                           <LogOut className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                          <span>Exited: <strong>{p.actualExit ? fmtClassDay(p.actualExit, 'dd MMM, h:mm a') : '—'}</strong></span>
+                          <span>Exited: <strong>{p.actualExit ? fmtStamp(p.actualExit) : '—'}</strong></span>
                         </div>
                         <div className="flex items-center gap-1.5 text-ink-soft dark:text-ink-muted">
                           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
@@ -284,7 +284,7 @@ export default function GatePassListModal({ type, open, onClose, passes = [], li
                       <>
                         <div className="flex items-center gap-1.5 text-ink-soft dark:text-ink-muted">
                           <LogIn className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                          <span>Returned: <strong>{p.actualReturn ? fmtClassDay(p.actualReturn, 'dd MMM, h:mm a') : '—'}</strong></span>
+                          <span>Returned: <strong>{p.actualReturn ? fmtStamp(p.actualReturn) : '—'}</strong></span>
                         </div>
                         <div className="flex items-center gap-1.5 text-ink-soft dark:text-ink-muted">
                           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" />

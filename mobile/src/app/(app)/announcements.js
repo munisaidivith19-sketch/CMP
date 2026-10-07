@@ -4,6 +4,7 @@ import { Avatar, Badge, Card, EmptyState, ErrorState, Header, Loading, Screen, T
 import { useGetAnnouncementsQuery } from '../../services/api';
 import { colors } from '../../theme';
 import { fmtDateTime, timeAgo, displayName } from '../../utils/format';
+import FullImage from '../../components/FullImage';
 
 export default function Announcements() {
   const { data, isLoading, isFetching, error, refetch } = useGetAnnouncementsQuery({ limit: 40 });
@@ -36,6 +37,7 @@ export default function Announcements() {
                 {a.priority !== 'normal' ? <Badge label={a.priority} color={a.priority === 'urgent' ? 'danger' : 'warning'} /> : null}
               </View>
               <T v="body">{a.content}</T>
+              {a.image ? <FullImage uri={a.image} /> : null}
               {a.deadline ? <T v="small" style={{ color: colors.danger }}>Deadline: {fmtDateTime(a.deadline)}</T> : null}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Avatar user={a.author} size={26} />

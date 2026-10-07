@@ -314,3 +314,24 @@ export function ProgressBar({ value, max, className }) {
   );
 }
 
+
+/**
+ * Shows a whole image — never cropped. The picture is letterboxed with
+ * object-contain over a blurred copy of itself, so any aspect ratio fits the box
+ * without empty bars or cut-off edges. Size the box with className
+ * (e.g. "h-40", "max-h-[70vh]"); with no height the image keeps its natural ratio.
+ */
+export function FullImage({ src, alt = '', className, imgClassName, fit }) {
+  if (!src) return null;
+  return (
+    <div className={cn('relative overflow-hidden bg-black/5 dark:bg-white/5', className)}>
+      <img src={src} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        className={cn('relative mx-auto block object-contain', fit ? 'h-full w-full' : 'h-auto max-h-[inherit] w-auto max-w-full', imgClassName)}
+      />
+    </div>
+  );
+}

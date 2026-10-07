@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { BookOpen, Download, FileText, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { BookOpen, ClipboardList, Download, FileText, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useDeleteStudyMaterialMutation, useGetMyTeachingAssignmentsQuery, useGetStudyMaterialsQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton } from '../../components/ui/primitives';
@@ -9,10 +9,13 @@ import { ConfirmDialog } from '../../components/ui/Modal';
 import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS } from '../../utils/constants';
 import { errMsg, fmtClassDay, titleCase, displayName } from '../../utils/format';
 import UploadMaterialModal from './UploadMaterialModal';
+import MaterialStatusModal from './MaterialStatusModal';
 import StudyAssistant from '../../components/StudyAssistant';
 
 const STUDENT_ROLES = ['student', 'club_admin'];
 const WRITE_ROLES = ['faculty', 'hod', 'admin'];
+// Upload status of each class — HOD (own department) and Principal only; the API enforces it.
+const STATUS_ROLES = ['hod', 'principal'];
 
 const fmtSize = (n) => (!n ? '' : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
 
@@ -63,6 +66,7 @@ export default function StudyMaterials() {
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(undefined); // undefined = closed, null = new, object = edit
   const [del, setDel] = useState(null);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   const { data, isLoading, error, refetch } = useGetStudyMaterialsQuery({
     page,
@@ -100,10 +104,19 @@ export default function StudyMaterials() {
         title="Study Materials"
         subtitle={isStudent ? 'Notes, question banks and resources for your class.' : 'Class notes, question banks and other resources.'}
         actions={
-          canWrite && (
-            <Button icon={Plus} onClick={() => setEditing(null)}>
-              Upload material
-            </Button>
+          (canWrite || STATUS_ROLES.includes(me.role)) && (
+            <div className="flex flex-wrap gap-2">
+              {STATUS_ROLES.includes(me.role) && (
+                <Button variant="outline" icon={ClipboardList} onClick={() => setStatusOpen(true)}>
+                  Status
+                </Button>
+              )}
+              {canWrite && (
+                <Button icon={Plus} onClick={() => setEditing(null)}>
+                  Upload material
+                </Button>
+              )}
+            </div>
           )
         }
       />
@@ -170,6 +183,7 @@ export default function StudyMaterials() {
         </div>
       </div>
 
+      {STATUS_ROLES.includes(me.role) && <MaterialStatusModal open={statusOpen} onClose={() => setStatusOpen(false)} me={me} />}
       {canWrite && <UploadMaterialModal open={editing !== undefined} material={editing} onClose={() => setEditing(undefined)} />}
       <ConfirmDialog
         open={Boolean(del)}

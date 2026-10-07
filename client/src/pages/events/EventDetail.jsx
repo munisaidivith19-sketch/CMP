@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, CalendarDays, Clock, Download, MapPin, Pencil, Star, Trash2, UserCheck, Users } from 'lucide-react';
 import { useDeleteEventMutation, useGetEventQuery, useGetParticipantsQuery, useMarkAttendanceMutation } from '../../services/api';
-import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, ErrorState, PageLoader, ProgressBar, cn } from '../../components/ui/primitives';
+import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, ErrorState, FullImage, PageLoader, ProgressBar, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { RegisterButton, ReportButton } from '../../components/domain';
 import EventForm from './EventForm';
@@ -95,7 +95,7 @@ export default function EventDetail() {
       </Link>
 
       <div className={cn('relative overflow-hidden rounded-[32px] bg-gradient-to-br', style.grad)}>
-        {ev.poster && <img src={ev.poster} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+        {ev.poster && <img src={ev.poster} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-xl" />}
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         <div className="relative flex min-h-[260px] flex-col justify-end p-6 text-white sm:p-8">
           <div className="flex flex-wrap gap-2">
@@ -118,6 +118,12 @@ export default function EventDetail() {
           </div>
         </div>
       </div>
+
+      {ev.poster && (
+        <a href={ev.poster} target="_blank" rel="noopener noreferrer" className="block" title="Open the full-size poster">
+          <FullImage src={ev.poster} alt={`${ev.title} poster`} className="flex max-h-[80vh] justify-center rounded-[32px]" />
+        </a>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">

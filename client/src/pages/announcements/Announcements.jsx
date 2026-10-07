@@ -9,32 +9,45 @@ import {
 } from '../../services/api';
 import { Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { AnnouncementItem } from '../../components/domain';
+import { AnnouncementDetail, AnnouncementItem } from '../../components/domain';
 import AnnouncementForm from './AnnouncementForm';
 import { selectIsModerator, selectUser } from '../../features/authSlice';
 import { PRIORITIES } from '../../utils/constants';
 import { errMsg } from '../../utils/format';
 
+const SCOPE_TABS = [
+  { value: '', label: 'All' },
+  { value: 'all', label: 'Main' },
+  { value: 'department', label: 'Department' },
+  { value: 'year', label: 'Year' },
+  { value: 'section', label: 'Section' },
+  { value: 'club', label: 'Clubs' },
+];
+
 export default function Announcements() {
   const user = useSelector(selectUser);
   const isMod = useSelector(selectIsModerator);
   const [priority, setPriority] = useState('');
+  const [scope, setScope] = useState('');
+  const [viewing, setViewing] = useState(null);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(null); // null | 'new' | announcement
   const [deleting, setDeleting] = useState(null);
 
-  const { data, isFetching, error, refetch } = useGetAnnouncementsQuery({ priority: priority || undefined, q: q || undefined, page });
+  const { data, isFetching, error, refetch } = useGetAnnouncementsQuery({ priority: priority || undefined, scope: scope || undefined, q: q || undefined, page });
   const [pin] = useTogglePinAnnouncementMutation();
   const [remove, { isLoading: removing }] = useDeleteAnnouncementMutation();
-  const canPost = isMod || user.role === 'club_admin' || user.clubs?.length > 0;
+  // Main: Principal. Department / year / section: Principal + HOD. Clubs: club managers.
+  const canPost = ['principal', 'hod'].includes(user.role) || isMod || user.role === 'club_admin' || user.clubs?.length > 0;
+  const canPin = (a) => ['admin', 'principal'].includes(user.role) || (a.canEdit && ['faculty', 'hod'].includes(user.role));
 
   return (
     <div>
       <PageHeader
         icon={Megaphone}
         title="Announcements"
-        subtitle="Official notices, deadlines and club updates."
+        subtitle="Campus-wide notices, department / year / section updates and club news."
         actions={
           canPost && (
             <Button icon={Plus} onClick={() => setEditing('new')}>
@@ -43,6 +56,23 @@ export default function Announcements() {
           )
         }
       />
+
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Announcement type">
+        {SCOPE_TABS.map((t) => (
+          <button
+            key={t.value || 'all'}
+            role="tab"
+            aria-selected={scope === t.value}
+            onClick={() => {
+              setScope(t.value);
+              setPage(1);
+            }}
+            className={cn('chip shrink-0', scope === t.value && 'chip-active')}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
       <Card className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
         <div className="relative flex-1">
@@ -57,7 +87,7 @@ export default function Announcements() {
             className="input pl-11"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {['', ...PRIORITIES].map((p) => (
             <button
               key={p || 'all'}
@@ -87,9 +117,10 @@ export default function Announcements() {
             <AnnouncementItem
               key={a._id}
               a={a}
+              onOpen={setViewing}
               actions={
                 <>
-                  {isMod && (
+                  {canPin(a) && (
                     <button
                       className={cn('btn-icon btn-ghost h-8 w-8', a.isPinned && 'text-primary-500')}
                       title={a.isPinned ? 'Unpin' : 'Pin to top'}
@@ -120,6 +151,7 @@ export default function Announcements() {
         </Card>
       )}
 
+      <AnnouncementDetail a={viewing} onClose={() => setViewing(null)} />
       <AnnouncementForm open={Boolean(editing)} onClose={() => setEditing(null)} announcement={editing === 'new' ? null : editing} />
       <ConfirmDialog
         open={Boolean(deleting)}

@@ -4,12 +4,12 @@ import { useSelector } from 'react-redux';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { CalendarDays, CheckCircle2, Clock, Flag, MapPin, Pin, Star, Users } from 'lucide-react';
-import { Avatar, Badge, Button, Card, CategoryBadge, ProgressBar, cn } from './ui/primitives';
+import { Avatar, Badge, Button, Card, CategoryBadge, FullImage, ProgressBar, cn } from './ui/primitives';
 import { Modal } from './ui/Modal';
 import { Select, Textarea } from './ui/form';
 import { useCancelRegistrationMutation, useCreateReportMutation, useRegisterEventMutation } from '../services/api';
 import { selectUser } from '../features/authSlice';
-import { catStyle, REPORT_REASONS, STUDENT_ROLES } from '../utils/constants';
+import { catStyle, REPORT_REASONS, ROLE_LABELS, STUDENT_ROLES, YEAR_LABELS } from '../utils/constants';
 import { errMsg, friendlyDay, fmtTime, timeAgo, displayName } from '../utils/format';
 
 /* ── Event registration button ──────────────────────────────────── */
@@ -79,7 +79,7 @@ export function EventCard({ event, delay = 0 }) {
       <Card hover className="flex h-full flex-col overflow-hidden p-0">
         <div className={cn('relative h-40 overflow-hidden bg-gradient-to-br', style.grad)}>
           {event.poster ? (
-            <img src={event.poster} alt="" className="h-full w-full object-cover transition-transform duration-700 ease-smooth group-hover:scale-105" />
+            <FullImage src={event.poster} fit className="absolute inset-0 h-full w-full" imgClassName="transition-transform duration-700 ease-smooth group-hover:scale-105" />
           ) : (
             <div className="absolute inset-0 opacity-30 [background:radial-gradient(circle_at_20%_20%,white_0,transparent_40%),radial-gradient(circle_at_80%_70%,white_0,transparent_35%)]" />
           )}
@@ -174,28 +174,47 @@ const PRIORITY = {
   normal: { color: 'info', bar: 'from-sky-400 to-primary-500' },
 };
 
-export function AnnouncementItem({ a, compact, actions }) {
+/** Who an announcement is addressed to, e.g. "CSE · 3rd Year · Section A". */
+export function audienceLabel(audience = {}) {
+  switch (audience.scope) {
+    case 'club':
+      return audience.club?.name || 'Club members';
+    case 'department':
+      return audience.department;
+    case 'year':
+      return `${audience.department || 'All departments'} · ${YEAR_LABELS[audience.year] || `Year ${audience.year}`}`;
+    case 'section':
+      return `${audience.department} · ${YEAR_LABELS[audience.year] || `Year ${audience.year}`} · Section ${audience.section}`;
+    default:
+      return 'Main · All campus';
+  }
+}
+
+export function AnnouncementItem({ a, compact, actions, onOpen }) {
   const p = PRIORITY[a.priority] || PRIORITY.normal;
-  const scopeLabel =
-    a.audience?.scope === 'club'
-      ? a.audience.club?.name
-      : a.audience?.scope === 'department'
-        ? a.audience.department
-        : a.audience?.scope === 'year'
-          ? `Year ${a.audience.year}`
-          : 'Everyone';
+  const open = onOpen ? () => onOpen(a) : undefined;
   return (
-    <div className="relative flex gap-4 overflow-hidden rounded-3xl bg-white/50 p-4 transition-all duration-300 hover:bg-white/80 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]">
+    <div
+      role={open ? 'button' : undefined}
+      tabIndex={open ? 0 : undefined}
+      onClick={open}
+      onKeyDown={open ? (e) => e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open()) : undefined}
+      className={cn(
+        'relative flex gap-4 overflow-hidden rounded-3xl bg-white/50 p-4 transition-all duration-300 hover:bg-white/80 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]',
+        open && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400'
+      )}
+    >
       <span className={cn('absolute inset-y-3 left-0 w-1 rounded-r-full bg-gradient-to-b', p.bar)} />
       <div className="min-w-0 flex-1 pl-1">
         <div className="flex flex-wrap items-center gap-2">
           {a.isPinned && <Pin className="h-3.5 w-3.5 fill-primary-500 text-primary-500" />}
           <Badge color={p.color}>{a.priority}</Badge>
-          <span className="text-[11px] font-semibold muted">{scopeLabel}</span>
+          <span className="text-[11px] font-semibold muted">{audienceLabel(a.audience)}</span>
           <span className="text-[11px] text-ink-muted">· {timeAgo(a.createdAt)}</span>
         </div>
-        <h4 className="mt-1.5 font-bold leading-snug">{a.title}</h4>
-        <p className={cn('mt-1 whitespace-pre-line text-sm muted', compact && 'line-clamp-2')}>{a.content}</p>
+        <h4 className="mt-1.5 break-words font-bold leading-snug">{a.title}</h4>
+        <p className={cn('mt-1 whitespace-pre-line break-words text-sm muted', compact ? 'line-clamp-2' : 'line-clamp-4')}>{a.content}</p>
+        {a.image && <FullImage src={a.image} className={cn('mt-3 flex justify-center rounded-2xl', compact ? 'max-h-48' : 'max-h-[28rem]')} />}
         {!compact && (
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <span className="flex items-center gap-2 text-xs font-semibold">
@@ -207,15 +226,78 @@ export function AnnouncementItem({ a, compact, actions }) {
               </Badge>
             )}
             {a.attachments?.map((f) => (
-              <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" className="chip">
+              <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" className="chip" onClick={(e) => e.stopPropagation()}>
                 📎 {f.name || 'Attachment'}
               </a>
             ))}
           </div>
         )}
       </div>
-      {actions && <div className="flex shrink-0 items-start gap-1">{actions}</div>}
+      {actions && (
+        <div className="flex shrink-0 items-start gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+          {actions}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** The full announcement card: image, full text, who shared it and when. */
+export function AnnouncementDetail({ a, onClose }) {
+  if (!a) return null;
+  const p = PRIORITY[a.priority] || PRIORITY.normal;
+  const author = a.author;
+  const authorRole = author?.designation || ROLE_LABELS[author?.role];
+  return (
+    <Modal open onClose={onClose} size="lg" title={a.title} subtitle={audienceLabel(a.audience)}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {a.isPinned && (
+            <Badge color="primary" icon={Pin}>
+              Pinned
+            </Badge>
+          )}
+          <Badge color={p.color}>{a.priority}</Badge>
+          {a.deadline && (
+            <Badge color="danger" icon={Clock}>
+              Due {format(new Date(a.deadline), 'dd MMM yyyy, h:mm a')}
+            </Badge>
+          )}
+        </div>
+        {a.image && (
+          <a href={a.image} target="_blank" rel="noopener noreferrer" className="block" title="Open the full-size image">
+            <FullImage src={a.image} className="flex max-h-[70vh] justify-center rounded-3xl" />
+          </a>
+        )}
+        <p className="whitespace-pre-line break-words text-sm leading-relaxed">{a.content}</p>
+        {a.attachments?.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {a.attachments.map((f) => (
+              <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" className="chip">
+                📎 {f.name || 'Attachment'}
+              </a>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-3 rounded-3xl bg-white/50 p-3 dark:bg-white/[0.04]">
+          <Avatar user={author} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs muted">Shared by</p>
+            <p className="truncate text-sm font-bold">
+              {displayName(author) || 'Unknown'}
+              {authorRole && <span className="font-medium muted"> · {authorRole}</span>}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs font-semibold">{format(new Date(a.createdAt), 'dd MMM yyyy, h:mm a')}</p>
+            <p className="text-[11px] muted">{timeAgo(a.createdAt)}</p>
+            {a.updatedAt && new Date(a.updatedAt) - new Date(a.createdAt) > 60000 && (
+              <p className="text-[11px] muted">Edited {timeAgo(a.updatedAt)}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

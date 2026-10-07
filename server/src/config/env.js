@@ -152,7 +152,7 @@ env.collegeName = (process.env.COLLEGE_NAME || 'VEXON').trim().slice(0, 90);
 env.location = {
   collegeLatitude: decimal('COLLEGE_LATITUDE', 13.263803, -90, 90),
   collegeLongitude: decimal('COLLEGE_LONGITUDE', 80.108414, -180, 180),
-  radiusMeters: num('LOCATION_GEOFENCE_RADIUS_METERS', 300, { max: 5000 }),
+  radiusMeters: num('LOCATION_GEOFENCE_RADIUS_METERS', 500, { max: 5000 }),
   maxAccuracyMeters: num('LOCATION_MAX_ACCURACY_METERS', 50, { max: 1000 }),
   maxAgeSeconds: num('LOCATION_MAX_AGE_SECONDS', 30, { max: 600 }),
   returnCredentialMinutes: num('RETURN_CREDENTIAL_MINUTES', 15, { max: 120 }),

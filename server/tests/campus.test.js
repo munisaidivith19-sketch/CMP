@@ -271,11 +271,14 @@ test('lost & found: owners can close or withdraw their own open reports only', a
 // ── Live signals for the existing features ────────────────────────
 
 test('existing features: new announcement / event changes reach every connected client', async () => {
+  // Only the Principal publishes the main campus-wide announcement.
+  const principal = await ctx.createUser({ role: 'principal' });
+  const p = await ctx.loginWeb(principal);
   const admin = await ctx.createUser({ role: 'admin' });
   const a = await ctx.loginWeb(admin);
   const ann = nextEvent(studentSocket, 'announcement:changed', (p) => p.action === 'created');
   const note = nextEvent(studentSocket, 'notification', (n) => n.type === 'announcement');
-  const res = await ctx.request('POST', '/announcements', { token: a.token, body: { title: 'Holiday on Friday', content: 'Campus closed for the festival.' } });
+  const res = await ctx.request('POST', '/announcements', { token: p.token, body: { title: 'Holiday on Friday', content: 'Campus closed for the festival.' } });
   assert.equal(res.status, 201, JSON.stringify(res.body));
   await ann;
   await note;

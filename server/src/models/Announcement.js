@@ -12,9 +12,12 @@ const announcementSchema = new Schema(
       scope: { type: String, enum: AUDIENCE_SCOPES, default: 'all' },
       department: { type: String, trim: true },
       year: { type: Number, min: 1, max: 6 },
+      section: { type: String, trim: true, uppercase: true, maxlength: 10 },
       club: { type: Schema.Types.ObjectId, ref: 'Club' },
     },
     priority: { type: String, enum: ANNOUNCEMENT_PRIORITIES, default: 'normal' },
+    // Optional cover image shown on the full announcement card.
+    image: { type: String, trim: true, maxlength: 500 },
     attachments: [
       {
         url: { type: String, required: true },

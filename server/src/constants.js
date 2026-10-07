@@ -102,7 +102,15 @@ export const DISCUSSION_CATEGORIES = [
 ];
 
 export const ANNOUNCEMENT_PRIORITIES = ['normal', 'important', 'urgent'];
-export const AUDIENCE_SCOPES = ['all', 'department', 'year', 'club'];
+// all = the main campus-wide announcement; department / year / section narrow it
+// to one class level of one department (year may span every department).
+export const AUDIENCE_SCOPES = ['all', 'department', 'year', 'section', 'club'];
+// Only the Principal publishes the main (campus-wide) announcement.
+export const MAIN_ANNOUNCEMENT_ROLES = ['principal'];
+// Department / year / section announcements: Principal anywhere, HOD in their own scope.
+export const CLASS_ANNOUNCEMENT_ROLES = ['principal', 'hod'];
+// Oversight roles that read every announcement regardless of audience.
+export const ANNOUNCEMENT_READ_ALL_ROLES = ['admin', 'principal', 'chairman', 'dean', 'ao'];
 
 export const REPORT_REASONS = ['spam', 'harassment', 'inappropriate', 'misinformation', 'other'];
 export const REPORT_TARGETS = ['discussion', 'reply', 'event', 'announcement', 'club', 'user'];

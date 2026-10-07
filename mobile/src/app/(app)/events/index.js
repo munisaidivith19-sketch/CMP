@@ -37,7 +37,7 @@ export default function Events() {
           renderItem={({ item: e }) => (
             <Card onPress={() => router.push(`/events/${e._id}`)} style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
               {e.poster ? (
-                <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 54, height: 54, borderRadius: 18, backgroundColor: colors.primarySoft }} resizeMode="cover" />
+                <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 54, height: 54, borderRadius: 18, backgroundColor: colors.primarySoft }} resizeMode="contain" />
               ) : (
                 <LinearGradient colors={gradients.sky} style={{ width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
                   <T style={{ color: '#fff', fontSize: 10, fontFamily: fonts.bold }}>{format(new Date(e.startDate), 'MMM').toUpperCase()}</T>

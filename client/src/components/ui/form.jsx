@@ -1,7 +1,7 @@
 import { forwardRef, useRef, useState } from 'react';
 import { ChevronDown, FileText, ImagePlus, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { cn } from './primitives';
+import { FullImage, cn } from './primitives';
 import { useUploadFileMutation } from '../../services/api';
 import { errMsg } from '../../utils/format';
 import { SECTIONS } from '../../utils/constants';
@@ -213,7 +213,7 @@ export function ImageUpload({ label, value, onChange, hint, aspect = 'aspect-[16
       >
         {value ? (
           <>
-            <img src={value} alt="" className="h-full w-full object-cover" />
+            <FullImage src={value} fit className="absolute inset-0 h-full w-full" />
             <button
               type="button"
               aria-label="Remove image"

@@ -148,14 +148,14 @@ test('only an approved pass that has been used to exit can start a return', asyn
   assert.equal((await checkLocation(id, student, north(10))).status, 422);
 });
 
-test('300 m geofence: 150/250/299/300 m accepted, 301 m rejected without a credential', async () => {
+test('500 m geofence: 150/300/499/500 m accepted, 501 m rejected without a credential', async () => {
   const { id, student } = await passFor();
-  for (const m of [150, 250, 299, 300]) {
+  for (const m of [150, 300, 499, 500]) {
     const res = await checkLocation(id, student, north(m));
     assert.equal(res.status, 200, `${m} m: ${JSON.stringify(res.body)}`);
   }
   const before = (await ctx.models.GatePass.findById(id).select('+returnCode').lean()).returnCode;
-  const res = await checkLocation(id, student, north(301));
+  const res = await checkLocation(id, student, north(501));
   assert.equal(res.status, 422);
   assert.equal(res.body.errors[0].code, 'outside_geofence');
   assert.equal(res.body.message, 'Your current location could not be verified as being within the campus area. Please enter the campus and try again.');

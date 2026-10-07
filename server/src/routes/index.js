@@ -401,12 +401,16 @@ const announcementRules = (optional = false) => {
     body('priority').optional().isIn(ANNOUNCEMENT_PRIORITIES),
     body('audience.scope').optional().isIn(AUDIENCE_SCOPES),
     body('audience.club').optional({ values: 'falsy' }).isMongoId(),
-    body('audience.year').optional({ values: 'falsy' }).isInt({ min: 1, max: 6 }),
+    body('audience.department').optional({ values: 'falsy' }).isString().isIn(DEPARTMENTS).withMessage('Choose a valid department'),
+    body('audience.year').optional({ values: 'falsy' }).isInt({ min: 1, max: 4 }),
+    body('audience.section').optional({ values: 'falsy' }).isString().bail().trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
     body('deadline').optional({ values: 'falsy' }).isISO8601().toDate(),
+    safeUrl('image'),
     body('attachments').optional().isArray({ max: 5 }),
     body('attachments.*.url')
       .optional()
-      .custom((v) => String(v).startsWith('/uploads/') || /^https:\/\//.test(v)),
+      .isString()
+      .custom((v) => (v.startsWith('/uploads/') && insideUploads(v)) || /^https:\/\//.test(v)),
     validate,
   ];
 };
@@ -414,7 +418,7 @@ router.get('/announcements', ann.listAnnouncements);
 router.post('/announcements', writeLimiter, ...announcementRules(), ann.createAnnouncement);
 router.put('/announcements/:id', idParam('id'), ...announcementRules(true), ann.updateAnnouncement);
 router.delete('/announcements/:id', idParam('id'), ann.deleteAnnouncement);
-router.patch('/announcements/:id/pin', idParam('id'), authorize('admin', 'faculty', 'hod'), ann.togglePin);
+router.patch('/announcements/:id/pin', idParam('id'), authorize('admin', 'principal', 'faculty', 'hod'), ann.togglePin);
 
 // ── Student achievements ───────────────────────────────────────────
 // Only the Principal and HODs post (HOD: own department, enforced in the
@@ -989,9 +993,12 @@ const summaryQuery = [
   query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
   query('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
   query('status').optional({ values: 'falsy' }).isIn(['present', 'absent', 'leave', 'unmarked']),
+  query('stayType').optional({ values: 'falsy' }).isIn(STAY_TYPES),
   validate,
 ];
 router.get('/attendance/summary', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.attendanceSummary);
+// Per-year (1st-year HOD: per-department) present / hostellers / low-attendance overview.
+router.get('/attendance/summary/breakdown', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.departmentBreakdown);
 router.get('/attendance/summary/students', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.summaryStudents);
 router.get('/attendance/summary/faculty', authorize(...SUMMARY_VIEW), ...summaryQuery, staffAttendance.summaryFaculty);
 
@@ -1237,6 +1244,16 @@ const materialWriteRules = (optional = false) => {
 
 router.get('/study-materials', authorize(...STUDY_MATERIAL_VIEW_ROLES), materials.listMaterials);
 router.get('/study-materials/my-assignments', authorize('faculty'), materials.getMyAssignments);
+// Upload status per subject of one class — HOD (own scope) and Principal only.
+router.get(
+  '/study-materials/status',
+  authorize('hod', 'principal'),
+  query('department').optional({ values: 'falsy' }).trim().isIn(DEPARTMENTS),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
+  query('semester').isInt({ min: 1, max: 8 }).withMessage('Select a semester').toInt(),
+  validate,
+  materials.getUploadStatus
+);
 router.get('/study-materials/:id', authorize(...STUDY_MATERIAL_VIEW_ROLES), idParam('id'), materials.getMaterial);
 router.post('/study-materials', writeLimiter, authorize(...STUDY_MATERIAL_WRITE_ROLES), ...materialWriteRules(), materials.createMaterial);
 router.put('/study-materials/:id', idParam('id'), authorize(...STUDY_MATERIAL_WRITE_ROLES), ...materialWriteRules(true), materials.updateMaterial);

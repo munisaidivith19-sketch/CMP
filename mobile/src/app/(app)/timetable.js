@@ -58,7 +58,6 @@ export default function Timetable() {
   };
   const ourClass = isFaculty && scope === 'class' ? data?.classInCharge : null;
   const noOurClass = isFaculty && scope === 'class' && data && !data.classInCharge;
-  const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   const [now, setNow] = useState(hhmm());
   useEffect(() => {
     const t = setInterval(() => setNow(hhmm()), 30000);

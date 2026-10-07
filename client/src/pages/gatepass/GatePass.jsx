@@ -44,6 +44,7 @@ import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, Select, Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
 import { errMsg, fmtClassDay, timeAgo, titleCase, todayKey, displayName } from '../../utils/format';
+import { fmtStamp as fmtMoment } from '../../utils/format';
 import { GATE_PASS_REGARDING, INDIAN_STATES, STUDENT_ROLES } from '../../utils/constants';
 import { ParentVerification } from './ParentVerification';
 import QrScannerModal from '../../components/QrScannerModal';
@@ -717,7 +718,7 @@ function ReviewQueue({ role }) {
   );
 }
 
-const fmtStamp = (v) => (v ? fmtClassDay(v, 'dd MMM, h:mm a') : '—');
+const fmtStamp = (v) => (v ? fmtMoment(v) : '—');
 
 /**
  * Students outside campus (now, or at the end of a past day), or the exits /

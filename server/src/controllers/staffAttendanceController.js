@@ -5,14 +5,16 @@ import User from '../models/User.js';
 import { ApiError, asyncHandler } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { emitToUsers } from '../config/socket.js';
-import { dayKey, toDay, today } from '../utils/dates.js';
-import { STUDENT_ROLES, percentage } from './attendanceController.js';
+import { dayFilter, dayKey, resolveRange, toDay, today } from '../utils/dates.js';
+import { LOW_ATTENDANCE_THRESHOLD, STUDENT_ROLES, percentage } from './attendanceController.js';
 import { DEPARTMENTS, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod } from '../constants.js';
 
 // Staff whose daily attendance is tracked.
 const TRACKED_STAFF = ['faculty', 'hod'];
 const FACULTY_FIELDS = 'name employeeId department designation phone avatar role';
 const STUDENT_FIELDS = 'name rollNo section department year semester phone parentPhone avatar stayType';
+// An approved On Duty period counts as attended, exactly as in attendanceController.
+const attendedExpr = { $sum: { $cond: [{ $in: ['$status', ['present', 'od']] }, 1, 0] } };
 
 /**
  * Department a request may look at. HOD: always their own, except First Year HOD
@@ -49,7 +51,7 @@ async function studentDayStatus(day, department, studentIds) {
     {
       $group: {
         _id: '$student',
-        presentPeriods: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
+        presentPeriods: attendedExpr,
         totalPeriods: { $sum: 1 },
       },
     },
@@ -64,11 +66,12 @@ async function facultyDayStatus(day, department) {
   return new Map(rows.map((r) => [String(r.faculty), r]));
 }
 
-const studentFilter = (department, { section, year, semester } = {}, user) => {
+const studentFilter = (department, { section, year, semester, stayType } = {}, user) => {
   const f = {
     role: { $in: STUDENT_ROLES },
     isActive: true,
     ...(department ? { department } : {}),
+    ...(stayType ? { stayType: String(stayType) } : {}),
     ...(section ? { section: String(section).toUpperCase() } : {}),
     ...(year ? { year: Number(year) } : {}),
     ...(semester ? { semester: Number(semester) } : {}),
@@ -86,8 +89,8 @@ const studentFilter = (department, { section, year, semester } = {}, user) => {
 };
 
 /** Class filters (all optional; "All" = absent) from the already-validated query. */
-const classFilters = (q) => ({ section: q.section, year: q.year, semester: q.semester });
-const isNarrowed = (f) => Boolean(f.section || f.year || f.semester);
+const classFilters = (q) => ({ section: q.section, year: q.year, semester: q.semester, stayType: q.stayType });
+const isNarrowed = (f) => Boolean(f.section || f.year || f.semester || f.stayType);
 
 const staffFilter = (department) => ({
   role: { $in: TRACKED_STAFF },
@@ -153,6 +156,86 @@ export const summaryStudents = asyncHandler(async (req, res) => {
     .filter((s) => !wanted || s.status === wanted);
 
   res.json({ date: dayKey(day), department: department || 'All departments', students: rows });
+});
+
+/**
+ * Department overview for the HOD attendance dashboard, one row per year
+ * (per department for the Science & Humanities HOD, who owns every
+ * department's 1st year): today's present / absent / unmarked headcount,
+ * the same for hostellers only, and the students below the attendance
+ * threshold over the current semester window (with their parent's mobile,
+ * which this audience already sees on the "View all" list).
+ *
+ * The student set comes from the same scopedDepartment + studentFilter as
+ * every other summary read, so an HOD can never widen it with a query.
+ */
+const BREAKDOWN_FIELDS = 'name title rollNo section department year semester parentPhone stayType avatar';
+
+export const departmentBreakdown = asyncHandler(async (req, res) => {
+  const department = scopedDepartment(req.user, req.query.department);
+  const day = dayOf(req.query.date);
+  const byDepartment = isFirstYearHod(req.user);
+
+  const students = await User.find(studentFilter(department, {}, req.user)).select(BREAKDOWN_FIELDS).lean();
+  const ids = students.map((s) => s._id);
+  const window = dayFilter(resolveRange({ range: 'semester' }));
+  const [status, periodRows] = await Promise.all([
+    studentDayStatus(day, department, ids.length ? ids : [null]),
+    AttendanceRecord.aggregate([
+      { $match: { student: { $in: ids }, ...(window ? { date: window } : {}) } },
+      { $group: { _id: '$student', total: { $sum: 1 }, present: attendedExpr } },
+    ]),
+  ]);
+  const periods = new Map(periodRows.map((r) => [String(r._id), r]));
+  const threshold = LOW_ATTENDANCE_THRESHOLD;
+
+  const emptyTally = () => ({ total: 0, present: 0, absent: 0, unmarked: 0 });
+  const groups = new Map();
+  const groupOf = (s) => {
+    const key = byDepartment ? s.department || '—' : String(s.year || '—');
+    if (!groups.has(key)) {
+      groups.set(key, { key, year: byDepartment ? 1 : s.year || null, department: byDepartment ? s.department || null : department, students: emptyTally(), hostellers: emptyTally(), lowAttendance: [] });
+    }
+    return groups.get(key);
+  };
+
+  for (const s of students) {
+    const g = groupOf(s);
+    const st = status.get(String(s._id))?.status || 'unmarked';
+    g.students.total += 1;
+    g.students[st] += 1;
+    if (s.stayType === 'hosteler') {
+      g.hostellers.total += 1;
+      g.hostellers[st] += 1;
+    }
+    const p = periods.get(String(s._id));
+    const pct = p ? percentage(p.present, p.total) : null;
+    if (p && pct < threshold) {
+      g.lowAttendance.push({
+        _id: s._id, name: s.name, title: s.title, rollNo: s.rollNo, section: s.section, department: s.department, year: s.year,
+        parentPhone: s.parentPhone || null, presentPeriods: p.present, totalPeriods: p.total, percentage: pct,
+      });
+    }
+  }
+
+  // Every year in scope gets a row, even when it has no students yet.
+  if (!byDepartment) {
+    const years = isBranchHod(req.user) ? [2, 3, 4] : [1, 2, 3, 4];
+    years.forEach((y) => groupOf({ year: y }));
+  }
+  const rows = [...groups.values()]
+    .map((g) => ({ ...g, lowAttendance: g.lowAttendance.sort((a, b) => a.percentage - b.percentage) }))
+    .sort((a, b) => (byDepartment ? String(a.key).localeCompare(String(b.key)) : (a.year || 99) - (b.year || 99)));
+
+  const sum = (pick) => rows.reduce((t, g) => ({ total: t.total + pick(g).total, present: t.present + pick(g).present, absent: t.absent + pick(g).absent, unmarked: t.unmarked + pick(g).unmarked }), emptyTally());
+  res.json({
+    date: dayKey(day),
+    department: department || (byDepartment ? '1st Year (All Departments)' : 'All departments'),
+    groupBy: byDepartment ? 'department' : 'year',
+    threshold,
+    totals: { students: sum((g) => g.students), hostellers: sum((g) => g.hostellers), lowAttendance: rows.reduce((t, g) => t + g.lowAttendance.length, 0) },
+    groups: rows,
+  });
 });
 
 /** "View all" list of faculty for a day, optionally filtered by status. */

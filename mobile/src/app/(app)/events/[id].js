@@ -1,10 +1,10 @@
-import { Alert, Image, View } from 'react-native';
+import { Alert, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSelector } from 'react-redux';
 import { CalendarDays, MapPin, Users } from 'lucide-react-native';
 import { Button, Card, ErrorState, Header, Loading, ProgressBar, Screen, StatusBadge, T } from '../../../components/ui';
 import { errMsg, useCancelRegistrationMutation, useGetEventQuery, useRegisterEventMutation } from '../../../services/api';
-import { assetUrl } from '../../../config';
+import FullImage from '../../../components/FullImage';
 import { selectUser } from '../../../store/authSlice';
 import { STUDENT_ROLES, colors } from '../../../theme';
 import { fmtDateTime, titleCase } from '../../../utils/format';
@@ -37,7 +37,7 @@ export default function EventDetail() {
   return (
     <Screen refreshing={isFetching} onRefresh={refetch}>
       <Header back title={e.title} subtitle={titleCase(e.category)} />
-      {e.poster ? <Image source={{ uri: assetUrl(e.poster) }} style={{ width: '100%', height: 190, borderRadius: 28 }} /> : null}
+      {e.poster ? <FullImage uri={e.poster} maxHeight={520} radius={28} /> : null}
       <Card style={{ gap: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <CalendarDays size={16} color={colors.primary} />

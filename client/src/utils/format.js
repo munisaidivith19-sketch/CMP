@@ -42,6 +42,8 @@ export const toLocalInput = (d) => (d ? format(new Date(d), "yyyy-MM-dd'T'HH:mm"
 /** Class days (attendance dates) are calendar dates stored as UTC midnight — format the date itself, not a local instant. */
 export const fmtClassDay = (d, pattern = 'dd MMM yyyy') => (d ? format(new Date(`${String(d).slice(0, 10)}T00:00:00`), pattern) : '');
 export const todayKey = () => format(new Date(), 'yyyy-MM-dd');
+/** A real moment (gate exit / return / request) — unlike fmtClassDay, keeps the time of day. */
+export const fmtStamp = (d, pattern = 'dd MMM, h:mm a') => (d ? format(new Date(d), pattern) : '');
 
 /**
  * Only http(s) and same-site paths may become an <a href>. The server already

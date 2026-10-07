@@ -26,7 +26,7 @@ import {
 import { selectUser } from '../features/authSlice';
 import { useGetAchievementsDashboardQuery, useGetAttendanceSummaryQuery, useGetDashboardQuery, useGetSecurityDashboardQuery } from '../services/api';
 import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, EmptyState, ErrorState, PageHeader, Skeleton, StatCard, cn } from '../components/ui/primitives';
-import { AnnouncementItem } from '../components/domain';
+import { AnnouncementDetail, AnnouncementItem } from '../components/domain';
 import { CategoryDonut, EngagementChart } from '../components/charts';
 import TodayStrip from '../components/TodayStrip';
 import { STAFF_VIEW, SUMMARY_VIEW, catStyle } from '../utils/constants';
@@ -247,6 +247,7 @@ export default function Dashboard() {
   const { data, isLoading, error, refetch } = useGetDashboardQuery(undefined, { skip: isSecurity || isAlumni });
   const { data: achievementsData } = useGetAchievementsDashboardQuery(undefined, { skip: isSecurity || isAlumni });
   const [popover, setPopover] = useState(null);
+  const [viewingAnn, setViewingAnn] = useState(null);
 
   if (isSecurity) return <SecurityDashboard />;
   if (isLoading) return <DashboardSkeleton />;
@@ -374,12 +375,13 @@ export default function Dashboard() {
           />
           <div className="space-y-3">
             {data.announcements.length ? (
-              data.announcements.map((a) => <AnnouncementItem key={a._id} a={a} compact />)
+              data.announcements.map((a) => <AnnouncementItem key={a._id} a={a} compact onOpen={setViewingAnn} />)
             ) : (
               <EmptyState icon={Megaphone} title="No announcements yet" />
             )}
           </div>
         </Card>
+        <AnnouncementDetail a={viewingAnn} onClose={() => setViewingAnn(null)} />
 
         <Card>
           <CardHeader title="Trending discussions" action={<Flame className="h-5 w-5 text-orange-400" />} />

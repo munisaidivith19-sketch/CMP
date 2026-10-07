@@ -77,6 +77,7 @@ import MyClasses from './MyClasses';
 import OurClass from './OurClass';
 import AttendanceReports from './AttendanceReports';
 import ODLeaveReviewQueue from './ODLeaveReviewQueue';
+import HodDepartmentCards from './HodDepartmentCards';
 import { HolidayBanner, HolidaysButton } from './Holidays';
 import {
   Avatar,
@@ -127,7 +128,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
   const isFaculty = me.role === 'faculty';
 
   // 1. Low attendance count
-  const { data: lowData } = useGetLowAttendanceQuery({ range: 'semester' });
+  const { data: lowData } = useGetLowAttendanceQuery({ range: 'semester' }, { skip: isHod });
   const atRiskCount = lowData?.students?.length ?? 0;
 
   // 2. Pending corrections
@@ -139,7 +140,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
     date: todayKey(),
     ...(isBranchHod(me) && me.department ? { department: me.department } : {}),
   };
-  const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams);
+  const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams, { skip: isHod });
 
   // 4. Today's periods (for faculty or HOD quick view)
   const { data: periodsData } = useGetMyPeriodsQuery(undefined, { pollingInterval: 30000 });
@@ -162,6 +163,21 @@ function AttendanceHeroDashboard({ onQuickMark }) {
     <div className="space-y-4">
       {/* 4 KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {isHod ? (
+          <HodDepartmentCards
+            me={me}
+            extraCard={
+              <StatCard
+                icon={Clock}
+                label="Pending Corrections"
+                value={pendingCount}
+                hint={pendingCount > 0 ? `${pendingCount} awaiting approval` : 'All requests reviewed'}
+                gradient="from-amber-400 to-orange-500"
+              />
+            }
+          />
+        ) : (
+        <>
         <StatCard
           icon={TrendingUp}
           label={isHod ? 'Dept Attendance Health' : 'Overall Health'}
@@ -197,6 +213,8 @@ function AttendanceHeroDashboard({ onQuickMark }) {
           hint={pendingCount > 0 ? `${pendingCount} awaiting approval` : 'All requests reviewed'}
           gradient="from-amber-400 to-orange-500"
         />
+        </>
+        )}
       </div>
 
       {/* Faculty Compliance Alert (For HOD/Admin) */}

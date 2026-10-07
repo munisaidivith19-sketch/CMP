@@ -94,7 +94,7 @@ function EventLine({ e, onPress }) {
   return (
     <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.75)' }}>
       {e.poster ? (
-        <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primarySoft }} resizeMode="cover" />
+        <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primarySoft }} resizeMode="contain" />
       ) : (
         <LinearGradient colors={gradients.sky} style={{ width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}>
           <T v="small" style={{ color: '#fff', fontSize: 9, fontFamily: fonts.bold }}>
@@ -333,7 +333,7 @@ function GeneralHome({ user }) {
               {d.recommended.slice(0, 3).map((e) => (
                 <Card key={e._id} onPress={() => router.push(`/events/${e._id}`)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   {e.poster ? (
-                    <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: colors.primarySoft }} resizeMode="cover" />
+                    <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: colors.primarySoft }} resizeMode="contain" />
                   ) : (
                     <IconTile icon={Sparkles} gradient={gradients.hero} size={42} />
                   )}

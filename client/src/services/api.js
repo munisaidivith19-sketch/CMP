@@ -332,6 +332,32 @@ export const api = createApi({
     getSecurityLogs: b.query({ query: (params) => ({ url: '/admin/security/logs', params }), providesTags: ['Security'], keepUnusedDataFor: 0 }),
     getSecurityOtps: b.query({ query: (params) => ({ url: '/admin/security/otps', params }), keepUnusedDataFor: 0 }),
 
+    // ── Admin → Role Assignments & Class In-Charge Handover / Swap ──
+    getRoleAssignmentsOverview: b.query({
+      query: () => '/admin/role-assignments/overview',
+      providesTags: ['Admin', 'User'],
+    }),
+    assignClassInCharge: b.mutation({
+      query: (body) => ({ url: '/admin/role-assignments/assign-class-in-charge', method: 'POST', body }),
+      invalidatesTags: ['Admin', 'User', 'ClassStudents'],
+    }),
+    swapClassInCharge: b.mutation({
+      query: (body) => ({ url: '/admin/role-assignments/swap-class-in-charge', method: 'POST', body }),
+      invalidatesTags: ['Admin', 'User', 'ClassStudents'],
+    }),
+    unassignClassInCharge: b.mutation({
+      query: (body) => ({ url: '/admin/role-assignments/unassign-class-in-charge', method: 'POST', body }),
+      invalidatesTags: ['Admin', 'User', 'ClassStudents'],
+    }),
+    setDepartmentHod: b.mutation({
+      query: (body) => ({ url: '/admin/role-assignments/set-hod', method: 'POST', body }),
+      invalidatesTags: ['Admin', 'User', 'ClassStudents', 'Dashboard'],
+    }),
+    demoteDepartmentHod: b.mutation({
+      query: (body) => ({ url: '/admin/role-assignments/demote-hod', method: 'POST', body }),
+      invalidatesTags: ['Admin', 'User', 'ClassStudents', 'Dashboard'],
+    }),
+
     // ── Class In-Charge: students of their own class ──
     getClassStudents: b.query({ query: () => '/class-students', providesTags: ['ClassStudents'] }),
     createClassStudent: b.mutation({ query: (body) => ({ url: '/class-students', method: 'POST', body }), invalidatesTags: ['ClassStudents'] }),
@@ -942,6 +968,12 @@ export const {
   useGetSecuritySummaryQuery,
   useGetSecurityLogsQuery,
   useGetSecurityOtpsQuery,
+  useGetRoleAssignmentsOverviewQuery,
+  useAssignClassInChargeMutation,
+  useSwapClassInChargeMutation,
+  useUnassignClassInChargeMutation,
+  useSetDepartmentHodMutation,
+  useDemoteDepartmentHodMutation,
   useGetClassStudentsQuery,
   useGetClassStudentQuery,
   useUpdateClassStudentMutation,

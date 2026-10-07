@@ -4,12 +4,13 @@ import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import { Ban, CheckCircle2, Download, KeyRound, Pencil, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
 import { useDeleteAdminUserMutation, useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
-import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination } from '../../components/ui/primitives';
+import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination, Tabs } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { ChipMultiSelect, Input, Select } from '../../components/ui/form';
 import { selectUser } from '../../features/authSlice';
 import CreateUserModal from '../../components/CreateUserModal';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
+import FacultyRoleAssignmentsTab from './FacultyRoleAssignmentsTab';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
 import { downloadProfilesPdf } from '../../services/reports';
@@ -199,6 +200,7 @@ function ClassModal({ user, onClose }) {
 
 export default function AdminUsers() {
   const me = useSelector(selectUser);
+  const [adminTab, setAdminTab] = useState('accounts');
   const [q, setQ] = useState('');
   const [role, setRole] = useState('');
   const [status, setStatus] = useState('');
@@ -241,18 +243,35 @@ export default function AdminUsers() {
         title="User management"
         subtitle="Create logins for students, faculty, HODs and the principal; assign roles and suspend or reactivate accounts."
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" icon={Download} loading={downloading} onClick={handleExportPdf}>
-              Export Directory (PDF)
-            </Button>
-            <Button icon={UserPlus} onClick={() => setCreating(true)}>
-              Create login
-            </Button>
-          </div>
+          adminTab === 'accounts' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" icon={Download} loading={downloading} onClick={handleExportPdf}>
+                Export Directory (PDF)
+              </Button>
+              <Button icon={UserPlus} onClick={() => setCreating(true)}>
+                Create login
+              </Button>
+            </div>
+          ) : null
         }
       />
-      <CreateUserModal open={creating} onClose={() => setCreating(false)} />
-      <Card className="mb-6 grid gap-3 md:grid-cols-[1fr_180px_180px]">
+      <div className="mb-6">
+        <Tabs
+          tabs={[
+            { value: 'accounts', label: 'User Accounts' },
+            { value: 'assignments', label: 'Faculty & HOD Role Assignments' },
+          ]}
+          value={adminTab}
+          onChange={setAdminTab}
+        />
+      </div>
+
+      {adminTab === 'assignments' ? (
+        <FacultyRoleAssignmentsTab />
+      ) : (
+        <>
+          <CreateUserModal open={creating} onClose={() => setCreating(false)} />
+          <Card className="mb-6 grid gap-3 md:grid-cols-[1fr_180px_180px]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
           <input
@@ -427,6 +446,8 @@ export default function AdminUsers() {
           setDeleting(null);
         }}
       />
+        </>
+      )}
     </div>
   );
 }

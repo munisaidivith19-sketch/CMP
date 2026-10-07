@@ -66,6 +66,7 @@ import * as disc from '../controllers/discussionController.js';
 import * as reports from '../controllers/reportController.js';
 import * as notes from '../controllers/notificationController.js';
 import * as admin from '../controllers/adminController.js';
+import * as roleAssignment from '../controllers/adminRoleAssignmentController.js';
 import * as account from '../controllers/accountController.js';
 import * as security from '../controllers/securityController.js';
 import { SECURITY_EVENTS } from '../models/SecurityLog.js';
@@ -659,6 +660,50 @@ router.patch(
 );
 router.delete('/admin/users/:id', idParam('id'), authorize('admin'), admin.deleteUser);
 router.get('/admin/activity', authorize('admin'), admin.listActivity);
+
+// ── Admin → Role Assignments & Class In-Charge (Admin only) ───────
+router.get('/admin/role-assignments/overview', authorize('admin'), roleAssignment.getRoleAssignmentsOverview);
+router.post(
+  '/admin/role-assignments/assign-class-in-charge',
+  authorize('admin'),
+  body('facultyId').isMongoId().withMessage('Valid faculty ID required'),
+  body('department').isIn(DEPARTMENTS).withMessage('Valid department required'),
+  body('year').isIn(ACADEMIC_YEARS).withMessage('Valid year (1–4) required').toInt(),
+  body('section').trim().toUpperCase().isIn(SECTIONS).withMessage('Valid section required'),
+  body('semester').isIn(SEMESTERS).withMessage('Valid semester (1–8) required').toInt(),
+  validate,
+  roleAssignment.assignClassInCharge
+);
+router.post(
+  '/admin/role-assignments/swap-class-in-charge',
+  authorize('admin'),
+  body('faculty1Id').isMongoId().withMessage('Valid faculty 1 ID required'),
+  body('faculty2Id').isMongoId().withMessage('Valid faculty 2 ID required'),
+  validate,
+  roleAssignment.swapClassInCharge
+);
+router.post(
+  '/admin/role-assignments/unassign-class-in-charge',
+  authorize('admin'),
+  body('facultyId').isMongoId().withMessage('Valid faculty ID required'),
+  validate,
+  roleAssignment.unassignClassInCharge
+);
+router.post(
+  '/admin/role-assignments/set-hod',
+  authorize('admin'),
+  body('department').isIn(DEPARTMENTS).withMessage('Valid department required'),
+  body('facultyId').isMongoId().withMessage('Valid faculty ID required'),
+  validate,
+  roleAssignment.setDepartmentHod
+);
+router.post(
+  '/admin/role-assignments/demote-hod',
+  authorize('admin'),
+  body('hodId').isMongoId().withMessage('Valid HOD ID required'),
+  validate,
+  roleAssignment.demoteDepartmentHod
+);
 
 // ── Admin → Security & Logs (Admin only, read-only) ────────────────
 const securityRangeRules = [

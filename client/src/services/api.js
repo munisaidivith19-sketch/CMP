@@ -74,7 +74,7 @@ const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
   'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation', 'Holiday',
-  'Security', 'ClassStudents',
+  'Security', 'ClassStudents', 'ODLeave',
   'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics', 'Achievement',
   'SOSAlert',
 ];
@@ -104,7 +104,11 @@ export const api = createApi({
     getDashboard: b.query({ query: () => '/dashboard', providesTags: ['Dashboard'] }),
     search: b.query({ query: (params) => ({ url: '/search', params }) }),
     uploadFile: b.mutation({
-      query: ({ file, kind = 'image' }) => {
+      query: (arg) => {
+        if (typeof FormData !== 'undefined' && arg instanceof FormData) {
+          return { url: '/uploads?kind=document', method: 'POST', body: arg };
+        }
+        const { file, kind = 'image' } = arg || {};
         const body = new FormData();
         body.append('file', file);
         return { url: `/uploads?kind=${kind}`, method: 'POST', body };
@@ -408,6 +412,18 @@ export const api = createApi({
     reviewCorrection: b.mutation({
       query: ({ id, ...body }) => ({ url: `/attendance/corrections/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['Correction', 'Attendance'],
+    }),
+    // ── OD / Leave Requests ──────────────────────────────
+    getMyODLeaveRequests: b.query({ query: (params) => ({ url: '/attendance/od-leave/my', params }), providesTags: ['ODLeave'] }),
+    getPendingODLeaveReviews: b.query({ query: (params) => ({ url: '/attendance/od-leave/reviews', params }), providesTags: ['ODLeave'] }),
+    createODLeaveRequest: b.mutation({ query: (body) => ({ url: '/attendance/od-leave', method: 'POST', body }), invalidatesTags: ['ODLeave', 'Attendance'] }),
+    reviewODLeaveRequest: b.mutation({
+      query: ({ id, ...body }) => ({ url: `/attendance/od-leave/${id}/review`, method: 'PATCH', body }),
+      invalidatesTags: ['ODLeave', 'Attendance'],
+    }),
+    cancelODLeaveRequest: b.mutation({
+      query: (id) => ({ url: `/attendance/od-leave/${id}/cancel`, method: 'PATCH' }),
+      invalidatesTags: ['ODLeave', 'Attendance'],
     }),
     getAttendanceSummary: b.query({ query: (params) => ({ url: '/attendance/summary', params }), providesTags: ['Attendance', 'StaffAttendance'] }),
     getSummaryStudents: b.query({ query: (params) => ({ url: '/attendance/summary/students', params }), providesTags: ['Attendance'] }),
@@ -971,6 +987,11 @@ export const {
   useGetCorrectionsQuery,
   useRequestCorrectionMutation,
   useReviewCorrectionMutation,
+  useGetMyODLeaveRequestsQuery,
+  useGetPendingODLeaveReviewsQuery,
+  useCreateODLeaveRequestMutation,
+  useReviewODLeaveRequestMutation,
+  useCancelODLeaveRequestMutation,
   useGetTimetableQuery,
   useGetHostelSummaryQuery,
   useGetHostelStudentsQuery,

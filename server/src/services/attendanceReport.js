@@ -327,7 +327,7 @@ export async function periodReport(user, query) {
     section: r.student?.section || session.section,
     status: r.status,
   });
-  const present = records.filter((r) => r.status === 'present').map(row).sort(byRollNo);
+  const present = records.filter((r) => r.status === 'present' || r.status === 'od').map(row).sort(byRollNo);
   const absent = records.filter((r) => r.status === 'absent').map(row).sort(byRollNo);
 
   return {
@@ -396,7 +396,7 @@ export async function dateReport(user, query) {
       section: r.student?.section || s.section,
       status: r.status,
     });
-    const present = mine.filter((r) => r.status === 'present').map(row).sort(byRollNo);
+    const present = mine.filter((r) => r.status === 'present' || r.status === 'od').map(row).sort(byRollNo);
     const absent = mine.filter((r) => r.status === 'absent').map(row).sort(byRollNo);
     return {
       period: s.period,
@@ -430,7 +430,7 @@ export async function dateReport(user, query) {
     }
     const row = perStudent.get(id);
     row.totalPeriods += 1;
-    if (r.status === 'present') row.presentPeriods += 1;
+    if (r.status === 'present' || r.status === 'od') row.presentPeriods += 1;
   }
   const students = [...perStudent.values()]
     .map((s) => ({ ...s, absentPeriods: s.totalPeriods - s.presentPeriods, percentage: pct(s.presentPeriods, s.totalPeriods) }))
@@ -504,7 +504,7 @@ export async function rangeReport(user, query, kind) {
     if (!stats.has(id)) stats.set(id, { presentPeriods: 0, totalPeriods: 0 });
     const row = stats.get(id);
     row.totalPeriods += 1;
-    if (r.status === 'present') row.presentPeriods += 1;
+    if (r.status === 'present' || r.status === 'od') row.presentPeriods += 1;
   }
 
   const students = roster

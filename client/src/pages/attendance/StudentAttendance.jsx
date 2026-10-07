@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { AlertTriangle, CalendarCheck2, CheckCircle2, ClipboardCheck, History, XCircle } from 'lucide-react';
+import { AlertTriangle, CalendarCheck2, CheckCircle2, ClipboardCheck, History, Sparkles, XCircle } from 'lucide-react';
 import {
   useGetAttendanceRecordsQuery,
   useGetAttendanceTrendsQuery,
@@ -10,11 +11,12 @@ import {
   useRequestCorrectionMutation,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, Tabs } from '../../components/ui/primitives';
+import { Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Textarea } from '../../components/ui/form';
 import { MiniStat, PercentBars, PercentRing, PercentTrend, RangeFilter, StatusBadge, rangeParams } from '../../components/insights';
 import { errMsg, fmtClassDay, fmtDateTime } from '../../utils/format';
+import ODLeaveRequests from './ODLeaveRequests';
 
 function CorrectionModal({ record, onClose }) {
   const [reason, setReason] = useState('');
@@ -88,9 +90,10 @@ function History_({ subjects }) {
               ))}
             </select>
             <select aria-label="Status" className="input w-auto rounded-xl py-1.5 text-xs" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
-              <option value="">Present & absent</option>
+              <option value="">All statuses</option>
               <option value="present">Present</option>
               <option value="absent">Absent</option>
+              <option value="od">On Duty (OD)</option>
             </select>
           </div>
         }
@@ -106,7 +109,13 @@ function History_({ subjects }) {
           <ul className="divide-y divide-white/60 dark:divide-white/5">
             {data.records.map((r) => (
               <li key={r._id} className="flex items-center gap-3 py-2.5">
-                {r.status === 'present' ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" /> : <XCircle className="h-5 w-5 shrink-0 text-rose-500" />}
+                {r.status === 'present' ? (
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                ) : r.status === 'od' ? (
+                  <Sparkles className="h-5 w-5 shrink-0 text-sky-500" />
+                ) : (
+                  <XCircle className="h-5 w-5 shrink-0 text-rose-500" />
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">
                     {r.subject?.code} · {r.subject?.name}
@@ -161,18 +170,24 @@ function MyCorrections() {
 
 export default function StudentAttendance() {
   const me = useSelector(selectUser);
+  const [params, setParams] = useSearchParams();
+  const currentTab = params.get('tab') === 'od-leave' ? 'od-leave' : 'overview';
+  const setTab = (t) => {
+    setParams(t === 'overview' ? {} : { tab: t }, { replace: true });
+  };
+
   const [range, setRange] = useState({ range: 'semester' });
   const [groupBy, setGroupBy] = useState('week');
-  const params = rangeParams(range);
-  const { data, isLoading, error, refetch } = useGetMyAttendanceQuery(params);
-  const { data: trend } = useGetAttendanceTrendsQuery({ ...params, groupBy });
+  const rangeQuery = rangeParams(range);
+  const { data, isLoading, error, refetch } = useGetMyAttendanceQuery(rangeQuery);
+  const { data: trend } = useGetAttendanceTrendsQuery({ ...rangeQuery, groupBy });
 
   const header = (
     <PageHeader
       icon={ClipboardCheck}
       title="My attendance"
       subtitle={me.section ? `${me.department} · Section ${me.section}` : 'Attendance across all your subjects'}
-      actions={<RangeFilter value={range} onChange={setRange} />}
+      actions={currentTab === 'overview' ? <RangeFilter value={range} onChange={setRange} /> : null}
     />
   );
   if (isLoading) return <div>{header}<Skeleton className="h-64" /></div>;
@@ -185,63 +200,102 @@ export default function StudentAttendance() {
     <div className="space-y-5">
       {header}
 
-      {low && (
-        <div role="alert" className="flex items-start gap-3 rounded-3xl border border-rose-300/60 bg-rose-500/10 p-4 text-sm text-rose-700">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-          <div>
-            <p className="font-bold">Your attendance is below {data.threshold}%.</p>
-            <p>
-              Attend the next {o.mustAttend} class{o.mustAttend === 1 ? '' : 'es'} without missing any to get back to {data.threshold}%.
-              {data.belowThreshold.length > 0 && ` Low in: ${data.belowThreshold.map((s) => s.subject.code).join(', ')}.`}
-            </p>
-          </div>
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+        <div className="glass inline-flex rounded-2xl p-1 shadow-inner">
+          <button
+            type="button"
+            onClick={() => setTab('overview')}
+            className={cn(
+              'rounded-xl px-4 py-2 text-xs font-bold transition-all duration-200',
+              currentTab === 'overview'
+                ? 'bg-primary-500 text-white shadow-glow'
+                : 'text-ink-soft hover:text-ink hover:bg-white/5'
+            )}
+          >
+            Overview & History
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('od-leave')}
+            className={cn(
+              'flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all duration-200',
+              currentTab === 'od-leave'
+                ? 'bg-primary-500 text-white shadow-glow'
+                : 'text-ink-soft hover:text-ink hover:bg-white/5'
+            )}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>OD / Leave Requests</span>
+          </button>
         </div>
-      )}
+      </div>
 
-      <div className="grid gap-5 xl:grid-cols-3">
-        <Card className="flex flex-col items-center gap-5 sm:flex-row xl:flex-col 2xl:flex-row">
-          <PercentRing value={o.percentage} threshold={data.threshold} sub={`${o.presentPeriods}/${o.totalPeriods} periods`} />
-          <div className="grid w-full grid-cols-2 gap-2">
-            <MiniStat label="Present" value={o.presentPeriods} icon={CheckCircle2} tone="text-emerald-600 bg-emerald-500/10" />
-            <MiniStat label="Absent" value={o.absentPeriods} icon={XCircle} tone="text-rose-600 bg-rose-500/10" />
-            <MiniStat label="Conducted" value={o.totalPeriods} icon={CalendarCheck2} />
-            <MiniStat
-              label={low ? 'Must attend' : 'Can miss'}
-              value={low ? o.mustAttend : o.canMiss}
-              hint={`to stay ≥ ${data.threshold}%`}
-              icon={AlertTriangle}
-              tone={low ? 'text-rose-600 bg-rose-500/10' : 'text-amber-600 bg-amber-500/10'}
-            />
-          </div>
-        </Card>
-        <Card className="xl:col-span-2">
-          <CardHeader title="Subject-wise" subtitle="Present ÷ conducted periods per subject" />
-          {data.subjects.length ? (
-            <PercentBars
-              threshold={data.threshold}
-              rows={data.subjects.map((s) => ({ key: s._id, label: `${s.subject.code} · ${s.subject.name}`, value: s.percentage, sub: `${s.presentPeriods}/${s.totalPeriods}` }))}
-            />
-          ) : (
-            <EmptyState icon={ClipboardCheck} title="No classes recorded in this period" />
+      {currentTab === 'od-leave' ? (
+        <ODLeaveRequests />
+      ) : (
+        <>
+          {low && (
+            <div role="alert" className="flex items-start gap-3 rounded-3xl border border-rose-300/60 bg-rose-500/10 p-4 text-sm text-rose-700">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-bold">Your attendance is below {data.threshold}%.</p>
+                <p>
+                  Attend the next {o.mustAttend} class{o.mustAttend === 1 ? '' : 'es'} without missing any to get back to {data.threshold}%.
+                  {data.belowThreshold.length > 0 && ` Low in: ${data.belowThreshold.map((s) => s.subject.code).join(', ')}.`}
+                </p>
+              </div>
+            </div>
           )}
-        </Card>
-      </div>
 
-      <Card>
-        <CardHeader
-          title="Trend"
-          subtitle="Attendance % over time"
-          action={<Tabs tabs={[{ value: 'day', label: 'Daily' }, { value: 'week', label: 'Weekly' }, { value: 'month', label: 'Monthly' }]} value={groupBy} onChange={setGroupBy} />}
-        />
-        {trend?.length ? <PercentTrend data={trend} xKey="_id" groupBy={groupBy} threshold={data.threshold} /> : <p className="py-10 text-center text-sm muted">No data for this period yet.</p>}
-      </Card>
+          <div className="grid gap-5 xl:grid-cols-3">
+            <Card className="flex flex-col items-center gap-5 sm:flex-row xl:flex-col 2xl:flex-row">
+              <PercentRing value={o.percentage} threshold={data.threshold} sub={`${o.presentPeriods}/${o.totalPeriods} periods`} />
+              <div className="grid w-full grid-cols-2 gap-2">
+                <MiniStat label="Present" value={o.presentPeriods} icon={CheckCircle2} tone="text-emerald-600 bg-emerald-500/10" />
+                <MiniStat label="Absent" value={o.absentPeriods} icon={XCircle} tone="text-rose-600 bg-rose-500/10" />
+                <MiniStat label="On Duty (OD)" value={o.odPeriods || 0} icon={Sparkles} tone="text-sky-600 bg-sky-500/10" />
+                <MiniStat label="Conducted" value={o.totalPeriods} icon={CalendarCheck2} />
+                <MiniStat
+                  label={low ? 'Must attend' : 'Can miss'}
+                  value={low ? o.mustAttend : o.canMiss}
+                  hint={`to stay ≥ ${data.threshold}%`}
+                  icon={AlertTriangle}
+                  tone={low ? 'text-rose-600 bg-rose-500/10' : 'text-amber-600 bg-amber-500/10'}
+                  className="col-span-2"
+                />
+              </div>
+            </Card>
+            <Card className="xl:col-span-2">
+              <CardHeader title="Subject-wise" subtitle="Present ÷ conducted periods per subject" />
+              {data.subjects.length ? (
+                <PercentBars
+                  threshold={data.threshold}
+                  rows={data.subjects.map((s) => ({ key: s._id, label: `${s.subject.code} · ${s.subject.name}`, value: s.percentage, sub: `${s.presentPeriods}/${s.totalPeriods}` }))}
+                />
+              ) : (
+                <EmptyState icon={ClipboardCheck} title="No classes recorded in this period" />
+              )}
+            </Card>
+          </div>
 
-      <div className="grid gap-5 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <History_ subjects={data.subjects} />
-        </div>
-        <MyCorrections />
-      </div>
+          <Card>
+            <CardHeader
+              title="Trend"
+              subtitle="Attendance % over time"
+              action={<Tabs tabs={[{ value: 'day', label: 'Daily' }, { value: 'week', label: 'Weekly' }, { value: 'month', label: 'Monthly' }]} value={groupBy} onChange={setGroupBy} />}
+            />
+            {trend?.length ? <PercentTrend data={trend} xKey="_id" groupBy={groupBy} threshold={data.threshold} /> : <p className="py-10 text-center text-sm muted">No data for this period yet.</p>}
+          </Card>
+
+          <div className="grid gap-5 xl:grid-cols-3">
+            <div className="xl:col-span-2">
+              <History_ subjects={data.subjects} />
+            </div>
+            <MyCorrections />
+          </div>
+        </>
+      )}
     </div>
   );
 }

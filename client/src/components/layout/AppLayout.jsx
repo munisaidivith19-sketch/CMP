@@ -30,6 +30,7 @@ const LIVE_TAGS = {
   'club:changed': ['Club', 'Dashboard'],
   'discussion:changed': ['Discussion', 'Dashboard'],
   'attendance:updated': ['Attendance', 'Analytics'],
+  'od_leave:updated': ['ODLeave', 'Attendance'],
   'gatepass:updated': ['GatePass'],
   'timetable:updated': ['Timetable'],
   'holiday:changed': ['Holiday', 'Attendance', 'Timetable'],
@@ -119,7 +120,7 @@ function useRealtime() {
       if (n.type === 'club') tags.push('Club');
       if (n.type === 'announcement') tags.push('Announcement');
       if (n.type === 'report') tags.push('Report');
-      if (n.type === 'attendance') tags.push('Attendance', 'Correction');
+      if (n.type === 'attendance') tags.push('Attendance', 'Correction', 'ODLeave');
       if (n.type === 'gate_pass') tags.push('GatePass');
       if (n.type === 'lost_found') tags.push('LostFound');
       if (n.type === 'system') tags.push('Session', 'Me');

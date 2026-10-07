@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import AttendanceRecord from '../models/AttendanceRecord.js';
 import AttendanceSession from '../models/AttendanceSession.js';
 import AttendanceCorrectionRequest from '../models/AttendanceCorrectionRequest.js';
+import ODLeaveRequest from '../models/ODLeaveRequest.js';
 import Notification from '../models/Notification.js';
 import Subject from '../models/Subject.js';
 import TimetableSlot from '../models/TimetableSlot.js';
@@ -34,7 +35,8 @@ export const LOW_ATTENDANCE_THRESHOLD = 75;
 // Club admins are students with extra club permissions.
 export const STUDENT_ROLES = ['student', 'club_admin'];
 
-const presentExpr = { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } };
+const presentExpr = { $sum: { $cond: [{ $in: ['$status', ['present', 'od']] }, 1, 0] } };
+const odExpr = { $sum: { $cond: [{ $eq: ['$status', 'od'] }, 1, 0] } };
 const pctExpr = (present, total) => ({
   $cond: [{ $gt: [total, 0] }, { $round: [{ $multiply: [{ $divide: [present, total] }, 100] }, 2] }, 0],
 });
@@ -333,6 +335,17 @@ export const getRoster = asyncHandler(async (req, res) => {
   const byStudent = Object.fromEntries(existing.map((r) => [String(r.student), r]));
   const last = existing.sort((a, b) => new Date(b.markedAt) - new Date(a.markedAt))[0];
 
+  const studentIds = students.map((s) => s._id);
+  const approvedODLeave = studentIds.length
+    ? await ODLeaveRequest.find({
+        student: { $in: studentIds },
+        status: 'approved',
+        fromDate: { $lte: day },
+        toDate: { $gte: day },
+      }).lean()
+    : [];
+  const odLeaveByStudent = Object.fromEntries(approvedODLeave.map((r) => [String(r.student), r]));
+
   let editable = true;
   let lockedReason = null;
   try {
@@ -365,7 +378,31 @@ export const getRoster = asyncHandler(async (req, res) => {
     editable,
     lockedReason,
     holiday: toHolidayApi(holiday),
-    students: students.map((s) => ({ ...s, status: byStudent[String(s._id)]?.status || null })),
+    students: students.map((s) => {
+      const rec = byStudent[String(s._id)];
+      const req = odLeaveByStudent[String(s._id)];
+      let status = rec?.status || null;
+      let lockedStatus = false;
+      let badge = null;
+
+      if (req?.requestType === 'od') {
+        status = 'od';
+        lockedStatus = true;
+        badge = 'OD';
+      } else if (req?.requestType === 'leave') {
+        if (!status) status = 'absent';
+        badge = 'Approved Leave';
+      }
+
+      return {
+        ...s,
+        status,
+        lockedStatus,
+        badge,
+        odLeaveReason: req?.description || null,
+        odLeaveType: req?.requestType || null,
+      };
+    }),
   });
 });
 
@@ -399,12 +436,27 @@ export const markAttendance = asyncHandler(async (req, res) => {
     .lean();
   const prev = Object.fromEntries(existing.map((r) => [String(r.student), r.status]));
 
+  const approvedODs = await ODLeaveRequest.find({
+    student: { $in: ids },
+    status: 'approved',
+    requestType: 'od',
+    fromDate: { $lte: day },
+    toDate: { $gte: day },
+  }).distinct('student');
+  const odSet = new Set(approvedODs.map(String));
+
   const now = new Date();
   const ops = [];
   let created = 0;
   let changed = 0;
   ids.forEach((id) => {
-    const status = statusById.get(id);
+    let status = statusById.get(id);
+    if (!['present', 'absent', 'od'].includes(status)) {
+      throw new ApiError(422, 'Invalid attendance status');
+    }
+    if (odSet.has(String(id))) {
+      status = 'od';
+    }
     if (!(id in prev)) {
       created += 1;
       ops.push({
@@ -528,7 +580,7 @@ async function studentSummary(studentId, query) {
 
   const subjects = await AttendanceRecord.aggregate([
     { $match: match },
-    { $group: { _id: '$subject', totalPeriods: { $sum: 1 }, presentPeriods: presentExpr, lastMarked: { $max: '$date' } } },
+    { $group: { _id: '$subject', totalPeriods: { $sum: 1 }, presentPeriods: presentExpr, odPeriods: odExpr, lastMarked: { $max: '$date' } } },
     { $lookup: { from: 'subjects', localField: '_id', foreignField: '_id', as: 'subject', pipeline: [{ $project: { name: 1, code: 1, semester: 1, type: 1, credits: 1 } }] } },
     { $unwind: '$subject' },
     {
@@ -536,6 +588,7 @@ async function studentSummary(studentId, query) {
         subject: 1,
         totalPeriods: 1,
         presentPeriods: 1,
+        odPeriods: 1,
         lastMarked: 1,
         absentPeriods: { $subtract: ['$totalPeriods', '$presentPeriods'] },
         percentage: pctExpr('$presentPeriods', '$totalPeriods'),
@@ -546,6 +599,7 @@ async function studentSummary(studentId, query) {
 
   // Overall = Σ present ÷ Σ conducted — NOT the average of subject percentages.
   const presentPeriods = subjects.reduce((a, s) => a + s.presentPeriods, 0);
+  const odPeriods = subjects.reduce((a, s) => a + (s.odPeriods || 0), 0);
   const totalPeriods = subjects.reduce((a, s) => a + s.totalPeriods, 0);
   const pct = percentage(presentPeriods, totalPeriods);
   // Classes the student can still miss and stay at the threshold, or must attend to recover.
@@ -556,7 +610,7 @@ async function studentSummary(studentId, query) {
   return {
     range: { from: window.from ? dayKey(window.from) : null, to: window.to ? dayKey(window.to) : null },
     threshold: LOW_ATTENDANCE_THRESHOLD,
-    overall: { presentPeriods, totalPeriods, absentPeriods: totalPeriods - presentPeriods, percentage: pct, canMiss, mustAttend },
+    overall: { presentPeriods, odPeriods, totalPeriods, absentPeriods: totalPeriods - presentPeriods, percentage: pct, canMiss, mustAttend },
     subjects,
     belowThreshold: subjects.filter((s) => s.percentage < LOW_ATTENDANCE_THRESHOLD),
   };
@@ -655,19 +709,20 @@ export const getOurClassAttendance = asyncHandler(async (req, res) => {
   const perStudent = new Map();
   const perSession = new Map();
   for (const r of records) {
-    const st = perStudent.get(String(r.student)) || { presentPeriods: 0, totalPeriods: 0 };
+    const st = perStudent.get(String(r.student)) || { presentPeriods: 0, odPeriods: 0, totalPeriods: 0 };
     st.totalPeriods += 1;
-    if (r.status === 'present') st.presentPeriods += 1;
+    if (r.status === 'present' || r.status === 'od') st.presentPeriods += 1;
+    if (r.status === 'od') st.odPeriods = (st.odPeriods || 0) + 1;
     perStudent.set(String(r.student), st);
 
     const ss = perSession.get(String(r.session)) || { present: 0, total: 0 };
     ss.total += 1;
-    if (r.status === 'present') ss.present += 1;
+    if (r.status === 'present' || r.status === 'od') ss.present += 1;
     perSession.set(String(r.session), ss);
   }
 
   const students = roster.map((st) => {
-    const r = perStudent.get(String(st._id)) || { presentPeriods: 0, totalPeriods: 0 };
+    const r = perStudent.get(String(st._id)) || { presentPeriods: 0, odPeriods: 0, totalPeriods: 0 };
     return {
       _id: st._id,
       name: st.name,
@@ -680,6 +735,7 @@ export const getOurClassAttendance = asyncHandler(async (req, res) => {
       semester: st.semester ?? ourClass.semester,
       totalPeriods: r.totalPeriods,
       presentPeriods: r.presentPeriods,
+      odPeriods: r.odPeriods || 0,
       absentPeriods: r.totalPeriods - r.presentPeriods,
       percentage: percentage(r.presentPeriods, r.totalPeriods),
     };
@@ -835,7 +891,7 @@ export const getAttendanceRecords = asyncHandler(async (req, res) => {
     if (req.query.student) narrow.student = oid(req.query.student, 'student');
   }
   if (req.query.subject) narrow.subject = oid(req.query.subject, 'subject');
-  if (req.query.status === 'present' || req.query.status === 'absent') narrow.status = req.query.status;
+  if (req.query.status === 'present' || req.query.status === 'absent' || req.query.status === 'od') narrow.status = req.query.status;
   if (req.query.date) narrow.date = toDay(req.query.date);
   else {
     const df = dayFilter(resolveRange(req.query, 'all'));

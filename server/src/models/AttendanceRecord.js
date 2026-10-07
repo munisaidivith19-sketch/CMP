@@ -8,19 +8,21 @@ const attendanceRecordSchema = new Schema(
     subject: { type: Schema.Types.ObjectId, ref: 'Subject', required: true, index: true },
     date: { type: Date, required: true, index: true },
     period: { type: Number, required: true, min: 1, max: 12 },
-    status: { type: String, enum: ['present', 'absent'], required: true },
+    status: { type: String, enum: ['present', 'absent', 'od'], required: true },
 
     section: { type: String, trim: true, maxlength: 10, index: true },
     department: { type: String, trim: true, maxlength: 80, index: true },
     // The timetable snapshot this record was taken under (absent on records
     // created before sessions existed).
     session: { type: Schema.Types.ObjectId, ref: 'AttendanceSession', index: true },
+    // Reference to approved On-Duty or Leave request if applied
+    odLeaveRequest: { type: Schema.Types.ObjectId, ref: 'ODLeaveRequest', index: true },
 
     markedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     markedAt: { type: Date, default: Date.now },
 
     // Correction tracking.
-    correctedFrom: { type: String, enum: ['present', 'absent'] },
+    correctedFrom: { type: String, enum: ['present', 'absent', 'od'] },
     correctedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     correctedAt: Date,
     correctionReason: { type: String, trim: true, maxlength: 300 },
@@ -29,8 +31,8 @@ const attendanceRecordSchema = new Schema(
     history: {
       type: [
         {
-          from: { type: String, enum: ['present', 'absent'] },
-          to: { type: String, enum: ['present', 'absent'] },
+          from: { type: String, enum: ['present', 'absent', 'od'] },
+          to: { type: String, enum: ['present', 'absent', 'od'] },
           by: { type: Schema.Types.ObjectId, ref: 'User' },
           at: { type: Date, default: Date.now },
           reason: { type: String, trim: true, maxlength: 300 },

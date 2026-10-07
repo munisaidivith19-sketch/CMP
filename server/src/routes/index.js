@@ -72,6 +72,7 @@ import { SECURITY_EVENTS } from '../models/SecurityLog.js';
 import { OTP_STATUSES } from '../models/OutpassOtp.js';
 import * as chat from '../controllers/chatController.js';
 import * as attendance from '../controllers/attendanceController.js';
+import * as odLeave from '../controllers/odLeaveController.js';
 import { REPORT_SCOPES, REPORT_TYPES } from '../services/attendanceReport.js';
 import * as staffAttendance from '../controllers/staffAttendanceController.js';
 import * as timetable from '../controllers/timetableController.js';
@@ -1030,6 +1031,48 @@ router.patch(
   body('note').optional().trim().isLength({ max: 300 }),
   validate,
   attendance.reviewCorrection
+);
+
+// ── On Duty (OD) & Leave Requests ──────────────────────────────
+router.post(
+  '/attendance/od-leave',
+  authorize(...STUDENT_ROLES),
+  writeLimiter,
+  odLeave.createRequest
+);
+
+router.get(
+  '/attendance/od-leave/my',
+  authorize(...STUDENT_ROLES),
+  odLeave.listMyRequests
+);
+
+router.get(
+  '/attendance/od-leave/reviews',
+  authorize('faculty', 'hod', 'principal', 'admin'),
+  odLeave.listPendingReviews
+);
+
+router.get(
+  '/attendance/od-leave/pending',
+  authorize('faculty', 'hod', 'principal', 'admin'),
+  odLeave.listPendingReviews
+);
+
+router.patch(
+  '/attendance/od-leave/:id/review',
+  idParam('id'),
+  authorize('faculty', 'hod', 'principal', 'admin'),
+  writeLimiter,
+  odLeave.reviewStage
+);
+
+router.patch(
+  '/attendance/od-leave/:id/cancel',
+  idParam('id'),
+  authorize(...STUDENT_ROLES),
+  writeLimiter,
+  odLeave.cancelRequest
 );
 
 // ── Timetable ──────────────────────────────────────────────────────

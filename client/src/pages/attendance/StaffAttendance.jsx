@@ -54,6 +54,7 @@ import {
   useMarkClassAttendanceMutation,
   useNotifyLowAttendanceStudentMutation,
   useReviewCorrectionMutation,
+  useGetPendingODLeaveReviewsQuery,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import {
@@ -75,6 +76,7 @@ import { DailySummary, FacultyMarking } from './DailySummary';
 import MyClasses from './MyClasses';
 import OurClass from './OurClass';
 import AttendanceReports from './AttendanceReports';
+import ODLeaveReviewQueue from './ODLeaveReviewQueue';
 import { HolidayBanner, HolidaysButton } from './Holidays';
 import {
   Avatar,
@@ -767,7 +769,8 @@ function MarkAttendance({ preset, onPresetUsed }) {
   }, [roster, rosterSearch]);
 
   const totalStudents = roster?.students?.length || 0;
-  const presentCount = counts.present || 0;
+  const odCount = counts.od || 0;
+  const presentCount = (counts.present || 0) + odCount;
   const absentCount = counts.absent || 0;
   const classPct = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
 
@@ -851,7 +854,13 @@ function MarkAttendance({ preset, onPresetUsed }) {
                   variant="success"
                   disabled={!roster.editable}
                   icon={CheckCheck}
-                  onClick={() => setMarks(Object.fromEntries(roster.students.map((s) => [s._id, 'present'])))}
+                  onClick={() =>
+                    setMarks(
+                      Object.fromEntries(
+                        roster.students.map((s) => [s._id, s.lockedStatus || s.status === 'od' ? 'od' : 'present'])
+                      )
+                    )
+                  }
                 >
                   All Present
                 </Button>
@@ -860,7 +869,13 @@ function MarkAttendance({ preset, onPresetUsed }) {
                   variant="danger"
                   disabled={!roster.editable}
                   icon={X}
-                  onClick={() => setMarks(Object.fromEntries(roster.students.map((s) => [s._id, 'absent'])))}
+                  onClick={() =>
+                    setMarks(
+                      Object.fromEntries(
+                        roster.students.map((s) => [s._id, s.lockedStatus || s.status === 'od' ? 'od' : 'absent'])
+                      )
+                    )
+                  }
                 >
                   All Absent
                 </Button>
@@ -873,6 +888,11 @@ function MarkAttendance({ preset, onPresetUsed }) {
                 <span className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
                   <CheckCircle2 className="h-4 w-4" /> {presentCount} Present
                 </span>
+                {odCount > 0 && (
+                  <span className="flex items-center gap-1.5 font-bold text-sky-700 dark:text-sky-400">
+                    <Sparkles className="h-4 w-4" /> {odCount} On Duty
+                  </span>
+                )}
                 <span className="flex items-center gap-1.5 font-bold text-rose-700 dark:text-rose-400">
                   <XCircle className="h-4 w-4" /> {absentCount} Absent
                 </span>
@@ -939,24 +959,32 @@ function MarkAttendance({ preset, onPresetUsed }) {
           {viewMode === 'cards' ? (
             <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredStudents.map((s, index) => {
-                const isPresent = marks[s._id] === 'present';
+                const mark = marks[s._id] || (s.lockedStatus ? 'od' : 'present');
+                const isOD = mark === 'od' || s.status === 'od';
+                const isPresent = mark === 'present';
                 return (
                   <button
                     key={s._id}
                     type="button"
-                    disabled={!roster.editable}
-                    onClick={() =>
+                    disabled={!roster.editable || s.lockedStatus}
+                    onClick={() => {
+                      if (s.lockedStatus || isOD) {
+                        toast.error('Student has approved On-Duty status and cannot be marked absent.');
+                        return;
+                      }
                       setMarks((prev) => ({
                         ...prev,
                         [s._id]: isPresent ? 'absent' : 'present',
-                      }))
-                    }
+                      }));
+                    }}
                     className={cn(
                       'group relative flex flex-col items-center justify-between rounded-2xl p-4 text-center transition-all duration-200 border-2 shadow-sm text-left select-none',
-                      isPresent
-                        ? 'bg-emerald-500/10 border-emerald-500/40 hover:border-emerald-500/80 shadow-emerald-500/5'
-                        : 'bg-rose-500/10 border-rose-500/40 hover:border-rose-500/80 shadow-rose-500/5',
-                      !roster.editable && 'cursor-not-allowed opacity-60'
+                      isOD
+                        ? 'bg-sky-500/10 border-sky-500/40 hover:border-sky-500/80 shadow-sky-500/5'
+                        : isPresent
+                          ? 'bg-emerald-500/10 border-emerald-500/40 hover:border-emerald-500/80 shadow-emerald-500/5'
+                          : 'bg-rose-500/10 border-rose-500/40 hover:border-rose-500/80 shadow-rose-500/5',
+                      (!roster.editable || s.lockedStatus) && 'cursor-not-allowed opacity-90'
                     )}
                   >
                     {/* Index Number */}
@@ -969,17 +997,42 @@ function MarkAttendance({ preset, onPresetUsed }) {
                       <Avatar user={s} size="md" />
                       <p className="mt-2 text-sm font-bold text-ink truncate w-full px-1">{s.name}</p>
                       <p className="text-xs font-mono text-ink-muted">{s.rollNo || 'No Roll'}</p>
+
+                      {/* OD or Approved Leave Badge */}
+                      {s.badge && (
+                        <span
+                          className={cn(
+                            'mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-xs',
+                            s.badge === 'OD'
+                              ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30'
+                              : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30'
+                          )}
+                        >
+                          {s.badge === 'OD' ? <Sparkles className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
+                          {s.badge === 'OD' ? 'On Duty (OD)' : 'Approved Leave'}
+                        </span>
+                      )}
                     </div>
 
                     {/* Big Tap Toggle Pill */}
                     <div
                       className={cn(
                         'mt-3.5 flex items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-extrabold shadow-sm transition-transform group-hover:scale-105',
-                        isPresent ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                        isOD
+                          ? 'bg-sky-500 text-white'
+                          : isPresent
+                            ? 'bg-emerald-500 text-white'
+                            : 'bg-rose-500 text-white'
                       )}
                     >
-                      {isPresent ? <Check className="h-3.5 w-3.5 stroke-[3]" /> : <X className="h-3.5 w-3.5 stroke-[3]" />}
-                      <span>{isPresent ? 'PRESENT' : 'ABSENT'}</span>
+                      {isOD ? (
+                        <Sparkles className="h-3.5 w-3.5 stroke-[2.5]" />
+                      ) : isPresent ? (
+                        <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      ) : (
+                        <X className="h-3.5 w-3.5 stroke-[3]" />
+                      )}
+                      <span>{isOD ? 'ON DUTY' : isPresent ? 'PRESENT' : 'ABSENT'}</span>
                     </div>
                   </button>
                 );
@@ -999,25 +1052,46 @@ function MarkAttendance({ preset, onPresetUsed }) {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredStudents.map((s, index) => {
-                    const isPresent = marks[s._id] === 'present';
+                    const mark = marks[s._id] || (s.lockedStatus ? 'od' : 'present');
+                    const isOD = mark === 'od' || s.status === 'od';
+                    const isPresent = mark === 'present';
                     return (
                       <tr
                         key={s._id}
                         onClick={() => {
-                          if (roster.editable) {
+                          if (roster.editable && !s.lockedStatus && !isOD) {
                             setMarks((prev) => ({ ...prev, [s._id]: isPresent ? 'absent' : 'present' }));
                           }
                         }}
                         className={cn(
-                          'cursor-pointer transition-colors hover:bg-white/[0.04]',
-                          isPresent ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-rose-500'
+                          'transition-colors hover:bg-white/[0.04]',
+                          s.lockedStatus || isOD ? 'cursor-not-allowed' : 'cursor-pointer',
+                          isOD
+                            ? 'border-l-4 border-l-sky-500'
+                            : isPresent
+                              ? 'border-l-4 border-l-emerald-500'
+                              : 'border-l-4 border-l-rose-500'
                         )}
                       >
                         <td className="px-5 py-3 text-xs font-mono text-ink-muted">{index + 1}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2.5">
                             <Avatar user={s} size="xs" />
-                            <span className="font-bold text-ink">{s.name}</span>
+                            <div>
+                              <span className="font-bold text-ink">{s.name}</span>
+                              {s.badge && (
+                                <span
+                                  className={cn(
+                                    'ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.2 text-[10px] font-bold',
+                                    s.badge === 'OD'
+                                      ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300'
+                                      : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                                  )}
+                                >
+                                  {s.badge}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs font-mono text-ink-muted">{s.rollNo || '—'}</td>
@@ -1025,11 +1099,21 @@ function MarkAttendance({ preset, onPresetUsed }) {
                           <span
                             className={cn(
                               'inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold',
-                              isPresent ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' : 'bg-rose-500/20 text-rose-700 dark:text-rose-400'
+                              isOD
+                                ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300'
+                                : isPresent
+                                  ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                                  : 'bg-rose-500/20 text-rose-700 dark:text-rose-400'
                             )}
                           >
-                            {isPresent ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                            {isPresent ? 'Present' : 'Absent'}
+                            {isOD ? (
+                              <Sparkles className="h-3 w-3" />
+                            ) : isPresent ? (
+                              <Check className="h-3 w-3" />
+                            ) : (
+                              <X className="h-3 w-3" />
+                            )}
+                            {isOD ? 'On Duty' : isPresent ? 'Present' : 'Absent'}
                           </span>
                         </td>
                       </tr>
@@ -1839,12 +1923,17 @@ export default function StaffAttendance() {
   const seesSummary = SUMMARY_VIEW.includes(me.role);
   const isHodOrAdmin = ['admin', 'hod'].includes(me.role);
   const canViewReports = ['faculty', 'hod', ...COLLEGE_WIDE].includes(me.role);
+  const canReviewODLeave = ['faculty', 'hod', 'principal', 'admin'].includes(me.role);
+
+  const { data: pendingODLeave } = useGetPendingODLeaveReviewsQuery({ limit: 1 }, { skip: !canReviewODLeave });
+  const pendingODLeaveCount = pendingODLeave?.pagination?.total || 0;
 
   // Grouped Navigation: Primary tabs vs Secondary (More) tabs
   const primaryTabs = [
     ...(canMark ? [{ value: 'mark', label: 'Mark Attendance' }] : []),
     ...(seesSummary ? [{ value: 'today', label: 'Daily Summary' }] : []),
     ...(me.role === 'faculty' ? [{ value: 'my-classes', label: 'My Classes' }] : []),
+    ...(canReviewODLeave ? [{ value: 'od-leave', label: 'OD / Leave Approvals', badge: pendingODLeaveCount }] : []),
   ];
 
   const secondaryTabs = [
@@ -1905,13 +1994,23 @@ export default function StaffAttendance() {
                 key={t.value}
                 onClick={() => setTab(t.value)}
                 className={cn(
-                  'rounded-xl px-4 py-2 text-xs font-bold transition-all duration-200',
+                  'flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition-all duration-200',
                   currentTab === t.value
                     ? 'bg-primary-500 text-white shadow-glow'
                     : 'text-ink-soft hover:text-ink hover:bg-white/5'
                 )}
               >
-                {t.label}
+                <span>{t.label}</span>
+                {t.badge > 0 && (
+                  <span
+                    className={cn(
+                      'rounded-full px-1.5 py-0.2 text-[10px] font-extrabold',
+                      currentTab === t.value ? 'bg-white/20 text-white' : 'bg-rose-500 text-white animate-pulse'
+                    )}
+                  >
+                    {t.badge}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -2011,6 +2110,7 @@ export default function StaffAttendance() {
         {currentTab === 'my-classes' && <MyClasses />}
         {currentTab === 'reports' && <AttendanceReports />}
         {currentTab === 'corrections' && <Corrections />}
+        {currentTab === 'od-leave' && <ODLeaveReviewQueue />}
       </div>
 
       <p className="flex items-center gap-1.5 text-xs text-ink-muted">

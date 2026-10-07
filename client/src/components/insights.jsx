@@ -208,6 +208,11 @@ const STATUS_COLORS = {
   closed: 'neutral',
   present: 'success',
   absent: 'danger',
+  od: 'info',
+  leave: 'warning',
+  pending_faculty: 'warning',
+  pending_hod: 'warning',
+  pending_principal: 'warning',
   SUBMITTED: 'warning',
   IN_REVIEW: 'primary',
   IN_PROGRESS: 'info',
@@ -220,6 +225,15 @@ const STATUS_COLORS = {
   resolved: 'success',
   false_alarm: 'neutral',
 };
+
+const STATUS_LABELS = {
+  od: 'On Duty',
+  pending_faculty: 'Pending Faculty',
+  pending_hod: 'Pending HOD',
+  pending_principal: 'Pending Principal',
+};
+
 export function StatusBadge({ status, label }) {
-  return <Badge color={STATUS_COLORS[status] || 'neutral'}>{label || String(status).replace(/_/g, ' ')}</Badge>;
+  const displayLabel = label || STATUS_LABELS[status] || String(status || '').replace(/_/g, ' ');
+  return <Badge color={STATUS_COLORS[status] || 'neutral'}>{displayLabel}</Badge>;
 }

@@ -4,7 +4,7 @@ import { logActivity } from '../utils/activity.js';
 import { logSecurity } from '../utils/securityLog.js';
 import { notifyUsers } from '../utils/notify.js';
 import { STUDENT_ROLES } from '../utils/academicScope.js';
-import { yearOfSemester } from '../constants.js';
+import { normalizePhoneDigits, yearOfSemester } from '../constants.js';
 import { revokeSessions } from './authController.js';
 
 /**
@@ -81,6 +81,18 @@ export const createClassStudent = asyncHandler(async (req, res) => {
 
   const email = String(req.body.email).toLowerCase().trim();
   if (await User.exists({ email })) throw new ApiError(409, 'An account with this email already exists');
+  if (req.body.rollNo) {
+    const rawRoll = String(req.body.rollNo).trim();
+    const dupeRoll = await User.exists({ rollNo: { $regex: new RegExp(`^${rawRoll.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    if (dupeRoll) throw new ApiError(409, 'That register number is already in use by another student');
+  }
+  if (req.body.phone && req.body.parentPhone) {
+    const p1 = normalizePhoneDigits(req.body.phone);
+    const p2 = normalizePhoneDigits(req.body.parentPhone);
+    if (p1 && p2 && p1 === p2) {
+      throw new ApiError(422, 'Student mobile number and parent mobile number cannot be the same');
+    }
+  }
 
   const user = await User.create({
     name: req.body.name,
@@ -165,6 +177,21 @@ export const updateClassStudent = asyncHandler(async (req, res) => {
   // skip the model's error when only one of title / gender changed.
   if ((student.title === 'Mr' && student.gender === 'female') || (student.title === 'Ms' && student.gender === 'male')) {
     throw new ApiError(422, `${student.title} cannot be used with gender ${student.gender === 'male' ? 'Male' : 'Female'}`);
+  }
+  if (student.isModified('rollNo') && student.rollNo) {
+    const rawRoll = String(student.rollNo).trim();
+    const dupeRoll = await User.exists({
+      rollNo: { $regex: new RegExp(`^${rawRoll.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      _id: { $ne: student._id },
+    });
+    if (dupeRoll) throw new ApiError(409, 'That register number is already in use by another student');
+  }
+  if (student.phone && student.parentPhone) {
+    const p1 = normalizePhoneDigits(student.phone);
+    const p2 = normalizePhoneDigits(student.parentPhone);
+    if (p1 && p2 && p1 === p2) {
+      throw new ApiError(422, 'Student mobile number and parent mobile number cannot be the same');
+    }
   }
   if (!student.year || !student.semester) throw new ApiError(422, 'Year and semester are required');
   if (yearOfSemester(student.semester) !== student.year) {

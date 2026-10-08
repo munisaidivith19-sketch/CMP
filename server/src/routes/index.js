@@ -26,6 +26,7 @@ import {
   CONVERSATION_TYPES,
   GROUP_CATEGORIES,
   STAY_TYPES,
+  normalizePhoneDigits,
   TITLES,
   GENDERS,
   STAFF_ROLES,
@@ -633,7 +634,18 @@ router.post(
     .isLength({ min: 6, max: 20 })
     .withMessage("Parent's mobile number is required")
     .matches(PHONE_CHARS)
-    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets"),
+    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets")
+    .bail()
+    .custom((parent, { req }) => {
+      if (!parent || !req.body.phone) return true;
+      const p1 = normalizePhoneDigits(req.body.phone);
+      const p2 = normalizePhoneDigits(parent);
+      if (p1 && p2 && p1 === p2) {
+        throw new Error('Student mobile number and parent mobile number cannot be the same');
+      }
+      return true;
+    })
+    .withMessage('Student mobile number and parent mobile number cannot be the same'),
   // Faculty / HOD / Principal / Admin.
   body('employeeId')
     .if((_v, { req }) => STAFF_ROLES.includes(req.body.role))
@@ -771,7 +783,18 @@ router.post(
   body('stayType').isIn(STAY_TYPES).withMessage('Select hosteler or day scholar'),
   body('title').isIn(STUDENT_TITLES).withMessage('Choose Mr or Ms'),
   body('gender').isIn(GENDERS).withMessage('Choose Male or Female'),
-  mobile10(body('parentPhone'), "Parent's mobile number"),
+  mobile10(body('parentPhone'), "Parent's mobile number")
+    .bail()
+    .custom((parent, { req }) => {
+      if (!parent || !req.body.phone) return true;
+      const p1 = normalizePhoneDigits(req.body.phone);
+      const p2 = normalizePhoneDigits(parent);
+      if (p1 && p2 && p1 === p2) {
+        throw new Error('Student mobile number and parent mobile number cannot be the same');
+      }
+      return true;
+    })
+    .withMessage('Student mobile number and parent mobile number cannot be the same'),
   mobile10(body('phone').optional({ values: 'falsy' }), 'Student mobile number'),
   validate,
   account.createClassStudent

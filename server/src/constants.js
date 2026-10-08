@@ -27,6 +27,13 @@ export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security', 
 // Roles with no department of their own (skip the "department required" rule).
 export const NO_DEPARTMENT_ROLES = ['principal', 'security', 'dean', 'ao', 'chairman', 'warden'];
 export const STAY_TYPES = ['hosteler', 'day_scholar'];
+export const normalizePhoneDigits = (val) => {
+  if (!val) return '';
+  const digits = String(val).replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+};
 // Honorific shown before a person's name (Ms. / Mr. / Dr.) and their gender.
 // Mr needs male and Ms needs female; Dr may be either.
 export const TITLES = ['Ms', 'Mr', 'Dr'];

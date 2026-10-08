@@ -5,6 +5,7 @@ import { useCreateAdminUserMutation } from '../services/api';
 import { Button, cn } from './ui/primitives';
 import { Modal } from './ui/Modal';
 import { ChipMultiSelect, Input, Select } from './ui/form';
+import RestrictionPopupModal from './RestrictionPopupModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../utils/constants';
 import { displayName, errMsg } from '../utils/format';
 
@@ -52,6 +53,7 @@ export default function CreateUserModal({ open, onClose }) {
   const [v, setV] = useState(EMPTY);
   const [show, setShow] = useState(false);
   const [errors, setErrors] = useState({});
+  const [restrictionPopup, setRestrictionPopup] = useState(null);
   const [create, { isLoading }] = useCreateAdminUserMutation();
 
   useEffect(() => {
@@ -59,6 +61,7 @@ export default function CreateUserModal({ open, onClose }) {
       setV(EMPTY);
       setErrors({});
       setShow(false);
+      setRestrictionPopup(null);
     }
   }, [open]);
 
@@ -76,8 +79,33 @@ export default function CreateUserModal({ open, onClose }) {
   const setList = (k) => (list) => setV((s) => ({ ...s, [k]: list }));
   const missing = fields.filter((k) => isRequired(k, role) && (Array.isArray(v[k]) ? !v[k].length : !String(v[k]).trim()));
 
+const normalizeDigits = (val) => {
+  if (!val) return '';
+  const digits = String(val).replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+};
+
   const submit = async (e) => {
     e.preventDefault();
+
+    // Verify student mobile and parent mobile are not identical
+    if (v.phone && v.parentPhone) {
+      const p1 = normalizeDigits(v.phone);
+      const p2 = normalizeDigits(v.parentPhone);
+      if (p1 && p2 && p1 === p2) {
+        setRestrictionPopup({
+          type: 'mobile',
+          title: 'Identical Mobile Numbers Restricted',
+          message: 'Student mobile number and parent mobile number cannot be the same. Institutional policy requires distinct contact numbers for student security and emergency verification.',
+          detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+        });
+        setErrors((prev) => ({ ...prev, parentPhone: 'Cannot be same as student mobile number' }));
+        return;
+      }
+    }
+
     const body = { role };
     fields.forEach((k) => {
       if (Array.isArray(v[k])) {
@@ -95,10 +123,43 @@ export default function CreateUserModal({ open, onClose }) {
       // Keep the class details so the next student of the same class is quick to add.
       setV((s) => ({ ...EMPTY, ...(role === 'student' ? { department: s.department, year: s.year, section: s.section } : {}) }));
       setErrors({});
+      setRestrictionPopup(null);
     } catch (err) {
       const list = err?.data?.errors;
       setErrors(Array.isArray(list) ? Object.fromEntries(list.map((x) => [x.field, x.message])) : {});
-      toast.error(errMsg(err));
+      const message = errMsg(err);
+      const lower = message.toLowerCase();
+
+      if (lower.includes('email') && (lower.includes('already exists') || lower.includes('in use') || err?.status === 409)) {
+        setRestrictionPopup({
+          type: 'email',
+          title: 'Email Already in Use',
+          message: `An account with the college email "${v.email}" is already registered. Duplicate login emails are strictly restricted.`,
+          detail: `Conflicting Email: ${v.email}`,
+        });
+      } else if (
+        (lower.includes('register number') || lower.includes('roll number') || lower.includes('rollno') || lower.includes('employee id')) &&
+        (lower.includes('already in use') || lower.includes('already exists') || err?.status === 409)
+      ) {
+        const isEmployee = lower.includes('employee id');
+        setRestrictionPopup({
+          type: isEmployee ? 'general' : 'rollNo',
+          title: isEmployee ? 'Employee ID Already in Use' : 'Register Number Already in Use',
+          message: isEmployee
+            ? `The employee ID "${v.employeeId}" is already assigned to another staff member. Duplicate employee IDs are strictly restricted.`
+            : `The register number "${v.rollNo}" is already assigned to another student. Duplicate register numbers are strictly restricted.`,
+          detail: isEmployee ? `Conflicting Employee ID: ${v.employeeId}` : `Conflicting Register Number: ${v.rollNo}`,
+        });
+      } else if (lower.includes('same') && (lower.includes('student mobile') || lower.includes('parent mobile'))) {
+        setRestrictionPopup({
+          type: 'mobile',
+          title: 'Identical Mobile Numbers Restricted',
+          message: 'Student mobile number and parent mobile number cannot be the same. Please provide distinct contact numbers.',
+          detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+        });
+      } else {
+        toast.error(message);
+      }
     }
   };
 
@@ -205,11 +266,12 @@ export default function CreateUserModal({ open, onClose }) {
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="lg"
-      title="Create login"
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        size="lg"
+        title="Create login"
       subtitle="The college email is the username. Share the password with the user — they can change it after signing in."
       footer={
         <>
@@ -243,5 +305,11 @@ export default function CreateUserModal({ open, onClose }) {
         {fields.map(field)}
       </form>
     </Modal>
+    <RestrictionPopupModal
+      open={Boolean(restrictionPopup)}
+      onClose={() => setRestrictionPopup(null)}
+      {...restrictionPopup}
+    />
+    </>
   );
 }

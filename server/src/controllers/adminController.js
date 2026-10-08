@@ -9,7 +9,7 @@ import Session from '../models/Session.js';
 import { disconnectSessions } from '../config/socket.js';
 import { env } from '../config/env.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate } from '../utils/http.js';
-import { ROLES, yearOfSemester } from '../constants.js';
+import { ROLES, normalizePhoneDigits, yearOfSemester } from '../constants.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
 import { pick } from '../utils/http.js';
@@ -241,6 +241,18 @@ export const createUser = asyncHandler(async (req, res) => {
     const dupe = await User.exists({ employeeId: String(req.body.employeeId).trim() });
     if (dupe) throw new ApiError(409, 'That employee ID is already in use');
   }
+  if (req.body.rollNo) {
+    const rollNo = String(req.body.rollNo).trim();
+    const dupeRoll = await User.exists({ rollNo: { $regex: new RegExp(`^${rollNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    if (dupeRoll) throw new ApiError(409, 'That register number is already in use by another student');
+  }
+  if (req.body.phone && req.body.parentPhone) {
+    const p1 = normalizePhoneDigits(req.body.phone);
+    const p2 = normalizePhoneDigits(req.body.parentPhone);
+    if (p1 && p2 && p1 === p2) {
+      throw new ApiError(422, 'Student mobile number and parent mobile number cannot be the same');
+    }
+  }
 
   const data = pick(req.body, CREATE_FIELDS[role] || []);
   const user = await User.create({ name: req.body.name, title: req.body.title, gender: req.body.gender, email, password: req.body.password, role, ...data });
@@ -280,6 +292,29 @@ export const updateUser = asyncHandler(async (req, res) => {
     if (email !== user.email) {
       if (await User.exists({ email, _id: { $ne: user._id } })) throw new ApiError(409, 'An account with this email already exists');
       user.email = email;
+    }
+  }
+
+  // Register number (rollNo) uniqueness check
+  if (req.body.rollNo !== undefined) {
+    const rawRoll = String(req.body.rollNo || '').trim();
+    if (rawRoll) {
+      const dupeRoll = await User.exists({
+        rollNo: { $regex: new RegExp(`^${rawRoll.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        _id: { $ne: user._id },
+      });
+      if (dupeRoll) throw new ApiError(409, 'That register number is already in use by another student');
+    }
+  }
+
+  // Student vs Parent mobile number uniqueness check
+  const effPhone = req.body.phone !== undefined ? req.body.phone : user.phone;
+  const effParentPhone = req.body.parentPhone !== undefined ? req.body.parentPhone : user.parentPhone;
+  if (effPhone && effParentPhone) {
+    const p1 = normalizePhoneDigits(effPhone);
+    const p2 = normalizePhoneDigits(effParentPhone);
+    if (p1 && p2 && p1 === p2) {
+      throw new ApiError(422, 'Student mobile number and parent mobile number cannot be the same');
     }
   }
 

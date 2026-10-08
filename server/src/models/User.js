@@ -54,7 +54,7 @@ const userSchema = new Schema(
     // Distinct from teachingYears, which is the general years handled.
     inChargeYear: { type: Number, min: 1, max: 4 },
     inChargeSemester: { type: Number, min: 1, max: 8 },
-    rollNo: { type: String, trim: true, maxlength: 30 },
+    rollNo: { type: String, trim: true, uppercase: true, maxlength: 30 },
     // Staff (faculty / HOD / principal) identifier, assigned by an administrator.
     employeeId: { type: String, trim: true, maxlength: 30 },
     // Student residence type.
@@ -104,6 +104,10 @@ userSchema.index({ role: 1, department: 1, year: 1, section: 1, semester: 1 }, {
 userSchema.index(
   { employeeId: 1 },
   { unique: true, name: 'unique_employee_id', partialFilterExpression: { employeeId: { $type: 'string' } } }
+);
+userSchema.index(
+  { rollNo: 1 },
+  { unique: true, name: 'unique_roll_no', partialFilterExpression: { rollNo: { $type: 'string' } } }
 );
 userSchema.index(
   { name: 'text', department: 'text', skills: 'text', interests: 'text' },

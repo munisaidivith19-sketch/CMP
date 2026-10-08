@@ -6,6 +6,7 @@ import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } fro
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select } from '../../components/ui/form';
 import ResetPasswordModal, { suggestPassword } from '../../components/ResetPasswordModal';
+import RestrictionPopupModal from '../../components/RestrictionPopupModal';
 import { ACADEMIC_YEARS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, timeAgo, displayName } from '../../utils/format';
 
@@ -109,6 +110,14 @@ function Locked({ label, value }) {
   );
 }
 
+const normalizeDigits = (val) => {
+  if (!val) return '';
+  const digits = String(val).replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+};
+
 /**
  * Class In-Charge creates a student login. Department, year, section and
  * semester are shown locked: the server takes them from the faculty's own
@@ -118,6 +127,7 @@ function CreateStudentModal({ open, scope, onClose }) {
   const [v, setV] = useState(EMPTY);
   const [show, setShow] = useState(false);
   const [errors, setErrors] = useState({});
+  const [restrictionPopup, setRestrictionPopup] = useState(null);
   const [create, { isLoading }] = useCreateClassStudentMutation();
 
   useEffect(() => {
@@ -125,6 +135,7 @@ function CreateStudentModal({ open, scope, onClose }) {
       setV(EMPTY);
       setErrors({});
       setShow(false);
+      setRestrictionPopup(null);
     }
   }, [open]);
 
@@ -134,6 +145,23 @@ function CreateStudentModal({ open, scope, onClose }) {
 
   const submit = async (e) => {
     e.preventDefault();
+
+    // Verify student mobile and parent mobile are not identical
+    if (v.phone && v.parentPhone) {
+      const p1 = normalizeDigits(v.phone);
+      const p2 = normalizeDigits(v.parentPhone);
+      if (p1 && p2 && p1 === p2) {
+        setRestrictionPopup({
+          type: 'mobile',
+          title: 'Identical Mobile Numbers Restricted',
+          message: 'Student mobile number and parent mobile number cannot be the same. Institutional policy requires distinct contact numbers for student security and emergency verification.',
+          detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+        });
+        setErrors((prev) => ({ ...prev, parentPhone: 'Cannot be same as student mobile number' }));
+        return;
+      }
+    }
+
     const body = Object.fromEntries(Object.entries(v).map(([k, val]) => [k, String(val).trim()]).filter(([, val]) => val));
     try {
       const user = await create(body).unwrap();
@@ -141,89 +169,129 @@ function CreateStudentModal({ open, scope, onClose }) {
       setV(EMPTY);
       setErrors({});
       setShow(false);
+      setRestrictionPopup(null);
     } catch (err) {
       const list = err?.data?.errors;
       setErrors(Array.isArray(list) ? Object.fromEntries(list.map((x) => [x.field, x.message])) : {});
-      toast.error(errMsg(err));
+      const message = errMsg(err);
+      const lower = message.toLowerCase();
+
+      if (lower.includes('email') && (lower.includes('already exists') || lower.includes('in use') || err?.status === 409)) {
+        setRestrictionPopup({
+          type: 'email',
+          title: 'Email Already in Use',
+          message: `An account with the college email "${v.email}" is already registered. Duplicate login emails are strictly restricted.`,
+          detail: `Conflicting Email: ${v.email}`,
+        });
+      } else if (
+        (lower.includes('register number') || lower.includes('roll number') || lower.includes('rollno')) &&
+        (lower.includes('already in use') || lower.includes('already exists') || err?.status === 409)
+      ) {
+        setRestrictionPopup({
+          type: 'rollNo',
+          title: 'Register Number Already in Use',
+          message: `The register number "${v.rollNo}" is already assigned to another student. Duplicate register numbers are strictly restricted.`,
+          detail: `Conflicting Register Number: ${v.rollNo}`,
+        });
+      } else if (lower.includes('same') && (lower.includes('student mobile') || lower.includes('parent mobile'))) {
+        setRestrictionPopup({
+          type: 'mobile',
+          title: 'Identical Mobile Numbers Restricted',
+          message: 'Student mobile number and parent mobile number cannot be the same. Please provide distinct contact numbers.',
+          detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+        });
+      } else {
+        toast.error(message);
+      }
     }
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      size="lg"
-      title="Create student"
-      subtitle="The college email is the username. Share the password with the student — they can change it after signing in."
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-          <Button type="submit" form="class-student-form" loading={isLoading} disabled={missing}>
-            Create student login
-          </Button>
-        </>
-      }
-    >
-      <div className="mb-4 rounded-2xl bg-primary-500/5 p-3">
-        <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-primary-700 dark:text-primary-300">
-          <Lock className="h-3.5 w-3.5" aria-hidden /> Assigned automatically from your Class In-Charge class
-        </p>
-        <div className="grid gap-3 sm:grid-cols-4">
-          <Locked label="Department" value={scope.department} />
-          <Locked label="Year" value={YEAR_LABELS[scope.year] || `Year ${scope.year}`} />
-          <Locked label="Section" value={scope.section} />
-          <Locked label="Semester" value={`Semester ${scope.semester}`} />
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        size="lg"
+        title="Create student"
+        subtitle="The college email is the username. Share the password with the student — they can change it after signing in."
+        footer={
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+            <Button type="submit" form="class-student-form" loading={isLoading} disabled={missing}>
+              Create student login
+            </Button>
+          </>
+        }
+      >
+        <div className="mb-4 rounded-2xl bg-primary-500/5 p-3">
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-primary-700 dark:text-primary-300">
+            <Lock className="h-3.5 w-3.5" aria-hidden /> Assigned automatically from your Class In-Charge class
+          </p>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <Locked label="Department" value={scope.department} />
+            <Locked label="Year" value={YEAR_LABELS[scope.year] || `Year ${scope.year}`} />
+            <Locked label="Section" value={scope.section} />
+            <Locked label="Semester" value={`Semester ${scope.semester}`} />
+          </div>
         </div>
-      </div>
-      <form id="class-student-form" onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
-        <Select keepCase label="Title" placeholder="Mr / Ms" required options={TITLE_OPTIONS} value={v.title} onChange={set('title')} error={errors.title} />
-        <Select keepCase label="Gender" placeholder="Male / Female" required options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} error={errors.gender} />
-        <Input label="Full name" maxLength={80} required value={v.name} onChange={set('name')} error={errors.name} />
-        <Input label="Roll number" maxLength={30} className="uppercase" required value={v.rollNo} onChange={set('rollNo')} error={errors.rollNo} />
-        <EmailInput label="College email (username)" required value={v.email} onValue={setValue('email')} error={errors.email} />
-        <Select
-          label="Stay"
-          placeholder="Hosteler / Day Scholar"
-          required
-          options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))}
-          value={v.stayType}
-          onChange={set('stayType')}
-          error={errors.stayType}
-        />
-        <MobileInput label="Parent mobile" required hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} value={v.parentPhone} onValue={setValue('parentPhone')} error={errors.parentPhone} />
-        <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setValue('phone')} error={errors.phone} />
-        <div className="flex items-start gap-2 sm:col-span-2">
-          <Input
-            label="Set password"
-            type={show ? 'text' : 'password'}
-            autoComplete="new-password"
-            hint="At least 8 characters with a letter and a number."
-            className="min-w-0 flex-1"
+<form id="class-student-form" onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
+          <Select keepCase label="Title" placeholder="Mr / Ms" required options={TITLE_OPTIONS} value={v.title} onChange={set('title')} error={errors.title} />
+          <Select keepCase label="Gender" placeholder="Male / Female" required options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} error={errors.gender} />
+          <Input label="Full name" maxLength={80} required value={v.name} onChange={set('name')} error={errors.name} />
+          <Input label="Roll number" maxLength={30} className="uppercase" required value={v.rollNo} onChange={set('rollNo')} error={errors.rollNo} />
+          <EmailInput label="College email (username)" required value={v.email} onValue={setValue('email')} error={errors.email} />
+          <Select
+            label="Stay"
+            placeholder="Hosteler / Day Scholar"
             required
-            value={v.password}
-            onChange={set('password')}
-            error={errors.password}
+            options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))}
+            value={v.stayType}
+            onChange={set('stayType')}
+            error={errors.stayType}
           />
-          <Button type="button" variant="ghost" className="mt-7" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'}>
-            {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-7"
-            icon={KeyRound}
-            onClick={() => {
-              setV((s) => ({ ...s, password: suggestPassword() }));
-              setShow(true);
-            }}
-          >
-            Generate
-          </Button>
-        </div>
-      </form>
-    </Modal>
+          <Input label="Parent mobile" type="tel" maxLength={20} required hint="Gate-pass OTPs go only to this number." value={v.parentPhone} onChange={set('parentPhone')} error={errors.parentPhone} />
+          <Input label="Student mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} error={errors.phone} />
+          <div className="flex items-start gap-2 sm:col-span-2">
+            <Input
+              label="Set password"
+              type={show ? 'text' : 'password'}
+              autoComplete="new-password"
+              hint="At least 8 characters with a letter and a number."
+              className="min-w-0 flex-1"
+              required
+              value={v.password}
+              onChange={set('password')}
+              error={errors.password}
+            />
+            <Button type="button" variant="ghost" className="mt-7" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'}>
+              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-7"
+              icon={KeyRound}
+              onClick={() => {
+                setV((s) => ({ ...s, password: suggestPassword() }));
+                setShow(true);
+              }}
+            >
+              Generate
+            </Button>
+          </div>
+        </form>
+      </Modal>
+      <RestrictionPopupModal
+        open={Boolean(restrictionPopup)}
+        onClose={() => setRestrictionPopup(null)}
+        type={restrictionPopup?.type}
+        title={restrictionPopup?.title}
+        message={restrictionPopup?.message}
+        detail={restrictionPopup?.detail}
+      />
+    </>
   );
 }
 
@@ -242,6 +310,7 @@ function EditStudentModal({ studentId, scope, onClose }) {
   const [save, { isLoading }] = useUpdateClassStudentMutation();
   const [v, setV] = useState(() => formOf(null));
   const [errors, setErrors] = useState({});
+  const [restrictionPopup, setRestrictionPopup] = useState(null);
 
   useEffect(() => {
     if (student && studentId) {
@@ -266,6 +335,20 @@ function EditStudentModal({ studentId, scope, onClose }) {
 
   const submit = async (e) => {
     e.preventDefault();
+
+    // Verify student phone and parent phone are not identical
+    const cleanStudentPhone = normalizeDigits(v.phone);
+    const cleanParentPhone = normalizeDigits(v.parentPhone);
+    if (cleanStudentPhone && cleanParentPhone && cleanStudentPhone === cleanParentPhone) {
+      setRestrictionPopup({
+        type: 'mobile',
+        title: 'Identical Mobile Numbers Restricted',
+        message: 'Student mobile number and parent mobile number cannot be the same. Please provide distinct contact numbers.',
+        detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+      });
+      return;
+    }
+
     // Only what changed is sent; the server re-checks everything anyway.
     const body = {};
     for (const k of EDIT_FIELDS) {
@@ -284,80 +367,119 @@ function EditStudentModal({ studentId, scope, onClose }) {
     } catch (err) {
       const list = err?.data?.errors;
       setErrors(Array.isArray(list) ? Object.fromEntries(list.map((x) => [x.field, x.message])) : {});
-      toast.error(errMsg(err));
+      const message = errMsg(err);
+      const lower = message.toLowerCase();
+
+      if (lower.includes('email') && (lower.includes('already exists') || lower.includes('in use') || err?.status === 409)) {
+        setRestrictionPopup({
+          type: 'email',
+          title: 'Email Already in Use',
+          message: `An account with the college email "${v.email}" is already registered. Duplicate login emails are strictly restricted.`,
+          detail: `Conflicting Email: ${v.email}`,
+        });
+      } else if (
+        (lower.includes('register number') || lower.includes('roll number') || lower.includes('rollno')) &&
+        (lower.includes('already in use') || lower.includes('already exists') || err?.status === 409)
+      ) {
+        setRestrictionPopup({
+          type: 'rollNo',
+          title: 'Register Number Already in Use',
+          message: `The register number "${v.rollNo}" is already assigned to another student. Duplicate register numbers are strictly restricted.`,
+          detail: `Conflicting Register Number: ${v.rollNo}`,
+        });
+      } else if (lower.includes('same') && (lower.includes('student mobile') || lower.includes('parent mobile'))) {
+        setRestrictionPopup({
+          type: 'mobile',
+          title: 'Identical Mobile Numbers Restricted',
+          message: 'Student mobile number and parent mobile number cannot be the same. Please provide distinct contact numbers.',
+          detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+        });
+      } else {
+        toast.error(message);
+      }
     }
   };
 
   return (
-    <Modal
-      open={Boolean(studentId)}
-      onClose={onClose}
-      size="lg"
-      title={`Edit student${student?.name ? ` · ${displayName(student)}` : ''}`}
-      subtitle="Changes are saved to the student’s account and recorded in Security & Logs."
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" form="class-student-edit" loading={isLoading} disabled={!ready || missing}>
-            Save
-          </Button>
-        </>
-      }
-    >
-      {error ? (
-        <ErrorState error={error} />
-      ) : !ready ? (
-        <Skeleton className="h-64" />
-      ) : (
-        <form id="class-student-edit" onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
-          <Select keepCase label="Title" placeholder="Mr / Ms" options={TITLE_OPTIONS} value={v.title} onChange={set('title')} error={errors.title} />
-          <Select keepCase label="Gender" placeholder="Male / Female" options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} error={errors.gender} />
-          <Input label="Full name" maxLength={80} required value={v.name} onChange={set('name')} error={errors.name} />
-          <Input label="Roll number" maxLength={30} className="uppercase" required value={v.rollNo} onChange={set('rollNo')} error={errors.rollNo} />
-          <EmailInput label="College email (username)" required hint="This is the student’s sign-in username." value={v.email} onValue={setValue('email')} error={errors.email} />
-          <Select
-            label="Stay"
-            placeholder="Hosteler / Day Scholar"
-            required
-            options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))}
-            value={v.stayType}
-            onChange={set('stayType')}
-            error={errors.stayType}
-          />
-          <MobileInput label="Parent mobile" required hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} value={v.parentPhone} onValue={setValue('parentPhone')} error={errors.parentPhone} />
-          <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setValue('phone')} error={errors.phone} />
+<>
+      <Modal
+        open={Boolean(studentId)}
+        onClose={onClose}
+        size="lg"
+        title={`Edit student${student?.name ? ` · ${displayName(student)}` : ''}`}
+        subtitle="Changes are saved to the student’s account and recorded in Security & Logs."
+        footer={
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" form="class-student-edit" loading={isLoading} disabled={!ready || missing}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        {error ? (
+          <ErrorState error={error} />
+        ) : !ready ? (
+          <Skeleton className="h-64" />
+        ) : (
+          <form id="class-student-edit" onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
+            <Select keepCase label="Title" placeholder="Mr / Ms" options={TITLE_OPTIONS} value={v.title} onChange={set('title')} error={errors.title} />
+            <Select keepCase label="Gender" placeholder="Male / Female" options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} error={errors.gender} />
+            <Input label="Full name" maxLength={80} required value={v.name} onChange={set('name')} error={errors.name} />
+            <Input label="Roll number" maxLength={30} className="uppercase" required value={v.rollNo} onChange={set('rollNo')} error={errors.rollNo} />
+            <EmailInput label="College email (username)" required hint="This is the student’s sign-in username." value={v.email} onValue={setValue('email')} error={errors.email} />
+            <Select
+              label="Stay"
+              placeholder="Hosteler / Day Scholar"
+              required
+              options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))}
+              value={v.stayType}
+              onChange={set('stayType')}
+              error={errors.stayType}
+            />
+            <MobileInput label="Parent mobile" required hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} value={v.parentPhone} onValue={setValue('parentPhone')} error={errors.parentPhone} />
+            <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setValue('phone')} error={errors.phone} />
 
-          <div className="sm:col-span-2">
-            <Locked label="Department (set by Admin)" value={student.department} />
-          </div>
-          <Select
-            label="Year"
-            required
-            options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))}
-            value={v.year}
-            onChange={set('year')}
-            error={errors.year}
-          />
-          <Select label="Section" required options={SECTIONS} value={v.section} onChange={set('section')} error={errors.section} />
-          <Select
-            label="Semester"
-            required
-            placeholder="Select semester"
-            options={semestersOfYear(Number(v.year)).map((n) => ({ value: String(n), label: `Semester ${n}` }))}
-            value={v.semester}
-            onChange={set('semester')}
-            error={errors.semester}
-          />
-          {moves && (
-            <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-semibold text-amber-800 dark:text-amber-300 sm:col-span-2">
-              This moves the student out of your class. After saving, they will no longer appear here and you will not be able to edit them.
-            </p>
-          )}
-        </form>
-      )}
-    </Modal>
+            <div className="sm:col-span-2">
+              <Locked label="Department (set by Admin)" value={student.department} />
+            </div>
+            <Select
+              label="Year"
+              required
+              options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))}
+              value={v.year}
+              onChange={set('year')}
+              error={errors.year}
+            />
+            <Select label="Section" required options={SECTIONS} value={v.section} onChange={set('section')} error={errors.section} />
+            <Select
+              label="Semester"
+              required
+              placeholder="Select semester"
+              options={semestersOfYear(Number(v.year)).map((n) => ({ value: String(n), label: `Semester ${n}` }))}
+              value={v.semester}
+              onChange={set('semester')}
+              error={errors.semester}
+            />
+            {moves && (
+              <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs font-semibold text-amber-800 dark:text-amber-300 sm:col-span-2">
+                This moves the student out of your class. After saving, they will no longer appear here and you will not be able to edit them.
+              </p>
+            )}
+          </form>
+        )}
+      </Modal>
+      <RestrictionPopupModal
+        open={Boolean(restrictionPopup)}
+        onClose={() => setRestrictionPopup(null)}
+        type={restrictionPopup?.type}
+        title={restrictionPopup?.title}
+        message={restrictionPopup?.message}
+        detail={restrictionPopup?.detail}
+      />
+    </>
   );
 }
 

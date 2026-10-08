@@ -10,6 +10,7 @@ import { ChipMultiSelect, Input, Select } from '../../components/ui/form';
 import { selectUser } from '../../features/authSlice';
 import CreateUserModal from '../../components/CreateUserModal';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
+import RestrictionPopupModal from '../../components/RestrictionPopupModal';
 import FacultyRoleAssignmentsTab from './FacultyRoleAssignmentsTab';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
@@ -20,6 +21,14 @@ const GENDER_OPTIONS = [
   { value: 'male', label: 'Male' },
   { value: 'female', label: 'Female' },
 ];
+
+const normalizeDigits = (val) => {
+  if (!val) return '';
+  const digits = String(val).replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return digits;
+};
 
 /** The form's values for a user; every text field is a string, never undefined. */
 const classFormValues = (user) => ({
@@ -37,6 +46,7 @@ const classFormValues = (user) => ({
  */
 function ClassModal({ user, onClose }) {
   const [update, { isLoading }] = useUpdateAdminUserMutation();
+  const [restrictionPopup, setRestrictionPopup] = useState(null);
   // Filled from the user on the very first render: the Save button reads
   // v.name / v.email immediately, so an empty first render crashed the page.
   const [v, setV] = useState(() => classFormValues(user));
@@ -60,6 +70,19 @@ function ClassModal({ user, onClose }) {
       return next;
     });
   const save = async () => {
+    if (v.phone && v.parentPhone) {
+      const p1 = normalizeDigits(v.phone);
+      const p2 = normalizeDigits(v.parentPhone);
+      if (p1 && p2 && p1 === p2) {
+        setRestrictionPopup({
+          type: 'mobile',
+          title: 'Identical Mobile Numbers Restricted',
+          message: 'Student mobile number and parent mobile number cannot be the same. Institutional policy requires distinct contact numbers for student security and emergency verification.',
+          detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+        });
+        return;
+      }
+    }
     try {
       await update({
         id: user._id,
@@ -100,13 +123,45 @@ function ClassModal({ user, onClose }) {
       toast.success('User details saved');
       onClose();
     } catch (e) {
-      toast.error(errMsg(e));
+      const message = errMsg(e);
+      const lower = message.toLowerCase();
+      if (lower.includes('email') && (lower.includes('already exists') || lower.includes('in use') || e?.status === 409)) {
+        setRestrictionPopup({
+          type: 'email',
+          title: 'Email Already in Use',
+          message: `An account with the college email "${v.email}" is already registered. Duplicate login emails are strictly restricted.`,
+          detail: `Conflicting Email: ${v.email}`,
+        });
+      } else if (
+        (lower.includes('register number') || lower.includes('roll number') || lower.includes('rollno') || lower.includes('employee id')) &&
+        (lower.includes('already in use') || lower.includes('already exists') || e?.status === 409)
+      ) {
+        const isEmployee = lower.includes('employee id');
+        setRestrictionPopup({
+          type: isEmployee ? 'general' : 'rollNo',
+          title: isEmployee ? 'Employee ID Already in Use' : 'Register Number Already in Use',
+          message: isEmployee
+            ? `The employee ID "${v.employeeId}" is already assigned to another staff member. Duplicate employee IDs are strictly restricted.`
+            : `The register number "${v.rollNo}" is already assigned to another student. Duplicate register numbers are strictly restricted.`,
+          detail: isEmployee ? `Conflicting Employee ID: ${v.employeeId}` : `Conflicting Register Number: ${v.rollNo}`,
+        });
+      } else if (lower.includes('same') && (lower.includes('student mobile') || lower.includes('parent mobile'))) {
+        setRestrictionPopup({
+          type: 'mobile',
+          title: 'Identical Mobile Numbers Restricted',
+          message: 'Student mobile number and parent mobile number cannot be the same. Please provide distinct contact numbers.',
+          detail: `Student Mobile: ${v.phone} | Parent Mobile: ${v.parentPhone}`,
+        });
+      } else {
+        toast.error(message);
+      }
     }
   };
   return (
-    <Modal
-      open
-      onClose={onClose}
+    <>
+      <Modal
+        open
+        onClose={onClose}
       size="lg"
       title={`Edit ${ROLE_LABELS[user.role] || 'user'} · ${displayName(user)}`}
       subtitle={
@@ -195,6 +250,12 @@ function ClassModal({ user, onClose }) {
         ) : null}
       </div>
     </Modal>
+    <RestrictionPopupModal
+      open={Boolean(restrictionPopup)}
+      onClose={() => setRestrictionPopup(null)}
+      {...restrictionPopup}
+    />
+    </>
   );
 }
 

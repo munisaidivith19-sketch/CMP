@@ -7,6 +7,7 @@ import Notification from '../models/Notification.js';
 import Subject from '../models/Subject.js';
 import TimetableSlot from '../models/TimetableSlot.js';
 import User from '../models/User.js';
+import Event from '../models/Event.js';
 import { ApiError, asyncHandler, paginate, pageMeta } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { notifyUsers } from '../utils/notify.js';
@@ -336,14 +337,31 @@ export const getRoster = asyncHandler(async (req, res) => {
   const last = existing.sort((a, b) => new Date(b.markedAt) - new Date(a.markedAt))[0];
 
   const studentIds = students.map((s) => s._id);
-  const approvedODLeave = studentIds.length
-    ? await ODLeaveRequest.find({
-        student: { $in: studentIds },
-        status: 'approved',
-        fromDate: { $lte: day },
-        toDate: { $gte: day },
-      }).lean()
-    : [];
+  const startOfDay = new Date(day);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(day);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const [approvedODLeave, activeEvents] = await Promise.all([
+    studentIds.length
+      ? ODLeaveRequest.find({
+          student: { $in: studentIds },
+          status: 'approved',
+          fromDate: { $lte: day },
+          toDate: { $gte: day },
+        }).lean()
+      : [],
+    studentIds.length
+      ? Event.find({
+          startDate: { $lte: endOfDay },
+          endDate: { $gte: startOfDay },
+          'registrations.user': { $in: studentIds },
+          'registrations.status': { $in: ['registered', 'attended'] },
+        })
+          .select('title category startDate endDate registrations')
+          .lean()
+      : [],
+  ]);
   const odLeaveByStudent = Object.fromEntries(approvedODLeave.map((r) => [String(r.student), r]));
 
   let editable = true;
@@ -365,10 +383,12 @@ export const getRoster = asyncHandler(async (req, res) => {
     ? { ...slotInfo, period: session.period, startTime: session.startTime, endTime: session.endTime, room: session.room, faculty: { _id: session.faculty, name: session.facultyName }, snapshot: true }
     : slotInfo;
 
+  const targetDayStr = dayKey(day);
+
   res.json({
     subject: { _id: subject._id, name: subject.name, code: subject.code, department: subject.department, semester: subject.semester, sections: subject.sections },
     section: section || null,
-    date: dayKey(day),
+    date: targetDayStr,
     period: p,
     slot: slotView,
     sessionId: session?._id || null,
@@ -384,6 +404,42 @@ export const getRoster = asyncHandler(async (req, res) => {
       let status = rec?.status || null;
       let lockedStatus = false;
       let badge = null;
+      let eventInfo = null;
+
+      // Event participation detection
+      if (activeEvents.length > 0) {
+        for (const ev of activeEvents) {
+          const reg = (ev.registrations || []).find((r) => sameId(r.user, s._id) && r.status !== 'waitlisted');
+          if (reg) {
+            const dayAtt = reg.attendanceDays?.find((d) => d.date === targetDayStr);
+            if (dayAtt && dayAtt.attended === false) {
+              badge = 'Event Absent';
+              status = 'absent';
+              lockedStatus = false;
+              eventInfo = { eventId: ev._id, title: ev.title, category: ev.category, attended: false };
+            } else {
+              const cat = ev.category ? String(ev.category).trim().toLowerCase() : 'workshop';
+              const catLabel =
+                cat === 'workshop'
+                  ? 'On Workshop'
+                  : cat === 'seminar'
+                  ? 'On Seminar'
+                  : cat === 'hackathon'
+                  ? 'On Hackathon'
+                  : cat === 'symposium'
+                  ? 'On Symposium'
+                  : cat === 'conference'
+                  ? 'On Conference'
+                  : `On ${cat.charAt(0).toUpperCase() + cat.slice(1)}`;
+              badge = catLabel;
+              status = 'od';
+              lockedStatus = true;
+              eventInfo = { eventId: ev._id, title: ev.title, category: ev.category, attended: dayAtt?.attended ?? true };
+            }
+            break;
+          }
+        }
+      }
 
       if (req?.requestType === 'od') {
         status = 'od';
@@ -399,6 +455,7 @@ export const getRoster = asyncHandler(async (req, res) => {
         status,
         lockedStatus,
         badge,
+        eventInfo,
         odLeaveReason: req?.description || null,
         odLeaveType: req?.requestType || null,
       };
@@ -436,14 +493,46 @@ export const markAttendance = asyncHandler(async (req, res) => {
     .lean();
   const prev = Object.fromEntries(existing.map((r) => [String(r.student), r.status]));
 
-  const approvedODs = await ODLeaveRequest.find({
-    student: { $in: ids },
-    status: 'approved',
-    requestType: 'od',
-    fromDate: { $lte: day },
-    toDate: { $gte: day },
-  }).distinct('student');
-  const odSet = new Set(approvedODs.map(String));
+  const startOfDay = new Date(day);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(day);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const [approvedODs, activeEvents] = await Promise.all([
+    ODLeaveRequest.find({
+      student: { $in: ids },
+      status: 'approved',
+      requestType: 'od',
+      fromDate: { $lte: day },
+      toDate: { $gte: day },
+    }).distinct('student'),
+    Event.find({
+      startDate: { $lte: endOfDay },
+      endDate: { $gte: startOfDay },
+      'registrations.user': { $in: ids },
+      'registrations.status': { $in: ['registered', 'attended'] },
+    }).select('startDate endDate registrations').lean(),
+  ]);
+
+  const targetDayStr = dayKey(day);
+  const eventODIds = [];
+  const eventAbsentIds = [];
+
+  activeEvents.forEach((ev) => {
+    (ev.registrations || []).forEach((reg) => {
+      if (reg.status !== 'waitlisted' && ids.some((id) => sameId(id, reg.user))) {
+        const dayAtt = reg.attendanceDays?.find((d) => d.date === targetDayStr);
+        if (dayAtt && dayAtt.attended === false) {
+          eventAbsentIds.push(String(reg.user));
+        } else {
+          eventODIds.push(String(reg.user));
+        }
+      }
+    });
+  });
+
+  const eventAbsentSet = new Set(eventAbsentIds);
+  const odSet = new Set([...approvedODs.map(String), ...eventODIds].filter((id) => !eventAbsentSet.has(id)));
 
   const now = new Date();
   const ops = [];
@@ -456,6 +545,8 @@ export const markAttendance = asyncHandler(async (req, res) => {
     }
     if (odSet.has(String(id))) {
       status = 'od';
+    } else if (eventAbsentSet.has(String(id))) {
+      status = 'absent';
     }
     if (!(id in prev)) {
       created += 1;

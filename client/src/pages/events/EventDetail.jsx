@@ -1,22 +1,79 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, CalendarDays, Clock, Download, GraduationCap, MapPin, Maximize2, Pencil, Star, Trash2, UserCheck, Users } from 'lucide-react';
+import {
+  ArrowLeft,
+  Calendar,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  Clock,
+  Download,
+  Filter,
+  GraduationCap,
+  MapPin,
+  Maximize2,
+  Pencil,
+  Search,
+  Sparkles,
+  Star,
+  Trash2,
+  UserCheck,
+  UserX,
+  Users,
+  X,
+  XCircle,
+} from 'lucide-react';
 import { useDeleteEventMutation, useGetEventQuery, useGetParticipantsQuery, useMarkAttendanceMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, ErrorState, PageLoader, ProgressBar, cn } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { RegisterButton, ReportButton } from '../../components/domain';
 import EventForm from './EventForm';
-import { catStyle } from '../../utils/constants';
+import { catStyle, DEPARTMENTS, ACADEMIC_YEARS, YEAR_LABELS } from '../../utils/constants';
 import { errMsg, eventRange, fmtDateTime, displayName } from '../../utils/format';
 import { downloadEventParticipantsPdf } from '../../services/reports';
 
-function Participants({ eventId, isPast, canMarkAttendance }) {
-  const { data = [], isLoading } = useGetParticipantsQuery(eventId);
+function Participants({ event, canMarkAttendance, isPast }) {
+  const eventId = event?._id;
+  const { data = [], isLoading, error } = useGetParticipantsQuery(eventId);
   const [mark] = useMarkAttendanceMutation();
   const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const confirmed = data.filter((r) => r.status !== 'waitlisted');
-  const waitlist = data.filter((r) => r.status === 'waitlisted');
+  const [search, setSearch] = useState('');
+  const [deptFilter, setDeptFilter] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [markingId, setMarkingId] = useState(null);
+
+  // Generate multi-day date sequence
+  const eventDates = useMemo(() => {
+    if (!event?.startDate || !event?.endDate) return [];
+    const start = new Date(event.startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(event.endDate);
+    end.setHours(0, 0, 0, 0);
+    const dates = [];
+    const curr = new Date(start);
+    while (curr <= end && dates.length < 30) {
+      dates.push(curr.toISOString().slice(0, 10));
+      curr.setDate(curr.getDate() + 1);
+    }
+    return dates.length > 0 ? dates : [String(event.startDate).slice(0, 10)];
+  }, [event?.startDate, event?.endDate]);
+
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return eventDates.includes(today) ? today : (eventDates[0] || today);
+  });
+
+  const getStatusOnDate = (r, date) => {
+    if (r.status === 'waitlisted') return 'waitlisted';
+    const dayRec = (r.attendanceDays || []).find((d) => d.date === date);
+    if (dayRec) {
+      return dayRec.attended ? 'attended' : 'absent';
+    }
+    if (r.status === 'attended') return 'attended';
+    return 'pending';
+  };
 
   const handleDownloadPdf = async () => {
     try {
@@ -30,15 +87,120 @@ function Participants({ eventId, isPast, canMarkAttendance }) {
     }
   };
 
+  const handleMark = async (userId, attended) => {
+    try {
+      setMarkingId(userId);
+      await mark({
+        id: eventId,
+        userId,
+        attended,
+        date: selectedDate,
+      }).unwrap();
+      toast.success(
+        attended
+          ? 'Marked present (OD credit granted)'
+          : 'Marked absent (Class In-Charge alerted)'
+      );
+    } catch (e) {
+      toast.error(errMsg(e) || 'Failed to update attendance');
+    } finally {
+      setMarkingId(null);
+    }
+  };
+
+  // Compute live statistics for selected date
+  const stats = useMemo(() => {
+    let confirmed = 0;
+    let attended = 0;
+    let absent = 0;
+    let pending = 0;
+    let waitlist = 0;
+
+    data.forEach((r) => {
+      if (r.status === 'waitlisted') {
+        waitlist += 1;
+      } else {
+        confirmed += 1;
+        const s = getStatusOnDate(r, selectedDate);
+        if (s === 'attended') attended += 1;
+        else if (s === 'absent') absent += 1;
+        else pending += 1;
+      }
+    });
+
+    return { confirmed, attended, absent, pending, waitlist };
+  }, [data, selectedDate]);
+
+  // Unique departments present in participants
+  const uniqueDepts = useMemo(() => {
+    const set = new Set();
+    data.forEach((r) => {
+      if (r.user?.department) set.add(r.user.department);
+    });
+    DEPARTMENTS.forEach((d) => set.add(d));
+    return Array.from(set).sort();
+  }, [data]);
+
+  // Filtered rows
+  const filteredParticipants = useMemo(() => {
+    return data.filter((r) => {
+      const u = r.user || {};
+      const name = displayName(u).toLowerCase();
+      const roll = (u.rollNo || '').toLowerCase();
+      const email = (u.email || '').toLowerCase();
+      const dept = (u.department || '').toLowerCase();
+      const q = search.trim().toLowerCase();
+
+      if (q && !name.includes(q) && !roll.includes(q) && !email.includes(q) && !dept.includes(q)) {
+        return false;
+      }
+      if (deptFilter && u.department !== deptFilter) {
+        return false;
+      }
+      if (yearFilter && String(u.year) !== String(yearFilter)) {
+        return false;
+      }
+      if (statusFilter) {
+        const s = getStatusOnDate(r, selectedDate);
+        if (statusFilter === 'attended' && s !== 'attended') return false;
+        if (statusFilter === 'absent' && s !== 'absent') return false;
+        if (statusFilter === 'pending' && s !== 'pending') return false;
+        if (statusFilter === 'waitlisted' && r.status !== 'waitlisted') return false;
+      }
+      return true;
+    });
+  }, [data, search, deptFilter, yearFilter, statusFilter, selectedDate]);
+
+  const selectedDateLabel = useMemo(() => {
+    try {
+      const d = new Date(selectedDate + 'T00:00:00');
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    } catch {
+      return selectedDate;
+    }
+  }, [selectedDate]);
+
   return (
-    <Card>
-      <CardHeader
-        title="Event Participants"
-        subtitle={
-          `${confirmed.length} confirmed · ${waitlist.length} waitlisted` +
-          (!canMarkAttendance ? ' · (Attendance marked by assigned Faculty Coordinators)' : '')
-        }
-        action={
+    <Card className="overflow-hidden border border-white/10 shadow-xl backdrop-blur-md">
+      {/* Header with Title and PDF Download Button */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 p-5 bg-white/[0.02]">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary-500/15 text-primary-600 dark:text-primary-300">
+              <Users className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-extrabold tracking-tight text-ink">Participant Management Roster</h3>
+              <p className="text-xs text-ink-muted">
+                {canMarkAttendance
+                  ? 'Mark attendance for confirmed participants (On-Duty credit is automatically synced with regular class attendance).'
+                  : 'View registrations and verified attendance status across event days.'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
           <Button
             variant="soft"
             size="sm"
@@ -47,53 +209,294 @@ function Participants({ eventId, isPast, canMarkAttendance }) {
             loading={downloadingPdf}
             disabled={!data.length}
             title="Download event participants list as PDF with official college logo"
+            className="shadow-sm"
           >
             Download PDF
           </Button>
-        }
-      />
-      {isLoading && <p className="text-sm muted">Loading participants…</p>}
-      <div className="-mx-2 max-h-[420px] space-y-1 overflow-y-auto">
-        {[...confirmed, ...waitlist].map((r) => (
-          <div key={r.user?._id} className="flex items-center gap-3 rounded-2xl p-2.5 table-row">
-            <Avatar user={r.user} size="sm" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">{displayName(r.user)}</p>
-              <p className="truncate text-[11px] muted">
-                {r.user?.department} {r.user?.year ? `· Y${r.user.year}` : ''} {r.user?.rollNo ? `(${r.user.rollNo})` : ''}
-              </p>
-            </div>
-            {r.status === 'waitlisted' ? (
-              <Badge color="warning">Waitlist</Badge>
-            ) : canMarkAttendance ? (
+        </div>
+      </div>
+
+      {/* Metric Summary Cards */}
+      <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4 border-b border-white/10 bg-white/[0.01]">
+        <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3.5 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">Total Confirmed</span>
+            <Users className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-sky-950 dark:text-sky-100">{stats.confirmed}</p>
+          <p className="text-[11px] text-sky-700/80 dark:text-sky-300/80">Active seats allocated</p>
+        </div>
+
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3.5 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Attended (Present)</span>
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-emerald-950 dark:text-emerald-100">{stats.attended}</p>
+          <p className="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">On {selectedDateLabel} (OD credit)</p>
+        </div>
+
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3.5 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Pending</span>
+            <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-amber-950 dark:text-amber-100">{stats.pending}</p>
+          <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">Awaiting roll call</p>
+        </div>
+
+        <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3.5 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">Waitlist</span>
+            <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-violet-950 dark:text-violet-100">{stats.waitlist}</p>
+          <p className="text-[11px] text-violet-700/80 dark:text-violet-300/80">Auto-queue</p>
+        </div>
+      </div>
+
+      {/* Multi-day date selector bar (if event spans > 1 day) */}
+      {eventDates.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-5 py-3 bg-white/[0.015]">
+          <span className="text-xs font-bold uppercase tracking-wider text-ink-muted mr-1">Select Event Day:</span>
+          {eventDates.map((dStr, idx) => {
+            const isSelected = selectedDate === dStr;
+            const dateObj = new Date(dStr + 'T00:00:00');
+            const dayLabel = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+            return (
               <button
+                key={dStr}
                 type="button"
-                onClick={() =>
-                  mark({ id: eventId, userId: r.user._id, attended: r.status !== 'attended' })
-                    .unwrap()
-                    .catch((e) => toast.error(errMsg(e)))
-                }
-                className={cn('chip', r.status === 'attended' && 'chip-active')}
-                title={isPast ? 'Toggle attendance' : 'Mark attendance'}
-              >
-                <UserCheck className="h-3.5 w-3.5" /> {r.status === 'attended' ? 'Attended' : 'Mark present'}
-              </button>
-            ) : (
-              <span
+                onClick={() => setSelectedDate(dStr)}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold',
-                  r.status === 'attended'
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                    : 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20'
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm',
+                  isSelected
+                    ? 'bg-primary-600 text-white shadow-primary-500/30'
+                    : 'bg-white/5 hover:bg-white/10 text-ink-muted hover:text-ink'
                 )}
               >
-                <UserCheck className="h-3 w-3" /> {r.status === 'attended' ? 'Attended' : 'Registered'}
-              </span>
-            )}
-          </div>
-        ))}
-        {!isLoading && !data.length && <p className="px-2 text-sm muted">No registrations yet.</p>}
+                <Calendar className="h-3.5 w-3.5" />
+                <span>Day {idx + 1} ({dayLabel})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Search and Filters Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4 bg-white/[0.01]">
+        <div className="relative min-w-[240px] flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
+          <input
+            type="text"
+            placeholder="Search by student name, roll no, department..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input w-full pl-10 pr-4 py-2 text-xs rounded-xl"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Department filter */}
+          <select
+            aria-label="Filter by Department"
+            value={deptFilter}
+            onChange={(e) => setDeptFilter(e.target.value)}
+            className="input text-xs py-2 rounded-xl"
+          >
+            <option value="">All Departments</option>
+            {uniqueDepts.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+
+          {/* Year filter */}
+          <select
+            aria-label="Filter by Year"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="input text-xs py-2 rounded-xl"
+          >
+            <option value="">All Years</option>
+            {ACADEMIC_YEARS.map((y) => (
+              <option key={y} value={y}>
+                {YEAR_LABELS[y] || `Year ${y}`}
+              </option>
+            ))}
+          </select>
+
+          {/* Status filter */}
+          <select
+            aria-label="Filter by Attendance Status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="input text-xs py-2 rounded-xl"
+          >
+            <option value="">All Statuses</option>
+            <option value="attended">Attended (Present)</option>
+            <option value="absent">Absent</option>
+            <option value="pending">Pending</option>
+            <option value="waitlisted">Waitlisted</option>
+          </select>
+
+          {(search || deptFilter || yearFilter || statusFilter) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearch('');
+                setDeptFilter('');
+                setYearFilter('');
+                setStatusFilter('');
+              }}
+              className="text-xs"
+            >
+              Reset
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Participants Table Content */}
+      {isLoading ? (
+        <div className="p-8 text-center text-sm text-ink-muted">Loading participant roster…</div>
+      ) : error ? (
+        <div className="p-6">
+          <ErrorState error={error} />
+        </div>
+      ) : !filteredParticipants.length ? (
+        <div className="p-12 text-center">
+          <Users className="mx-auto h-10 w-10 text-ink-muted opacity-40 mb-2" />
+          <p className="text-sm font-bold text-ink">No participants match your criteria</p>
+          <p className="text-xs text-ink-muted mt-1">Try adjusting your search terms or active filters.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02] text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                <th className="px-5 py-3.5 w-12 text-center">#</th>
+                <th className="px-4 py-3.5">Student Participant</th>
+                <th className="px-4 py-3.5">Academic Class</th>
+                <th className="px-4 py-3.5">Registration Time</th>
+                <th className="px-4 py-3.5 text-center">Attendance ({selectedDateLabel})</th>
+                <th className="px-5 py-3.5 text-right">{canMarkAttendance ? 'Mark Attendance' : 'Status'}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredParticipants.map((r, index) => {
+                const dayStatus = getStatusOnDate(r, selectedDate);
+                const isWaitlist = r.status === 'waitlisted';
+                const isMutating = markingId === r.user?._id;
+
+                return (
+                  <tr key={r.user?._id || index} className="hover:bg-white/[0.03] transition-colors">
+                    <td className="px-5 py-3.5 text-center font-mono text-xs text-ink-muted">
+                      {index + 1}
+                    </td>
+
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <Avatar user={r.user} size="sm" />
+                        <div className="min-w-0">
+                          <p className="font-bold text-ink truncate text-sm">
+                            {displayName(r.user)}
+                          </p>
+                          <p className="font-mono text-xs text-ink-muted truncate">
+                            {r.user?.rollNo || r.user?.email || '—'}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3.5">
+                      <div className="space-y-0.5">
+                        <span className="inline-block rounded-md bg-white/5 px-2 py-0.5 text-xs font-semibold text-ink">
+                          {r.user?.department || '—'}
+                        </span>
+                        <p className="text-[11px] text-ink-muted">
+                          {r.user?.year ? `Year ${r.user.year}` : ''}
+                          {r.user?.section ? ` · Sec ${r.user.section}` : ''}
+                        </p>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3.5 text-xs text-ink-muted">
+                      {r.registeredAt ? fmtDateTime(r.registeredAt) : '—'}
+                    </td>
+
+                    <td className="px-4 py-3.5 text-center">
+                      {isWaitlist ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 border border-violet-500/25 px-2.5 py-0.5 text-xs font-bold text-violet-700 dark:text-violet-300">
+                          <Sparkles className="h-3 w-3" /> Waitlisted
+                        </span>
+                      ) : dayStatus === 'attended' ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/25 px-2.5 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Present (OD)
+                        </span>
+                      ) : dayStatus === 'absent' ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 border border-rose-500/25 px-2.5 py-0.5 text-xs font-bold text-rose-700 dark:text-rose-400">
+                          <XCircle className="h-3.5 w-3.5" /> Absent
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-500/15 border border-slate-500/25 px-2.5 py-0.5 text-xs font-bold text-slate-600 dark:text-slate-400">
+                          <Clock className="h-3.5 w-3.5" /> Pending
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-5 py-3.5 text-right">
+                      {isWaitlist ? (
+                        <span className="text-xs text-ink-muted italic">In queue</span>
+                      ) : canMarkAttendance ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isMutating}
+                            onClick={() => handleMark(r.user._id, true)}
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all shadow-sm',
+                              dayStatus === 'attended'
+                                ? 'bg-emerald-600 text-white shadow-emerald-500/30'
+                                : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400'
+                            )}
+                            title="Mark Present (Grants academic OD credit for today)"
+                          >
+                            <UserCheck className="h-3.5 w-3.5" />
+                            <span>Present</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isMutating}
+                            onClick={() => handleMark(r.user._id, false)}
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all shadow-sm',
+                              dayStatus === 'absent'
+                                ? 'bg-rose-600 text-white shadow-rose-500/30'
+                                : 'bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:text-rose-400'
+                            )}
+                            title="Mark Absent (Alerts Class In-Charge & updates class attendance to absent)"
+                          >
+                            <UserX className="h-3.5 w-3.5" />
+                            <span>Absent</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-semibold text-ink-muted">
+                          {dayStatus === 'attended' ? 'Verified OD' : dayStatus === 'absent' ? 'Verified Absent' : 'Registered'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }
@@ -256,10 +659,6 @@ export default function EventDetail() {
             </div>
           </Card>
 
-          {/* Participants Roster: Visible to all faculties, HODs, Principal, and higher authorities */}
-          {ev.canViewParticipants && (
-            <Participants eventId={ev._id} isPast={ev.isPast} canMarkAttendance={Boolean(ev.canMarkAttendance)} />
-          )}
         </div>
 
         <div className="space-y-6">
@@ -304,6 +703,13 @@ export default function EventDetail() {
           </Card>
         </div>
       </div>
+
+      {/* Participants Roster: Full-width responsive section visible to faculties, HODs, Principal, and higher authorities */}
+      {ev.canViewParticipants && (
+        <div className="mt-8">
+          <Participants event={ev} canMarkAttendance={Boolean(ev.canMarkAttendance)} isPast={ev.isPast} />
+        </div>
+      )}
 
       {/* Poster Lightbox Modal */}
       {viewingPoster && ev.poster && (

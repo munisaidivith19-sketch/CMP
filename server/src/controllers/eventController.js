@@ -1,10 +1,14 @@
 import Event from '../models/Event.js';
 import Club from '../models/Club.js';
 import User from '../models/User.js';
+import AttendanceRecord from '../models/AttendanceRecord.js';
+import TimetableSlot from '../models/TimetableSlot.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../utils/http.js';
 import { canManageClub, canManageEvent, sameId } from '../utils/permissions.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
+import { dayKey, toDay, weekdayOf } from '../utils/dates.js';
+import { clock } from '../utils/clock.js';
 import { generateEventParticipantsPdfBuffer } from '../services/eventParticipantsPdf.js';
 
 const EDITABLE = [
@@ -357,7 +361,7 @@ async function promoteWaitlist(eventId) {
 export const getParticipants = asyncHandler(async (req, res) => {
   const { event, club } = await loadEvent(req.params.id);
   if (!canViewParticipants(req.user, event, club)) throw new ApiError(403, 'You do not have permission to view participants');
-  await event.populate('registrations.user', 'name email avatar department year rollNo');
+  await event.populate('registrations.user', 'name email avatar department year section rollNo');
   res.json(event.registrations);
 });
 
@@ -386,11 +390,189 @@ export const getEventParticipantsPdf = asyncHandler(async (req, res) => {
 
 export const markAttendance = asyncHandler(async (req, res) => {
   const { event } = await loadEvent(req.params.id);
-  if (!canMarkEventAttendance(req.user, event)) throw new ApiError(403, 'Only assigned faculty coordinators and the hosting HOD can mark attendance');
+  if (!canMarkEventAttendance(req.user, event)) {
+    throw new ApiError(403, 'Only assigned faculty coordinators and the hosting HOD can mark attendance');
+  }
+
   const reg = event.registrations.find((r) => sameId(r.user, req.params.userId));
-  if (!reg || reg.status === 'waitlisted') throw new ApiError(400, 'User is not a confirmed participant');
-  reg.status = req.body.attended ? 'attended' : 'registered';
+  if (!reg || reg.status === 'waitlisted') {
+    throw new ApiError(400, 'User is not a confirmed participant');
+  }
+
+  const attended = Boolean(req.body.attended);
+  const now = clock.now();
+  let targetDateStr = req.body.date ? String(req.body.date).trim().slice(0, 10) : dayKey(now);
+
+  const targetDay = toDay(targetDateStr);
+  const evStartDay = toDay(event.startDate);
+  const evEndDay = toDay(event.endDate);
+
+  if (targetDay < evStartDay || targetDay > evEndDay) {
+    if (!req.body.date) {
+      targetDateStr = dayKey(evStartDay);
+    } else {
+      throw new ApiError(422, 'The selected date is outside of the event schedule');
+    }
+  }
+
+  if (!reg.attendanceDays) reg.attendanceDays = [];
+  const dayIdx = reg.attendanceDays.findIndex((d) => d.date === targetDateStr);
+  if (dayIdx >= 0) {
+    reg.attendanceDays[dayIdx].attended = attended;
+    reg.attendanceDays[dayIdx].markedBy = req.user._id;
+    reg.attendanceDays[dayIdx].markedAt = new Date();
+  } else {
+    reg.attendanceDays.push({
+      date: targetDateStr,
+      attended,
+      markedBy: req.user._id,
+      markedAt: new Date(),
+    });
+  }
+
+  const hasAttendedAny = reg.attendanceDays.some((d) => d.attended);
+  reg.status = hasAttendedAny ? 'attended' : 'registered';
   await event.save();
-  logActivity(req, 'event.attendance', { entityType: 'event', entityId: event._id, summary: event.title });
-  res.json({ status: reg.status });
+
+  const student = await User.findById(req.params.userId).select('name rollNo department year section email').lean();
+
+  if (student) {
+    const studentDay = toDay(targetDateStr);
+    const dayOfWeek = weekdayOf(studentDay);
+    const studentSection = String(student.section || '').trim().toUpperCase();
+
+    const scheduledSlots = await TimetableSlot.find({
+      department: student.department,
+      isActive: true,
+      isBreak: { $ne: true },
+      dayOfWeek,
+      ...(studentSection ? { section: studentSection } : {}),
+      ...(student.year ? { year: student.year } : {}),
+    }).lean();
+
+    const periods = scheduledSlots.map((s) => s.period);
+
+    if (attended) {
+      if (scheduledSlots.length > 0) {
+        const ops = scheduledSlots.map((slot) => ({
+          updateOne: {
+            filter: { student: student._id, subject: slot.subject, date: studentDay, period: slot.period },
+            update: {
+              $setOnInsert: {
+                student: student._id,
+                subject: slot.subject,
+                date: studentDay,
+                period: slot.period,
+                department: student.department,
+                section: student.section,
+              },
+              $set: {
+                status: 'od',
+                markedBy: req.user._id,
+                markedAt: new Date(),
+                correctionReason: `Attended event: ${event.title}`,
+              },
+            },
+            upsert: true,
+          },
+        }));
+        await AttendanceRecord.bulkWrite(ops);
+      }
+
+      await notifyUsers([student._id], {
+        type: 'attendance',
+        title: 'Event Attendance Marked: Present',
+        message: `You have been marked present (On Duty) for "${event.title}" on ${targetDateStr} by ${req.user.name}.`,
+        link: '/attendance',
+      });
+    } else {
+      if (periods.length > 0) {
+        const existingRecords = await AttendanceRecord.find({
+          student: student._id,
+          date: studentDay,
+          period: { $in: periods },
+        });
+
+        for (const rec of existingRecords) {
+          const prevStatus = rec.status;
+          rec.status = 'absent';
+          rec.markedBy = req.user._id;
+          rec.markedAt = new Date();
+          rec.history.push({
+            from: prevStatus,
+            to: 'absent',
+            by: req.user._id,
+            at: new Date(),
+            reason: `Did not attend registered event: ${event.title}`,
+          });
+          await rec.save();
+        }
+
+        const recordedPeriods = new Set(existingRecords.map((r) => r.period));
+        const missingSlots = scheduledSlots.filter((s) => !recordedPeriods.has(s.period));
+        if (missingSlots.length > 0) {
+          const ops = missingSlots.map((slot) => ({
+            updateOne: {
+              filter: { student: student._id, subject: slot.subject, date: studentDay, period: slot.period },
+              update: {
+                $setOnInsert: {
+                  student: student._id,
+                  subject: slot.subject,
+                  date: studentDay,
+                  period: slot.period,
+                  department: student.department,
+                  section: student.section,
+                },
+                $set: {
+                  status: 'absent',
+                  markedBy: req.user._id,
+                  markedAt: new Date(),
+                  correctionReason: `Did not attend registered event: ${event.title}`,
+                },
+              },
+              upsert: true,
+            },
+          }));
+          await AttendanceRecord.bulkWrite(ops);
+        }
+      }
+
+      const cic = await User.findOne({
+        role: 'faculty',
+        department: student.department,
+        section: student.section,
+        inChargeYear: student.year,
+        isActive: true,
+      }).select('_id name');
+
+      if (cic) {
+        await notifyUsers([cic._id], {
+          type: 'attendance',
+          title: `Event Absence Alert: ${student.name}`,
+          message: `${student.name} (${student.rollNo || student.department}) did not attend registered event "${event.title}" on ${targetDateStr}. Academic attendance has been marked absent.`,
+          link: '/attendance',
+        });
+      }
+
+      await notifyUsers([student._id], {
+        type: 'attendance',
+        title: `Event Absence: ${event.title}`,
+        message: `You were marked absent for the event "${event.title}" on ${targetDateStr}. Your academic attendance has been marked absent.`,
+        link: '/attendance',
+      });
+    }
+  }
+
+  logActivity(req, 'event.attendance', {
+    entityType: 'event',
+    entityId: event._id,
+    summary: `${event.title} - ${student?.name || 'Student'}: ${attended ? 'Attended' : 'Absent'} (${targetDateStr})`,
+  });
+
+  res.json({
+    status: reg.status,
+    attended,
+    date: targetDateStr,
+    attendanceDays: reg.attendanceDays,
+  });
 });

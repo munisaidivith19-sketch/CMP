@@ -8,6 +8,14 @@ const registrationSchema = new Schema(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     status: { type: String, enum: ['registered', 'waitlisted', 'attended'], default: 'registered' },
     registeredAt: { type: Date, default: Date.now },
+    attendanceDays: [
+      {
+        date: { type: String, required: true }, // 'YYYY-MM-DD'
+        attended: { type: Boolean, default: false },
+        markedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        markedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { _id: false }
 );

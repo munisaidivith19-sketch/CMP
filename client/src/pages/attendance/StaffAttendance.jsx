@@ -1028,18 +1028,31 @@ function MarkAttendance({ preset, onPresetUsed }) {
                       <p className="mt-2 text-sm font-bold text-ink truncate w-full px-1">{s.name}</p>
                       <p className="text-xs font-mono text-ink-muted">{s.rollNo || 'No Roll'}</p>
 
-                      {/* OD or Approved Leave Badge */}
+                      {/* OD, Workshop/Event or Approved Leave Badge */}
                       {s.badge && (
                         <span
+                          title={s.eventInfo?.title ? `${s.badge}: ${s.eventInfo.title}` : s.badge}
                           className={cn(
                             'mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold shadow-xs',
-                            s.badge === 'OD'
+                            s.badge.startsWith('On ')
+                              ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30'
+                              : s.badge === 'Event Absent'
+                              ? 'bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                              : s.badge === 'OD'
                               ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30'
                               : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30'
                           )}
                         >
-                          {s.badge === 'OD' ? <Sparkles className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
-                          {s.badge === 'OD' ? 'On Duty (OD)' : 'Approved Leave'}
+                          {s.badge.startsWith('On ') ? (
+                            <Sparkles className="h-3 w-3 text-purple-500" />
+                          ) : s.badge === 'Event Absent' ? (
+                            <XCircle className="h-3 w-3 text-rose-500" />
+                          ) : s.badge === 'OD' ? (
+                            <Sparkles className="h-3 w-3" />
+                          ) : (
+                            <Calendar className="h-3 w-3" />
+                          )}
+                          <span>{s.badge === 'OD' ? 'On Duty (OD)' : s.badge}</span>
                         </span>
                       )}
                     </div>
@@ -1111,13 +1124,20 @@ function MarkAttendance({ preset, onPresetUsed }) {
                               <span className="font-bold text-ink">{s.name}</span>
                               {s.badge && (
                                 <span
+                                  title={s.eventInfo?.title ? `${s.badge}: ${s.eventInfo.title}` : s.badge}
                                   className={cn(
-                                    'ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.2 text-[10px] font-bold',
-                                    s.badge === 'OD'
+                                    'ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold',
+                                    s.badge.startsWith('On ')
+                                      ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30'
+                                      : s.badge === 'Event Absent'
+                                      ? 'bg-rose-500/20 text-rose-700 dark:text-rose-400 border border-rose-500/30'
+                                      : s.badge === 'OD'
                                       ? 'bg-sky-500/20 text-sky-700 dark:text-sky-300'
                                       : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
                                   )}
                                 >
+                                  {s.badge.startsWith('On ') && <Sparkles className="h-2.5 w-2.5 text-purple-500" />}
+                                  {s.badge === 'Event Absent' && <XCircle className="h-2.5 w-2.5 text-rose-500" />}
                                   {s.badge}
                                 </span>
                               )}

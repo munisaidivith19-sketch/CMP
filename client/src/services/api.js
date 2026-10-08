@@ -188,8 +188,12 @@ export const api = createApi({
     }),
     getParticipants: b.query({ query: (id) => `/events/${id}/participants`, providesTags: ['Event'] }),
     markAttendance: b.mutation({
-      query: ({ id, userId, attended }) => ({ url: `/events/${id}/attendance/${userId}`, method: 'PATCH', body: { attended } }),
-      invalidatesTags: ['Event'],
+      query: ({ id, userId, attended, date }) => ({
+        url: `/events/${id}/attendance/${userId}`,
+        method: 'PATCH',
+        body: { attended, date },
+      }),
+      invalidatesTags: ['Event', 'Attendance'],
     }),
 
     // ── Announcements ─────────────────────────────────

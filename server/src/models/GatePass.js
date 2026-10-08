@@ -122,6 +122,27 @@ const gatePassSchema = new Schema(
     returnToken: { type: String, select: false },
     returnCode: { type: String, select: false },
     returnCredentialExpiresAt: Date,
+    // Admin override: the return credential was issued by an Admin without the
+    // student's location check (e.g. a device that cannot get a precise fix).
+    returnOverride: {
+      by: { type: Schema.Types.ObjectId, ref: 'User' },
+      at: Date,
+      reason: { type: String, trim: true, maxlength: 300 },
+    },
+
+    // Bulk (bind) approval: the class in-charge groups parent-verified requests;
+    // the HOD and principal then decide the group (and may drop single students).
+    bindGroup: { type: Schema.Types.ObjectId, ref: 'GatePassBindGroup' },
+    // Bind-group passes are approved without a code; the code queue issues them
+    // a few at a time (services/gatePassCodeQueue.js) and retries any failure.
+    codeIssue: {
+      state: { type: String, enum: ['queued', 'processing', 'issued', 'skipped'] },
+      scheduledAt: Date,
+      claimedAt: Date,
+      issuedAt: Date,
+      attempts: { type: Number, default: 0 },
+      lastError: { type: String, trim: true, maxlength: 200 },
+    },
 
     cancelledAt: Date,
     revokedBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -135,6 +156,8 @@ gatePassSchema.index({ student: 1, status: 1, createdAt: -1 });
 gatePassSchema.index({ status: 1, createdAt: -1 });
 gatePassSchema.index({ status: 1, department: 1, section: 1 });
 gatePassSchema.index({ passType: 1, emergencyAuthority: 1, status: 1, createdAt: -1 });
+gatePassSchema.index({ bindGroup: 1, status: 1 }, { partialFilterExpression: { bindGroup: { $exists: true } } });
+gatePassSchema.index({ 'codeIssue.state': 1, 'codeIssue.scheduledAt': 1 }, { partialFilterExpression: { 'codeIssue.state': { $exists: true } } });
 gatePassSchema.index(
   { verificationCode: 1 },
   { unique: true, name: 'unique_verification_code', partialFilterExpression: { verificationCode: { $type: 'string' } } }

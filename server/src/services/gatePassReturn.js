@@ -23,14 +23,25 @@ export const LOCATION_MESSAGES = {
  * Distance is computed here from the raw coordinates; nothing the client
  * claims about distance or verification is used. Distance is compared at
  * centimeter precision so a reading exactly on the radius counts as inside.
+ *
+ * A precise reading (accuracy within the configured limit) is judged by its
+ * point alone. A less precise one — typical indoors, where the device falls
+ * back to Wi-Fi / cell positioning — is still accepted when its whole
+ * uncertainty circle lies inside the campus (distance + accuracy ≤ radius):
+ * wherever the student really is within that error, they are on campus. A
+ * circle that crosses the boundary cannot be decided and stays low_accuracy;
+ * one entirely beyond it is outside_geofence.
  */
 export function evaluateLocation({ latitude, longitude, accuracy, timestamp }, now = Date.now()) {
   const cfg = env.location;
   const distance = distanceMeters({ latitude: cfg.collegeLatitude, longitude: cfg.collegeLongitude }, { latitude, longitude });
+  const d = Math.round(distance * 100) / 100;
+  const precise = accuracy <= cfg.maxAccuracyMeters;
   let reason = null;
   if (Math.abs(now - new Date(timestamp).getTime()) > cfg.maxAgeSeconds * 1000) reason = 'stale_location';
-  else if (accuracy > cfg.maxAccuracyMeters) reason = 'low_accuracy';
-  else if (Math.round(distance * 100) / 100 > cfg.radiusMeters) reason = 'outside_geofence';
+  else if (precise) reason = d > cfg.radiusMeters ? 'outside_geofence' : null;
+  else if (d + accuracy <= cfg.radiusMeters) reason = null; // certainly inside, even at the edge of the error
+  else reason = d - accuracy > cfg.radiusMeters ? 'outside_geofence' : 'low_accuracy';
   return { distance, reason };
 }
 
@@ -38,16 +49,23 @@ export function evaluateLocation({ latitude, longitude, accuracy, timestamp }, n
  * Give an active (student-outside) pass a fresh return credential: an opaque
  * random QR token plus a short spoken code in the existing gate-code format.
  * Any earlier return credential for the pass stops working.
+ *
+ * `override` ({ by, reason }) is an Admin issuing it without a location check:
+ * it is recorded on the pass as such, never as a verified location.
  */
-export async function issueReturnCredential(passId, studentId, now = new Date()) {
-  const expiresAt = new Date(now.getTime() + env.location.returnCredentialMinutes * 60000);
+export async function issueReturnCredential(passId, studentId, now = new Date(), override = null) {
+  const minutes = override ? env.location.returnOverrideMinutes : env.location.returnCredentialMinutes;
+  const expiresAt = new Date(now.getTime() + minutes * 60000);
+  const stamp = override
+    ? { returnOverride: { by: override.by, at: now, reason: override.reason } }
+    : { returnLocationVerifiedAt: now };
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const token = crypto.randomBytes(24).toString('base64url');
     const code = generateGatePassSecurityCode();
     try {
       const pass = await GatePass.findOneAndUpdate(
         { _id: passId, student: studentId, status: 'active', actualExit: { $ne: null } },
-        { $set: { returnToken: token, returnCode: code, returnCredentialExpiresAt: expiresAt, returnLocationVerifiedAt: now } },
+        { $set: { returnToken: token, returnCode: code, returnCredentialExpiresAt: expiresAt, ...stamp } },
         { new: true }
       );
       if (!pass) throw new ApiError(409, 'This gate pass is no longer waiting for your return');

@@ -1,16 +1,88 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { ArrowLeft, DoorOpen } from 'lucide-react';
-import { useGetGatePassQuery } from '../../services/api';
+import toast from 'react-hot-toast';
+import { ArrowLeft, DoorOpen, LogIn } from 'lucide-react';
+import { useAdminReturnOverrideMutation, useGetGatePassQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { Avatar, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui/primitives';
+import { Avatar, Button, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui/primitives';
+import { Modal } from '../../components/ui/Modal';
+import { Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
-import { fmtClassDay, fmtDateTime, titleCase, displayName } from '../../utils/format';
+import { errMsg, fmtClassDay, fmtDateTime, titleCase, displayName } from '../../utils/format';
 import { GATE_PASS_REGARDING } from '../../utils/constants';
 import { PassQr, PassTimeline, ReviewCard, canReviewPass, isOuting, passStatusLabel } from './GatePass';
 import { AUTHORITY_LABELS, EmergencyBadge, EmergencyDetails, isEmergency } from './EmergencyGatePass';
 
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '—');
+
+/**
+ * Admin: when a student's device cannot pass the return location check, issue
+ * their Return QR / code directly. Security still scans it and records IN —
+ * this never marks the student as returned by itself.
+ */
+function AdminReturnOverride({ pass }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [submit, { isLoading }] = useAdminReturnOverrideMutation();
+  const trimmed = reason.trim();
+  const go = async () => {
+    try {
+      await submit({ id: pass._id, reason: trimmed }).unwrap();
+      toast.success('Return code sent to the student — Security will record IN at the gate');
+      setOpen(false);
+      setReason('');
+    } catch (e) {
+      toast.error(errMsg(e));
+    }
+  };
+  return (
+    <Card className="flex flex-wrap items-center justify-between gap-3 border border-amber-500/20 bg-amber-500/5">
+      <div className="min-w-0">
+        <p className="font-bold">Student can't verify their location?</p>
+        <p className="text-sm muted">
+          {pass.returnOverride?.at
+            ? `Return approved by ${displayName(pass.returnOverride.by) || 'Admin'} · ${fmtDateTime(pass.returnOverride.at)}${pass.returnOverride.reason ? ` — “${pass.returnOverride.reason}”` : ''}`
+            : 'Mark the return to send them a Return QR / code. Security still scans it and taps IN at the gate.'}
+        </p>
+      </div>
+      <Button icon={LogIn} variant={pass.returnOverride?.at ? 'outline' : 'primary'} onClick={() => setOpen(true)}>
+        {pass.returnOverride?.at ? 'Issue a new code' : 'Mark as return'}
+      </Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Mark as return"
+        subtitle={`${displayName(pass.student)} · ${pass.student?.rollNo || ''}`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button icon={LogIn} loading={isLoading} disabled={trimmed.length < 3} onClick={go}>
+              Send return code
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm">
+          <p>
+            The student gets a Return QR / code on their gate pass, valid for an hour. They show it to Security, who scans it and taps <b>IN</b> — only then is
+            the return recorded. Any earlier return code stops working.
+          </p>
+          <Textarea
+            label="Reason (recorded in Security & Logs)"
+            rows={3}
+            maxLength={300}
+            placeholder="e.g. Student is at the gate; laptop cannot get a precise location"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </div>
+      </Modal>
+    </Card>
+  );
+}
 
 export default function GatePassDetail() {
   const { id } = useParams();
@@ -41,6 +113,7 @@ export default function GatePassDetail() {
             }
           />
           {!mine && canReviewPass(me.role, pass) && <ReviewCard pass={pass} onDone={refetch} />}
+          {me.role === 'admin' && pass.status === 'active' && pass.actualExit && !pass.dayScholarOuting && <AdminReturnOverride pass={pass} />}
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader title="Details" />

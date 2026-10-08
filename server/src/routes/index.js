@@ -79,6 +79,7 @@ import * as staffAttendance from '../controllers/staffAttendanceController.js';
 import * as timetable from '../controllers/timetableController.js';
 import * as holidays from '../controllers/holidayController.js';
 import * as gatePass from '../controllers/gatePassController.js';
+import * as gateBind from '../controllers/gatePassBindController.js';
 import * as lostFound from '../controllers/lostFoundController.js';
 import * as complaints from '../controllers/complaintController.js';
 import { COMPLAINT_AUTHORITY_ROLES } from '../controllers/complaintController.js';
@@ -133,6 +134,23 @@ const tagArray = (field) =>
 const PHONE_CHARS = /^[0-9+\-\s()]*$/;
 const phoneRule = (chain, label = 'Phone number') =>
   chain.trim().isLength({ max: 20 }).matches(PHONE_CHARS).withMessage(`${label} may contain only digits, +, spaces, - and brackets`);
+
+/**
+ * A mobile number entered by a Class In-Charge: exactly 10 digits. Spacing,
+ * dashes, brackets and a +91 / 91 / 0 prefix are dropped first, so the stored
+ * value is always the bare 10 digits.
+ */
+const toMobile10 = (v) => {
+  const d = String(v ?? '').replace(/[\s\-()]/g, '');
+  if (d.startsWith('+91')) return d.slice(3);
+  if (/^91\d{10}$/.test(d)) return d.slice(2);
+  if (/^0\d{10}$/.test(d)) return d.slice(1);
+  return d;
+};
+const mobile10 = (chain, label) =>
+  chain.isString().withMessage(`${label} is required`).bail().customSanitizer(toMobile10).matches(/^\d{10}$/).withMessage(`${label} must be exactly 10 digits`);
+// Students: Mr / Ms only (Dr is for staff), and a gender that matches it (checked in the User model too).
+const STUDENT_TITLES = ['Mr', 'Ms'];
 
 const isStudentRole = (_v, { req }) => STUDENT_ROLES.includes(req.body.role);
 const isFacultyRole = (_v, { req }) => req.body.role === 'faculty';
@@ -751,14 +769,10 @@ router.post(
   password('password'),
   body('rollNo').isString().trim().isLength({ min: 1, max: 30 }).withMessage('Roll number is required').toUpperCase(),
   body('stayType').isIn(STAY_TYPES).withMessage('Select hosteler or day scholar'),
-  body('parentPhone')
-    .isString()
-    .trim()
-    .isLength({ min: 6, max: 20 })
-    .withMessage("Parent's mobile number is required")
-    .matches(PHONE_CHARS)
-    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets"),
-  phoneRule(body('phone').optional({ values: 'falsy' })),
+  body('title').isIn(STUDENT_TITLES).withMessage('Choose Mr or Ms'),
+  body('gender').isIn(GENDERS).withMessage('Choose Male or Female'),
+  mobile10(body('parentPhone'), "Parent's mobile number"),
+  mobile10(body('phone').optional({ values: 'falsy' }), 'Student mobile number'),
   validate,
   account.createClassStudent
 );
@@ -774,15 +788,11 @@ router.patch(
   body('email').optional().isString().trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
   body('rollNo').optional().isString().trim().isLength({ min: 1, max: 30 }).withMessage('Roll number is required').toUpperCase(),
   body('stayType').optional().isIn(STAY_TYPES).withMessage('Select hosteler or day scholar'),
-  body('parentPhone')
-    .optional()
-    .isString()
-    .trim()
-    .isLength({ min: 6, max: 20 })
-    .withMessage("Parent's mobile number is required")
-    .matches(PHONE_CHARS)
-    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets"),
-  phoneRule(body('phone').optional({ values: 'null' }).isString()),
+  body('title').optional().isIn(STUDENT_TITLES).withMessage('Choose Mr or Ms'),
+  body('gender').optional().isIn(GENDERS).withMessage('Choose Male or Female'),
+  mobile10(body('parentPhone').optional(), "Parent's mobile number"),
+  // Empty clears the student's own mobile; anything else must be 10 digits.
+  mobile10(body('phone').optional({ values: 'falsy' }), 'Student mobile number'),
   body('year').optional().isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4').toInt(),
   body('section').optional().isString().trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
   body('semester').optional().isIn(SEMESTERS).withMessage('Semester must be 1–8').toInt(),
@@ -980,6 +990,8 @@ router.get('/attendance/my-classes/options', authorize('faculty'), attendance.ge
 // "Our Class": the complete attendance of the faculty member's Class In-Charge
 // class — no subject chosen; the class comes from the account.
 router.get('/attendance/our-class', authorize('faculty'), ...rangeQuery, validate, attendance.getOurClassAttendance);
+// Faculty dashboard cards: their Class In-Charge class today (students, hostelers, below 75%).
+router.get('/attendance/our-class/today', authorize('faculty'), attendance.getClassToday);
 
 router.get(
   '/attendance/my-classes',
@@ -1428,6 +1440,68 @@ router.post(
 // Return to campus: Security scans the return QR / types the return code (read-only).
 const returnCodeRule = body('code').isString().trim().isLength({ min: 4, max: 80 }).withMessage('Return code is required');
 router.post('/gate-pass/return/verify', verifyLimiter, authorize(...GATE_SECURITY), returnCodeRule, validate, gatePass.verifyReturnCredential);
+// Bulk approval ("Bind"): class in-charge groups parent-verified requests → HOD → principal.
+// Role + scope + stage are all re-checked in the controller against the database.
+const BIND_ROLES = ['faculty', 'hod', 'principal', 'admin'];
+const bindGroupStatus = query('status')
+  .optional()
+  .isString()
+  .custom((v) => v.split(',').every((s) => ['open', 'pending_hod', 'pending_principal', 'approved', 'rejected'].includes(s)))
+  .withMessage('Invalid status');
+const bindReason = body('reason').optional({ values: 'null' }).isString().withMessage('Reason must be text').bail().trim().isLength({ max: 300 }).withMessage('Reason must be at most 300 characters');
+router.get('/gate-pass/bind-groups', authorize(...BIND_ROLES), bindGroupStatus, validate, gateBind.listBindGroups);
+router.post(
+  '/gate-pass/bind-groups',
+  writeLimiter,
+  authorize(...GATE_FACULTY),
+  body('name').isString().withMessage('Group name is required').bail().trim().isLength({ min: 2, max: 80 }).withMessage('Group name must be 2–80 characters'),
+  body('title').isString().withMessage('Title is required').bail().trim().isLength({ min: 2, max: 120 }).withMessage('Title must be 2–120 characters'),
+  body('reason').isString().withMessage('Reason is required').bail().trim().isLength({ min: 5, max: 500 }).withMessage('Reason must be 5–500 characters'),
+  validate,
+  gateBind.createBindGroup
+);
+router.get('/gate-pass/bind-groups/:id', idParam('id'), authorize(...BIND_ROLES), gateBind.getBindGroup);
+router.delete('/gate-pass/bind-groups/:id', writeLimiter, idParam('id'), authorize(...GATE_FACULTY), gateBind.deleteBindGroup);
+router.post('/gate-pass/bind-groups/:id/submit', writeLimiter, idParam('id'), authorize(...GATE_FACULTY), gateBind.submitBindGroup);
+router.patch(
+  '/gate-pass/bind-groups/:id/hod-review',
+  writeLimiter,
+  idParam('id'),
+  authorize(...GATE_HOD),
+  body('action').isIn(['forward', 'reject']).withMessage('Choose forward or reject'),
+  bindReason,
+  validate,
+  gateBind.hodReviewBindGroup
+);
+router.patch(
+  '/gate-pass/bind-groups/:id/principal-review',
+  writeLimiter,
+  idParam('id'),
+  authorize(...GATE_PRINCIPAL),
+  body('action').isIn(['approve', 'reject']).withMessage('Choose approve or reject'),
+  bindReason,
+  validate,
+  gateBind.principalReviewBindGroup
+);
+router.patch(
+  '/gate-pass/bind-groups/:id/members/:passId/reject',
+  writeLimiter,
+  idParam('id', 'passId'),
+  authorize('hod', 'principal', 'admin'),
+  bindReason,
+  validate,
+  gateBind.rejectBindMember
+);
+router.post(
+  '/gate-pass/:id/bind',
+  writeLimiter,
+  idParam('id'),
+  authorize(...GATE_FACULTY),
+  body('groupId').isMongoId().withMessage('Choose a bind group'),
+  validate,
+  gateBind.bindGatePass
+);
+router.delete('/gate-pass/:id/bind', writeLimiter, idParam('id'), authorize(...GATE_FACULTY), gateBind.unbindGatePass);
 router.get('/gate-pass/:id', idParam('id'), gatePass.getGatePass);
 router.get('/gate-pass/:id/qr', idParam('id'), gatePass.getGatePassQr);
 router.get('/gate-pass/:id/parent-otp', idParam('id'), authorize(...GATE_FACULTY), gatePass.getParentOtp);
@@ -1489,6 +1563,17 @@ router.post(
   gatePass.verifyReturnLocation
 );
 router.get('/gate-pass/:id/return-credential', idParam('id'), authorize(...STUDENT_ROLES), gatePass.getReturnCredential);
+// Admin marks a return when the student's device cannot pass the location check:
+// issues the Return QR / code; Security still scans it and records IN.
+router.patch(
+  '/gate-pass/:id/return-override',
+  writeLimiter,
+  idParam('id'),
+  authorize('admin'),
+  body('reason').isString().withMessage('Give a reason').bail().trim().isLength({ min: 3, max: 300 }).withMessage('Reason must be 3–300 characters'),
+  validate,
+  gatePass.adminReturnOverride
+);
 router.patch(
   '/gate-pass/:id/revoke',
   idParam('id'),

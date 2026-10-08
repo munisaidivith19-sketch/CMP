@@ -200,3 +200,46 @@ test('HOD Demotion: Demoting Staff 3 to regular faculty switches role back to fa
   const staff3New = await ctx.loginWeb(staff3.u);
   assert.equal(staff3New.user.role, 'faculty');
 });
+
+test('Access control: non-admins cannot read or change role assignments', async () => {
+  const hod = await ctx.createUser({ role: 'hod', department: 'ECE', email: 'ra_hod@jnn.edu.in' });
+  const principal = await ctx.createUser({ role: 'principal', email: 'ra_principal@jnn.edu.in' });
+  const tokens = [
+    (await ctx.loginWeb(staff3.u)).token,
+    (await ctx.loginWeb(hod)).token,
+    (await ctx.loginWeb(principal)).token,
+  ];
+  const calls = [
+    ['GET', '/admin/role-assignments/overview'],
+    ['POST', '/admin/role-assignments/assign-class-in-charge', { facultyId: staff3.u._id, department: 'CSE', year: 1, section: 'A', semester: 2 }],
+    ['POST', '/admin/role-assignments/swap-class-in-charge', { faculty1Id: staff1.u._id, faculty2Id: staff2.u._id }],
+    ['POST', '/admin/role-assignments/unassign-class-in-charge', { facultyId: staff2.u._id }],
+    ['POST', '/admin/role-assignments/set-hod', { department: 'CSE', facultyId: staff3.u._id }],
+    ['POST', '/admin/role-assignments/demote-hod', { hodId: hod._id }],
+  ];
+  for (const token of tokens) {
+    for (const [method, path, body] of calls) {
+      const res = await ctx.request(method, path, { token, body });
+      assert.equal(res.status, 403, `${method} ${path} should be forbidden`);
+    }
+  }
+  const anon = await ctx.request('GET', '/admin/role-assignments/overview');
+  assert.equal(anon.status, 401);
+});
+
+test('HOD Management: only faculty (or an existing HOD) can be appointed HOD', async () => {
+  const student = await ctx.createUser({ name: 'RA Student', email: 'ra_student@jnn.edu.in', rollNo: 'RA_001', department: 'CSE', year: 1, section: 'A', semester: 2 });
+  const principal = await ctx.createUser({ role: 'principal', email: 'ra_principal2@jnn.edu.in' });
+  for (const target of [student, principal, admin.u]) {
+    const res = await ctx.request('POST', '/admin/role-assignments/set-hod', {
+      token: admin.token,
+      body: { department: 'CSE', facultyId: target._id },
+    });
+    assert.equal(res.status, 400, `${target.role} must not become HOD`);
+  }
+  // The admin's own session survived (not demoted / revoked by a self-promotion).
+  const still = await ctx.request('GET', '/admin/role-assignments/overview', { token: admin.token });
+  assert.equal(still.status, 200);
+  const stuLogin = await ctx.loginWeb(student);
+  assert.notEqual(stuLogin.user.role, 'hod');
+});

@@ -299,3 +299,44 @@ test('GET /events/:id/participants-pdf generates official PDF with college logo'
   assert.equal(coordRes.headers.get('content-type'), 'application/pdf');
   assert.ok(typeof coordRes.body === 'string' && coordRes.body.startsWith('%PDF-1.4'));
 });
+
+test('Faculty coordinators must be active faculty — students/non-faculty IDs are rejected', async () => {
+  const futureStart = new Date(Date.now() + 86400000).toISOString();
+  const futureEnd = new Date(Date.now() + 90000000).toISOString();
+
+  // Creating with a student as "faculty coordinator" would hand them attendance marking + participant PII.
+  const createRes = await ctx.request('POST', '/events', {
+    token: users.hodCse.token,
+    body: {
+      title: 'Coordinator Escalation Attempt',
+      description: 'Should be rejected: coordinator is a student.',
+      venue: 'Lab 2',
+      startDate: futureStart,
+      endDate: futureEnd,
+      facultyCoordinators: [users.student.u._id],
+    },
+  });
+  assert.equal(createRes.status, 400, JSON.stringify(createRes.body));
+
+  // Same through update.
+  const updRes = await ctx.request('PUT', `/events/${eventByHodCse._id}`, {
+    token: users.hodCse.token,
+    body: { facultyCoordinators: [users.student.u._id] },
+  });
+  assert.equal(updRes.status, 400, JSON.stringify(updRes.body));
+
+  // The student still cannot mark attendance on that event.
+  const markRes = await ctx.request('PATCH', `/events/${eventByHodCse._id}/attendance/${users.student.u._id}`, {
+    token: users.student.token,
+    body: { attended: true },
+  });
+  assert.equal(markRes.status, 403);
+
+  // Duplicates collapse; valid faculty still accepted.
+  const okRes = await ctx.request('PUT', `/events/${eventByHodCse._id}`, {
+    token: users.hodCse.token,
+    body: { facultyCoordinators: [users.facCoord.u._id, users.facCoord.u._id] },
+  });
+  assert.equal(okRes.status, 200, JSON.stringify(okRes.body));
+  assert.equal(okRes.body.facultyCoordinators.length, 1);
+});

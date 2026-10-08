@@ -166,13 +166,36 @@ test('500 m geofence: 150/300/499/500 m accepted, 501 m rejected without a crede
   assert.equal(recs.at(-1).rejectionReason, 'outside_geofence');
 });
 
-test('GPS accuracy above the configured limit is rejected', async () => {
+test('GPS accuracy above the configured limit is rejected when the reading could be off campus', async () => {
   const { id, student } = await passFor();
-  const res = await checkLocation(id, student, north(20, { accuracy: env.location.maxAccuracyMeters + 1 }));
+  const { maxAccuracyMeters: max, radiusMeters: radius } = env.location;
+  // Imprecise and near the boundary: the error circle crosses it, so it cannot be decided.
+  const res = await checkLocation(id, student, north(radius - max, { accuracy: max + 1 }));
   assert.equal(res.status, 422);
   assert.equal(res.body.errors[0].code, 'low_accuracy');
   assert.equal(res.body.message, 'Your current location is not accurate enough. Please move to an open area and try again.');
-  assert.equal((await checkLocation(id, student, north(20, { accuracy: env.location.maxAccuracyMeters }))).status, 200);
+  assert.equal((await checkLocation(id, student, north(radius, { accuracy: radius }))).body.errors[0].code, 'low_accuracy');
+  assert.equal((await checkLocation(id, student, north(20, { accuracy: 100000 }))).body.errors[0].code, 'low_accuracy');
+  assert.equal((await checkLocation(id, student, north(20, { accuracy: max }))).status, 200);
+});
+
+test('indoors: an imprecise reading whose whole error circle is inside campus is accepted', async () => {
+  const { id, student } = await passFor();
+  const { maxAccuracyMeters: max, radiusMeters: radius } = env.location;
+  // e.g. 20 m from the campus point at ±51 m (Wi-Fi positioning inside a building).
+  assert.equal((await checkLocation(id, student, north(20, { accuracy: max + 1 }))).status, 200);
+  assert.equal((await checkLocation(id, student, north(100, { accuracy: radius - 100 }))).status, 200, 'circle touching the boundary from inside');
+  assert.equal((await checkLocation(id, student, north(101, { accuracy: radius - 100 }))).body.errors[0].code, 'low_accuracy', '1 m over');
+  const recs = await checks(id);
+  assert.equal(recs.filter((r) => r.result === 'verified').length, 2);
+});
+
+test('an imprecise reading entirely beyond the campus is outside, not "inaccurate"', async () => {
+  const { id, student } = await passFor();
+  const { maxAccuracyMeters: max, radiusMeters: radius } = env.location;
+  const res = await checkLocation(id, student, north(radius + 2 * max + 10, { accuracy: 2 * max }));
+  assert.equal(res.status, 422);
+  assert.equal(res.body.errors[0].code, 'outside_geofence');
 });
 
 test('stale (or future-dated) readings are rejected using the server clock', async () => {
@@ -333,4 +356,79 @@ test('privacy: location is read only per explicit check and never appears in oth
   }
   await inside(id, (await ctx.request('GET', `/gate-pass/${id}/return-credential`, { token: student.token })).body.code);
   assert.equal((await checks(id)).length, 1, 'completing the return reads no location');
+});
+
+// ── Admin return override ──────────────────────────────────────────────
+
+const override = (id, who, body = { reason: 'Laptop cannot get a precise location' }) =>
+  ctx.request('PATCH', `/gate-pass/${id}/return-override`, { token: who.token, body });
+
+test('admin override: issues a Return QR / code without a location check; Security still scans and records IN', async () => {
+  const { id, student } = await passFor();
+  const res = await override(id, admin);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.status, 'active', 'the override does not mark the student as returned');
+  assert.equal(res.body.returnOverride.by.name, 'Admin');
+  assert.equal(res.body.returnOverride.reason, 'Laptop cannot get a precise location');
+  assert.equal(res.body.returnCode, undefined, 'the admin never sees the student credential');
+  assert.equal(res.body.returnToken, undefined);
+
+  const pass = await ctx.models.GatePass.findById(id).lean();
+  assert.equal(pass.returnLocationVerifiedAt, undefined, 'never recorded as a verified location');
+  assert.equal((await checks(id)).length, 0);
+
+  const cred = await ctx.request('GET', `/gate-pass/${id}/return-credential`, { token: student.token });
+  assert.equal(cred.status, 200);
+  assert.equal(cred.body.override, true);
+  const minutes = (new Date(cred.body.expiresAt) - Date.now()) / 60000;
+  assert.ok(minutes > env.location.returnOverrideMinutes - 0.2 && minutes <= env.location.returnOverrideMinutes);
+  const notes = (await ctx.request('GET', '/notifications?limit=20', { token: student.token })).body.items;
+  assert.ok(notes.some((x) => x.title === 'Return approved by Admin' && x.link === `/gate-pass/${id}`));
+
+  assert.equal((await scan(cred.body.code)).status, 200);
+  const done = await inside(id, cred.body.code);
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  const after = await ctx.models.GatePass.findById(id).lean();
+  assert.equal(after.status, 'completed');
+  assert.ok(after.actualReturn);
+  assert.equal((await scan(cred.body.code)).status, 404, 'the code is single-use');
+
+  const audit = await ctx.models.SecurityLog.findOne({ event: 'GATE_PASS_RETURN_OVERRIDE', entityId: after._id }).lean();
+  assert.ok(audit, 'override is in Security & Logs');
+});
+
+test('admin override: only an admin, only a pass that is outside, and a reason is required', async () => {
+  const { id, student } = await passFor();
+  for (const who of [student, security, classFaculty, hod]) {
+    assert.equal((await override(id, who)).status, 403, who.u.role);
+  }
+  assert.equal((await ctx.request('PATCH', `/gate-pass/${id}/return-override`, { body: { reason: 'x' } })).status, 401);
+  for (const body of [{}, { reason: '' }, { reason: 'ok' }, { reason: 'x'.repeat(301) }, { reason: { $ne: '' } }, { reason: ['a', 'b', 'c'] }]) {
+    assert.equal((await override(id, admin, body)).status, 422, JSON.stringify(body));
+  }
+  assert.equal((await ctx.request('GET', `/gate-pass/${id}/return-credential`, { token: student.token })).status, 404, 'nothing issued');
+
+  for (const status of ['pending_hod', 'approved', 'completed', 'revoked']) {
+    const p = await passFor(status);
+    assert.equal((await override(p.id, admin)).status, 422, status);
+  }
+  const noExit = await passFor('active', { actualExit: null });
+  assert.equal((await override(noExit.id, admin)).status, 422);
+  const outing = await passFor('active', { dayScholarOuting: true });
+  assert.equal((await override(outing.id, admin)).status, 422, 'a day scholar outing has no return');
+  assert.equal((await override('64b000000000000000000000', admin)).status, 404);
+});
+
+test('admin override replaces an earlier return code; a later location check replaces the override', async () => {
+  const { id, student, credential } = await verifiedPass();
+  assert.equal((await override(id, admin)).status, 200);
+  assert.equal((await scan(credential.code)).status, 404, 'the old code stops working');
+  const cred = await ctx.request('GET', `/gate-pass/${id}/return-credential`, { token: student.token });
+  assert.equal(cred.body.override, true);
+
+  const again = await checkLocation(id, student, north(50));
+  assert.equal(again.status, 200);
+  const latest = await ctx.request('GET', `/gate-pass/${id}/return-credential`, { token: student.token });
+  assert.equal(latest.body.override, false);
+  assert.equal((await scan(cred.body.code)).status, 404);
 });

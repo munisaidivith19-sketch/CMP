@@ -494,6 +494,11 @@ export const setDepartmentHod = asyncHandler(async (req, res) => {
 
   const candidate = await User.findById(facultyId).select('+tokenVersion');
   if (!candidate) throw new ApiError(404, 'Selected faculty not found');
+  // Only staff may head a department — never a student, principal, admin, etc.
+  if (!['faculty', 'hod'].includes(candidate.role)) {
+    throw new ApiError(400, 'Only faculty members can be appointed HOD');
+  }
+  const oldRole = candidate.role;
 
   // Demote previous HOD of this department if different
   const previousHod = await User.findOne({
@@ -540,7 +545,7 @@ export const setDepartmentHod = asyncHandler(async (req, res) => {
   });
   logSecurity(req, 'ROLE_CHANGED', {
     target: candidate,
-    details: { oldRole: 'faculty', newRole: 'hod', department },
+    details: { oldRole, newRole: 'hod', department },
   });
   notifyUsers([candidate._id], {
     type: 'system',

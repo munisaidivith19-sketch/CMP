@@ -156,6 +156,19 @@ env.location = {
   maxAccuracyMeters: num('LOCATION_MAX_ACCURACY_METERS', 50, { max: 1000 }),
   maxAgeSeconds: num('LOCATION_MAX_AGE_SECONDS', 30, { max: 600 }),
   returnCredentialMinutes: num('RETURN_CREDENTIAL_MINUTES', 15, { max: 120 }),
+  // An Admin-issued return code lasts longer: the student may still be on the way to the gate.
+  returnOverrideMinutes: num('RETURN_OVERRIDE_MINUTES', 60, { max: 240 }),
+};
+
+/**
+ * Bind-group (bulk) approvals: gate codes + QR are issued a few at a time by
+ * a background queue instead of all at once when the principal approves.
+ */
+env.gatePass = {
+  codeBatchSize: num('GATE_CODE_BATCH_SIZE', 5, { min: 1, max: 50 }),
+  codeBatchIntervalMs: num('GATE_CODE_BATCH_INTERVAL_MS', 10000, { min: 1000, max: 600000 }),
+  // Longest wait between retries of a failed code/QR generation.
+  codeRetryMaxMs: num('GATE_CODE_RETRY_MAX_MS', 300000, { min: 1000, max: 3600000 }),
 };
 
 env.cloudinary.enabled = Boolean(

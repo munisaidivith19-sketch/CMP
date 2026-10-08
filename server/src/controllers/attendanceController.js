@@ -776,6 +776,89 @@ export const getOurClassAttendance = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Faculty Attendance dashboard cards for their own Class In-Charge class only
+ * (the class comes from the faculty account, never the request):
+ *   - students: total, present / absent / not-yet-marked today
+ *   - hostelers: the same, for hostelers only
+ *   - below threshold: students under 75% this semester, with their %
+ * "Present today" = attended (present / OD) at least one period today, the
+ * same rule as the HOD / admin daily summary. Mobile numbers are the student's
+ * own, which the Class In-Charge already manages.
+ */
+export const getClassToday = asyncHandler(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const [ourClass] = await facultyClassInChargeScope(req.user);
+  if (!ourClass) return res.json({ class: null });
+
+  const day = toDay(clock.now());
+  const roster = await User.find({
+    role: { $in: STUDENT_ROLES },
+    isActive: true,
+    department: ourClass.department,
+    section: ourClass.section,
+    year: ourClass.year,
+    semester: { $in: [ourClass.semester, null] },
+  })
+    .select('name title rollNo phone stayType avatar department year section')
+    .lean();
+  roster.sort(byRollNo);
+  const ids = roster.map((s) => s._id);
+  const semester = dayFilter(resolveRange({ range: 'semester' }));
+
+  const [todayRows, termRows] = ids.length
+    ? await Promise.all([
+        AttendanceRecord.aggregate([
+          { $match: { student: { $in: ids }, date: day } },
+          { $group: { _id: '$student', present: presentExpr, total: { $sum: 1 } } },
+        ]),
+        AttendanceRecord.aggregate([
+          { $match: { student: { $in: ids }, ...(semester ? { date: semester } : {}) } },
+          { $group: { _id: '$student', present: presentExpr, total: { $sum: 1 } } },
+        ]),
+      ])
+    : [[], []];
+  const todayOf = new Map(todayRows.map((r) => [String(r._id), r]));
+  const termOf = new Map(termRows.map((r) => [String(r._id), r]));
+
+  const students = roster.map((s) => {
+    const t = todayOf.get(String(s._id));
+    const term = termOf.get(String(s._id)) || { present: 0, total: 0 };
+    return {
+      _id: s._id,
+      name: s.name,
+      title: s.title,
+      rollNo: s.rollNo || null,
+      phone: s.phone || null,
+      avatar: s.avatar,
+      stayType: s.stayType || null,
+      today: t ? (t.present > 0 ? 'present' : 'absent') : 'unmarked',
+      todayPresentPeriods: t?.present || 0,
+      todayPeriods: t?.total || 0,
+      presentPeriods: term.present,
+      totalPeriods: term.total,
+      percentage: percentage(term.present, term.total),
+    };
+  });
+  const tally = (list) => ({
+    total: list.length,
+    present: list.filter((s) => s.today === 'present').length,
+    absent: list.filter((s) => s.today === 'absent').length,
+    unmarked: list.filter((s) => s.today === 'unmarked').length,
+  });
+  const below = students.filter((s) => s.totalPeriods > 0 && s.percentage < LOW_ATTENDANCE_THRESHOLD).sort((a, b) => a.percentage - b.percentage);
+
+  res.json({
+    class: ourClass,
+    date: dayKey(day),
+    threshold: LOW_ATTENDANCE_THRESHOLD,
+    students: tally(students),
+    hostelers: tally(students.filter((s) => s.stayType === 'hosteler')),
+    belowThreshold: below.length,
+    list: students,
+  });
+});
+
 // ── My Classes (faculty) ───────────────────────────────────────────
 
 /**

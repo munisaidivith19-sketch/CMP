@@ -53,6 +53,7 @@ import { ReturnStatus } from './ReturnStatus';
 import { AUTHORITY_LABELS, EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, EmergencyRequestForm, isEmergency } from './EmergencyGatePass';
 import GatePassListModal from './GatePassListModal';
 import MassOutpassModal from './MassOutpassModal';
+import { BindButton, BindPanel } from './BindGroups';
 
 const OPEN = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active'];
 const PENDING = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority'];
@@ -105,7 +106,11 @@ export function PassTimeline({ pass }) {
       ? [{ label: 'Left campus · outing complete', at: pass.actualExit, done: Boolean(pass.actualExit) }]
       : [
           { label: 'Left campus', at: pass.actualExit, done: Boolean(pass.actualExit) },
-          ...(pass.actualExit ? [{ label: 'Return location verified', at: pass.returnLocationVerifiedAt, done: Boolean(pass.returnLocationVerifiedAt) }] : []),
+          ...(pass.actualExit && pass.returnOverride?.at && !pass.returnLocationVerifiedAt
+            ? [{ label: 'Return approved by Admin', at: pass.returnOverride.at, done: true }]
+            : pass.actualExit
+              ? [{ label: 'Return location verified', at: pass.returnLocationVerifiedAt, done: Boolean(pass.returnLocationVerifiedAt) }]
+              : []),
           { label: 'Returned', at: pass.actualReturn, done: Boolean(pass.actualReturn) },
         ]),
   ];
@@ -142,7 +147,30 @@ export function PassQr({ pass }) {
   return isEmergency(pass) ? <EmergencyApprovedCode pass={pass} /> : <ExitQr pass={pass} />;
 }
 
+/** Bulk-approved: approved, but the code queue has not issued this pass's code yet. */
+export const codeQueued = (pass) => pass?.status === 'approved' && ['queued', 'processing'].includes(pass.codeIssue?.state);
+
+function QueuedQr({ pass }) {
+  return (
+    <div className="flex max-w-xs flex-col items-center gap-2 text-center">
+      <span className="flex h-14 w-14 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-600">
+        <Clock className="h-7 w-7" />
+      </span>
+      <p className="text-base font-extrabold">Approved</p>
+      <p className="text-sm">
+        Your QR code and code will be generated at <span className="font-bold">{fmtMoment(pass.codeIssue.scheduledAt, 'h:mm:ss a')}</span>.
+      </p>
+      <p className="text-xs muted">This page updates by itself as soon as it is ready — no need to ask for approval again.</p>
+    </div>
+  );
+}
+
 function ExitQr({ pass }) {
+  if (codeQueued(pass)) return <QueuedQr pass={pass} />;
+  return <IssuedQr pass={pass} />;
+}
+
+function IssuedQr({ pass }) {
   const { data, isLoading, error } = useGetGatePassQrQuery(pass._id);
   if (isLoading) return <Skeleton className="mx-auto h-56 w-56" />;
   if (error) return <p className="text-center text-sm text-rose-600">{errMsg(error)}</p>;
@@ -426,6 +454,7 @@ function StudentGatePass() {
                   {isEmergency(current) && <EmergencyBadge />}
                   <StatusBadge status={current.status} label={passStatusLabel(current.status, current)} />
                   {current.overdue && <StatusBadge status="rejected" label="overdue" />}
+                  {current.bindGroup?.name && <StatusBadge status="pending" label={`Group: ${current.bindGroup.name}`} />}
                 </div>
                 <p className="mt-1 text-sm">{current.description}</p>
                 {destinationLine(current.destination) && (
@@ -648,12 +677,14 @@ export function ReviewCard({ pass, onDone }) {
           )}
         </div>
         {canDecide && (
-        <div className="flex flex-wrap gap-2">
-          {!stage.needsParentOtp && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* A bound request moves with its group, so it has no Forward of its own. */}
+          {!stage.needsParentOtp && !pass.bindGroup && (
             <Button size="sm" variant={stage.okVariant} icon={stage.forwardAction === 'forward' ? ArrowRight : CheckCircle2} loading={saving} onClick={() => act(stage.forwardAction)}>
               {stage.forwardLabel}
             </Button>
           )}
+          {pass.status === 'parent_verified' && ['faculty', 'admin'].includes(me.role) && <BindButton pass={pass} onDone={onDone} />}
           <Button size="sm" variant="danger" onClick={() => { setReject(true); setReason(''); }}>
             Reject
           </Button>
@@ -693,6 +724,8 @@ const STAGE_STATUS = {
   chairman: ['pending_authority'],
 };
 const AUTHORITY_ONLY = ['ao', 'dean', 'chairman'];
+// Bulk approval: faculty build groups; HOD / principal decide them; admin can do all.
+const BIND_ROLES = ['faculty', 'hod', 'principal', 'admin'];
 
 /** Whether this role has an approve/reject stage open on the pass (the API still enforces it). */
 export const canReviewPass = (role, pass) => role === 'admin' ? PENDING.includes(pass.status) : Boolean(STAGE_STATUS[role]?.includes(pass.status));
@@ -701,7 +734,9 @@ export const canReviewPass = (role, pass) => role === 'admin' ? PENDING.includes
 function ReviewQueue({ role }) {
   const [page, setPage] = useState(1);
   const isAdmin = role === 'admin';
-  const { data, isLoading, error, refetch } = useGetGatePassesQuery(isAdmin ? { status: PENDING.join(','), page } : { page });
+  // HOD / principal / admin decide bound requests from the Bind tab, as a group.
+  const bind = role === 'faculty' ? {} : { bind: 'none' };
+  const { data, isLoading, error, refetch } = useGetGatePassesQuery(isAdmin ? { status: PENDING.join(','), page, ...bind } : { page, ...bind });
   const mine = isAdmin ? data?.passes : data?.passes.filter((p) => STAGE_STATUS[role]?.includes(p.status));
 
   if (isLoading) return <Skeleton className="h-48" />;
@@ -724,7 +759,7 @@ const fmtStamp = (v) => (v ? fmtMoment(v) : '—');
  * Students outside campus (now, or at the end of a past day), or the exits /
  * returns of one day. `when` picks the timestamp shown on each row.
  */
-function PassList({ passes, when = 'left', linkProfile, emptyTitle = 'Everyone is on campus' }) {
+function PassList({ passes, when = 'left', linkProfile, linkPass = false, emptyTitle = 'Everyone is on campus' }) {
   if (!passes?.length) return <Card><EmptyState icon={Users} title={emptyTitle} /></Card>;
   return (
     <Card>
@@ -747,6 +782,11 @@ function PassList({ passes, when = 'left', linkProfile, emptyTitle = 'Everyone i
             {isEmergency(p) && <EmergencyBadge />}
             <span className="text-xs muted">due back {fmtClassDay(p.toDate)}</span>
             {p.overdue && <StatusBadge status="rejected" label="overdue" />}
+            {linkPass && (
+              <Button size="sm" variant="ghost" to={`/gate-pass/${p._id}`} icon={ArrowRight}>
+                Open
+              </Button>
+            )}
           </li>
         ))}
       </ul>
@@ -914,6 +954,7 @@ function StaffGatePass() {
       ]
     : [
         { value: 'review', label: 'Review' },
+        ...(BIND_ROLES.includes(me.role) ? [{ value: 'bind', label: me.role === 'faculty' ? 'Bind' : 'Bind groups' }] : []),
         ...(hasRequests ? [{ value: 'requests', label: authorityOnly ? 'My requests' : 'Requests' }] : []),
         ...(me.role === 'admin' ? [{ value: 'all', label: 'All passes' }] : []),
       ];
@@ -1059,8 +1100,9 @@ function StaffGatePass() {
       )}
       <Tabs tabs={tabs} value={tab} onChange={(t) => setQuery({ tab: t })} />
       {tab === 'review' && <ReviewQueue role={me.role} />}
+      {tab === 'bind' && <BindPanel />}
       {tab === 'outside' && view && !error && (
-        <PassList passes={view.outsideStudents} linkProfile={linkProfile} emptyTitle={inHistory ? 'Nobody was outside at the end of that day' : 'Everyone is on campus'} />
+        <PassList passes={view.outsideStudents} linkProfile={linkProfile} linkPass={me.role === 'admin' && !inHistory} emptyTitle={inHistory ? 'Nobody was outside at the end of that day' : 'Everyone is on campus'} />
       )}
       {tab === 'exits' && view?.exits && <PassList passes={view.exits} when="exited" linkProfile={linkProfile} emptyTitle="No exits recorded that day" />}
       {tab === 'returns' && view?.returns && <PassList passes={view.returns} when="returned" linkProfile={linkProfile} emptyTitle="No returns recorded that day" />}

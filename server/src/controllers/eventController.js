@@ -53,6 +53,20 @@ export const getFacultyCoordinatorsList = asyncHandler(async (req, res) => {
   res.json(faculties);
 });
 
+/**
+ * Coordinators gain attendance marking + participant access, so every ID must
+ * be an active faculty account — never a student or another role.
+ */
+async function resolveFacultyCoordinators(raw) {
+  if (!Array.isArray(raw)) return [];
+  const ids = [...new Set(raw.filter(Boolean).map(String))];
+  if (ids.length === 0) return [];
+  if (ids.length > 50) throw new ApiError(400, 'Too many faculty coordinators');
+  const found = await User.countDocuments({ _id: { $in: ids }, role: 'faculty', isActive: true });
+  if (found !== ids.length) throw new ApiError(400, 'Faculty coordinators must be active faculty members');
+  return ids;
+}
+
 /** Strip the registrations array and expose counts + the viewer's own status. */
 function shapeEvent(ev, user, { includeRegistrations = false } = {}) {
   const regs = ev.registrations || [];
@@ -157,10 +171,7 @@ export const createEvent = asyncHandler(async (req, res) => {
     if (!canManageClub(req.user, club)) throw new ApiError(403, 'Only admins of this club can create its events');
   }
 
-  let facultyCoordinators = [];
-  if (Array.isArray(req.body.facultyCoordinators)) {
-    facultyCoordinators = req.body.facultyCoordinators.filter(Boolean);
-  }
+  const facultyCoordinators = await resolveFacultyCoordinators(req.body.facultyCoordinators);
 
   const event = await Event.create({
     ...data,
@@ -202,7 +213,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
     throw new ApiError(400, `Capacity cannot be lower than current registrations (${event.registeredCount})`);
   }
   if (req.body.facultyCoordinators !== undefined) {
-    updates.facultyCoordinators = Array.isArray(req.body.facultyCoordinators) ? req.body.facultyCoordinators.filter(Boolean) : [];
+    updates.facultyCoordinators = await resolveFacultyCoordinators(req.body.facultyCoordinators);
   }
   Object.assign(event, updates);
   if (req.user.role === 'admin' && req.body.isFeatured !== undefined) event.isFeatured = Boolean(req.body.isFeatured);

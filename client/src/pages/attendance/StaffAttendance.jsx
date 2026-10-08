@@ -78,6 +78,7 @@ import OurClass from './OurClass';
 import AttendanceReports from './AttendanceReports';
 import ODLeaveReviewQueue from './ODLeaveReviewQueue';
 import HodDepartmentCards from './HodDepartmentCards';
+import FacultyClassCards from './FacultyClassCards';
 import { HolidayBanner, HolidaysButton } from './Holidays';
 import {
   Avatar,
@@ -129,8 +130,8 @@ function AttendanceHeroDashboard({ onQuickMark }) {
   // HOD: their department; Principal: the whole college (department → year → students).
   const deptCards = isHod || me.role === 'principal';
 
-  // 1. Low attendance count
-  const { data: lowData } = useGetLowAttendanceQuery({ range: 'semester' }, { skip: deptCards });
+  // 1. Low attendance count (faculty: their own class, from FacultyClassCards)
+  const { data: lowData } = useGetLowAttendanceQuery({ range: 'semester' }, { skip: deptCards || isFaculty });
   const atRiskCount = lowData?.students?.length ?? 0;
 
   // 2. Pending corrections
@@ -142,7 +143,8 @@ function AttendanceHeroDashboard({ onQuickMark }) {
     date: todayKey(),
     ...(isBranchHod(me) && me.department ? { department: me.department } : {}),
   };
-  const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams, { skip: deptCards });
+  // Faculty may not read the department / college summary (the API refuses it).
+  const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams, { skip: deptCards || isFaculty });
 
   // 4. Today's periods (for faculty or HOD quick view)
   const { data: periodsData } = useGetMyPeriodsQuery(undefined, { pollingInterval: 30000 });
@@ -163,9 +165,17 @@ function AttendanceHeroDashboard({ onQuickMark }) {
 
   return (
     <div className="space-y-4">
-      {/* 4 KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {deptCards ? (
+      {/* KPI Cards */}
+      <div className={cn('grid gap-4 sm:grid-cols-2', isFaculty ? 'lg:grid-cols-3 2xl:grid-cols-5' : 'xl:grid-cols-4')}>
+        {isFaculty ? (
+          <FacultyClassCards
+            periods={todayPeriods}
+            periodsDate={periodsData?.date}
+            corrections={pendingData?.requests || []}
+            pendingCount={pendingCount}
+            onQuickMark={onQuickMark}
+          />
+        ) : deptCards ? (
           <HodDepartmentCards
             me={me}
             extraCard={

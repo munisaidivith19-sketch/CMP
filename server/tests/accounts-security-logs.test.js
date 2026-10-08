@@ -58,7 +58,7 @@ after(async () => {
 
 const newStudentBody = (over = {}) => {
   n += 1;
-  return { name: `New Student ${n}`, email: `new${n}@jnn.edu.in`, password: 'Welcome123', rollNo: `23cse2${n}`, stayType: 'day_scholar', parentPhone: '+91 98765 43210', ...over };
+  return { name: `New Student ${n}`, email: `new${n}@jnn.edu.in`, password: 'Welcome123', rollNo: `23cse2${n}`, stayType: 'day_scholar', title: 'Mr', gender: 'male', parentPhone: '+91 98765 43210', ...over };
 };
 
 // ── Faculty (Class In-Charge) student creation ──────────────────────

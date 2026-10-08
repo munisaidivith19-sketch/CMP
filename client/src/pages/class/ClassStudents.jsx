@@ -9,8 +9,92 @@ import ResetPasswordModal, { suggestPassword } from '../../components/ResetPassw
 import { ACADEMIC_YEARS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, timeAgo, displayName } from '../../utils/format';
 
-const EMPTY = { name: '', rollNo: '', email: '', phone: '', parentPhone: '', stayType: '', password: '' };
-const REQUIRED = ['name', 'rollNo', 'email', 'parentPhone', 'stayType', 'password'];
+const EMPTY = { title: '', gender: '', name: '', rollNo: '', email: '', phone: '', parentPhone: '', stayType: '', password: '' };
+const REQUIRED = ['title', 'gender', 'name', 'rollNo', 'email', 'parentPhone', 'stayType', 'password'];
+
+// Students are Mr / Ms; picking one fills in the matching gender and vice versa.
+const TITLE_OPTIONS = [
+  { value: 'Mr', label: 'Mr' },
+  { value: 'Ms', label: 'Ms' },
+];
+const GENDER_OPTIONS = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+];
+const GENDER_OF_TITLE = { Mr: 'male', Ms: 'female' };
+const TITLE_OF_GENDER = { male: 'Mr', female: 'Ms' };
+/** Apply a field change, keeping title and gender consistent. */
+const withPair = (s, k, value) => {
+  const next = { ...s, [k]: value };
+  if (k === 'title' && GENDER_OF_TITLE[value]) next.gender = GENDER_OF_TITLE[value];
+  if (k === 'gender' && TITLE_OF_GENDER[value]) next.title = TITLE_OF_GENDER[value];
+  return next;
+};
+
+const MOBILE_HINT = '10 digits';
+/** Digits only, at most 10 (a pasted +91 / leading 0 is dropped first). */
+const toMobile = (raw) => {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
+  else if (d.length > 10 && d.startsWith('0')) d = d.slice(1);
+  return d.slice(0, 10);
+};
+const mobileOk = (v) => !v || /^\d{10}$/.test(v);
+
+/**
+ * Mobile number field: only digits, never more than 10 — typed, pasted or
+ * autofilled. The server checks the same rule.
+ */
+function MobileInput({ value, onValue, ...props }) {
+  return (
+    <Input
+      type="tel"
+      inputMode="numeric"
+      autoComplete="off"
+      maxLength={10}
+      pattern="\d{10}"
+      placeholder="10-digit mobile"
+      value={value}
+      onChange={(e) => onValue(toMobile(e.target.value))}
+      onPaste={(e) => {
+        e.preventDefault();
+        onValue(toMobile(e.clipboardData.getData('text')));
+      }}
+      {...props}
+    />
+  );
+}
+
+/**
+ * College email field. Paste is handled here (inserted once, trimmed) and the
+ * browser's autocapitalise / autocorrect / email-type value sanitising are off,
+ * so a pasted address is never doubled or altered (e.g. "VC@…" → "vvc@…").
+ */
+function EmailInput({ value, onValue, ...props }) {
+  return (
+    <Input
+      type="text"
+      inputMode="email"
+      autoComplete="off"
+      autoCapitalize="none"
+      autoCorrect="off"
+      spellCheck={false}
+      maxLength={120}
+      placeholder="name@jnn.edu.in"
+      value={value}
+      onChange={(e) => onValue(e.target.value.replace(/\s/g, ''))}
+      onPaste={(e) => {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text').replace(/\s/g, '');
+        const el = e.currentTarget;
+        const start = el.selectionStart ?? value.length;
+        const end = el.selectionEnd ?? value.length;
+        onValue(`${value.slice(0, start)}${text}${value.slice(end)}`);
+      }}
+      {...props}
+    />
+  );
+}
 
 /** Read-only field showing a value assigned from the faculty's Class In-Charge scope. */
 function Locked({ label, value }) {
@@ -44,8 +128,9 @@ function CreateStudentModal({ open, scope, onClose }) {
     }
   }, [open]);
 
-  const set = (k) => (e) => setV((s) => ({ ...s, [k]: e.target.value }));
-  const missing = REQUIRED.some((k) => !String(v[k]).trim());
+  const set = (k) => (e) => setV((s) => withPair(s, k, e.target.value));
+  const setValue = (k) => (value) => setV((s) => ({ ...s, [k]: value }));
+  const missing = REQUIRED.some((k) => !String(v[k]).trim()) || !mobileOk(v.parentPhone) || !v.parentPhone || !mobileOk(v.phone);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -93,9 +178,11 @@ function CreateStudentModal({ open, scope, onClose }) {
         </div>
       </div>
       <form id="class-student-form" onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
+        <Select keepCase label="Title" placeholder="Mr / Ms" required options={TITLE_OPTIONS} value={v.title} onChange={set('title')} error={errors.title} />
+        <Select keepCase label="Gender" placeholder="Male / Female" required options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} error={errors.gender} />
         <Input label="Full name" maxLength={80} required value={v.name} onChange={set('name')} error={errors.name} />
         <Input label="Roll number" maxLength={30} className="uppercase" required value={v.rollNo} onChange={set('rollNo')} error={errors.rollNo} />
-        <Input label="College email (username)" type="email" placeholder="name@jnn.edu.in" required value={v.email} onChange={set('email')} error={errors.email} />
+        <EmailInput label="College email (username)" required value={v.email} onValue={setValue('email')} error={errors.email} />
         <Select
           label="Stay"
           placeholder="Hosteler / Day Scholar"
@@ -105,8 +192,8 @@ function CreateStudentModal({ open, scope, onClose }) {
           onChange={set('stayType')}
           error={errors.stayType}
         />
-        <Input label="Parent mobile" type="tel" maxLength={20} required hint="Gate-pass OTPs go only to this number." value={v.parentPhone} onChange={set('parentPhone')} error={errors.parentPhone} />
-        <Input label="Student mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} error={errors.phone} />
+        <MobileInput label="Parent mobile" required hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} value={v.parentPhone} onValue={setValue('parentPhone')} error={errors.parentPhone} />
+        <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setValue('phone')} error={errors.phone} />
         <div className="flex items-start gap-2 sm:col-span-2">
           <Input
             label="Set password"
@@ -140,7 +227,7 @@ function CreateStudentModal({ open, scope, onClose }) {
   );
 }
 
-const EDIT_FIELDS = ['name', 'email', 'rollNo', 'phone', 'parentPhone', 'stayType', 'year', 'section', 'semester'];
+const EDIT_FIELDS = ['title', 'gender', 'name', 'email', 'rollNo', 'phone', 'parentPhone', 'stayType', 'year', 'section', 'semester'];
 const EDIT_REQUIRED = ['name', 'email', 'rollNo', 'parentPhone', 'stayType', 'year', 'section', 'semester'];
 const formOf = (s) => Object.fromEntries(EDIT_FIELDS.map((k) => [k, s?.[k] == null ? '' : String(s[k])]));
 
@@ -165,13 +252,16 @@ function EditStudentModal({ studentId, scope, onClose }) {
 
   const set = (k) => (e) =>
     setV((s) => {
-      const next = { ...s, [k]: e.target.value };
+      const next = withPair(s, k, e.target.value);
       // The semester must belong to the year.
       if (k === 'year' && !semestersOfYear(Number(e.target.value)).includes(Number(s.semester))) next.semester = '';
       return next;
     });
+  const setValue = (k) => (value) => setV((s) => ({ ...s, [k]: value }));
   const ready = Boolean(student) && !isFetching;
-  const missing = EDIT_REQUIRED.some((k) => !String(v[k]).trim());
+  // A number saved earlier in another format is only re-checked once it is edited.
+  const changedBad = (k) => v[k] !== String(student?.[k] ?? '') && !mobileOk(v[k]);
+  const missing = EDIT_REQUIRED.some((k) => !String(v[k]).trim()) || changedBad('parentPhone') || changedBad('phone');
   const moves = ready && (Number(v.year) !== scope.year || v.section !== scope.section || Number(v.semester) !== scope.semester);
 
   const submit = async (e) => {
@@ -222,9 +312,11 @@ function EditStudentModal({ studentId, scope, onClose }) {
         <Skeleton className="h-64" />
       ) : (
         <form id="class-student-edit" onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
+          <Select keepCase label="Title" placeholder="Mr / Ms" options={TITLE_OPTIONS} value={v.title} onChange={set('title')} error={errors.title} />
+          <Select keepCase label="Gender" placeholder="Male / Female" options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} error={errors.gender} />
           <Input label="Full name" maxLength={80} required value={v.name} onChange={set('name')} error={errors.name} />
           <Input label="Roll number" maxLength={30} className="uppercase" required value={v.rollNo} onChange={set('rollNo')} error={errors.rollNo} />
-          <Input label="College email (username)" type="email" required hint="This is the student’s sign-in username." value={v.email} onChange={set('email')} error={errors.email} />
+          <EmailInput label="College email (username)" required hint="This is the student’s sign-in username." value={v.email} onValue={setValue('email')} error={errors.email} />
           <Select
             label="Stay"
             placeholder="Hosteler / Day Scholar"
@@ -234,8 +326,8 @@ function EditStudentModal({ studentId, scope, onClose }) {
             onChange={set('stayType')}
             error={errors.stayType}
           />
-          <Input label="Parent mobile" type="tel" maxLength={20} required hint="Gate-pass OTPs go only to this number." value={v.parentPhone} onChange={set('parentPhone')} error={errors.parentPhone} />
-          <Input label="Student mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} error={errors.phone} />
+          <MobileInput label="Parent mobile" required hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} value={v.parentPhone} onValue={setValue('parentPhone')} error={errors.parentPhone} />
+          <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setValue('phone')} error={errors.phone} />
 
           <div className="sm:col-span-2">
             <Locked label="Department (set by Admin)" value={student.department} />

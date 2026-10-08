@@ -36,7 +36,7 @@ const inScope = (scope, student) =>
   Number(student.semester) === scope.semester;
 
 // No phone numbers: the Class In-Charge screen does not need them.
-const CLASS_STUDENT_FIELDS = 'name email role rollNo department year section semester stayType isActive lastLogin createdAt';
+const CLASS_STUDENT_FIELDS = 'name title gender email role rollNo department year section semester stayType isActive lastLogin createdAt';
 
 /** The faculty's own Class In-Charge class and its students. */
 export const listClassStudents = asyncHandler(async (req, res) => {
@@ -53,7 +53,7 @@ export const listClassStudents = asyncHandler(async (req, res) => {
 
 // What a Class In-Charge may set on a new student. Department, year, section
 // and semester are NOT here: they are always taken from the faculty's scope.
-const CLASS_STUDENT_INPUT = ['rollNo', 'stayType', 'phone', 'parentPhone'];
+const CLASS_STUDENT_INPUT = ['title', 'gender', 'rollNo', 'stayType', 'phone', 'parentPhone'];
 const SCOPE_FIELDS = ['department', 'year', 'section', 'semester'];
 
 /**
@@ -109,7 +109,7 @@ export const createClassStudent = asyncHandler(async (req, res) => {
 
 // What a Class In-Charge may change on a student of their class. Department is
 // deliberately absent: moving a student to another department stays with Admin.
-const CLASS_STUDENT_EDITABLE = ['name', 'email', 'rollNo', 'phone', 'parentPhone', 'stayType', 'year', 'section', 'semester'];
+const CLASS_STUDENT_EDITABLE = ['title', 'gender', 'name', 'email', 'rollNo', 'phone', 'parentPhone', 'stayType', 'year', 'section', 'semester'];
 const CLASS_STUDENT_DETAIL_FIELDS = `${CLASS_STUDENT_FIELDS} phone parentPhone`;
 const CLASS_SCOPE_KEYS = ['year', 'section', 'semester'];
 
@@ -160,6 +160,11 @@ export const updateClassStudent = asyncHandler(async (req, res) => {
 
   if (student.isModified('email') && (await User.exists({ email: student.email, _id: { $ne: student._id } }))) {
     throw new ApiError(409, 'An account with this email already exists');
+  }
+  // Checked here as well as in the model: saving with validateModifiedOnly would
+  // skip the model's error when only one of title / gender changed.
+  if ((student.title === 'Mr' && student.gender === 'female') || (student.title === 'Ms' && student.gender === 'male')) {
+    throw new ApiError(422, `${student.title} cannot be used with gender ${student.gender === 'male' ? 'Male' : 'Female'}`);
   }
   if (!student.year || !student.semester) throw new ApiError(422, 'Year and semester are required');
   if (yearOfSemester(student.semester) !== student.year) {

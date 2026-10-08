@@ -15,6 +15,19 @@ const GOOD_ENOUGH_M = 20; // stop early once the fix is this precise
 
 const accuracyOf = (fix) => fix?.coords?.accuracy ?? Number.POSITIVE_INFINITY;
 
+// Android 12+ lets the student grant only "Approximate" location: the phone then
+// never reports a precise position (±100 m to ±2 km), so the campus check cannot pass.
+const APPROXIMATE_TEXT =
+  'Vexon only has your approximate location. Open Settings → Permissions → Location and turn on "Use precise location", then try again.';
+
+/** The server's reason code on a rejected check (e.g. "low_accuracy"). */
+const reasonOf = (e) => e?.data?.errors?.[0]?.code;
+/** The student's own device accuracy — never anything about the campus distance. */
+const accuracyHint = (fix) => {
+  const acc = Math.round(accuracyOf(fix));
+  return Number.isFinite(acc) ? ` Your phone's location is accurate to about ±${acc} m right now — turn on GPS / "Precise location" or step near a window.` : '';
+};
+
 /**
  * Fresh high-accuracy fixes for a few seconds, keeping the most precise one —
  * never a cached last-known position. Stops listening as soon as it returns.
@@ -89,6 +102,10 @@ export default function ReturnToCampus({ pass }) {
       setStep('denied');
       return;
     }
+    if (perm.android?.accuracy === 'coarse') {
+      setStep('approximate');
+      return;
+    }
     setStep('locating');
     let fix;
     try {
@@ -117,7 +134,8 @@ export default function ReturnToCampus({ pass }) {
       setFresh(res);
       setStep('idle');
     } catch (e) {
-      setFailure(errMsg(e, 'Could not verify your location. Please try again.'));
+      const message = errMsg(e, 'Could not verify your location. Please try again.');
+      setFailure(reasonOf(e) === 'low_accuracy' ? message + accuracyHint(fix) : message);
       setStep('failed');
     }
   };
@@ -132,11 +150,11 @@ export default function ReturnToCampus({ pass }) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <CheckCircle2 size={18} color={colors.success} />
           <T v="strong" style={{ color: '#059669' }}>
-            Location verified
+            {credential.override ? 'Return approved by Admin' : 'Location verified'}
           </T>
         </View>
         <T v="small" style={{ textAlign: 'center' }}>
-          You are within the campus verification area.
+          {credential.override ? 'Show this code to Security at the gate to record your return.' : 'You are within the campus verification area.'}
         </T>
         <T v="label">Return code</T>
         <T v="code" accessibilityLabel={`Return code ${credential.code.split('').join(' ')}`}>
@@ -176,6 +194,17 @@ export default function ReturnToCampus({ pass }) {
             </T>
           </View>
           <Button title={canAskAgain ? 'Allow location' : 'Open settings'} icon={LocateFixed} onPress={allowLocation} />
+        </>
+      ) : step === 'approximate' ? (
+        <>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <MapPinOff size={16} color={colors.danger} />
+            <T v="small" style={{ color: colors.danger, flex: 1 }}>
+              {APPROXIMATE_TEXT}
+            </T>
+          </View>
+          <Button title="Open settings" icon={LocateFixed} onPress={() => Linking.openSettings()} />
+          <Button title="I turned it on — try again" variant="outline" onPress={checkLocation} />
         </>
       ) : (
         <>

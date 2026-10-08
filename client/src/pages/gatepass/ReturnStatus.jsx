@@ -19,6 +19,12 @@ function useNow(active) {
 }
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+/** The student's own device accuracy on a "not accurate enough" rejection — never the campus distance. */
+const accuracyHint = (e, fix) =>
+  e?.data?.errors?.[0]?.code === 'low_accuracy' && fix
+    ? ` This device's location is accurate to about ±${Math.round(fix.coords.accuracy)} m right now — laptops and phones without GPS are often too imprecise indoors; try the Vexon app on your phone with GPS on.`
+    : '';
+
 const PERMISSION_TEXT = 'Location permission is required to verify your return to campus. Allow location for this site in your browser settings, then try again.';
 
 /**
@@ -77,8 +83,9 @@ export function ReturnStatus({ pass }) {
     }
     setBusy(true);
     abort.current = new AbortController();
+    let fix = null;
     try {
-      const fix = await bestFreshFix(abort.current.signal);
+      fix = await bestFreshFix(abort.current.signal);
       if (!fix) {
         setProblem('Could not get your location. Turn on location (GPS) and try again.');
         return;
@@ -94,7 +101,7 @@ export function ReturnStatus({ pass }) {
     } catch (e) {
       if (e?.code === 1) setProblem(PERMISSION_TEXT); // GeolocationPositionError.PERMISSION_DENIED
       else if (e?.code === 2 || e?.code === 3) setProblem('Could not get your location. Turn on location (GPS) and try again.');
-      else setProblem(errMsg(e, 'Could not verify your location. Please try again.'));
+      else setProblem(errMsg(e, 'Could not verify your location. Please try again.') + accuracyHint(e, fix));
     } finally {
       setBusy(false);
     }
@@ -124,9 +131,9 @@ export function ReturnStatus({ pass }) {
   return (
     <div className="flex w-full flex-col items-center gap-3 text-center">
       <p className="flex items-center gap-1.5 font-bold text-emerald-600">
-        <CheckCircle2 className="h-5 w-5" /> Location verified
+        <CheckCircle2 className="h-5 w-5" /> {data.override ? 'Return approved by Admin' : 'Location verified'}
       </p>
-      <p className="text-sm muted">You are within the campus verification area.</p>
+      <p className="text-sm muted">{data.override ? 'Show this code to Security at the gate to record your return.' : 'You are within the campus verification area.'}</p>
       <p className="text-xs font-bold uppercase tracking-wide muted">Return code</p>
       <p className="font-mono text-4xl font-extrabold tracking-[0.3em]">{data.code}</p>
       {showQr && (

@@ -4,6 +4,8 @@ import { connectDB } from './config/db.js';
 import { initSocket } from './config/socket.js';
 import { createApp } from './app.js';
 import { expireGatePasses } from './controllers/gatePassController.js';
+import { startGatePassCodeQueue } from './services/gatePassCodeQueue.js';
+import { startKeepAlive } from './utils/keepAlive.js';
 import { syncSubjects } from './utils/syncSubjects.js';
 import { startAlumniSchedulers } from './utils/alumniSchedulers.js';
 import { startIdleSessionSweeper } from './utils/sessionIdle.js';
@@ -21,6 +23,12 @@ async function start() {
   // Close gate passes whose validity window has passed (also runs lazily on verify).
   const sweep = setInterval(() => expireGatePasses().catch((err) => console.error('[gate-pass] sweep failed:', err.message)), 5 * 60 * 1000);
   sweep.unref();
+
+  // Bulk (bind-group) approvals: issue gate codes + QR a few at a time, retrying failures.
+  startGatePassCodeQueue();
+
+  // On Render: ping our own URL every 14 min, 05:30–22:00 IST only (sleeps at night).
+  startKeepAlive();
 
   // Revoke web sessions idle past their limit and drop their sockets, even
   // when the tab sends no HTTP request at all (one indexed query / 30 s).

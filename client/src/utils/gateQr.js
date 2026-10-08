@@ -32,3 +32,10 @@ export function createScanGate(onScan) {
     },
   };
 }
+
+/**
+ * True once a typed code is a complete 4-character gate code (letters + at
+ * least one digit and one letter) — the screens auto-verify at that point.
+ * Mirrors GATE_CODE_PATTERN on the server, which still makes the decision.
+ */
+export const isCompleteGateCode = (value) => /^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{4}$/.test(String(value || '').trim().toUpperCase());

@@ -48,7 +48,7 @@ import { fmtStamp as fmtMoment } from '../../utils/format';
 import { GATE_PASS_REGARDING, INDIAN_STATES, STUDENT_ROLES } from '../../utils/constants';
 import { ParentVerification } from './ParentVerification';
 import QrScannerModal from '../../components/QrScannerModal';
-import { scanProblem } from '../../utils/gateQr';
+import { isCompleteGateCode, scanProblem } from '../../utils/gateQr';
 import { ReturnStatus } from './ReturnStatus';
 import { AUTHORITY_LABELS, EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, EmergencyRequestForm, isEmergency } from './EmergencyGatePass';
 import GatePassListModal from './GatePassListModal';
@@ -1141,6 +1141,23 @@ function StaffGatePass() {
 }
 
 /* ── Security ───────────────────────────────────────────────────── */
+/** The verified student's identity, large enough for the guard to read at a glance. */
+function VerifiedStudent({ student }) {
+  return (
+    <div className="flex min-w-0 items-center gap-4 rounded-2xl bg-white/50 p-3 dark:bg-white/5">
+      <Avatar user={student} size="lg" />
+      <div className="min-w-0">
+        <p className="break-words text-xl font-extrabold leading-tight">{displayName(student)}</p>
+        <p className="mt-0.5 break-words text-sm muted">
+          {student?.rollNo || '—'} · {student?.department}
+          {student?.year ? ` · Y${student.year}` : ''}
+          {student?.section ? ` · Sec ${student.section}` : ''}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SecurityConsole() {
   const { data: dash, isLoading, error, refetch } = useGetSecurityDashboardQuery(undefined, { pollingInterval: 30000 });
   const [code, setCode] = useState('');
@@ -1159,6 +1176,14 @@ function SecurityConsole() {
     } catch (err) {
       setResult({ valid: false, problems: [errMsg(err, 'Invalid code')] });
     }
+  };
+
+  // Typing a full 4-character code verifies it straight away — no Verify click.
+  const onCodeChange = (e) => {
+    const next = e.target.value.toUpperCase();
+    setCode(next);
+    if (isCompleteGateCode(next)) check(null, next);
+    else if (result) setResult(null); // never leave the previous student on screen
   };
 
   const act = async (fn, msg) => {
@@ -1198,7 +1223,7 @@ function SecurityConsole() {
           <form onSubmit={check} className="flex gap-2">
             <input
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onChange={onCodeChange}
               placeholder="A4G5"
               aria-label="Verification code"
               autoFocus
@@ -1227,7 +1252,7 @@ function SecurityConsole() {
               ))}
               {result.pass && (
                 <>
-                  <StudentLine student={result.pass.student} />
+                  <VerifiedStudent student={result.pass.student} />
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-2xl bg-white/50 p-2.5 dark:bg-white/5">
                       <p className="muted">Pass type</p>

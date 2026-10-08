@@ -51,3 +51,11 @@ test('the scanned value is passed through exactly — the case-sensitive return 
   createScanGate((v) => sent.push(v)).handle({ data: 'CCRT:AbC-dEf_123xYz789QrStUv' });
   assert.equal(sent[0], 'CCRT:AbC-dEf_123xYz789QrStUv');
 });
+
+test('isCompleteGateCode: only a full 4-character code triggers auto-verify', async () => {
+  const { isCompleteGateCode } = await import('../src/utils/gateQr.js');
+  for (const ok of ['A4G5', 'a4g5', ' 7KQ2 ', '1B2C']) assert.equal(isCompleteGateCode(ok), true, ok);
+  for (const bad of ['', 'A4G', 'A4G55', 'ABCD', '1234', 'A4-5', 'CCRT:abc', null, undefined]) {
+    assert.equal(isCompleteGateCode(bad), false, String(bad));
+  }
+});

@@ -8,7 +8,7 @@ import PassQr from '../../../components/PassQr';
 import ParentVerification from '../../../components/ParentVerification';
 import ReturnToCampus from '../../../components/ReturnToCampus';
 import QrScanner from '../../../components/QrScanner';
-import { scanProblem } from '../../../utils/gateQr';
+import { isCompleteGateCode, scanProblem } from '../../../utils/gateQr';
 import { EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, emergencyStatusLabel, isEmergency } from '../../../components/EmergencyGatePass';
 import {
   errMsg,
@@ -308,6 +308,25 @@ function StaffGatePasses() {
 }
 
 /* ── Security ───────────────────────────────────────────────────── */
+/** The verified student's identity, large enough for the guard to read at a glance. */
+function VerifiedStudent({ student }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      <Avatar user={student} size={56} />
+      <View style={{ flex: 1 }}>
+        <T v="h2" numberOfLines={2}>
+          {displayName(student)}
+        </T>
+        <T v="small" numberOfLines={2}>
+          {student?.rollNo || '—'} · {student?.department}
+          {student?.year ? ` · Y${student.year}` : ''}
+          {student?.section ? ` · Sec ${student.section}` : ''}
+        </T>
+      </View>
+    </View>
+  );
+}
+
 function SecurityConsole() {
   const { data: dash, isLoading, error, refetch } = useGetSecurityDashboardQuery(undefined, { pollingInterval: 30000 });
   const [code, setCode] = useState('');
@@ -325,6 +344,14 @@ function SecurityConsole() {
     } catch (err) {
       setResult({ valid: false, problems: [errMsg(err, 'Invalid code')] });
     }
+  };
+
+  // Typing a full 4-character code verifies it straight away — no Verify tap.
+  const onCodeChange = (v) => {
+    const next = v.toUpperCase();
+    setCode(next);
+    if (isCompleteGateCode(next)) check(next);
+    else if (result) setResult(null); // never leave the previous student on screen
   };
 
   const act = async (fn, title, message) => {
@@ -375,7 +402,7 @@ function SecurityConsole() {
         </View>
         <Input
           value={code}
-          onChangeText={(v) => setCode(v.toUpperCase())}
+          onChangeText={onCodeChange}
           placeholder="A4G5"
           autoCapitalize="characters"
           autoCorrect={false}
@@ -411,7 +438,7 @@ function SecurityConsole() {
           {!result.valid ? <Button title="Scan again" icon={ScanLine} variant="outline" onPress={() => setScanOpen(true)} /> : null}
           {result.pass ? (
             <>
-              <StudentLine student={result.pass.student} />
+              <VerifiedStudent student={result.pass.student} />
               <T v="small">
                 {passTitle(result.pass)} · {fmtClassDay(result.pass.fromDate)} → {fmtClassDay(result.pass.toDate)}
               </T>

@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, LogIn, LogOut, ScanLine, Shield
 import { useRecordGateInMutation, useRecordGateOutMutation, useVerifyGatePassMutation, useVerifyReturnCredentialMutation } from '../../services/api';
 import { Avatar, Button, Card, PageHeader, cn } from '../../components/ui/primitives';
 import QrScannerModal from '../../components/QrScannerModal';
-import { scanProblem } from '../../utils/gateQr';
+import { isCompleteGateCode, scanProblem } from '../../utils/gateQr';
 import { StatusBadge } from '../../components/insights';
 import { errMsg, fmtClassDay, titleCase, displayName } from '../../utils/format';
 import { GATE_PASS_REGARDING, YEAR_LABELS } from '../../utils/constants';
@@ -60,6 +60,16 @@ export default function GateVerify({ direction }) {
     }
   };
 
+  // Typing a full 4-character code verifies it straight away — no Verify click.
+  // A typed/wedge-scanned "CCRT:<token>" still waits for Enter.
+  const onCodeChange = (e) => {
+    const raw = e.target.value;
+    const next = isReturn && /^ccrt:/i.test(raw) ? raw : raw.toUpperCase();
+    setCode(next);
+    if (isCompleteGateCode(next)) check(null, next);
+    else if (result) setResult(null); // never leave the previous student on screen
+  };
+
   const confirm = async () => {
     try {
       if (isReturn) await recordIn({ id: result.pass._id, code: result.credential }).unwrap();
@@ -98,7 +108,7 @@ export default function GateVerify({ direction }) {
             <input
               value={code}
               // A scanner types "CCRT:<token>" — keep that case-sensitive; codes are upper-cased.
-              onChange={(e) => setCode(isReturn && /^ccrt:/i.test(e.target.value) ? e.target.value : e.target.value.toUpperCase())}
+              onChange={onCodeChange}
               placeholder={copy.placeholder}
               aria-label={isReturn ? 'Return code or scanned Return QR' : 'Verification code'}
               autoFocus
@@ -127,11 +137,11 @@ export default function GateVerify({ direction }) {
               ))}
               {result.pass && (
                 <>
-                  <div className="flex items-center gap-3">
-                    <Avatar user={student} />
+                  <div className="flex items-center gap-4 rounded-2xl bg-white/50 p-3 dark:bg-white/5">
+                    <Avatar user={student} size="lg" />
                     <div className="min-w-0 flex-1">
-                      <p className="break-words font-bold">{displayName(student)}</p>
-                      <p className="truncate text-xs muted">{student?.rollNo || '—'}</p>
+                      <p className="break-words text-xl font-extrabold leading-tight">{displayName(student)}</p>
+                      <p className="truncate text-sm muted">{student?.rollNo || '—'}</p>
                     </div>
                     {!isReturn && <StatusBadge status={result.pass.status} />}
                   </div>

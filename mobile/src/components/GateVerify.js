@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { AlertTriangle, CheckCircle2, LogIn, LogOut, ScanLine, ShieldCheck, XCircle } from 'lucide-react-native';
 import { Avatar, Button, Card, Header, Input, Screen, StatusBadge, T } from './ui';
 import QrScanner from './QrScanner';
-import { scanProblem } from '../utils/gateQr';
+import { isCompleteGateCode, scanProblem } from '../utils/gateQr';
 import {
   errMsg,
   useGetSecurityDashboardQuery,
@@ -77,6 +77,15 @@ export default function GateVerify({ direction }) {
     }
   };
 
+  // Typing a full 4-character code verifies it straight away — no Verify tap.
+  // A typed/wedge-scanned "CCRT:<token>" still waits for submit.
+  const onCodeChange = (v) => {
+    const next = isReturn && /^ccrt:/i.test(v) ? v : v.toUpperCase();
+    setCode(next);
+    if (isCompleteGateCode(next)) check(next);
+    else if (result) setResult(null); // never leave the previous student on screen
+  };
+
   const confirm = async () => {
     try {
       if (isReturn) await recordIn({ id: result.pass._id, code: result.credential }).unwrap();
@@ -108,7 +117,7 @@ export default function GateVerify({ direction }) {
         </View>
         <Input
           value={code}
-          onChangeText={(v) => setCode(isReturn && /^ccrt:/i.test(v) ? v : v.toUpperCase())}
+          onChangeText={onCodeChange}
           placeholder={copy.placeholder}
           autoCapitalize="characters"
           autoCorrect={false}
@@ -148,9 +157,9 @@ export default function GateVerify({ direction }) {
           {result.pass ? (
             <>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Avatar user={student} size={40} />
+                <Avatar user={student} size={56} />
                 <View style={{ flex: 1 }}>
-                  <T v="strong" numberOfLines={2}>
+                  <T v="h2" numberOfLines={2}>
                     {displayName(student)}
                   </T>
                   <T v="small" numberOfLines={1}>

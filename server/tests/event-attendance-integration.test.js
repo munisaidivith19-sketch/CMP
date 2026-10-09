@@ -228,3 +228,20 @@ test('6. Multi-day Event: Coordinator marks student Absent on Day 2 -> marks Abs
   assert.ok(studentNotif, 'Student must receive absence notification');
 });
 
+test('7. Out-of-schedule date gracefully clamps to event date and marks absent', async () => {
+  // Pass a date well beyond the event end date (e.g. +30 days)
+  const farFutureDate = new Date();
+  farFutureDate.setDate(farFutureDate.getDate() + 30);
+  const outOfRangeStr = dayKey(farFutureDate);
+
+  const res = await ctx.request('PATCH', `/events/${testEvent._id}/attendance/${studentCse._id}`, {
+    token: users.facCoord.token,
+    body: {
+      attended: false,
+      date: outOfRangeStr,
+    },
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.attended, false);
+});

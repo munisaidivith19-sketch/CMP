@@ -407,12 +407,10 @@ export const markAttendance = asyncHandler(async (req, res) => {
   const evStartDay = toDay(event.startDate);
   const evEndDay = toDay(event.endDate);
 
+  let studentDay = targetDay;
   if (targetDay < evStartDay || targetDay > evEndDay) {
-    if (!req.body.date) {
-      targetDateStr = dayKey(evStartDay);
-    } else {
-      throw new ApiError(422, 'The selected date is outside of the event schedule');
-    }
+    targetDateStr = targetDay < evStartDay ? dayKey(evStartDay) : dayKey(evEndDay);
+    studentDay = toDay(targetDateStr);
   }
 
   if (!reg.attendanceDays) reg.attendanceDays = [];
@@ -429,6 +427,16 @@ export const markAttendance = asyncHandler(async (req, res) => {
       markedAt: new Date(),
     });
   }
+
+  // Filter out any out-of-schedule date entries that may have been saved from timezone shifts
+  reg.attendanceDays = reg.attendanceDays.filter((d) => {
+    try {
+      const dt = toDay(d.date);
+      return dt >= evStartDay && dt <= evEndDay;
+    } catch {
+      return false;
+    }
+  });
 
   const hasAttendedAny = reg.attendanceDays.some((d) => d.attended);
   reg.status = hasAttendedAny ? 'attended' : 'registered';
@@ -486,28 +494,28 @@ export const markAttendance = asyncHandler(async (req, res) => {
         link: '/attendance',
       });
     } else {
-      if (periods.length > 0) {
-        const existingRecords = await AttendanceRecord.find({
-          student: student._id,
-          date: studentDay,
-          period: { $in: periods },
+      const existingRecords = await AttendanceRecord.find({
+        student: student._id,
+        date: studentDay,
+        ...(periods.length > 0 ? { period: { $in: periods } } : {}),
+      });
+
+      for (const rec of existingRecords) {
+        const prevStatus = rec.status;
+        rec.status = 'absent';
+        rec.markedBy = req.user._id;
+        rec.markedAt = new Date();
+        rec.history.push({
+          from: prevStatus,
+          to: 'absent',
+          by: req.user._id,
+          at: new Date(),
+          reason: `Did not attend registered event: ${event.title}`,
         });
+        await rec.save();
+      }
 
-        for (const rec of existingRecords) {
-          const prevStatus = rec.status;
-          rec.status = 'absent';
-          rec.markedBy = req.user._id;
-          rec.markedAt = new Date();
-          rec.history.push({
-            from: prevStatus,
-            to: 'absent',
-            by: req.user._id,
-            at: new Date(),
-            reason: `Did not attend registered event: ${event.title}`,
-          });
-          await rec.save();
-        }
-
+      if (periods.length > 0) {
         const recordedPeriods = new Set(existingRecords.map((r) => r.period));
         const missingSlots = scheduledSlots.filter((s) => !recordedPeriods.has(s.period));
         if (missingSlots.length > 0) {

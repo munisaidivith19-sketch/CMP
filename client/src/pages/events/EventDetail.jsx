@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { format } from 'date-fns';
 import {
   ArrowLeft,
   Calendar,
@@ -44,7 +45,7 @@ function Participants({ event, canMarkAttendance, isPast }) {
   const [statusFilter, setStatusFilter] = useState('');
   const [markingId, setMarkingId] = useState(null);
 
-  // Generate multi-day date sequence
+  // Generate multi-day date sequence using local calendar format (avoiding UTC shift)
   const eventDates = useMemo(() => {
     if (!event?.startDate || !event?.endDate) return [];
     const start = new Date(event.startDate);
@@ -54,16 +55,24 @@ function Participants({ event, canMarkAttendance, isPast }) {
     const dates = [];
     const curr = new Date(start);
     while (curr <= end && dates.length < 30) {
-      dates.push(curr.toISOString().slice(0, 10));
+      dates.push(format(curr, 'yyyy-MM-dd'));
       curr.setDate(curr.getDate() + 1);
     }
-    return dates.length > 0 ? dates : [String(event.startDate).slice(0, 10)];
+    return dates.length > 0 ? dates : [format(new Date(event.startDate), 'yyyy-MM-dd')];
   }, [event?.startDate, event?.endDate]);
 
   const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = format(new Date(), 'yyyy-MM-dd');
     return eventDates.includes(today) ? today : (eventDates[0] || today);
   });
+
+  // Keep selectedDate synchronized whenever eventDates loads or updates
+  useEffect(() => {
+    if (eventDates.length > 0 && !eventDates.includes(selectedDate)) {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      setSelectedDate(eventDates.includes(today) ? today : eventDates[0]);
+    }
+  }, [eventDates, selectedDate]);
 
   const getStatusOnDate = (r, date) => {
     if (r.status === 'waitlisted') return 'waitlisted';

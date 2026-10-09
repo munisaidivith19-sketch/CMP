@@ -468,7 +468,8 @@ const achievementRules = (optional = false) => {
     body('images').optional().isArray({ max: 5 }).withMessage('You can add at most 5 images'),
     body('images.*.url')
       .optional()
-      .custom((v) => String(v).startsWith('/uploads/') || /^https:\/\//.test(v))
+      .isString()
+      .custom((v) => (v.startsWith('/uploads/') && insideUploads(v)) || /^https:\/\//.test(v))
       .withMessage('Invalid image'),
     body('images.*.mimeType')
       .optional()
@@ -1129,6 +1130,17 @@ router.post(
   '/attendance/od-leave',
   authorize(...STUDENT_ROLES),
   writeLimiter,
+  body('requestType').isIn(['od', 'leave']).withMessage('Choose On Duty (OD) or Leave'),
+  body('category').isString().withMessage('Category is required').bail().trim().isLength({ min: 2, max: 120 }).withMessage('Category is required'),
+  body('description').isString().withMessage('Description is required').bail().trim().isLength({ min: 5, max: 1000 }).withMessage('Description must be 5–1000 characters'),
+  dateField('fromDate').bail().isISO8601().withMessage('Valid from date required'),
+  dateField('toDate').bail().isISO8601().withMessage('Valid to date required'),
+  body('document').optional({ values: 'null' }).isObject().withMessage('Invalid document'),
+  safeUrl('document.url'),
+  body('document.name').optional().isString().trim().isLength({ max: 200 }),
+  body('document.mimeType').optional().isString().trim().isLength({ max: 100 }),
+  body('document.size').optional().isInt({ min: 0, max: 25 * 1024 * 1024 }),
+  validate,
   odLeave.createRequest
 );
 
@@ -1155,6 +1167,9 @@ router.patch(
   idParam('id'),
   authorize('faculty', 'hod', 'principal', 'admin'),
   writeLimiter,
+  body('action').isIn(['forward', 'approve', 'reject']).withMessage('Choose forward, approve or reject'),
+  body('reason').optional({ values: 'null' }).isString().withMessage('Reason must be text').bail().trim().isLength({ max: 500 }),
+  validate,
   odLeave.reviewStage
 );
 
@@ -1554,6 +1569,8 @@ router.post(
   body('toDate').isISO8601().withMessage('Valid return date is required'),
   body('description').isString().trim().isLength({ min: 3, max: 500 }).withMessage('Description must be 3–500 characters'),
   body('regarding').optional().isIn(GATE_PASS_REGARDING).withMessage('Select a valid regarding category'),
+  body('destination').optional({ values: 'null' }).isObject().withMessage('Invalid destination'),
+  body(['destination.state', 'destination.district', 'destination.area']).optional({ values: 'null' }).isString().withMessage('Destination fields must be text').bail().trim().isLength({ max: 120 }),
   validate,
   gatePass.massApproveGatePass
 );

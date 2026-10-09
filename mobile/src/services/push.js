@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import { isExpoGo } from '../utils/native';
+import { mobileRoute } from '../utils/links';
 
 // Expo Go (SDK 53+) throws as soon as expo-notifications is imported on
 // Android, which used to crash the root layout. Load it only in real builds.
@@ -59,8 +60,7 @@ export function onNotificationTap(onTap) {
   return () => sub.remove();
 }
 
-/** Web-style links from notifications map 1:1 onto app routes. */
+/** Web-style links from notifications, mapped onto app routes (null when there is no mobile screen). */
 export function linkFromNotification(data) {
-  const link = data?.link;
-  return typeof link === 'string' && link.startsWith('/') ? link : null;
+  return mobileRoute(data?.link);
 }

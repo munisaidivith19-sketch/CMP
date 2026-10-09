@@ -9,7 +9,8 @@ import { logSecurity } from '../utils/securityLog.js';
 import { notifyUsers } from '../utils/notify.js';
 import { sameId } from '../utils/permissions.js';
 import { emitToRoles, emitToUsers } from '../config/socket.js';
-import { timestampFilter, resolveRange, toDay } from '../utils/dates.js';
+import { campusDayStart, campusTimezone, timestampFilter, resolveRange, toDay } from '../utils/dates.js';
+import { clock } from '../utils/clock.js';
 import { facultyClasses, inClasses } from '../utils/academicScope.js';
 import * as otpService from '../services/otp/otpService.js';
 import * as returnSvc from '../services/gatePassReturn.js';
@@ -786,7 +787,7 @@ export const cancelGatePass = asyncHandler(async (req, res) => {
 // ── Security: verify a presented code ───────────────────────────────
 
 function problemsFor(pass) {
-  const now = new Date();
+  const now = clock.now();
   const problems = [];
   const messages = {
     completed: 'This pass has already been used and completed',
@@ -802,9 +803,16 @@ function problemsFor(pass) {
   };
   if (messages[pass.status]) problems.push(messages[pass.status]);
   if (pass.verificationExpiry && now > pass.verificationExpiry) problems.push('The verification window has closed');
-  const start = pass.leaveAt || pass.fromDate;
-  if (pass.status === 'approved' && start && now < new Date(new Date(start).getTime() - EARLY_EXIT_MS)) {
-    problems.push(`Exit is allowed from ${new Date(new Date(start).getTime() - EARLY_EXIT_MS).toLocaleString('en-IN')}`);
+  // An emergency pass has an exact leaving time (exit opens an hour before it).
+  // Every other pass has a "from" calendar day, stored as UTC midnight: it opens
+  // when that campus day begins (00:00 campus time), never on the day before.
+  const opensAt = pass.leaveAt
+    ? new Date(new Date(pass.leaveAt).getTime() - EARLY_EXIT_MS)
+    : pass.fromDate
+      ? campusDayStart(new Date(pass.fromDate))
+      : null;
+  if (pass.status === 'approved' && opensAt && now < opensAt) {
+    problems.push(`Exit is allowed from ${opensAt.toLocaleString('en-IN', { timeZone: campusTimezone() })}`);
   }
   return problems;
 }

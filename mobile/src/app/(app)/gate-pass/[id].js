@@ -12,6 +12,7 @@ import { GATE_PASS_REGARDING, colors } from '../../../theme';
 import { fmtClassDay, sameId, timeAgo, titleCase } from '../../../utils/format';
 
 const regardingLabel = (r) => GATE_PASS_REGARDING[r] || titleCase(r);
+const isOuting = (p) => Boolean(p?.dayScholarOuting);
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '—');
 
 function Step({ label, at, done, bad, note }) {
@@ -37,7 +38,7 @@ export default function GatePassDetail() {
 
   return (
     <Screen refreshing={isFetching && !isLoading} onRefresh={refetch}>
-      <Header back title="Gate pass" subtitle={p ? (isEmergency(p) ? 'Emergency gate pass' : regardingLabel(p.regarding)) : ''} right={p ? <StatusBadge status={p.status} label={emergencyStatusLabel(p) || undefined} /> : null} />
+      <Header back title="Gate pass" subtitle={p ? (isEmergency(p) ? 'Emergency gate pass' : isOuting(p) ? `Outing · ${p.subject || ''}` : regardingLabel(p.regarding)) : ''} right={p ? <StatusBadge status={p.status} label={emergencyStatusLabel(p) || undefined} /> : null} />
       {isLoading ? (
         <Loading />
       ) : error ? (
@@ -49,6 +50,12 @@ export default function GatePassDetail() {
               <>
                 <EmergencyBadge />
                 <EmergencyDetails pass={p} />
+              </>
+            ) : isOuting(p) ? (
+              <>
+                <T v="body">{p.description}</T>
+                <T v="small">Today, {fmtClassDay(p.fromDate)} · no return check-in needed</T>
+                <T v="small">Parent: {p.parentPhone}</T>
               </>
             ) : (
               <>
@@ -86,9 +93,16 @@ export default function GatePassDetail() {
             <Step label="Principal approval" at={p.principalReview?.at} done={Boolean(p.principalReview)} bad={p.principalReview?.action === 'rejected'} note={p.principalReview?.action === 'rejected' ? p.principalReview.reason : null} />
             </>
             )}
-            <Step label="Left campus" at={p.actualExit} done={Boolean(p.actualExit)} />
-            {p.actualExit ? <Step label="Return location verified" at={p.returnLocationVerifiedAt} done={Boolean(p.returnLocationVerifiedAt)} /> : null}
-            <Step label="Returned" at={p.actualReturn} done={Boolean(p.actualReturn)} />
+            {/* An Outing has no return step: leaving campus completes it. */}
+            {isOuting(p) ? (
+              <Step label="Left campus · outing complete" at={p.actualExit} done={Boolean(p.actualExit)} />
+            ) : (
+              <>
+                <Step label="Left campus" at={p.actualExit} done={Boolean(p.actualExit)} />
+                {p.actualExit ? <Step label="Return location verified" at={p.returnLocationVerifiedAt} done={Boolean(p.returnLocationVerifiedAt)} /> : null}
+                <Step label="Returned" at={p.actualReturn} done={Boolean(p.actualReturn)} />
+              </>
+            )}
             {['cancelled', 'revoked', 'expired'].includes(p.status) ? <Step label={titleCase(p.status)} done bad /> : null}
           </Card>
           {sameId(p.student, me) && p.status === 'approved' ? (

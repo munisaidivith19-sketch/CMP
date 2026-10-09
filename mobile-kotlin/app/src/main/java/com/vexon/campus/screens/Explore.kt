@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
@@ -362,6 +363,8 @@ private val CATEGORY_LABELS = mapOf("notes" to "Notes", "question_bank" to "Ques
 @Composable
 private fun Materials(modifier: Modifier) {
     val context = LocalContext.current
+    val me = me()
+    val remove = rememberMutation()
     val q = Api.studyMaterials(mapOf("limit" to 50))
     val data = q.data
     Box(modifier) {
@@ -384,9 +387,15 @@ private fun Materials(modifier: Modifier) {
                                     (m["section"].text?.let { " · Sec $it" } ?: "") + " · Sem ${m["semester"].str ?: ""}",
                             )
                             m["description"].text?.let { Body(it, maxLines = 3) }
-                            m["file"]["url"].text?.let { url ->
-                                Box(Modifier.padding(top = 4.dp)) {
-                                    Button(m["file"]["name"].text ?: "Open", { openUrl(context, ServerConfig.assetUrl(url)) }, variant = Variant.Outline, icon = Icons.Rounded.Download, small = true)
+                            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                m["file"]["url"].text?.let { url ->
+                                    Button(m["file"]["name"].text ?: "Open", { openUrl(context, ServerConfig.assetUrl(url)) }, Modifier.weight(1f, fill = false), variant = Variant.Outline, icon = Icons.Rounded.Download, small = true)
+                                }
+                                // The uploader (or admin) may remove it; the server re-checks.
+                                if (me.role == "admin" || sameId(m["uploadedBy"], me)) IconButton(Icons.Rounded.Delete, "Delete material", C.danger) {
+                                    Dialogs.confirm("Delete this material?", m["title"].str, "Delete", destructive = true) {
+                                        remove.launch(onError = { Dialogs.alert("Could not delete", errMsg(it)) }) { Api.deleteStudyMaterial(m.id.orEmpty()) }
+                                    }
                                 }
                             }
                         }
@@ -402,12 +411,15 @@ private fun Materials(modifier: Modifier) {
 fun StudyMaterialsScreen() {
     val me = me()
     var tab by rememberSaveable { mutableStateOf("assistant") }
+    var uploading by remember { mutableStateOf(false) }
+    if (uploading) MaterialUploadSheet { uploading = false }
     Screen(scroll = false) {
         Column(Modifier.fillMaxSize().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Header(
                 "Study Materials",
                 if (me.role in STUDENT_ROLES) "Notes, question banks and resources for your class." else "Class notes, question banks and other resources.",
                 back = true,
+                right = if (tab == "materials" && me.role in MATERIAL_UPLOAD_ROLES) ({ Button("Upload", { uploading = true }, icon = Icons.Rounded.Add, small = true) }) else null,
             )
             Segmented(listOf(Opt("assistant", "🤖 Study Assistant"), Opt("materials", "Materials")), tab, { tab = it })
             // Both stay composed so switching tabs never loses the conversation.

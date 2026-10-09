@@ -8,6 +8,8 @@ import PassQr from '../../../components/PassQr';
 import ParentVerification from '../../../components/ParentVerification';
 import ReturnToCampus from '../../../components/ReturnToCampus';
 import QrScanner from '../../../components/QrScanner';
+import ReasonSheet from '../../../components/ReasonSheet';
+import { BindButton, BindPanel } from '../../../components/BindGroups';
 import { isCompleteGateCode, scanProblem } from '../../../utils/gateQr';
 import { EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, emergencyStatusLabel, isEmergency } from '../../../components/EmergencyGatePass';
 import {
@@ -30,12 +32,16 @@ import { fmtClassDay, timeAgo, titleCase, displayName } from '../../../utils/for
 const OPEN = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority', 'approved', 'active'];
 const PENDING = ['pending_faculty', 'parent_verified', 'pending_hod', 'pending_principal', 'pending_authority'];
 const statusLabel = (s, pass) => emergencyStatusLabel({ ...pass, status: s }) || (s === 'parent_verified' ? 'parent verified' : s.replace('pending_', 'waiting: '));
-const passTitle = (p) => (isEmergency(p) ? 'Emergency gate pass' : GATE_PASS_REGARDING[p.regarding] || titleCase(p.regarding || ''));
+/** A day scholar's same-day Outing (no destination, no return step). */
+const isOuting = (p) => Boolean(p?.dayScholarOuting);
+const passTitle = (p) => (isEmergency(p) ? 'Emergency gate pass' : isOuting(p) ? `Outing · ${p.subject || ''}` : GATE_PASS_REGARDING[p.regarding] || titleCase(p.regarding || ''));
 const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean).join(', ') : '');
 const regardingLabel = (r) => GATE_PASS_REGARDING[r] || titleCase(r);
 
 /* ── Student ────────────────────────────────────────────────────── */
 function StudentGatePasses() {
+  const me = useSelector(selectUser);
+  const requestLabel = me?.stayType === 'day_scholar' ? 'Request outing' : 'Request gate pass';
   const { data, isLoading, isFetching, error, refetch } = useGetGatePassesQuery({ limit: 20 });
   const [cancel, { isLoading: cancelling }] = useCancelGatePassMutation();
   const current = data?.passes.find((p) => OPEN.includes(p.status));
@@ -69,6 +75,13 @@ function StudentGatePasses() {
                   <EmergencyBadge />
                   <EmergencyDetails pass={current} />
                 </>
+              ) : isOuting(current) ? (
+                <>
+                  <T v="body">{current.description}</T>
+                  <T v="small">
+                    Today, {fmtClassDay(current.fromDate)} · Parent: {current.parentPhone}
+                  </T>
+                </>
               ) : (
                 <>
                   <T v="body">{current.description}</T>
@@ -94,7 +107,7 @@ function StudentGatePasses() {
             </Card>
           ) : (
             <Card>
-              <EmptyState icon={DoorOpen} title="No active gate pass" text="Request one and tell your code to security once approved." action={<Button title="Request gate pass" icon={Plus} onPress={() => router.push('/gate-pass/new')} />} />
+              <EmptyState icon={DoorOpen} title="No active gate pass" text="Request one and tell your code to security once approved." action={<Button title={requestLabel} icon={Plus} onPress={() => router.push('/gate-pass/new')} />} />
             </Card>
           )}
           <SectionTitle title="History" />
@@ -153,6 +166,7 @@ function ReviewCard({ pass, onDone }) {
   const [principalReview, { isLoading: pLoading }] = usePrincipalReviewGatePassMutation();
   const [authorityReview, { isLoading: aLoading }] = useEmergencyReviewGatePassMutation();
   const mutations = { faculty: facultyReview, hod: hodReview, principal: principalReview, authority: authorityReview };
+  const [rejecting, setRejecting] = useState(false);
   const stage = STAGE_BY_STATUS[pass.status];
   const saving = fLoading || hLoading || pLoading || aLoading;
   if (!stage) return null;
@@ -166,13 +180,9 @@ function ReviewCard({ pass, onDone }) {
       Alert.alert('Could not update', errMsg(e));
       return;
     }
+    setRejecting(false);
     onDone?.();
   };
-
-  const confirmReject = () =>
-    Alert.prompt
-      ? Alert.prompt('Reject gate pass', 'Reason (shared with the student)', (reason) => act('reject', reason?.trim() || undefined), 'plain-text')
-      : Alert.alert('Reject this gate pass?', undefined, [{ text: 'Cancel', style: 'cancel' }, { text: 'Reject', style: 'destructive', onPress: () => act('reject') }]);
 
   return (
     <Card style={{ gap: 10 }}>
@@ -184,6 +194,24 @@ function ReviewCard({ pass, onDone }) {
             <StatusBadge status={pass.status} label={statusLabel(pass.status, pass)} />
           </View>
           <EmergencyDetails pass={pass} />
+        </>
+      ) : isOuting(pass) ? (
+        <>
+          <Badge label="Day scholar outing" color="info" />
+          <T v="small">
+            <T v="strong">{pass.subject}:</T> {pass.description}
+          </T>
+          <T v="small" style={{ color: colors.muted }}>
+            Today, {fmtClassDay(pass.fromDate)} · Parent (entered by student): {pass.parentPhone}
+          </T>
+          {pass.parentPhoneDiffers ? (
+            <View style={{ flexDirection: 'row', gap: 6, backgroundColor: colors.warningSoft, borderRadius: 12, padding: 8 }}>
+              <AlertTriangle size={14} color="#b45309" />
+              <T v="small" style={{ flex: 1, color: '#b45309' }}>
+                This is not the parent number registered on the student’s account. Confirm it is really the parent.
+              </T>
+            </View>
+          ) : null}
         </>
       ) : (
         <>
@@ -206,13 +234,27 @@ function ReviewCard({ pass, onDone }) {
       ) : null}
       {stage.needsParentOtp ? <ParentVerification pass={pass} onVerified={onDone} /> : null}
       {canDecide ? (
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        {!stage.needsParentOtp ? (
-          <Button title={stage.forwardLabel} variant={stage.action === 'approve' ? 'success' : 'primary'} small style={{ flex: 1 }} loading={saving} onPress={() => act(stage.action)} />
-        ) : null}
-        <Button title="Reject" variant="danger" small style={{ flex: 1 }} loading={saving} onPress={confirmReject} />
-      </View>
+        <>
+          {pass.status === 'parent_verified' && ['faculty', 'admin'].includes(me.role) ? <BindButton pass={pass} onDone={onDone} /> : null}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {/* A bound request moves with its group, so it has no Forward of its own. */}
+            {!stage.needsParentOtp && !pass.bindGroup ? (
+              <Button title={stage.forwardLabel} variant={stage.action === 'approve' ? 'success' : 'primary'} small style={{ flex: 1 }} loading={saving} onPress={() => act(stage.action)} />
+            ) : null}
+            <Button title="Reject" variant="danger" small style={{ flex: 1 }} disabled={saving} onPress={() => setRejecting(true)} />
+          </View>
+        </>
       ) : null}
+      <ReasonSheet
+        open={rejecting}
+        title="Reject gate pass"
+        subtitle={displayName(pass.student)}
+        label="Reason (shared with the student)"
+        confirmText="Reject"
+        loading={saving}
+        onClose={() => setRejecting(false)}
+        onConfirm={(reason) => act('reject', reason || undefined)}
+      />
     </Card>
   );
 }
@@ -227,9 +269,14 @@ const STAGE_STATUS = {
 };
 const AUTHORITY_ONLY = ['ao', 'dean', 'chairman'];
 
+// Bulk approval: faculty build groups; HOD / principal decide them; admin can do all.
+const BIND_ROLES = ['faculty', 'hod', 'principal', 'admin'];
+
 function ReviewQueue({ role }) {
   const isAdmin = role === 'admin';
-  const { data, isLoading, error, refetch } = useGetGatePassesQuery(isAdmin ? { status: PENDING.join(',') } : undefined);
+  // HOD / principal / admin decide bound requests from the Bind tab, as a group.
+  const bind = role === 'faculty' ? {} : { bind: 'none' };
+  const { data, isLoading, error, refetch } = useGetGatePassesQuery(isAdmin ? { status: PENDING.join(','), ...bind } : bind);
   const mine = isAdmin ? data?.passes : data?.passes.filter((p) => STAGE_STATUS[role]?.includes(p.status));
 
   if (isLoading) return <Loading />;
@@ -291,15 +338,20 @@ function StaffGatePasses() {
       )}
       {authorityOnly ? null : (
         <>
+          {me.role === 'principal' ? (
+            <Button title="Institutional mass outpass" icon={DoorOpen} variant="soft" onPress={() => router.push('/gate-pass/mass')} />
+          ) : null}
           <Segmented
             value={tab}
             onChange={setTab}
             options={[
               { value: 'review', label: 'Review' },
+              ...(BIND_ROLES.includes(me.role) ? [{ value: 'bind', label: me.role === 'faculty' ? 'Bind' : 'Bind groups' }] : []),
               { value: 'outside', label: 'Outside' },
             ]}
           />
           {tab === 'review' && <ReviewQueue role={me.role} />}
+          {tab === 'bind' && <BindPanel />}
           {tab === 'outside' && dash && <OutsideNow dash={dash} />}
         </>
       )}

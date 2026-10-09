@@ -18,6 +18,10 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Bed
+import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -69,6 +73,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -139,6 +145,7 @@ import com.vexon.campus.ui.Screen
 import com.vexon.campus.ui.SectionTitle
 import com.vexon.campus.ui.Sheet
 import com.vexon.campus.ui.Small
+import com.vexon.campus.ui.pressable
 import com.vexon.campus.ui.Strong
 import com.vexon.campus.ui.T
 import com.vexon.campus.ui.Tone
@@ -705,11 +712,15 @@ fun ChatListScreen() {
 private data class CampusItem(val href: String, val label: String, val hint: String, val icon: ImageVector, val g: List<Color>)
 
 private val CAMPUS_ITEMS = listOf(
+    CampusItem("/sos", "Emergency SOS", "Instant alert", Icons.Rounded.Warning, Grad.rose),
     CampusItem("/timetable", "Timetable", "Today & this week", Icons.Rounded.EventNote, Grad.violet),
     CampusItem("/attendance", "Attendance", "Subject-wise %", Icons.Rounded.FactCheck, Grad.emerald),
+    CampusItem("/od-leave", "OD & Leave", "Apply & track", Icons.Rounded.EventAvailable, Grad.sky),
+    CampusItem("/holidays", "Holidays", "College holidays", Icons.Rounded.EventBusy, Grad.rose),
     CampusItem("/study-materials", "Study Materials", "Notes & AI assistant", Icons.Rounded.MenuBook, Grad.sky),
     CampusItem("/alumni", "Alumni Network", "Mentors, jobs & chapters", Icons.Rounded.School, Grad.primary),
     CampusItem("/gate-pass", "Gate pass", "Request & QR", Icons.Rounded.DoorFront, Grad.cyan),
+    CampusItem("/hostel", "Hostel", "Inside & outside", Icons.Rounded.Bed, Grad.violet),
     CampusItem("/lost-found", "Lost & found", "Report or search", Icons.Rounded.Inventory2, Grad.amber),
     CampusItem("/complaints", "Complaints", "Register & track", Icons.Rounded.ReportProblem, Grad.rose),
     CampusItem("/achievements", "Achievements", "Student honors & awards", Icons.Rounded.EmojiEvents, Grad.amber),
@@ -728,21 +739,30 @@ private val ADMIN_ITEMS = listOf(
 )
 
 // Security only deals with gate passes and lost & found — the rest of campus life doesn't apply to them.
-private val HIDDEN_FOR_SECURITY = setOf("/timetable", "/study-materials", "/attendance", "/events", "/clubs", "/announcements", "/discussions", "/search", "/complaints", "/alumni")
+private val HIDDEN_FOR_SECURITY = setOf("/timetable", "/study-materials", "/attendance", "/events", "/clubs", "/announcements", "/discussions", "/search", "/complaints", "/alumni", "/holidays")
 // Warden/Security have zero timetable or study-materials access anywhere in the app.
-private val HIDDEN_FOR_NO_TIMETABLE = setOf("/timetable", "/study-materials")
+private val HIDDEN_FOR_NO_TIMETABLE = setOf("/timetable", "/study-materials", "/holidays")
 // Alumni only access alumni network, events, clubs, announcements, discussions, search, and security.
-private val HIDDEN_FOR_ALUMNI = setOf("/timetable", "/attendance", "/study-materials", "/gate-pass", "/lost-found", "/complaints")
+private val HIDDEN_FOR_ALUMNI = setOf("/timetable", "/attendance", "/study-materials", "/gate-pass", "/lost-found", "/complaints", "/holidays")
+// Students apply for OD / Leave; these staff roles review. The API enforces the same.
+private val OD_LEAVE_ROLES = STUDENT_ROLES + setOf("faculty", "hod", "principal", "admin")
+// Faculty Class In-Charge: manage their own class's student logins.
+private val CLASS_ITEM = CampusItem("/class/students", "My class", "Student logins", Icons.Rounded.Groups, Grad.emerald)
 
 @Composable
 fun CampusScreen() {
     val me = me()
     val role = me.role
     val staff = role !in STUDENT_ROLES
-    var items = (if (role == "admin") ADMIN_ITEMS else emptyList()) + CAMPUS_ITEMS.filter {
+    var items = (if (role == "admin") ADMIN_ITEMS else emptyList()) +
+        // The principal approves the chat groups HODs ask to create.
+        (if (role == "principal") ADMIN_ITEMS.filter { it.href == "/admin/chat-requests" } else emptyList()) +
+        (if (isClassInCharge(me)) listOf(CLASS_ITEM) else emptyList()) + CAMPUS_ITEMS.filter {
         (role != "security" || it.href !in HIDDEN_FOR_SECURITY) &&
             (role !in setOf("warden", "security") || it.href !in HIDDEN_FOR_NO_TIMETABLE) &&
             (role != "alumni" || it.href !in HIDDEN_FOR_ALUMNI) &&
+            (it.href != "/od-leave" || role in OD_LEAVE_ROLES) &&
+            (it.href != "/hostel" || role in HOSTEL_ROLES) &&
             (role !in ACHIEVEMENT_BLOCKED_ROLES || it.href != "/achievements") &&
             // The People directory is for faculty, HODs and college-wide roles (server rule).
             (it.href != "/people" || role in setOf("faculty", "hod") + COLLEGE_WIDE)
@@ -813,6 +833,10 @@ fun ProfileScreen() {
     val save = rememberMutation()
     var signingOut by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val photo = rememberMutation()
+    val photoPicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) photo.launch(onError = { Dialogs.alert("Could not update photo", errMsg(it)) }) { Auth.setUser(Api.uploadAvatar(uri)) }
+    }
 
     /** Sign out THIS device: the server revokes only this session and forgets its push token. */
     fun signOut() {
@@ -835,7 +859,16 @@ fun ProfileScreen() {
     Screen {
         Header("Profile", right = { Button(if (editing) "Cancel" else "Edit", { editing = !editing }, variant = Variant.Soft, icon = Icons.Rounded.Edit, small = true) })
         Card(Wide, horizontalAlignment = Alignment.CenterHorizontally, gap = 8.dp) {
-            Avatar(user, size = 84.dp)
+            Box(Modifier.pressable({
+                photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }).semantics { contentDescription = "Change profile photo" }) {
+                Avatar(user, size = 84.dp)
+                Box(
+                    Modifier.align(Alignment.BottomEnd).size(30.dp).clip(androidx.compose.foundation.shape.CircleShape).background(C.primary),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.PhotoCamera, null, Modifier.size(15.dp), tint = Color.White) }
+            }
+            if (photo.isLoading) Small("Uploading photo…")
             H2(user["name"].str)
             Small(user["email"].str)
             Badge(ROLE_LABELS[user.role] ?: user.role)

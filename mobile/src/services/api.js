@@ -58,7 +58,7 @@ export const api = createApi({
     'Attendance', 'Correction', 'Timetable', 'GatePass', 'LostFound', 'StaffAttendance', 'ChatRequest', 'Admin',
     'StudyMaterial', 'Complaint', 'Holiday',
     'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics',
-    'SOSAlert',
+    'SOSAlert', 'ODLeave', 'Achievement', 'ClassStudents', 'Hostel',
   ],
   endpoints: (b) => ({
     // ── Auth / account ────────────────────────────────
@@ -100,6 +100,12 @@ export const api = createApi({
     getEvent: b.query({ query: (id) => `/events/${id}`, providesTags: ['Event'] }),
     registerEvent: b.mutation({ query: (id) => ({ url: `/events/${id}/register`, method: 'POST' }), invalidatesTags: ['Event', 'Dashboard'] }),
     cancelRegistration: b.mutation({ query: (id) => ({ url: `/events/${id}/register`, method: 'DELETE' }), invalidatesTags: ['Event', 'Dashboard'] }),
+    // Participants (organiser / coordinators / staff, server-decided) and per-day attendance (coordinators / hosting HOD).
+    getParticipants: b.query({ query: (id) => `/events/${id}/participants`, providesTags: ['Event'] }),
+    markEventAttendance: b.mutation({
+      query: ({ id, userId, attended, date }) => ({ url: `/events/${id}/attendance/${userId}`, method: 'PATCH', body: { attended, date } }),
+      invalidatesTags: ['Event', 'Attendance'],
+    }),
     getClubs: b.query({ query: (params) => ({ url: '/clubs', params }), providesTags: ['Club'] }),
     getClub: b.query({ query: (id) => `/clubs/${id}`, providesTags: ['Club'] }),
     joinClub: b.mutation({ query: ({ id, message }) => ({ url: `/clubs/${id}/join`, method: 'POST', body: { message } }), invalidatesTags: ['Club'] }),
@@ -491,6 +497,73 @@ export const api = createApi({
       providesTags: ['AlumniProfile', 'MentorshipRequest', 'MentorshipSession', 'AlumniJob', 'AlumniEvent', 'ChapterPost'],
     }),
 
+    // ── Uploads: a photo as a supporting document (images are valid documents server-side) ──
+    uploadDocument: b.mutation({
+      query: (asset) => {
+        const body = new FormData();
+        body.append('file', { uri: asset.uri, name: asset.fileName || 'document.jpg', type: asset.mimeType || 'image/jpeg' });
+        return { url: '/uploads?kind=document', method: 'POST', body };
+      },
+    }),
+    uploadAvatar: b.mutation({
+      query: (asset) => {
+        const body = new FormData();
+        body.append('file', { uri: asset.uri, name: asset.fileName || 'avatar.jpg', type: asset.mimeType || 'image/jpeg' });
+        return { url: '/users/me/avatar', method: 'PUT', body };
+      },
+      invalidatesTags: ['Me', 'User'],
+    }),
+
+    // ── Day scholar Outing, bind groups, mass outpass (same endpoints as the web) ──
+    createDayScholarOuting: b.mutation({ query: (body) => ({ url: '/gate-pass/outing', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
+    massApproveGatePass: b.mutation({ query: (body) => ({ url: '/gate-pass/mass-approve', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
+    getBindGroups: b.query({ query: (params) => ({ url: '/gate-pass/bind-groups', params }), providesTags: ['GatePass'] }),
+    createBindGroup: b.mutation({ query: (body) => ({ url: '/gate-pass/bind-groups', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
+    deleteBindGroup: b.mutation({ query: (id) => ({ url: `/gate-pass/bind-groups/${id}`, method: 'DELETE' }), invalidatesTags: ['GatePass'] }),
+    bindGatePass: b.mutation({ query: ({ id, groupId }) => ({ url: `/gate-pass/${id}/bind`, method: 'POST', body: { groupId } }), invalidatesTags: ['GatePass'] }),
+    unbindGatePass: b.mutation({ query: (id) => ({ url: `/gate-pass/${id}/bind`, method: 'DELETE' }), invalidatesTags: ['GatePass'] }),
+    submitBindGroup: b.mutation({ query: (id) => ({ url: `/gate-pass/bind-groups/${id}/submit`, method: 'POST' }), invalidatesTags: ['GatePass'] }),
+    hodReviewBindGroup: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/bind-groups/${id}/hod-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
+    principalReviewBindGroup: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/bind-groups/${id}/principal-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
+    rejectBindMember: b.mutation({ query: ({ id, passId, reason }) => ({ url: `/gate-pass/bind-groups/${id}/members/${passId}/reject`, method: 'PATCH', body: { reason } }), invalidatesTags: ['GatePass'] }),
+
+    // ── On Duty (OD) & Leave ──
+    getMyODLeaveRequests: b.query({ query: (params) => ({ url: '/attendance/od-leave/my', params }), providesTags: ['ODLeave'] }),
+    getPendingODLeaveReviews: b.query({ query: (params) => ({ url: '/attendance/od-leave/reviews', params }), providesTags: ['ODLeave'] }),
+    createODLeaveRequest: b.mutation({ query: (body) => ({ url: '/attendance/od-leave', method: 'POST', body }), invalidatesTags: ['ODLeave', 'Attendance'] }),
+    reviewODLeaveRequest: b.mutation({ query: ({ id, ...body }) => ({ url: `/attendance/od-leave/${id}/review`, method: 'PATCH', body }), invalidatesTags: ['ODLeave', 'Attendance'] }),
+    cancelODLeaveRequest: b.mutation({ query: (id) => ({ url: `/attendance/od-leave/${id}/cancel`, method: 'PATCH' }), invalidatesTags: ['ODLeave', 'Attendance'] }),
+
+    // ── Student achievements ──
+    getAchievements: b.query({ query: (params) => ({ url: '/achievements', params }), providesTags: ['Achievement'] }),
+    getAchievement: b.query({ query: (id) => `/achievements/${id}`, providesTags: ['Achievement'] }),
+    searchAchievementStudents: b.query({ query: (params) => ({ url: '/achievements/students', params }) }),
+    createAchievement: b.mutation({ query: (body) => ({ url: '/achievements', method: 'POST', body }), invalidatesTags: ['Achievement', 'Announcement', 'Notification'] }),
+    deleteAchievement: b.mutation({ query: (id) => ({ url: `/achievements/${id}`, method: 'DELETE' }), invalidatesTags: ['Achievement', 'Announcement'] }),
+    toggleFeaturedAchievement: b.mutation({ query: (id) => ({ url: `/achievements/${id}/feature`, method: 'PATCH' }), invalidatesTags: ['Achievement'] }),
+    congratulateAchievement: b.mutation({ query: (id) => ({ url: `/achievements/${id}/congratulate`, method: 'POST' }), invalidatesTags: ['Achievement'] }),
+    requestAchievementHide: b.mutation({ query: ({ id, reason }) => ({ url: `/achievements/${id}/hide-request`, method: 'POST', body: { reason } }), invalidatesTags: ['Achievement'] }),
+    resolveAchievementHide: b.mutation({ query: ({ id, reqId, action }) => ({ url: `/achievements/${id}/hide-request/${reqId}`, method: 'PATCH', body: { action } }), invalidatesTags: ['Achievement'] }),
+
+    // ── Hostel (admin, principal, dean, AO, chairman, warden — enforced server-side) ──
+    getHostelSummary: b.query({ query: () => '/hostel/summary', providesTags: ['Hostel', 'GatePass'] }),
+    getHostelStudents: b.query({ query: (params) => ({ url: '/hostel/students', params }), providesTags: ['Hostel', 'GatePass'] }),
+
+    // ── Class In-Charge: own class's students ──
+    getClassStudents: b.query({ query: () => '/class-students', providesTags: ['ClassStudents'] }),
+    getClassStudent: b.query({ query: (id) => `/class-students/${id}`, providesTags: ['ClassStudents'], keepUnusedDataFor: 0 }),
+    createClassStudent: b.mutation({ query: (body) => ({ url: '/class-students', method: 'POST', body }), invalidatesTags: ['ClassStudents'] }),
+    updateClassStudent: b.mutation({ query: ({ id, ...body }) => ({ url: `/class-students/${id}`, method: 'PATCH', body }), invalidatesTags: ['ClassStudents', 'Attendance', 'User'] }),
+    resetUserPassword: b.mutation({ query: ({ id, ...body }) => ({ url: `/users/${id}/reset-password`, method: 'POST', body }) }),
+
+    // ── Announcements management / holidays ──
+    createAnnouncement: b.mutation({ query: (body) => ({ url: '/announcements', method: 'POST', body }), invalidatesTags: ['Announcement', 'Dashboard'] }),
+    deleteAnnouncement: b.mutation({ query: (id) => ({ url: `/announcements/${id}`, method: 'DELETE' }), invalidatesTags: ['Announcement', 'Dashboard'] }),
+    togglePinAnnouncement: b.mutation({ query: (id) => ({ url: `/announcements/${id}/pin`, method: 'PATCH' }), invalidatesTags: ['Announcement', 'Dashboard'] }),
+    getHolidayOptions: b.query({ query: () => '/holidays/options' }),
+    createHoliday: b.mutation({ query: (body) => ({ url: '/holidays', method: 'POST', body }), invalidatesTags: ['Holiday', 'Attendance', 'Timetable'] }),
+    deleteHoliday: b.mutation({ query: (id) => ({ url: `/holidays/${id}`, method: 'DELETE' }), invalidatesTags: ['Holiday', 'Attendance', 'Timetable'] }),
+
     // ── Campus SOS ──
     getSOSAlerts: b.query({ query: (params) => ({ url: '/sos', params }), providesTags: ['SOSAlert'] }),
     createSOSAlert: b.mutation({ query: (body) => ({ url: '/sos', method: 'POST', body }), invalidatesTags: ['SOSAlert', 'Dashboard'] }),
@@ -520,6 +593,8 @@ export const {
   useGetEventQuery,
   useRegisterEventMutation,
   useCancelRegistrationMutation,
+  useGetParticipantsQuery,
+  useMarkEventAttendanceMutation,
   useGetClubsQuery,
   useGetClubQuery,
   useJoinClubMutation,
@@ -682,6 +757,46 @@ export const {
   useCreateSOSAlertMutation,
   useAckSOSAlertMutation,
   useResolveSOSAlertMutation,
+  useUploadDocumentMutation,
+  useUploadAvatarMutation,
+  useCreateDayScholarOutingMutation,
+  useMassApproveGatePassMutation,
+  useGetBindGroupsQuery,
+  useCreateBindGroupMutation,
+  useDeleteBindGroupMutation,
+  useBindGatePassMutation,
+  useUnbindGatePassMutation,
+  useSubmitBindGroupMutation,
+  useHodReviewBindGroupMutation,
+  usePrincipalReviewBindGroupMutation,
+  useRejectBindMemberMutation,
+  useGetMyODLeaveRequestsQuery,
+  useGetPendingODLeaveReviewsQuery,
+  useCreateODLeaveRequestMutation,
+  useReviewODLeaveRequestMutation,
+  useCancelODLeaveRequestMutation,
+  useGetAchievementsQuery,
+  useGetAchievementQuery,
+  useSearchAchievementStudentsQuery,
+  useCreateAchievementMutation,
+  useDeleteAchievementMutation,
+  useToggleFeaturedAchievementMutation,
+  useCongratulateAchievementMutation,
+  useRequestAchievementHideMutation,
+  useResolveAchievementHideMutation,
+  useGetHostelSummaryQuery,
+  useGetHostelStudentsQuery,
+  useGetClassStudentsQuery,
+  useGetClassStudentQuery,
+  useCreateClassStudentMutation,
+  useUpdateClassStudentMutation,
+  useResetUserPasswordMutation,
+  useCreateAnnouncementMutation,
+  useDeleteAnnouncementMutation,
+  useTogglePinAnnouncementMutation,
+  useGetHolidayOptionsQuery,
+  useCreateHolidayMutation,
+  useDeleteHolidayMutation,
 } = api;
 
 export const errMsg = (err, fallback = 'Something went wrong') =>

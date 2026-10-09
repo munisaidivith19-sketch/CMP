@@ -151,7 +151,13 @@ private fun statusLabel(s: String?, pass: JsonElement?): String =
     emergencyStatusLabel(pass, s) ?: if (s == "parent_verified") "parent verified" else s.orEmpty().replace("pending_", "waiting: ")
 
 private fun regardingLabel(r: String?) = GATE_PASS_REGARDING[r] ?: Fmt.titleCase(r)
-private fun passTitle(p: JsonElement?) = if (isEmergency(p)) "Emergency gate pass" else regardingLabel(p["regarding"].str)
+/** A day scholar's same-day Outing (no destination, no return step). */
+fun isOuting(p: JsonElement?) = p["dayScholarOuting"].bool
+private fun passTitle(p: JsonElement?) = when {
+    isEmergency(p) -> "Emergency gate pass"
+    isOuting(p) -> "Outing · ${p["subject"].str ?: ""}"
+    else -> regardingLabel(p["regarding"].str)
+}
 private fun destinationLine(d: JsonElement?, empty: String = "") =
     if (d == null) empty else listOfNotNull(d["area"].text, d["district"].text, d["state"].text).joinToString(", ")
 
@@ -283,6 +289,7 @@ fun GatePassScreen() {
 
 @Composable
 private fun StudentGatePasses() {
+    val requestLabel = if (me()["stayType"].str == "day_scholar") "Request outing" else "Request gate pass"
     val q = Api.gatePasses(mapOf("limit" to 20))
     val cancel = rememberMutation()
     val passes = q.data["passes"].list
@@ -307,6 +314,9 @@ private fun StudentGatePasses() {
                         if (isEmergency(current)) {
                             EmergencyBadge()
                             EmergencyDetails(current)
+                        } else if (isOuting(current)) {
+                            Body(current["description"].str)
+                            Small("Today, ${Fmt.classDay(current["fromDate"])} · Parent: ${current["parentPhone"].str ?: ""}")
                         } else {
                             Body(current["description"].str)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -333,7 +343,7 @@ private fun StudentGatePasses() {
                 } else {
                     Card(Wide) {
                         EmptyState(Icons.Rounded.DoorFront, "No active gate pass", "Request one and tell your code to security once approved.",
-                            action = { Button("Request gate pass", { Nav.push("/gate-pass/new") }, icon = Icons.Rounded.Add) })
+                            action = { Button(requestLabel, { Nav.push("/gate-pass/new") }, icon = Icons.Rounded.Add) })
                     }
                 }
                 val history = passes.filter { it !== current }
@@ -391,6 +401,17 @@ private fun ReviewCard(pass: JsonElement, onDone: () -> Unit) {
                 StatusBadge(pass["status"].str, statusLabel(pass["status"].str, pass))
             }
             EmergencyDetails(pass)
+        } else if (isOuting(pass)) {
+            Badge("Day scholar outing", Tone.Info)
+            Small("${pass["subject"].str ?: ""}: ${pass["description"].str ?: ""}")
+            Small("Today, ${Fmt.classDay(pass["fromDate"])} · Parent (entered by student): ${pass["parentPhone"].str ?: ""}", color = C.muted)
+            if (pass["parentPhoneDiffers"].bool) Row(
+                Wide.clip(RoundedCornerShape(12.dp)).background(C.warningSoft).padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Rounded.Warning, null, Modifier.size(14.dp), tint = C.amberText)
+                Small("This is not the parent number registered on the student’s account. Confirm it is really the parent.", Modifier.weight(1f), color = C.amberText)
+            }
         } else {
             Small("${regardingLabel(pass["regarding"].str)}: ${pass["description"].str ?: ""}")
             Small(destinationLine(pass["destination"]))
@@ -401,8 +422,11 @@ private fun ReviewCard(pass: JsonElement, onDone: () -> Unit) {
             Small("Parent verified by OTP${pass["parentVerifiedBy"]["name"].text?.let { " · $it" } ?: ""}", color = C.emeraldText)
         }
         if (stage.needsParentOtp) ParentVerification(pass, onDone)
+        if (canDecide && pass["status"].str == "parent_verified" && me.role in setOf("faculty", "admin")) BindButton(pass, onDone)
+        // A bound request moves with its group, so it has no Forward of its own.
+        val bound = pass["bindGroup"].id != null
         if (canDecide) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (!stage.needsParentOtp) Button(stage.forwardLabel, { act(stage.action) }, Modifier.weight(1f),
+            if (!stage.needsParentOtp && !bound) Button(stage.forwardLabel, { act(stage.action) }, Modifier.weight(1f),
                 variant = if (stage.action == "approve") Variant.Success else Variant.Primary, small = true, loading = review.isLoading)
             Button("Reject", {
                 Dialogs.prompt("Reject gate pass", "Reason (shared with the student)", "Optional", "Reject") { act("reject", it) }
@@ -424,7 +448,8 @@ private val AUTHORITY_ONLY = setOf("ao", "dean", "chairman")
 @Composable
 private fun ReviewQueue(role: String) {
     val isAdmin = role == "admin"
-    val q = Api.gatePasses(if (isAdmin) mapOf("status" to PENDING.joinToString(",")) else null)
+    val bind = if (role == "faculty") null else "none"
+    val q = Api.gatePasses(if (isAdmin) mapOf("status" to PENDING.joinToString(","), "bind" to bind) else mapOf("bind" to bind))
     val passes = q.data["passes"].list
     val mine = if (isAdmin) passes else passes.filter { it["status"].str in STAGE_STATUS[role].orEmpty() }
     when {
@@ -480,8 +505,17 @@ private fun StaffGatePasses() {
                 Card(mod, gap = 2.dp) { Label(l); H2(v) }
             }
         }
-        Segmented(listOf(Opt("review", "Review"), Opt("outside", "Outside")), tab, { tab = it })
+        if (me.role == "principal") Button("Institutional mass outpass", { Nav.push("/gate-pass/mass") }, Wide, variant = Variant.Soft, icon = Icons.Rounded.DoorFront)
+        Segmented(
+            buildList {
+                add(Opt("review", "Review"))
+                if (me.role in BIND_ROLES) add(Opt("bind", if (me.role == "faculty") "Bind" else "Bind groups"))
+                add(Opt("outside", "Outside"))
+            },
+            tab, { tab = it },
+        )
         if (tab == "review") ReviewQueue(me.role)
+        if (tab == "bind") BindPanel()
         if (tab == "outside" && dash != null) OutsideNow(dash)
     }
 }
@@ -693,7 +727,8 @@ fun NewGatePassScreen() {
     val fresh = Api.me()
     val me = fresh.data?.takeIf { it["_id"].str != null } ?: me()
     val parentPhone = me["parentPhone"].text?.takeIf { it.isNotBlank() }
-    var type by rememberSaveable { mutableStateOf("normal") }
+    val isDayScholar = me["stayType"].str == "day_scholar"
+    var type by rememberSaveable { mutableStateOf(if (isDayScholar) "outing" else "normal") }
     var regarding by rememberSaveable { mutableStateOf("outing") }
     var description by rememberSaveable { mutableStateOf("") }
     var state by rememberSaveable { mutableStateOf("") }
@@ -730,15 +765,21 @@ fun NewGatePassScreen() {
 
     Screen {
         Header(
-            "Request gate pass",
-            if (type == "emergency") "Goes straight to the authority you choose — no faculty, HOD or parent OTP." else "Goes to your class faculty, then HOD, then the principal.",
+            if (isDayScholar) "Request an outing" else "Request gate pass",
+            when (type) {
+                "emergency" -> "Goes straight to the authority you choose — no faculty, HOD or parent OTP."
+                "outing" -> "For today only. Class faculty (parent OTP) → HOD → principal."
+                else -> "Goes to your class faculty, then HOD, then the principal."
+            },
             back = true,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("Normal gate pass", type == "normal") { type = "normal" }
+            if (isDayScholar) Chip("Outing", type == "outing") { type = "outing" }
+            else Chip("Normal gate pass", type == "normal") { type = "normal" }
             Chip("Emergency gate pass", type == "emergency") { type = "emergency" }
         }
         if (type == "emergency") Card(Wide) { EmergencyRequestForm { Nav.back() } }
+        else if (type == "outing") Card(Wide) { OutingForm(parentPhone.orEmpty()) }
         else Card(Wide, gap = 14.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Label("Regarding")
@@ -764,6 +805,45 @@ fun NewGatePassScreen() {
 }
 
 private const val MAX_BYTES = 5L * 1024 * 1024
+
+/**
+ * Day scholar Outing: today only (the server sets the date), no destination
+ * and no return check-in — it completes when security records the exit.
+ */
+@Composable
+private fun OutingForm(registeredParentPhone: String) {
+    var subject by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var parentPhone by rememberSaveable { mutableStateOf(registeredParentPhone) }
+    var doc by remember { mutableStateOf<JsonElement?>(null) }
+    var errors by remember { mutableStateOf(mapOf<String, String>()) }
+    val create = rememberMutation()
+    fun submit() {
+        val e = mutableMapOf<String, String>()
+        if (subject.trim().length < 2) e["subject"] = "At least 2 characters"
+        if (description.trim().length < 5) e["description"] = "At least 5 characters"
+        val digits = parentPhone.count { it.isDigit() }
+        if (!Regex("^[0-9+\\-\\s()]*$").matches(parentPhone) || digits < 6 || digits > 15) e["parentPhone"] = "Enter a valid mobile number"
+        errors = e
+        if (e.isNotEmpty()) return
+        create.launch(onError = { Dialogs.alert("Could not submit", errMsg(it)) }) {
+            Api.createDayScholarOuting(jsonOf(
+                "subject" to subject.trim(), "description" to description.trim(), "parentPhone" to parentPhone.trim(),
+                "supportingDocument" to docBody(doc),
+            ))
+            Dialogs.alert("Outing requested", "Your class faculty has been notified.")
+            Nav.back()
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Input(subject, { subject = it }, label = "Subject", maxLength = 120, placeholder = "e.g. Doctor appointment", error = errors["subject"])
+        Input(description, { description = it }, label = "Description", multiline = true, maxLength = 500, placeholder = "Why do you need to go out today?", error = errors["description"])
+        Input(parentPhone, { parentPhone = it }, label = "Parent mobile", keyboardType = KeyboardType.Phone, maxLength = 20, hint = "The parent verification OTP is sent to this number.", error = errors["parentPhone"])
+        AttachDocument("Attachment", doc, { doc = it })
+        Small("For today only. No return check-in is needed — the pass is complete once security records your exit.")
+        Button("Request outing", ::submit, Wide, loading = create.isLoading)
+    }
+}
 
 /** Emergency request form: identity is read-only, from the signed-in account. */
 @Composable
@@ -876,6 +956,10 @@ fun GatePassDetailScreen(id: String) {
                     if (isEmergency(p)) {
                         EmergencyBadge()
                         EmergencyDetails(p)
+                    } else if (isOuting(p)) {
+                        Body(p["description"].str)
+                        Small("Today, ${Fmt.classDay(p["fromDate"])} · no return check-in needed")
+                        Small("Parent: ${p["parentPhone"].str ?: ""}")
                     } else {
                         Body(p["description"].str)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -906,9 +990,12 @@ fun GatePassDetailScreen(id: String) {
                         ReviewStep("HOD review", "hodReview")
                         ReviewStep("Principal approval", "principalReview")
                     }
-                    Step("Left campus", p["actualExit"], p["actualExit"] != null)
-                    if (p["actualExit"] != null) Step("Return location verified", p["returnLocationVerifiedAt"], p["returnLocationVerifiedAt"] != null)
-                    Step("Returned", p["actualReturn"], p["actualReturn"] != null)
+                    if (isOuting(p)) Step("Left campus · outing complete", p["actualExit"], p["actualExit"] != null)
+                    else {
+                        Step("Left campus", p["actualExit"], p["actualExit"] != null)
+                        if (p["actualExit"] != null) Step("Return location verified", p["returnLocationVerifiedAt"], p["returnLocationVerifiedAt"] != null)
+                        Step("Returned", p["actualReturn"], p["actualReturn"] != null)
+                    }
                     if (p["status"].str in setOf("cancelled", "revoked", "expired")) Step(Fmt.titleCase(p["status"].str), done = true, bad = true)
                 }
                 val mine = sameId(p["student"], me)

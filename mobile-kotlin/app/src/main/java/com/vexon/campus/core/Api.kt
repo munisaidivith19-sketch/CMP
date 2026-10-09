@@ -52,6 +52,10 @@ object Api {
 
     // ── Study materials + JNN Study Assistant ──
     @Composable fun studyMaterials(params: Params? = null) = get("/study-materials", "StudyMaterial", params = params)
+    // Faculty upload only for the classes they currently teach; HODs inside their department (server-enforced).
+    @Composable fun myTeachingAssignments(skip: Boolean = false) = get("/study-materials/my-assignments", "StudyMaterial", "Timetable", skip = skip)
+    suspend fun uploadStudyMaterial(body: JsonElement) = post("/study-materials", body, "StudyMaterial")
+    suspend fun deleteStudyMaterial(id: String) = delete("/study-materials/$id", null, "StudyMaterial")
     // Web research can take a while — allow longer than the default 20s.
     suspend fun askStudyAssistant(body: JsonElement) = send("POST", "/ai/study-assistant/chat", body, timeoutMs = 90_000)
     suspend fun assistantConversation(id: String) = Http.request("GET", "/ai/study-assistant/conversations/$id")
@@ -61,6 +65,13 @@ object Api {
     @Composable fun dashboard() = get("/dashboard", "Dashboard")
     @Composable fun search(q: String, skip: Boolean = false) = get("/search", params = mapOf("q" to q), skip = skip)
     suspend fun uploadImage(uri: Uri) = Http.request("POST", "/uploads", params = mapOf("kind" to "image"), body = Http.imagePart(uri), timeoutMs = 60_000)
+    // A document: image, PDF, DOC/DOCX or TXT — the server checks the real type from the file's bytes.
+    suspend fun uploadDocument(uri: Uri) = Http.request("POST", "/uploads", params = mapOf("kind" to "document"), body = Http.imagePart(uri), timeoutMs = 90_000)
+    suspend fun uploadAvatar(uri: Uri): JsonElement {
+        val res = Http.request("PUT", "/users/me/avatar", body = Http.imagePart(uri), timeoutMs = 60_000)
+        QueryClient.invalidate("Me", "User")
+        return res
+    }
     @Composable fun users(params: Params? = null, skip: Boolean = false) = get("/users", "User", params = params, skip = skip)
     @Composable fun user(id: String) = get("/users/$id", "User")
 
@@ -70,6 +81,10 @@ object Api {
     @Composable fun event(id: String) = get("/events/$id", "Event")
     suspend fun registerEvent(id: String) = post("/events/$id/register", null, "Event", "Dashboard")
     suspend fun cancelRegistration(id: String) = delete("/events/$id/register", null, "Event", "Dashboard")
+    // Participants (organiser / coordinators / staff — server-decided) and per-day attendance (coordinators / hosting HOD).
+    @Composable fun eventParticipants(id: String, skip: Boolean = false) = get("/events/$id/participants", "Event", skip = skip)
+    suspend fun markEventAttendance(id: String, userId: String, attended: Boolean, date: String) =
+        patch("/events/$id/attendance/$userId", jsonOf("attended" to attended, "date" to date), "Event", "Attendance")
     @Composable fun clubs(params: Params? = null) = get("/clubs", "Club", params = params)
     @Composable fun club(id: String) = get("/clubs/$id", "Club")
     suspend fun joinClub(id: String, message: String?) = post("/clubs/$id/join", jsonOf("message" to (message ?: Omit)), "Club")
@@ -80,6 +95,11 @@ object Api {
     suspend fun createDiscussion(body: JsonElement) = post("/discussions", body, "Discussion")
     suspend fun addReply(id: String, body: String) = post("/discussions/$id/replies", jsonOf("body" to body), "Discussion")
     suspend fun upvoteDiscussion(id: String) = post("/discussions/$id/upvote", null, "Discussion")
+
+    // Posting: the Principal (whole campus or any class) and HODs (own scope); the API re-checks every audience.
+    suspend fun createAnnouncement(body: JsonElement) = post("/announcements", body, "Announcement", "Dashboard")
+    suspend fun deleteAnnouncement(id: String) = delete("/announcements/$id", null, "Announcement", "Dashboard")
+    suspend fun togglePinAnnouncement(id: String) = patch("/announcements/$id/pin", null, "Announcement", "Dashboard")
 
     // ── Notifications ─────────────────────────────────
     @Composable fun notifications(params: Params? = null) = get("/notifications", "Notification", params = params)
@@ -104,6 +124,9 @@ object Api {
     // Faculty may pass { scope: 'class' } (Our Class) or { scope: 'handling' };
     // the server derives both scopes from the account.
     @Composable fun timetable(params: Params? = null, skip: Boolean = false) = get("/timetable", "Timetable", params = params, skip = skip)
+    // HOD only: the department's master schedule and who is free each period.
+    @Composable fun masterTimetable(params: Params? = null, skip: Boolean = false) = get("/timetable/master", "Timetable", params = params, skip = skip)
+    @Composable fun facultyAvailability(params: Params? = null, skip: Boolean = false) = get("/timetable/faculty-availability", "Timetable", params = params, skip = skip)
     // Holidays that apply to this account — the server decides which (read-only on mobile).
     @Composable fun holidays(params: Params? = null, skip: Boolean = false) = get("/holidays", "Holiday", params = params, skip = skip)
     @Composable fun ourClassAttendance(params: Params? = null, skip: Boolean = false) = get("/attendance/our-class", "Attendance", params = params, skip = skip)
@@ -184,6 +207,46 @@ object Api {
     suspend fun verifyReturnCredential(code: String) = post("/gate-pass/return/verify", jsonOf("code" to code))
     suspend fun verifyReturnLocation(id: String, reading: JsonElement) = post("/gate-pass/$id/return-location/verify", reading, "GatePass")
     @Composable fun returnCredential(id: String, skip: Boolean = false) = get("/gate-pass/$id/return-credential", "GatePass", skip = skip, keep = false)
+
+    // Day scholar same-day Outing, and the Principal's institutional mass outpass.
+    suspend fun createDayScholarOuting(body: JsonElement) = post("/gate-pass/outing", body, "GatePass")
+    suspend fun massApproveGatePass(body: JsonElement) = post("/gate-pass/mass-approve", body, "GatePass", "Hostel")
+
+    // Bulk approval ("Bind") groups: class in-charge builds, HOD forwards, principal approves.
+    @Composable fun bindGroups(params: Params? = null, skip: Boolean = false) = get("/gate-pass/bind-groups", "GatePass", params = params, skip = skip)
+    suspend fun createBindGroup(body: JsonElement) = post("/gate-pass/bind-groups", body, "GatePass")
+    suspend fun deleteBindGroup(id: String) = delete("/gate-pass/bind-groups/$id", null, "GatePass")
+    suspend fun bindGatePass(id: String, groupId: String) = post("/gate-pass/$id/bind", jsonOf("groupId" to groupId), "GatePass")
+    suspend fun unbindGatePass(id: String) = delete("/gate-pass/$id/bind", null, "GatePass")
+    suspend fun submitBindGroup(id: String) = post("/gate-pass/bind-groups/$id/submit", null, "GatePass")
+    suspend fun hodReviewBindGroup(id: String, body: JsonElement) = patch("/gate-pass/bind-groups/$id/hod-review", body, "GatePass")
+    suspend fun principalReviewBindGroup(id: String, body: JsonElement) = patch("/gate-pass/bind-groups/$id/principal-review", body, "GatePass")
+    suspend fun rejectBindMember(id: String, passId: String, reason: String?) =
+        patch("/gate-pass/bind-groups/$id/members/$passId/reject", jsonOf("reason" to (reason?.takeIf { it.isNotBlank() } ?: Omit)), "GatePass")
+
+    // ── On Duty (OD) & Leave ──────────────────────────
+    @Composable fun myOdLeave(params: Params? = null, skip: Boolean = false, pollMs: Long = 0) = get("/attendance/od-leave/my", "ODLeave", params = params, skip = skip, pollMs = pollMs)
+    @Composable fun odLeaveReviews(params: Params? = null, skip: Boolean = false, pollMs: Long = 0) = get("/attendance/od-leave/reviews", "ODLeave", params = params, skip = skip, pollMs = pollMs)
+    suspend fun createOdLeave(body: JsonElement) = post("/attendance/od-leave", body, "ODLeave", "Attendance")
+    suspend fun reviewOdLeave(id: String, body: JsonElement) = patch("/attendance/od-leave/$id/review", body, "ODLeave", "Attendance")
+    suspend fun cancelOdLeave(id: String) = patch("/attendance/od-leave/$id/cancel", null, "ODLeave", "Attendance")
+
+    // ── Hostel (admin, principal, dean, AO, chairman, warden — enforced server-side) ──
+    @Composable fun hostelSummary(skip: Boolean = false, pollMs: Long = 0) = get("/hostel/summary", "Hostel", "GatePass", skip = skip, pollMs = pollMs)
+    @Composable fun hostelStudents(params: Params?, skip: Boolean = false) = get("/hostel/students", "Hostel", "GatePass", params = params, skip = skip)
+
+    // ── Class In-Charge: own class's students (the class comes from the account) ──
+    @Composable fun classStudents(skip: Boolean = false) = get("/class-students", "ClassStudents", skip = skip)
+    @Composable fun classStudent(id: String, skip: Boolean = false) = get("/class-students/$id", "ClassStudents", skip = skip, keep = false)
+    suspend fun createClassStudent(body: JsonElement) = post("/class-students", body, "ClassStudents")
+    suspend fun updateClassStudent(id: String, body: JsonElement) = patch("/class-students/$id", body, "ClassStudents", "Attendance", "User")
+    suspend fun resetUserPassword(id: String, body: JsonElement) = post("/users/$id/reset-password", body)
+
+    // ── Campus SOS: anyone raises; responders list, acknowledge and resolve ──
+    @Composable fun sosAlerts(params: Params? = null, skip: Boolean = false, pollMs: Long = 0) = get("/sos", "SOSAlert", params = params, skip = skip, pollMs = pollMs)
+    suspend fun createSos(body: JsonElement) = post("/sos", body, "SOSAlert", "Dashboard")
+    suspend fun ackSos(id: String) = patch("/sos/$id/ack", null, "SOSAlert", "Dashboard")
+    suspend fun resolveSos(id: String, body: JsonElement) = patch("/sos/$id/resolve", body, "SOSAlert", "Dashboard")
 
     // ── Lost & found ──────────────────────────────────
     @Composable fun lostFound(params: Params? = null) = get("/lost-found", "LostFound", params = params)

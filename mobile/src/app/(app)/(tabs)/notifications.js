@@ -5,6 +5,7 @@ import { Button, EmptyState, ErrorState, Header, Loading, Screen, T } from '../.
 import { useGetNotificationsQuery, useMarkAllNotificationsReadMutation, useMarkNotificationReadMutation } from '../../../services/api';
 import { colors } from '../../../theme';
 import { timeAgo } from '../../../utils/format';
+import { mobileRoute } from '../../../utils/links';
 
 export default function Notifications() {
   const { data, isLoading, isFetching, error, refetch } = useGetNotificationsQuery({ limit: 50 });
@@ -13,7 +14,8 @@ export default function Notifications() {
 
   const open = (n) => {
     if (!n.read) markRead(n._id);
-    if (n.link) router.push(n.link);
+    const route = mobileRoute(n.link);
+    if (route) router.push(route);
   };
 
   return (

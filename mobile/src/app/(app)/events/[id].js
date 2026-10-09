@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSelector } from 'react-redux';
 import { CalendarDays, MapPin, Users } from 'lucide-react-native';
 import { Button, Card, ErrorState, Header, Loading, ProgressBar, Screen, StatusBadge, T } from '../../../components/ui';
+import EventParticipants from '../../../components/EventParticipants';
 import { errMsg, useCancelRegistrationMutation, useGetEventQuery, useRegisterEventMutation } from '../../../services/api';
 import FullImage from '../../../components/FullImage';
 import { selectUser } from '../../../store/authSlice';
@@ -73,6 +74,7 @@ export default function EventDetail() {
       ) : (
         <Button title={e.myStatus ? 'Cancel registration' : full ? 'Join waitlist' : 'Register'} variant={e.myStatus ? 'danger' : 'primary'} loading={registering || cancelling} onPress={act} />
       )}
+      {e.canViewParticipants ? <EventParticipants event={e} /> : null}
     </Screen>
   );
 }

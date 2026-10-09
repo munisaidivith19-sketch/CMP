@@ -57,7 +57,8 @@ after(async () => {
 
 const newStudent = (over) => ({
   role: 'student', name: 'New Kid', email: `kid${Math.random().toString(36).slice(2, 8)}@test.edu`, password: 'Welcome123',
-  rollNo: 'K1', department: 'CSE', year: 3, section: 'A', semester: 5, stayType: 'hosteler', parentPhone: '9111111111', ...over,
+  // Register numbers are unique per student, so every generated student gets its own.
+  rollNo: `K${Math.random().toString(36).slice(2, 8).toUpperCase()}`, department: 'CSE', year: 3, section: 'A', semester: 5, stayType: 'hosteler', parentPhone: '9111111111', ...over,
 });
 const newFaculty = (over) => ({
   role: 'faculty', name: 'New Fac', email: `fac${Math.random().toString(36).slice(2, 8)}@test.edu`, password: 'Welcome123',

@@ -141,3 +141,14 @@ export const SOS_TYPES = ['medical', 'security', 'fire', 'ragging', 'other'];
 export const SOS_STATUSES = ['active', 'acknowledged', 'resolved', 'false_alarm'];
 export const SOS_RESPONDER_ROLES = ['security', 'admin', 'hod', 'principal', 'chairman'];
 
+
+// ── Student achievements (same values the server validates) ──
+export const ACHIEVEMENT_POST_ROLES = ['principal', 'hod'];
+export const ACHIEVEMENT_BLOCKED_ROLES = ['warden', 'security'];
+export const ACHIEVEMENT_CATEGORIES = ['academic', 'sports', 'technical', 'cultural', 'research', 'placement', 'competition', 'certification', 'other'];
+export const ACHIEVEMENT_LEVELS = ['college', 'state', 'national', 'international'];
+export const ACHIEVEMENT_POSITIONS = ['winner', 'first', 'second', 'third', 'runner_up', 'finalist', 'participant', 'selected', 'published', 'other'];
+export const ACHIEVEMENT_LEVEL_COLORS = { college: 'neutral', state: 'info', national: 'primary', international: 'warning' };
+
+// Hostel overview (the server enforces the same list).
+export const HOSTEL_ROLES = ['admin', 'principal', 'dean', 'ao', 'chairman', 'warden'];

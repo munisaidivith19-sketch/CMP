@@ -131,6 +131,10 @@ private fun hhmm(): String = LocalTime.now().let { "%02d:%02d".format(it.hour, i
 @Composable
 fun TimetableScreen() {
     val me = me()
+    if (me.role == "hod") {
+        HodTimetable(me)
+        return
+    }
     val isFaculty = me.role == "faculty"
     val isStudent = me.role in STUDENT_ROLES
     // Faculty: "Our Class" = the complete timetable of their Class In-Charge class;
@@ -1013,3 +1017,92 @@ private fun AttendanceReports() {
     }
 }
 
+
+/* ── HOD: master schedule + faculty availability ────────────────── */
+
+/**
+ * The department's whole timetable grouped by class, and who is free in each
+ * period. The server pins a branch HOD to their own department (2nd–4th year)
+ * and the first-year HOD to 1st year; the filters here only narrow that.
+ */
+@Composable
+private fun HodTimetable(me: JsonElement) {
+    val firstYear = isFirstYearHod(me.role, me["department"].str)
+    var tab by rememberSaveable { mutableStateOf("master") }
+    var day by rememberSaveable { mutableStateOf(if (todayName() in DAYS) todayName() else "monday") }
+    var department by rememberSaveable { mutableStateOf("") }
+    var year by rememberSaveable { mutableStateOf(0) }
+    var now by remember { mutableStateOf(hhmm()) }
+    LaunchedEffect(Unit) { while (true) { delay(30_000); now = hhmm() } }
+    val dept = if (firstYear) department.ifEmpty { null } else null
+    val master = Api.masterTimetable(mapOf("department" to dept, "year" to year.takeIf { it > 0 }), skip = tab != "master")
+    val avail = Api.facultyAvailability(mapOf("dayOfWeek" to day, "department" to dept), skip = tab != "availability")
+    val q = if (tab == "master") master else avail
+    val data = q.data
+    Screen(refreshing = q.isFetching && !q.isLoading, onRefresh = { q.refetch() }) {
+        Header("Timetable", "Master Timetable · ${if (firstYear) department.ifEmpty { "All departments (Year 1)" } else me["department"].str ?: "Department"}", back = true)
+        if (firstYear) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip("All departments", department.isEmpty()) { department = "" }
+            com.vexon.campus.ui.DEPARTMENTS.filter { it != com.vexon.campus.ui.FIRST_YEAR_HOD_DEPT }.forEach { d -> Chip(d, department == d) { department = d } }
+        }
+        if (!firstYear && tab == "master") FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip("All years (2–4)", year == 0) { year = 0 }
+            listOf(2, 3, 4).forEach { y -> Chip(YEAR_LABELS[y] ?: "Year $y", year == y) { year = y } }
+        }
+        Segmented(listOf(Opt("master", "Master Schedule"), Opt("availability", "Faculty Availability")), tab, { tab = it })
+        Segmented(DAYS.map { d -> Opt(d, if (d == todayName()) "Today" else d.take(3).replaceFirstChar { it.uppercase() }) }, day, { day = it })
+        when {
+            data == null && q.error != null -> ErrorState(q.error) { q.refetch() }
+            data == null -> Loading()
+            tab == "availability" -> {
+                val faculties = data["faculties"].list
+                if (faculties.isEmpty()) Card(Wide) { EmptyState(Icons.Rounded.Person, "No faculty found", "No department faculty members found.") }
+                faculties.forEach { f ->
+                    Card(Wide, gap = 8.dp) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Strong(f["name"].str)
+                                Small((f["designation"].text ?: "Faculty") + (f["employeeId"].text?.let { " · $it" } ?: ""))
+                            }
+                            val free = f["freePeriods"].int ?: 0
+                            Badge("$free Free / ${f["busyPeriods"].int ?: 0} Class", if (free > 0) Tone.Success else Tone.Neutral)
+                        }
+                        f["periods"].list.forEach { p ->
+                            val time = "${Fmt.to12h(p["startTime"])} – ${Fmt.to12h(p["endTime"])}"
+                            when {
+                                p["isBreak"].bool -> Small("☕ ${p["breakLabel"].text ?: "Break"} ($time)", color = C.amberText)
+                                p["status"].str == "free" -> Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Small("Period ${p["period"].str ?: ""} ($time)", Modifier.weight(1f), color = C.emeraldText)
+                                    Badge("Available", Tone.Success)
+                                }
+                                p["status"].str == "holiday" -> Small("Period ${p["period"].str ?: ""}: Holiday", color = C.roseText)
+                                else -> {
+                                    val slot = p["slot"]
+                                    Small(
+                                        "Period ${p["period"].str ?: ""} · ${slot["subject"]["code"].text ?: "Class"}" +
+                                            (if (slot != null) " · ${slot["department"].str ?: ""} Y${slot["year"].str ?: ""} Sec ${slot["section"].str ?: ""}" else "") +
+                                            (slot["room"].text?.let { " · Rm $it" } ?: ""),
+                                        color = C.primary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            else -> {
+                val slots = data["slots"].list.filter { it["dayOfWeek"].str == day }.sortedBy { it["startTime"].str.orEmpty() }
+                val byClass = slots.groupBy { "${it["department"].str ?: ""} · Year ${it["year"].str ?: ""} · Sec ${it["section"].str ?: ""} (Sem ${it["semester"].str ?: ""})" }
+                if (byClass.isEmpty()) Card(Wide) { EmptyState(Icons.Rounded.Coffee, "No classes scheduled", "Nothing scheduled for this day.") }
+                byClass.forEach { (name, classSlots) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Rounded.School, null, Modifier.size(16.dp), tint = C.primary)
+                        Strong(name, Modifier.weight(1f))
+                        Badge("${classSlots.count { !it["isBreak"].bool }} periods", Tone.Neutral)
+                    }
+                    classSlots.forEach { s -> TimetableSlot(s, day == todayName(), now, false, showFaculty = true, isStudent = true) }
+                }
+            }
+        }
+    }
+}

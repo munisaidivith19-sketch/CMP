@@ -11,7 +11,14 @@ let subjectCse;
 let timetableSlot;
 let testEvent;
 
+// Class attendance can only be marked during its period, so the tests run at a
+// fixed time inside today's 09:00–10:00 slot instead of whenever the suite runs.
+const realNow = clock.now;
+
 before(async () => {
+  const todayKey = campusParts(realNow()).dateKey;
+  const pinned = new Date(`${todayKey}T09:30:00+05:30`);
+  clock.now = () => pinned;
   ctx = await startServer();
 
   let empIdx = 900;
@@ -81,6 +88,7 @@ before(async () => {
 });
 
 after(async () => {
+  clock.now = realNow;
   if (ctx) await ctx.stop();
 });
 

@@ -44,7 +44,8 @@ object Realtime {
         "club:changed" to listOf("Club", "Dashboard"),
         "discussion:changed" to listOf("Discussion", "Dashboard"),
         "attendance:updated" to listOf("Attendance", "Correction"),
-        "gatepass:updated" to listOf("GatePass"),
+        "od_leave:updated" to listOf("ODLeave", "Attendance"),
+        "gatepass:updated" to listOf("GatePass", "Hostel"),
         "timetable:updated" to listOf("Timetable"),
         "holiday:changed" to listOf("Holiday", "Attendance", "Timetable"),
         "lostfound:updated" to listOf("LostFound"),
@@ -53,6 +54,8 @@ object Realtime {
         "chat:conversation" to listOf("Chat"),
         "chat:read" to listOf("Chat"),
         "chat:messageDeleted" to listOf("Chat"),
+        "sos:new" to listOf("SOSAlert", "Dashboard"),
+        "sos:updated" to listOf("SOSAlert", "Dashboard"),
     )
 
     private fun toJson(arg: Any?): JsonElement = when (arg) {

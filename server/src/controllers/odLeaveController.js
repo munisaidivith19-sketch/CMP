@@ -9,6 +9,7 @@ import { emitToUsers, emitToRoles } from '../config/socket.js';
 import { addDays, campusParts, dayKey, toDay, today } from '../utils/dates.js';
 import { clock } from '../utils/clock.js';
 import {
+  FIRST_YEAR_HOD_DEPT,
   facultyClassInChargeScope,
   isBranchHod,
   isFirstYearHod,
@@ -16,6 +17,53 @@ import {
 } from '../utils/academicScope.js';
 
 const REVIEWER_POPULATE = 'name rollNo avatar role department section';
+const norm = (s) => String(s || '').trim().toUpperCase();
+
+/**
+ * The requests a reviewer is responsible for, taken from the account only —
+ * never from the request. Faculty: their class (department + section, and the
+ * in-charge year when the account stores one; a faculty member with no section
+ * keeps the department-wide fallback the gate pass uses). HOD: their own
+ * department's 2nd–4th years, or every 1st year for the first-year HOD.
+ * Principal / admin: college-wide. Used for the queue AND every review action.
+ */
+function reviewScope(user) {
+  if (user.role === 'faculty') {
+    if (!user.department) return null;
+    const section = norm(user.section);
+    return {
+      department: user.department,
+      ...(section ? { section } : {}),
+      ...(section && user.inChargeYear != null ? { year: Number(user.inChargeYear) } : {}),
+    };
+  }
+  if (user.role === 'hod') {
+    if (isFirstYearHod(user)) return { year: 1 };
+    if (!user.department) return null;
+    return { department: user.department, year: { $ne: 1 } };
+  }
+  if (['principal', 'admin'].includes(user.role)) return {};
+  return null;
+}
+
+/** Whether one request falls inside reviewScope(user) (same rules, in memory). */
+function inReviewScope(request, user) {
+  const scope = reviewScope(user);
+  if (!scope) return false;
+  if (scope.department && request.department !== scope.department) return false;
+  if (scope.section && norm(request.section) !== scope.section) return false;
+  if (typeof scope.year === 'number' && request.year !== scope.year) return false;
+  if (scope.year?.$ne !== undefined && request.year === scope.year.$ne) return false;
+  return true;
+}
+
+/** Only the known attachment fields are stored, never whatever else the body carries. */
+const pickDocument = (doc) =>
+  doc?.url
+    ? Object.fromEntries(
+        Object.entries({ url: doc.url, name: doc.name, mimeType: doc.mimeType, size: doc.size }).filter(([, v]) => v !== undefined && v !== null && v !== '')
+      )
+    : undefined;
 
 /**
  * Check the 5:00 PM previous-day cut-off rule.
@@ -58,6 +106,10 @@ export const createRequest = asyncHandler(async (req, res) => {
 
   if (!OD_LEAVE_TYPES.includes(requestType)) {
     throw new ApiError(422, 'Invalid request type. Must be "od" or "leave".');
+  }
+  // The request is routed (and scoped) by the student's class, so it must be on file — never guessed.
+  if (!req.user.department || !req.user.section || !req.user.year) {
+    throw new ApiError(422, 'Your account has no department/year/section on file — ask your Class In-Charge or an admin to set it');
   }
 
   if (requestType === 'od' && (!document || !document.url)) {
@@ -106,8 +158,8 @@ export const createRequest = asyncHandler(async (req, res) => {
   const request = await ODLeaveRequest.create({
     student: req.user._id,
     department: req.user.department,
-    section: req.user.section || 'A',
-    year: req.user.year || 1,
+    section: req.user.section,
+    year: req.user.year,
     semester: req.user.semester,
     requestType,
     category: String(category).trim(),
@@ -115,16 +167,17 @@ export const createRequest = asyncHandler(async (req, res) => {
     toDate: endDay,
     daysCount: diffDays,
     description: String(description).trim(),
-    document: document || undefined,
+    document: pickDocument(document),
     status: 'pending_faculty',
   });
 
-  // Notify Class In-Charge faculty
+  // Notify the Class In-Charge — of this year when the account records it.
   try {
     const inChargeFaculty = await User.find({
       role: 'faculty',
       department: req.user.department,
       section: req.user.section,
+      inChargeYear: { $in: [req.user.year, null] },
     }).select('_id');
 
     const facultyIds = inChargeFaculty.map((f) => f._id);
@@ -180,34 +233,16 @@ export const listMyRequests = asyncHandler(async (req, res) => {
 export const listPendingReviews = asyncHandler(async (req, res) => {
   const { role } = req.user;
   let filter = {};
+  const scope = reviewScope(req.user);
 
   if (role === 'faculty') {
-    const scope = req.user.section
-      ? { department: req.user.department, section: req.user.section }
-      : { department: req.user.department };
-    filter = {
-      $or: [
-        { 'facultyReview.by': req.user._id },
-        { status: 'pending_faculty', ...scope },
-      ],
-    };
+    filter = scope
+      ? { $or: [{ 'facultyReview.by': req.user._id }, { status: 'pending_faculty', ...scope }] }
+      : { 'facultyReview.by': req.user._id };
   } else if (role === 'hod') {
-    const isFirstYear = isFirstYearHod(req.user);
-    if (isFirstYear) {
-      filter = {
-        $or: [
-          { 'hodReview.by': req.user._id },
-          { status: 'pending_hod', year: 1 },
-        ],
-      };
-    } else {
-      filter = {
-        $or: [
-          { 'hodReview.by': req.user._id },
-          { status: 'pending_hod', department: req.user.department, year: { $ne: 1 } },
-        ],
-      };
-    }
+    filter = scope
+      ? { $or: [{ 'hodReview.by': req.user._id }, { status: 'pending_hod', ...scope }] }
+      : { 'hodReview.by': req.user._id };
   } else if (role === 'principal' || role === 'admin') {
     filter = {
       $or: [
@@ -391,6 +426,11 @@ export const reviewStage = asyncHandler(async (req, res) => {
   const request = await ODLeaveRequest.findById(id);
   if (!request) throw new ApiError(404, 'Request not found');
 
+  // Object-level check first: a reviewer acts only on their own students' requests.
+  if (!inReviewScope(request, req.user)) {
+    throw new ApiError(403, 'This request is outside your review scope.');
+  }
+
   if (['approved', 'rejected', 'cancelled'].includes(request.status)) {
     throw new ApiError(422, `This request is already ${request.status}.`);
   }
@@ -413,7 +453,7 @@ export const reviewStage = asyncHandler(async (req, res) => {
       // Notify HOD
       try {
         const isFirstYear = request.year === 1;
-        const hodFilter = isFirstYear ? { role: 'hod', department: 'First Year' } : { role: 'hod', department: request.department };
+        const hodFilter = isFirstYear ? { role: 'hod', department: FIRST_YEAR_HOD_DEPT } : { role: 'hod', department: request.department };
         const hod = await User.findOne(hodFilter).select('_id');
         if (hod) {
           await notifyUsers([hod._id], {
@@ -572,7 +612,7 @@ export const cancelRequest = asyncHandler(async (req, res) => {
   try {
     const isFirstYear = request.year === 1;
     const hodFilter = isFirstYear
-      ? { role: 'hod', department: 'First Year' }
+      ? { role: 'hod', department: FIRST_YEAR_HOD_DEPT }
       : { role: 'hod', department: request.department };
 
     const [inChargeFaculty, hodUser, principals] = await Promise.all([

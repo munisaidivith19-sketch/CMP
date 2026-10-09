@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useDispatch, useSelector } from 'react-redux';
-import { LogOut, Pencil, ShieldCheck } from 'lucide-react-native';
+import { Camera, LogOut, Pencil, ShieldCheck } from 'lucide-react-native';
 import { Avatar, Badge, Button, Card, Header, Input, Screen, T } from '../../../components/ui';
-import { api, errMsg, useUpdateMeMutation } from '../../../services/api';
+import { api, errMsg, useUpdateMeMutation, useUploadAvatarMutation } from '../../../services/api';
 import { clearRefreshToken, mobileHeaders, readRefreshToken } from '../../../services/session';
 import { disconnectSocket } from '../../../services/socket';
 import { getPushToken } from '../../../services/push';
@@ -27,6 +28,19 @@ export default function Profile() {
   const [form, setForm] = useState({ bio: '', phone: '', skills: '' });
   const [save, { isLoading }] = useUpdateMeMutation();
   const [signingOut, setSigningOut] = useState(false);
+  const [uploadAvatar, { isLoading: uploadingAvatar }] = useUploadAvatarMutation();
+
+  const changePhoto = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsEditing: true, aspect: [1, 1] });
+    if (res.canceled) return;
+    const asset = res.assets[0];
+    if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) return Alert.alert('Photo too large', 'Please choose an image under 5 MB.');
+    try {
+      dispatch(setUser(await uploadAvatar(asset).unwrap()));
+    } catch (e) {
+      Alert.alert('Could not update photo', errMsg(e));
+    }
+  };
 
   useEffect(() => {
     setForm({ bio: user.bio || '', phone: user.phone || '', skills: (user.skills || []).join(', ') });
@@ -65,7 +79,13 @@ export default function Profile() {
     <Screen>
       <Header title="Profile" right={<Button small variant="soft" icon={Pencil} title={editing ? 'Cancel' : 'Edit'} onPress={() => setEditing((e) => !e)} />} />
       <Card style={{ alignItems: 'center', gap: 8 }}>
-        <Avatar user={user} size={84} />
+        <Pressable onPress={changePhoto} disabled={uploadingAvatar} accessibilityRole="button" accessibilityLabel="Change profile photo">
+          <Avatar user={user} size={84} />
+          <View style={{ position: 'absolute', right: -4, bottom: -4, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' }}>
+            <Camera size={14} color="#fff" />
+          </View>
+        </Pressable>
+        {uploadingAvatar ? <T v="small">Uploading photo…</T> : null}
         <T v="h2">{displayName(user)}</T>
         <T v="small">{user.email}</T>
         <Badge label={ROLE_LABELS[user.role]} />

@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Category
@@ -56,6 +57,7 @@ import com.vexon.campus.core.int
 import com.vexon.campus.core.jsonOf
 import com.vexon.campus.core.list
 import com.vexon.campus.core.rememberMutation
+import com.vexon.campus.core.sameId
 import com.vexon.campus.core.str
 import com.vexon.campus.core.text
 import com.vexon.campus.nav.Nav
@@ -68,6 +70,7 @@ import com.vexon.campus.ui.Card
 import com.vexon.campus.ui.Chip
 import com.vexon.campus.ui.DialogButton
 import com.vexon.campus.ui.Dialogs
+import com.vexon.campus.ui.IconButton
 import com.vexon.campus.ui.EmptyState
 import com.vexon.campus.ui.Grad
 import com.vexon.campus.ui.H2
@@ -96,10 +99,21 @@ import kotlinx.serialization.json.JsonElement
 
 @Composable
 fun AnnouncementsScreen() {
+    val me = me()
     val q = Api.announcements(mapOf("limit" to 40))
+    var composing by remember { mutableStateOf(false) }
+    val act = rememberMutation()
+    // Same rules as the API: admin / principal pin anything, faculty / HOD only their own; admin or the author deletes.
+    fun canPin(a: JsonElement) = me.role in setOf("admin", "principal") || (me.role in setOf("faculty", "hod") && sameId(a["author"], me))
+    fun canDelete(a: JsonElement) = me.role == "admin" || sameId(a["author"], me)
+    if (composing) AnnouncementFormSheet { composing = false }
     ListScreen(
         q, { it["items"].list },
-        header = { Header("Announcements", "Only what’s addressed to you.", back = true) },
+        header = {
+            Header("Announcements", "Only what’s addressed to you.", back = true, right = if (announcementScopes(me.role).isNotEmpty()) ({
+                Button("Post", { composing = true }, icon = Icons.Rounded.Add, small = true)
+            }) else null)
+        },
         empty = { EmptyState(Icons.Rounded.Campaign, "No announcements yet") },
     ) { a ->
         Card(Wide, gap = 8.dp) {
@@ -112,7 +126,15 @@ fun AnnouncementsScreen() {
             a["deadline"].text?.let { Small("Deadline: ${Fmt.dateTime(it)}", color = C.danger) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Avatar(a["author"], size = 26.dp)
-                Small("${a["author"]["name"].str ?: ""} · ${Fmt.timeAgo(a["createdAt"])}")
+                Small("${a["author"]["name"].str ?: ""} · ${Fmt.timeAgo(a["createdAt"])}", Modifier.weight(1f))
+                if (canPin(a)) IconButton(Icons.Rounded.PushPin, if (a["isPinned"].bool) "Unpin" else "Pin", if (a["isPinned"].bool) C.primary else C.muted) {
+                    act.launch(onError = { Dialogs.alert("Could not update", errMsg(it)) }) { Api.togglePinAnnouncement(a.id.orEmpty()) }
+                }
+                if (canDelete(a)) IconButton(Icons.Rounded.Delete, "Delete", C.danger) {
+                    Dialogs.confirm("Delete this announcement?", a["title"].str, "Delete", destructive = true) {
+                        act.launch(onError = { Dialogs.alert("Could not delete", errMsg(it)) }) { Api.deleteAnnouncement(a.id.orEmpty()) }
+                    }
+                }
             }
         }
     }
@@ -326,6 +348,8 @@ fun EventDetailScreen(id: String) {
                 Wide, variant = if (myStatus != null) Variant.Danger else Variant.Primary, loading = act.isLoading,
             )
         }
+        // Organiser, coordinators and staff (server-decided) see who registered; coordinators mark each day.
+        if (e["canViewParticipants"].bool) EventParticipants(e)
     }
 }
 

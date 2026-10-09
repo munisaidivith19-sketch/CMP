@@ -6,17 +6,63 @@ import { selectUser } from '../../../store/authSlice';
 import { Button, Card, Chip, Header, Input, Screen, T } from '../../../components/ui';
 import DateField from '../../../components/DateField';
 import PickerField from '../../../components/PickerField';
-import { errMsg, useCreateGatePassMutation } from '../../../services/api';
+import AttachDocument from '../../../components/AttachDocument';
+import { errMsg, useCreateDayScholarOutingMutation, useCreateGatePassMutation } from '../../../services/api';
 import { GATE_PASS_REGARDING, INDIAN_STATES } from '../../../theme';
 import { EmergencyRequestForm } from '../../../components/EmergencyGatePass';
+import { dateKey } from '../../../utils/dates';
+
+/**
+ * Day scholar Outing: today only (the server sets the date), no destination
+ * and no return check-in — it completes when security records the exit.
+ */
+function OutingForm() {
+  const me = useSelector(selectUser);
+  const [create, { isLoading }] = useCreateDayScholarOutingMutation();
+  const [subject, setSubject] = useState('');
+  const [description, setDescription] = useState('');
+  const [parentPhone, setParentPhone] = useState(me?.parentPhone || '');
+  const [doc, setDoc] = useState(null);
+  const [errors, setErrors] = useState({});
+
+  const submit = async () => {
+    const e = {};
+    if (subject.trim().length < 2) e.subject = 'At least 2 characters';
+    if (description.trim().length < 5) e.description = 'At least 5 characters';
+    const digits = parentPhone.replace(/\D/g, '').length;
+    if (!/^[0-9+\-\s()]*$/.test(parentPhone) || digits < 6 || digits > 15) e.parentPhone = 'Enter a valid mobile number';
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    try {
+      await create({ subject: subject.trim(), description: description.trim(), parentPhone: parentPhone.trim(), ...(doc ? { supportingDocument: doc } : {}) }).unwrap();
+      Alert.alert('Outing requested', 'Your class faculty has been notified.');
+      router.back();
+    } catch (err) {
+      Alert.alert('Could not submit', errMsg(err));
+    }
+  };
+
+  return (
+    <Card style={{ gap: 14 }}>
+      <Input label="Subject" value={subject} onChangeText={setSubject} maxLength={120} placeholder="e.g. Doctor appointment" error={errors.subject} />
+      <Input label="Description" value={description} onChangeText={setDescription} multiline maxLength={500} placeholder="Why do you need to go out today?" error={errors.description} />
+      <Input label="Parent mobile" value={parentPhone} onChangeText={setParentPhone} keyboardType="phone-pad" maxLength={20} hint="The parent verification OTP is sent to this number." error={errors.parentPhone} />
+      <AttachDocument value={doc} onChange={setDoc} />
+      <T v="small">For today only. No return check-in is needed — the pass is complete once security records your exit.</T>
+      <Button title="Request outing" onPress={submit} loading={isLoading} />
+    </Card>
+  );
+}
 
 export default function NewGatePass() {
-  const [type, setType] = useState('normal');
+  const me = useSelector(selectUser);
+  // Day scholars see Outing instead of the multi-day pass; hostelers are unchanged.
+  const isDayScholar = me?.stayType === 'day_scholar';
+  const [type, setType] = useState(isDayScholar ? 'outing' : 'normal');
   const [create, { isLoading }] = useCreateGatePassMutation();
   const [regarding, setRegarding] = useState('outing');
   const [description, setDescription] = useState('');
   // The parent OTP always goes to the number the administrator registered.
-  const me = useSelector(selectUser);
   const [state, setState] = useState('');
   const [district, setDistrict] = useState('');
   const [area, setArea] = useState('');
@@ -30,7 +76,7 @@ export default function NewGatePass() {
     if (!state) e.state = 'Select a state';
     if (!district.trim()) e.district = 'Required';
     if (!area.trim()) e.area = 'Required';
-    if (toDate < fromDate) e.toDate = 'Cannot be before the departure date';
+    if (dateKey(toDate) < dateKey(fromDate)) e.toDate = 'Cannot be before the departure date';
     setErrors(e);
     if (Object.keys(e).length) return;
     try {
@@ -38,8 +84,8 @@ export default function NewGatePass() {
         regarding,
         description: description.trim(),
         destination: { state, district: district.trim(), area: area.trim() },
-        fromDate: fromDate.toISOString().slice(0, 10),
-        toDate: toDate.toISOString().slice(0, 10),
+        fromDate: dateKey(fromDate),
+        toDate: dateKey(toDate),
       }).unwrap();
       Alert.alert('Request sent', 'Your class faculty has been notified.');
       router.back();
@@ -52,17 +98,29 @@ export default function NewGatePass() {
     <Screen>
       <Header
         back
-        title="Request gate pass"
-        subtitle={type === 'emergency' ? 'Goes straight to the authority you choose — no faculty, HOD or parent OTP.' : 'Goes to your class faculty, then HOD, then the principal.'}
+        title={isDayScholar ? 'Request an outing' : 'Request gate pass'}
+        subtitle={
+          type === 'emergency'
+            ? 'Goes straight to the authority you choose — no faculty, HOD or parent OTP.'
+            : type === 'outing'
+              ? 'For today only. Class faculty (parent OTP) → HOD → principal.'
+              : 'Goes to your class faculty, then HOD, then the principal.'
+        }
       />
       <View style={{ flexDirection: 'row', gap: 8 }} accessibilityRole="radiogroup">
-        <Chip label="Normal gate pass" active={type === 'normal'} onPress={() => setType('normal')} />
+        {isDayScholar ? (
+          <Chip label="Outing" active={type === 'outing'} onPress={() => setType('outing')} />
+        ) : (
+          <Chip label="Normal gate pass" active={type === 'normal'} onPress={() => setType('normal')} />
+        )}
         <Chip label="Emergency gate pass" active={type === 'emergency'} onPress={() => setType('emergency')} />
       </View>
       {type === 'emergency' ? (
         <Card>
           <EmergencyRequestForm onSubmitted={() => router.back()} />
         </Card>
+      ) : type === 'outing' ? (
+        <OutingForm />
       ) : (
       <Card style={{ gap: 14 }}>
         <View style={{ gap: 6 }}>

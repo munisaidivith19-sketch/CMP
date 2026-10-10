@@ -25,6 +25,8 @@ export const ATTENDANCE_READ_ONLY = COLLEGE_WIDE.filter((r) => r !== 'admin');
 export const PEOPLE_DIRECTORY = ['student', 'club_admin', 'faculty', 'hod', ...COLLEGE_WIDE];
 /** Sees the daily college / department attendance summary. */
 export const SUMMARY_VIEW = ['hod', ...COLLEGE_WIDE];
+/** Get the Principal's college attendance dashboard (department cards + department-wise summary). */
+export const COLLEGE_ATTENDANCE_DASHBOARD = ['principal', 'admin', 'dean', 'ao', 'chairman'];
 /** The gate pass approval chain, in order. */
 export const GATE_APPROVAL_ROLES = ['faculty', 'hod', 'principal'];
 export const STAY_TYPES = { hosteler: 'Hosteler', day_scholar: 'Day Scholar' };
@@ -56,8 +58,12 @@ export const STUDY_MATERIAL_CATEGORY_LABELS = {
   assignment: 'Assignment',
   other: 'Other',
 };
-// Warden/Security/Alumni have no access to Study Materials, same as the timetable.
-export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni'];
+// Warden/Security/Alumni have no access to Study Materials, same as the timetable; nor does the AO.
+export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni', 'ao'];
+/** See every class's upload status (HOD: own department). Mirrors the server. */
+export const STUDY_MATERIAL_STATUS_ROLES = ['hod', 'principal', 'dean', 'chairman'];
+/** Get the Principal's Status view: any department, year and semester. */
+export const STUDY_MATERIAL_COLLEGE_STATUS = ['principal', 'dean', 'chairman'];
 
 export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 /** Roles that can add, edit and delete timetable periods (HOD: own department only). */

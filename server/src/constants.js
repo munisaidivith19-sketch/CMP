@@ -67,7 +67,10 @@ export const TIMETABLE_WRITE_ROLES = ['admin', 'hod'];
 // ── Study Materials ─────────────────────────────────────────────────
 // Same "no access at all" roles as the timetable.
 // Alumni must not read current students' course material or run the Study Assistant on it.
-export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni'];
+// The AO (administrative officer) has no academic role here either.
+export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni', 'ao'];
+// Upload status of each class: HOD (own scope); Principal, Dean and Chairman (any department).
+export const STUDY_MATERIAL_STATUS_ROLES = ['hod', 'principal', 'dean', 'chairman'];
 export const STUDY_MATERIAL_VIEW_ROLES = ROLES.filter((r) => !STUDY_MATERIAL_BLOCKED_ROLES.includes(r));
 // Upload/edit/delete: faculty only for their own current timetable assignment,
 // HOD only within their own department, admin college-wide — enforced in the

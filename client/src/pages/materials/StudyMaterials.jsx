@@ -6,7 +6,7 @@ import { useDeleteStudyMaterialMutation, useGetMyTeachingAssignmentsQuery, useGe
 import { selectUser } from '../../features/authSlice';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS } from '../../utils/constants';
+import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS, STUDY_MATERIAL_STATUS_ROLES } from '../../utils/constants';
 import { errMsg, fmtClassDay, titleCase, displayName } from '../../utils/format';
 import UploadMaterialModal from './UploadMaterialModal';
 import MaterialStatusModal from './MaterialStatusModal';
@@ -14,8 +14,8 @@ import StudyAssistant from '../../components/StudyAssistant';
 
 const STUDENT_ROLES = ['student', 'club_admin'];
 const WRITE_ROLES = ['faculty', 'hod', 'admin'];
-// Upload status of each class — HOD (own department) and Principal only; the API enforces it.
-const STATUS_ROLES = ['hod', 'principal'];
+// Upload status of each class — HOD (own department); Principal, Dean, Chairman (any). The API enforces it.
+const STATUS_ROLES = STUDY_MATERIAL_STATUS_ROLES;
 
 const fmtSize = (n) => (!n ? '' : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
 

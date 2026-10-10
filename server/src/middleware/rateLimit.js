@@ -20,6 +20,21 @@ export const authLimiter = rateLimit({
   message: json('Too many failed sign-in attempts from this network. Try again later.'),
 });
 
+// Session-refresh (token rotation) endpoint. The refresh token's signature and
+// one-time rotation already make guessing infeasible, so this is an edge cap
+// against a flood of garbage/expired tokens (DoS + enumeration). Successful
+// rotations are skipped, so a legitimate multi-device user — or a whole hostel
+// behind one NAT IP — is never penalised; only *failed* refreshes count.
+// Configurable via REFRESH_RATE_LIMIT for different deployment sizes.
+export const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.REFRESH_RATE_LIMIT) || 100,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: json('Too many session-refresh attempts. Please sign in again.'),
+});
+
 export const writeLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 40,

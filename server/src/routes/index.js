@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import { protect, authorize } from '../middleware/auth.js';
 import { idParam, validate } from '../middleware/validate.js';
-import { aiHourLimiter, aiMinuteLimiter, authLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { aiHourLimiter, aiMinuteLimiter, authLimiter, refreshLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { ApiError } from '../utils/http.js';
 import { realtimeChanges } from '../middleware/realtime.js';
 import { upload } from '../utils/storage.js';
@@ -40,6 +40,7 @@ import {
   ATTENDANCE_SUMMARY_ROLES,
   PEOPLE_DIRECTORY_ROLES,
   STUDY_MATERIAL_VIEW_ROLES,
+  STUDY_MATERIAL_STATUS_ROLES,
   STUDY_MATERIAL_WRITE_ROLES,
   STUDY_MATERIAL_CATEGORIES,
   ACADEMIC_YEARS,
@@ -251,7 +252,7 @@ router.post(
   validate,
   auth.login
 );
-router.post('/auth/refresh', auth.refresh);
+router.post('/auth/refresh', refreshLimiter, auth.refresh);
 router.post('/auth/logout', auth.logout);
 // Email password reset is retired: both answer 410 with "contact your Class
 // In-Charge or Admin" and never touch an account (see authController).
@@ -1343,10 +1344,10 @@ const materialWriteRules = (optional = false) => {
 
 router.get('/study-materials', authorize(...STUDY_MATERIAL_VIEW_ROLES), materials.listMaterials);
 router.get('/study-materials/my-assignments', authorize('faculty'), materials.getMyAssignments);
-// Upload status per subject of one class — HOD (own scope) and Principal only.
+// Upload status per subject of one class — HOD (own scope); Principal, Dean and Chairman (any department).
 router.get(
   '/study-materials/status',
-  authorize('hod', 'principal'),
+  authorize(...STUDY_MATERIAL_STATUS_ROLES),
   query('department').optional({ values: 'falsy' }).trim().isIn(DEPARTMENTS),
   query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS),
   query('semester').isInt({ min: 1, max: 8 }).withMessage('Select a semester').toInt(),

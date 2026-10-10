@@ -47,6 +47,8 @@ module.exports = {
       'expo-router',
       'expo-secure-store',
       'expo-font',
+      // Attendance report PDFs: saved to the app cache, then handed to the share sheet.
+      'expo-sharing',
       ['expo-notifications', { color: '#1D6FEB' }],
       // cameraPermission omitted: the gate-pass QR scanner (expo-camera) needs CAMERA,
       // so image-picker must not strip it from the manifest.

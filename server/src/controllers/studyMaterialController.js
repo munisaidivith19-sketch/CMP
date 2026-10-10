@@ -138,14 +138,14 @@ export const deleteMaterial = asyncHandler(async (req, res) => {
   res.json({ message: 'Material removed' });
 });
 
-// ── Upload status (HOD: own department · Principal: any) ─────────────
+// ── Upload status (HOD: own department · Principal / Dean / Chairman: any) ─
 
 /**
  * Which subjects of one class (department + semester) have study material
  * uploaded, by whom and when — and which still have none. The department is
  * pinned server-side for a branch HOD (years 2–4 of their own department);
  * the Science & Humanities HOD sees 1st year of any department; the
- * Principal may pick any department, year and semester.
+ * Principal, Dean and Chairman may pick any department, year and semester.
  */
 export const getUploadStatus = asyncHandler(async (req, res) => {
   const semester = Number(req.query.semester);

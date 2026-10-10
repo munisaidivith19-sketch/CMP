@@ -41,7 +41,7 @@ import {
   cn,
 } from '../../components/ui/primitives';
 import { StatusBadge } from '../../components/insights';
-import { ACADEMIC_YEARS, DEPARTMENTS, YEAR_LABELS, isFirstYearHod } from '../../utils/constants';
+import { ACADEMIC_YEARS, COLLEGE_ATTENDANCE_DASHBOARD, DEPARTMENTS, YEAR_LABELS, isFirstYearHod } from '../../utils/constants';
 import { errMsg, fmtClassDay, todayKey } from '../../utils/format';
 
 // Roles that also get the Year / Section / Semester filters.
@@ -257,7 +257,7 @@ function PrincipalDailySummary() {
 
 export function DailySummary() {
   const me = useSelector(selectUser);
-  return me.role === 'principal' ? <PrincipalDailySummary /> : <StaffDailySummary />;
+  return COLLEGE_ATTENDANCE_DASHBOARD.includes(me.role) ? <PrincipalDailySummary /> : <StaffDailySummary />;
 }
 
 function StaffDailySummary() {

@@ -10,7 +10,7 @@ import { errMsg, useLoginMutation } from '../services/api';
 import { saveRefreshToken } from '../services/session';
 import { setCredentials } from '../store/authSlice';
 import { checkServer, defaultApiUrl, getApiUrl, isServerOverridden, setServerUrl } from '../config';
-import { colors, gradients } from '../theme';
+import { colors, gradients, shadowLg } from '../theme';
 
 /**
  * Where the app finds the backend. A phone on mobile data needs a public address
@@ -97,8 +97,8 @@ export default function Login() {
     <Screen>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ gap: 18, paddingTop: 30 }}>
         <View style={{ alignItems: 'center', gap: 10 }}>
-          <LinearGradient colors={gradients.primary} style={{ width: 64, height: 64, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}>
-            <GraduationCap size={30} color="#fff" />
+          <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[{ width: 72, height: 72, borderRadius: 26, alignItems: 'center', justifyContent: 'center' }, shadowLg]}>
+            <GraduationCap size={34} color="#fff" />
           </LinearGradient>
           <T v="h1">Welcome back 👋</T>
           <T v="small" style={{ textAlign: 'center' }}>

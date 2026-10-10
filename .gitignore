@@ -1,6 +1,9 @@
 node_modules/
 dist/
+# Secrets / environment — never commit real values. Only *.env.example is kept.
 .env
+.env.*
+!.env.example
 server/uploads/*
 !server/uploads/.gitkeep
 *.log

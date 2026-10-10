@@ -59,7 +59,7 @@ const MAIN = [
 const CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
   { to: '/timetable', label: 'Timetable', icon: CalendarDays, roles: TIMETABLE_ROLES, excludeRoles: ['warden', 'security'] },
-  { to: '/study-materials', label: 'Study Materials', icon: BookOpen, excludeRoles: ['warden', 'security'] },
+  { to: '/study-materials', label: 'Study Materials', icon: BookOpen, excludeRoles: ['warden', 'security', 'ao'] },
   { to: '/achievements', label: 'Achievements', icon: Trophy, excludeRoles: ['warden', 'security'] },
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },

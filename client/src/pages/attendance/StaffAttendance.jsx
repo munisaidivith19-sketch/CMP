@@ -60,6 +60,7 @@ import { selectUser } from '../../features/authSlice';
 import {
   ACADEMIC_YEARS,
   ATTENDANCE_READ_ONLY,
+  COLLEGE_ATTENDANCE_DASHBOARD,
   COLLEGE_WIDE,
   DEPARTMENTS,
   FIRST_YEAR_HOD_DEPT,
@@ -127,8 +128,8 @@ function AttendanceHeroDashboard({ onQuickMark }) {
   const isHod = me.role === 'hod';
   const isAdmin = me.role === 'admin';
   const isFaculty = me.role === 'faculty';
-  // HOD: their department; Principal: the whole college (department → year → students).
-  const deptCards = isHod || me.role === 'principal';
+  // HOD: their department; Principal / Admin / Dean / AO / Chairman: the whole college (department → year → students).
+  const deptCards = isHod || COLLEGE_ATTENDANCE_DASHBOARD.includes(me.role);
 
   // 1. Low attendance count (faculty: their own class, from FacultyClassCards)
   const { data: lowData } = useGetLowAttendanceQuery({ range: 'semester' }, { skip: deptCards || isFaculty });
@@ -1978,21 +1979,27 @@ export default function StaffAttendance() {
   const { data: pendingODLeave } = useGetPendingODLeaveReviewsQuery({ limit: 1 }, { skip: !canReviewODLeave });
   const pendingODLeaveCount = pendingODLeave?.pagination?.total || 0;
 
+  // The college dashboard roles (Principal, Admin, Dean, AO, Chairman) share one layout:
+  // Daily Summary first. Admin, the only one of them who marks, finds Mark Attendance under More.
+  const collegeDashboard = COLLEGE_ATTENDANCE_DASHBOARD.includes(me.role);
+
   // Grouped Navigation: Primary tabs vs Secondary (More) tabs
   const primaryTabs = [
-    ...(canMark ? [{ value: 'mark', label: 'Mark Attendance' }] : []),
+    ...(canMark && !collegeDashboard ? [{ value: 'mark', label: 'Mark Attendance' }] : []),
     ...(seesSummary ? [{ value: 'today', label: 'Daily Summary' }] : []),
     ...(me.role === 'faculty' ? [{ value: 'my-classes', label: 'My Classes' }] : []),
     ...(canReviewODLeave ? [{ value: 'od-leave', label: 'OD / Leave Approvals', badge: pendingODLeaveCount }] : []),
   ];
 
-  // The Principal reads attendance college-wide: no per-class overview and no correction review.
-  const isPrincipal = me.role === 'principal';
+  // The Principal, Dean, AO and Chairman read attendance college-wide: no per-class overview and
+  // no correction review. Admin shares their dashboard but keeps these, since admin acts on them.
+  const collegeReader = collegeDashboard && !canMark;
   const secondaryTabs = [
+    ...(canMark && collegeDashboard ? [{ value: 'mark', label: 'Mark Attendance' }] : []),
     { value: 'sessions', label: 'History' },
-    ...(isPrincipal ? [] : [{ value: 'overview', label: me.role === 'faculty' ? 'Our Class' : 'Class Overview' }]),
+    ...(collegeReader ? [] : [{ value: 'overview', label: me.role === 'faculty' ? 'Our Class' : 'Class Overview' }]),
     { value: 'low', label: 'Low Attendance' },
-    ...(isPrincipal ? [] : [{ value: 'corrections', label: 'Corrections' }]),
+    ...(collegeReader ? [] : [{ value: 'corrections', label: 'Corrections' }]),
     ...(canViewReports ? [{ value: 'reports', label: 'Reports' }] : []),
     ...(isHodOrAdmin ? [{ value: 'faculty', label: 'Faculty Attendance' }] : []),
   ];

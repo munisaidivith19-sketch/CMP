@@ -57,7 +57,7 @@ export default function ChatList() {
               <View style={{ gap: 4, marginBottom: 6 }}>
                 {requests.map((r) => (
                   <View key={r._id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 20, opacity: 0.85 }}>
-                    <View style={{ width: 48, height: 48, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{ width: 48, height: 48, borderRadius: 17, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
                       {r.status === 'pending' ? <Clock size={22} color={colors.warning} /> : <XCircle size={22} color={colors.danger} />}
                     </View>
                     <View style={{ flex: 1 }}>
@@ -80,7 +80,7 @@ export default function ChatList() {
             const d = describeConversation(c, me);
             const online = d.other ? presence[d.other._id] ?? d.other.online : false;
             return (
-              <Pressable onPress={() => router.push(`/chat/${c._id}`)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 20, backgroundColor: pressed ? 'rgba(255,255,255,0.8)' : 'transparent' })}>
+              <Pressable onPress={() => router.push(`/chat/${c._id}`)} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10, borderRadius: 20, backgroundColor: pressed ? colors.surface : 'transparent' })}>
                 {d.group ? <IconTile icon={Users} gradient={gradients.hero} size={48} /> : <Avatar user={d.other} size={48} online={online} />}
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>

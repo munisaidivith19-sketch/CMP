@@ -1,15 +1,29 @@
 /**
- * Vexon design tokens — a "classic" light glass look (sky-blue, airline-style):
+ * Vexon design tokens — a refined light "glass" look (sky-blue, airline-style):
  * crisp white cards with just enough translucency to read as glass, no heavy
  * blur, high-contrast navy text, no dark backgrounds.
+ *
+ * Refined set: a tuned sky-blue ramp, reusable translucent `surface` tokens for
+ * the inset "glass pill" rows that recur across screens, a small spacing scale,
+ * and a layered shadow set — so the whole app shares one calm, cohesive surface.
  */
 export const colors = {
-  bg: '#EFF5FC',
+  // Backdrop — a soft, cool sky wash the decorative blobs sit on.
+  bg: '#ECF3FC',
+  bgTint: '#E2EDFB',
+  // Cards — translucent "glass" over the backdrop.
   card: 'rgba(255,255,255,0.86)',
   cardStrong: 'rgba(255,255,255,0.97)',
+  // Inset rows / fields inside a card — kept as tokens so screens stop
+  // hand-writing rgba(255,255,255,0.75) everywhere.
+  surface: 'rgba(255,255,255,0.78)',
+  surfaceSoft: 'rgba(255,255,255,0.6)',
+  surfaceStrong: 'rgba(255,255,255,0.92)',
+  hairline: 'rgba(16,27,45,0.06)',
   border: 'rgba(31,111,235,0.14)',
-  ink: '#101B2D',
-  soft: '#48566C',
+  borderStrong: 'rgba(31,111,235,0.22)',
+  ink: '#0F1B2E',
+  soft: '#45546B',
   muted: '#8592A6',
   primary50: '#EAF3FF',
   primary100: '#D2E6FF',
@@ -17,6 +31,7 @@ export const colors = {
   primary400: '#4396EF',
   primary: '#1D6FEB',
   primary600: '#1257C4',
+  primary700: '#0E428F',
   fuchsia: '#d946ef', // unused elsewhere; kept for now
   success: '#10b981',
   successSoft: 'rgba(16,185,129,0.12)',
@@ -28,6 +43,7 @@ export const colors = {
   infoSoft: 'rgba(14,165,233,0.12)',
   neutralSoft: 'rgba(100,116,139,0.12)',
   primarySoft: 'rgba(29,111,235,0.1)',
+  primarySofter: 'rgba(29,111,235,0.06)',
 };
 
 export const gradients = {
@@ -39,6 +55,14 @@ export const gradients = {
   amber: ['#fbbf24', '#f97316'],
   violet: ['#a78bfa', '#6366f1'],
   cyan: ['#22d3ee', '#0ea5e9'],
+  // Tile palette — softer two-stop fills for stat/quick-link tiles. These were
+  // referenced by the alumni dashboard before they existed (so every tile fell
+  // back to blue); defining them restores the intended variety.
+  tileBlue: ['#5AA2F4', '#1D6FEB'],
+  tileTeal: ['#2DD4BF', '#0EA5A3'],
+  tileViolet: ['#a78bfa', '#6366f1'],
+  tileAmber: ['#fbbf24', '#f97316'],
+  tileRose: ['#fb7185', '#ec4899'],
 };
 
 export const fonts = {
@@ -48,7 +72,10 @@ export const fonts = {
   extrabold: 'PlusJakartaSans_800ExtraBold',
 };
 
-export const radius = { sm: 12, md: 18, lg: 24, xl: 28 };
+// Small spacing scale so padding/gaps stay on a consistent rhythm.
+export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 };
+
+export const radius = { sm: 12, md: 18, lg: 24, xl: 28, pill: 999 };
 
 // Crisp, shallow shadow rather than a hazy glow — keeps cards feeling defined, not blurred.
 export const shadow = {
@@ -57,6 +84,24 @@ export const shadow = {
   shadowRadius: 10,
   shadowOffset: { width: 0, height: 5 },
   elevation: 3,
+};
+
+// A whisper-light shadow for inset rows and small controls.
+export const shadowSoft = {
+  shadowColor: '#0F2A4A',
+  shadowOpacity: 0.06,
+  shadowRadius: 6,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 1,
+};
+
+// A deeper lift for hero surfaces and floating actions.
+export const shadowLg = {
+  shadowColor: '#0B2748',
+  shadowOpacity: 0.16,
+  shadowRadius: 20,
+  shadowOffset: { width: 0, height: 12 },
+  elevation: 8,
 };
 
 export const ROLE_LABELS = {

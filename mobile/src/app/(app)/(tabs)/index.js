@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AlertTriangle, ArrowRight, Briefcase, CalendarCheck2, CalendarClock, CalendarDays, ClipboardCheck, Clock, Compass, DoorOpen, LogIn, LogOut, Megaphone, MessageCircle, Radio, Search, Shapes, ShieldCheck, Sparkles, Star, Users } from 'lucide-react-native';
-import { Avatar, Badge, Card, EmptyState, ErrorState, IconButton, IconTile, Loading, Screen, SectionTitle, T } from '../../../components/ui';
+import { Avatar, Badge, Card, EmptyState, ErrorState, IconButton, IconTile, Loading, Screen, SectionTitle, SoftRow, T, Tile } from '../../../components/ui';
 import { assetUrl } from '../../../config';
 import {
   useGetAlumniDashboardQuery,
@@ -19,7 +19,7 @@ import {
   useGetSecurityDashboardQuery,
 } from '../../../services/api';
 import { selectUser } from '../../../store/authSlice';
-import { STUDENT_ROLES, SUMMARY_VIEW, colors, fonts, gradients } from '../../../theme';
+import { STUDENT_ROLES, SUMMARY_VIEW, colors, fonts, gradients, shadowLg } from '../../../theme';
 import { fmtClassDay, timeAgo, to12h, displayName } from '../../../utils/format';
 
 /** "Dr. Suresh Kumar" → "Suresh" — skip honorifics in the greeting. */
@@ -30,22 +30,18 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
-function Tile({ icon, gradient, label, value, hint, onPress }) {
+/** The greeting avatar — tapping it opens the Profile tab. */
+function ProfileAvatar({ user }) {
   return (
-    <Card onPress={onPress} style={{ width: '47.8%', gap: 10 }}>
-      <IconTile icon={icon} gradient={gradient} size={38} />
-      <View>
-        <T v="label">{label}</T>
-        <T v="strong" numberOfLines={1}>
-          {value}
-        </T>
-        {hint ? (
-          <T v="small" numberOfLines={1}>
-            {hint}
-          </T>
-        ) : null}
-      </View>
-    </Card>
+    <Pressable
+      onPress={() => router.navigate('/profile')}
+      accessibilityRole="button"
+      accessibilityLabel="Open my profile"
+      hitSlop={6}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.95 : 1 }] })}
+    >
+      <Avatar user={user} size={46} />
+    </Pressable>
   );
 }
 
@@ -81,18 +77,18 @@ function Sheet({ title, viewAll, onClose, children }) {
 
 function Row({ label, value, tone }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 }}>
+    <SoftRow style={{ justifyContent: 'space-between' }}>
       <T v="small">{label}</T>
       <T v="strong" style={tone ? { color: tone } : null}>
         {value ?? '—'}
       </T>
-    </View>
+    </SoftRow>
   );
 }
 
 function EventLine({ e, onPress }) {
   return (
-    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.75)' }}>
+    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, borderRadius: 16, backgroundColor: colors.surface }}>
       {e.poster ? (
         <Image source={{ uri: assetUrl(e.poster) }} style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primarySoft }} resizeMode="contain" />
       ) : (
@@ -125,7 +121,7 @@ function SecurityHome({ user }) {
   return (
     <Screen refreshing={isFetching && !isLoading} onRefresh={refetch}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <Avatar user={user} size={46} />
+        <ProfileAvatar user={user} />
         <View style={{ flex: 1 }}>
           <T v="small">{greeting()},</T>
           <T v="h2" numberOfLines={1}>
@@ -233,7 +229,7 @@ function GeneralHome({ user }) {
   return (
     <Screen refreshing={refreshing} onRefresh={onRefresh}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <Avatar user={user} size={46} />
+        <ProfileAvatar user={user} />
         <View style={{ flex: 1 }}>
           <T v="small">{greeting()},</T>
           <T v="h2" numberOfLines={1}>
@@ -245,7 +241,7 @@ function GeneralHome({ user }) {
         <IconButton icon={Search} label="Search" onPress={() => router.push('/search')} />
       </View>
 
-      <LinearGradient colors={gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 28, padding: 18, gap: 6 }}>
+      <LinearGradient colors={gradients.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[{ borderRadius: 28, padding: 18, gap: 6 }, shadowLg]}>
         <T v="small" style={{ color: 'rgba(255,255,255,0.85)' }}>
           {format(new Date(), 'EEEE, dd MMMM')}
         </T>
@@ -360,7 +356,7 @@ function GeneralHome({ user }) {
                       close();
                       router.push(`/clubs/${c.slug}`);
                     }}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.75)' }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, borderRadius: 16, backgroundColor: colors.surface }}
                   >
                     <Avatar name={c.name} uri={c.logo} size={40} />
                     <View style={{ flex: 1 }}>
@@ -459,7 +455,7 @@ function AlumniHome({ user }) {
     <Screen refreshing={refreshing} onRefresh={onRefresh}>
       {/* Header Greeting */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <Avatar user={user} size={46} />
+        <ProfileAvatar user={user} />
         <View style={{ flex: 1 }}>
           <T v="small">{greeting()},</T>
           <T v="h2" numberOfLines={1}>
@@ -489,7 +485,7 @@ function AlumniHome({ user }) {
         colors={gradients.hero}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={{ borderRadius: 28, padding: 18, gap: 10 }}
+        style={[{ borderRadius: 28, padding: 18, gap: 10 }, shadowLg]}
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <T v="small" style={{ color: 'rgba(255,255,255,0.85)' }}>

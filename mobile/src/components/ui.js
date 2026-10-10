@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 import Svg, { Circle } from 'react-native-svg';
 import { ChevronLeft } from 'lucide-react-native';
 import { assetUrl } from '../config';
-import { colors, fonts, gradients, radius, shadow } from '../theme';
+import { colors, fonts, gradients, radius, shadow, shadowSoft } from '../theme';
 
 /* ── Typography ─────────────────────────────────────────────────── */
 const VARIANTS = {
@@ -35,8 +35,9 @@ export function Screen({ children, scroll = true, refreshing = false, onRefresh,
   return (
     <SafeAreaView style={styles.screen} edges={edges}>
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <View style={[styles.blob, { top: -120, left: -100, backgroundColor: 'rgba(67,150,239,0.16)' }]} />
-        <View style={[styles.blob, { top: 180, right: -140, backgroundColor: 'rgba(29,111,235,0.1)' }]} />
+        <View style={[styles.blob, { top: -140, left: -110, backgroundColor: 'rgba(67,150,239,0.18)' }]} />
+        <View style={[styles.blob, { top: 150, right: -150, backgroundColor: 'rgba(45,212,191,0.1)' }]} />
+        <View style={[styles.blob, { bottom: -160, left: -80, backgroundColor: 'rgba(29,111,235,0.08)' }]} />
       </View>
       <Body
         style={{ flex: 1 }}
@@ -89,6 +90,39 @@ export function Card({ children, style, onPress, padded = true }) {
     <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [outer, { transform: [{ scale: pressed ? 0.985 : 1 }] }]}>
       <View style={[styles.card, padded && { padding: 16 }, { flexGrow: 1 }, inner]}>{children}</View>
     </Pressable>
+  );
+}
+
+/** The recurring inset "glass pill" row inside a card (was hand-written rgba(255,255,255,0.75) everywhere). */
+export function SoftRow({ children, style, onPress, soft }) {
+  const base = [styles.softRow, soft && { backgroundColor: colors.surfaceSoft }, style];
+  if (!onPress) return <View style={base}>{children}</View>;
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [base, { opacity: pressed ? 0.75 : 1 }]}>
+      {children}
+    </Pressable>
+  );
+}
+
+/** Stat / quick-link tile: a gradient icon over a label + value. Half-width by default (two per row). */
+export function Tile({ icon, gradient = gradients.primary, label, value, hint, onPress, width = '47.8%', style }) {
+  return (
+    <Card onPress={onPress} style={[{ width, gap: 10 }, style]}>
+      <IconTile icon={icon} gradient={gradient} size={38} />
+      <View style={{ gap: 1 }}>
+        {label ? <T v="label">{label}</T> : null}
+        {value != null ? (
+          <T v="strong" numberOfLines={1}>
+            {value}
+          </T>
+        ) : null}
+        {hint ? (
+          <T v="small" numberOfLines={1}>
+            {hint}
+          </T>
+        ) : null}
+      </View>
+    </Card>
   );
 }
 
@@ -170,7 +204,9 @@ export const Input = forwardRef(function Input({ label, error, hint, style, mult
 /** Pill segmented control (the web's <Tabs>). */
 export function Segmented({ options, value, onChange, style }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={style} contentContainerStyle={styles.segment}>
+    // flexGrow 0: a ScrollView grows to fill a flex parent by default, which stretched
+    // the tabs down the whole screen on non-scrolling screens (e.g. Study Materials).
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[{ flexGrow: 0 }, style]} contentContainerStyle={styles.segment}>
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -328,23 +364,24 @@ export function ProgressBar({ value = 0, threshold = 75 }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  blob: { position: 'absolute', width: 340, height: 340, borderRadius: 340 },
+  blob: { position: 'absolute', width: 360, height: 360, borderRadius: 360 },
   // Android draws elevation shadows *through* translucent backgrounds (a pale inner
   // rectangle), so glass cards there get no elevation and a slightly firmer fill.
   card: Platform.select({
-    android: { backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border },
+    android: { backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border },
     default: { backgroundColor: colors.card, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, ...shadow },
   }),
+  softRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 11 },
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.md, paddingHorizontal: 18, paddingVertical: 13 },
   btnSmall: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.sm },
-  btnText: { fontFamily: fonts.bold, fontSize: 14 },
-  iconBtn: { width: 40, height: 40, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.88)', borderWidth: 1, borderColor: colors.border },
-  input: { backgroundColor: 'rgba(255,255,255,0.92)', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
-  segment: { backgroundColor: 'rgba(255,255,255,0.75)', borderRadius: 18, padding: 4, gap: 4, borderWidth: 1, borderColor: colors.border },
-  segmentItem: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14 },
-  segmentActive: { backgroundColor: '#fff', ...shadow, shadowOpacity: 0.08 },
+  btnText: { fontFamily: fonts.bold, fontSize: 14, letterSpacing: 0.2 },
+  iconBtn: { width: 40, height: 40, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceStrong, borderWidth: 1, borderColor: colors.border },
+  input: { backgroundColor: colors.surfaceStrong, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.regular, fontSize: 14, color: colors.ink },
+  segment: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 4, gap: 4, borderWidth: 1, borderColor: colors.border },
+  segmentItem: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.sm },
+  segmentActive: { backgroundColor: '#fff', ...shadowSoft },
   segmentText: { fontFamily: fonts.bold, fontSize: 13, color: colors.soft },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.8)' },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   chipText: { fontFamily: fonts.semibold, fontSize: 12, color: colors.soft },
   online: { position: 'absolute', right: -1, bottom: -1, backgroundColor: colors.success, borderWidth: 2, borderColor: '#fff' },
 });

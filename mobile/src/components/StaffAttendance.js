@@ -19,6 +19,7 @@ import { selectUser } from '../store/authSlice';
 import { ATTENDANCE_READ_ONLY, COLLEGE_WIDE, DEPARTMENTS, SUMMARY_VIEW, colors, fonts, isBranchHod, isFirstYearHod } from '../theme';
 import OurClassAttendance from './OurClassAttendance';
 import AttendanceReports from './AttendanceReports';
+import Dropdown from './Dropdown';
 import HolidayCard from './HolidayCard';
 import { fmtClassDay, to12h, displayName } from '../utils/format';
 
@@ -143,19 +144,23 @@ function MarkClass() {
       ) : null}
 
       <Card style={{ gap: 12 }}>
-        <T v="label">Subject</T>
         {subjects.isLoading ? (
           <Loading />
         ) : subjects.error ? (
           <ErrorState error={subjects.error} onRetry={subjects.refetch} />
         ) : subjects.data?.length ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {subjects.data.map((s) => (
-              <Chip key={s._id} label={`${s.code} · Sem ${s.semester}`} active={form.subjectId === s._id} onPress={() => set({ subjectId: s._id, section: '' })} />
-            ))}
-          </View>
+          <Dropdown
+            label="Subject"
+            value={form.subjectId}
+            placeholder="Choose a subject"
+            options={subjects.data.map((s) => ({ value: s._id, label: `${s.code}${s.name ? ` · ${s.name}` : ''}`, hint: `Semester ${s.semester}` }))}
+            onChange={(subjectId) => set({ subjectId, section: '' })}
+          />
         ) : (
-          <T v="small">No subjects are assigned to you yet.</T>
+          <>
+            <T v="label">Subject</T>
+            <T v="small">No subjects are assigned to you yet.</T>
+          </>
         )}
         {subject?.sections?.length ? (
           <>
@@ -167,12 +172,13 @@ function MarkClass() {
             </View>
           </>
         ) : null}
-        <T v="label">Period</T>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((p) => (
-            <Chip key={p} label={`P${p}`} active={form.period === String(p)} onPress={() => set({ period: String(p) })} />
-          ))}
-        </View>
+        <Dropdown
+          label="Period"
+          value={form.period}
+          placeholder="Choose a period"
+          options={[1, 2, 3, 4, 5, 6, 7, 8].map((p) => ({ value: String(p), label: `Period ${p}` }))}
+          onChange={(period) => set({ period })}
+        />
         <T v="label">Day</T>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Chip label="Today" active={form.date === todayKey()} onPress={() => set({ date: todayKey() })} />

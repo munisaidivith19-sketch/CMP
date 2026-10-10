@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Alert, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { AlertTriangle, CheckCircle2, Clock, DoorOpen, LogIn, LogOut, MapPin, Plus, ScanLine, ShieldCheck, Users, XCircle } from 'lucide-react-native';
+import { AlertTriangle, CheckCircle2, DoorOpen, LogIn, LogOut, MapPin, Plus, ScanLine, ShieldCheck, Users, XCircle } from 'lucide-react-native';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, Header, Input, Loading, Screen, SectionTitle, Segmented, StatusBadge, T } from '../../../components/ui';
 import PassQr from '../../../components/PassQr';
+import PassTimeline from '../../../components/PassTimeline';
 import ParentVerification from '../../../components/ParentVerification';
 import ReturnToCampus from '../../../components/ReturnToCampus';
 import QrScanner from '../../../components/QrScanner';
@@ -94,8 +95,11 @@ function StudentGatePasses() {
                   </T>
                 </>
               )}
+              {/* Stage-by-stage approval progress, same as the web pass card. */}
+              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 2 }} />
+              <PassTimeline pass={current} />
               {PENDING.includes(current.status) ? (
-                <EmptyState icon={Clock} title="Waiting for approval" text="You’ll get a notification the moment it moves to the next stage." />
+                <T v="small" style={{ color: colors.muted }}>You’ll get a notification the moment it moves to the next stage.</T>
               ) : current.status === 'active' ? (
                 <ReturnToCampus pass={current} />
               ) : isEmergency(current) && current.status === 'approved' ? (

@@ -207,3 +207,21 @@ test('an unassigned faculty member can still view materials but not manage them'
   assert.equal(list.status, 200);
   assert.ok(list.body.items.length > 0);
 });
+
+// ── AO: no Study Materials sub-dashboard at all ──────────────────────
+
+test('the AO cannot list, open, upload or use the Study Assistant', async () => {
+  const aoUser = await ctx.createUser({ role: 'ao', name: 'The AO', employeeId: 'E-AO-SM' });
+  const ao = { u: aoUser, ...(await ctx.loginWeb(aoUser)) };
+  const material = await upload(admin, { title: 'AO probe' });
+  assert.equal(material.status, 201, JSON.stringify(material.body));
+
+  assert.equal((await ctx.request('GET', '/study-materials', { token: ao.token })).status, 403);
+  assert.equal((await ctx.request('GET', `/study-materials/${material.body._id}`, { token: ao.token })).status, 403);
+  assert.equal((await ctx.request('GET', '/study-materials/status?department=CSE&semester=5', { token: ao.token })).status, 403);
+  assert.equal((await upload(ao)).status, 403);
+  assert.equal((await ctx.request('PUT', `/study-materials/${material.body._id}`, { token: ao.token, body: { title: 'x' } })).status, 403);
+  assert.equal((await ctx.request('DELETE', `/study-materials/${material.body._id}`, { token: ao.token })).status, 403);
+  assert.equal((await ctx.request('POST', '/ai/study-assistant/chat', { token: ao.token, body: { message: 'Summarise CSE notes' } })).status, 403);
+  assert.equal((await ctx.request('GET', '/ai/study-assistant/conversations', { token: ao.token })).status, 403);
+});

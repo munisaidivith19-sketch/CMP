@@ -14,8 +14,8 @@ import { HOSTEL_ROLES, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW } from './utils/const
 const PEOPLE_DIRECTORY_ROLES = PEOPLE_DIRECTORY;
 // Warden/Security have zero timetable access anywhere in the app.
 const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
-// Warden/Security have zero Study Materials access either.
-const STUDY_MATERIAL_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
+// Warden/Security (and the AO) have zero Study Materials access either.
+const STUDY_MATERIAL_ROLES = ROLES.filter((r) => !['warden', 'security', 'ao'].includes(r));
 
 import Login from './pages/auth/Login';
 import Dashboard from './pages/Dashboard';

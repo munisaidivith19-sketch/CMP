@@ -62,6 +62,8 @@ export default function Campus() {
         (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.href)) &&
         (!noTimetable || !HIDDEN_FOR_NO_TIMETABLE.includes(i.href)) &&
         (!isAlumni || !HIDDEN_FOR_ALUMNI.includes(i.href)) &&
+        // The AO has no Study Materials access (the API refuses it too).
+        (i.href !== '/study-materials' || me.role !== 'ao') &&
         (i.href !== '/od-leave' || OD_LEAVE_ROLES.includes(me.role)) &&
         (i.href !== '/hostel' || HOSTEL_ROLES.includes(me.role))
     ).map((i) =>

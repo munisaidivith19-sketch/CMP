@@ -38,7 +38,7 @@ export default function Notifications() {
           contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 40 }}
           ListEmptyComponent={<EmptyState icon={Bell} title="No notifications yet" text="Announcements, events, gate pass updates and more show up here." />}
           renderItem={({ item: n }) => (
-            <Pressable onPress={() => open(n)} style={{ flexDirection: 'row', gap: 12, padding: 14, borderRadius: 22, backgroundColor: n.read ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.95)', borderWidth: 1, borderColor: colors.border }}>
+            <Pressable onPress={() => open(n)} style={{ flexDirection: 'row', gap: 12, padding: 14, borderRadius: 22, backgroundColor: n.read ? colors.surfaceSoft : colors.surfaceStrong, borderWidth: 1, borderColor: n.read ? colors.hairline : colors.border }}>
               <View style={{ width: 8, height: 8, borderRadius: 8, marginTop: 6, backgroundColor: n.read ? 'transparent' : colors.primary }} />
               <View style={{ flex: 1, gap: 2 }}>
                 <T v="strong">{n.title}</T>

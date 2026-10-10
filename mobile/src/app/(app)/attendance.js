@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Alert, Modal, Pressable, View } from 'react-native';
 import { useSelector } from 'react-redux';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, XCircle } from 'lucide-react-native';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ClipboardCheck, XCircle } from 'lucide-react-native';
 import StaffAttendance from '../../components/StaffAttendance';
 import { Button, Card, EmptyState, ErrorState, Header, Input, Loading, PercentRing, ProgressBar, Screen, Segmented, SectionTitle, StatusBadge, T } from '../../components/ui';
 import { errMsg, useGetAttendanceRecordsQuery, useGetCorrectionsQuery, useGetMyAttendanceQuery, useRequestCorrectionMutation } from '../../services/api';
 import { selectUser } from '../../store/authSlice';
-import { STUDENT_ROLES, colors } from '../../theme';
+import { STUDENT_ROLES, colors, fonts, radius, shadow } from '../../theme';
 import { fmtClassDay } from '../../utils/format';
 
 const RANGES = [
@@ -15,6 +15,58 @@ const RANGES = [
   { value: 'semester', label: 'Semester' },
   { value: 'all', label: 'All' },
 ];
+
+// Recent-classes filter. The server applies `status` inside the student's own scope.
+const STATUS_FILTERS = [
+  { value: 'all', label: 'All classes' },
+  { value: 'absent', label: 'Absent' },
+  { value: 'present', label: 'Present' },
+];
+
+/** Compact dropdown: shows the current choice, opens a small menu of options. */
+function FilterDropdown({ value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.value === value) || options[0];
+  return (
+    <>
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Filter: ${current.label}`}
+        hitSlop={6}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: pressed ? colors.primary50 : colors.surfaceStrong })}
+      >
+        <T v="small" style={{ fontFamily: fonts.bold, color: colors.primary600 }}>{current.label}</T>
+        <ChevronDown size={14} color={colors.primary600} />
+      </Pressable>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(27,29,58,0.25)', justifyContent: 'center', padding: 32 }} onPress={() => setOpen(false)}>
+          <View style={[{ backgroundColor: '#fff', borderRadius: radius.lg, paddingVertical: 6 }, shadow]}>
+            <T v="label" style={{ paddingHorizontal: 18, paddingTop: 10, paddingBottom: 6 }}>Show</T>
+            {options.map((o) => {
+              const active = o.value === value;
+              return (
+                <Pressable
+                  key={o.value}
+                  accessibilityRole="menuitem"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18, paddingVertical: 13, backgroundColor: pressed ? colors.primary50 : 'transparent' })}
+                >
+                  <T v="body" style={{ flex: 1, fontFamily: active ? fonts.bold : fonts.regular, color: active ? colors.primary600 : colors.ink }}>{o.label}</T>
+                  {active ? <Check size={18} color={colors.primary600} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
 
 function CorrectionSheet({ record, onClose }) {
   const [reason, setReason] = useState('');
@@ -54,8 +106,9 @@ export default function Attendance() {
 function StudentAttendance() {
   const [range, setRange] = useState('semester');
   const [correct, setCorrect] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
   const summary = useGetMyAttendanceQuery({ range });
-  const records = useGetAttendanceRecordsQuery({ limit: 30 });
+  const records = useGetAttendanceRecordsQuery(statusFilter === 'all' ? { limit: 30 } : { limit: 30, status: statusFilter });
   const corrections = useGetCorrectionsQuery({ limit: 10 });
 
   const { data, isLoading, error, refetch, isFetching } = summary;
@@ -116,9 +169,14 @@ function StudentAttendance() {
         </>
       )}
 
-      <SectionTitle title="Recent classes" />
-      {records.isLoading ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+        <T v="h3">{statusFilter === 'absent' ? 'Absent classes' : statusFilter === 'present' ? 'Present classes' : 'Recent classes'}</T>
+        <FilterDropdown value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} />
+      </View>
+      {records.isLoading || (records.isFetching && !records.data) ? (
         <Loading />
+      ) : records.error ? (
+        <ErrorState error={records.error} onRetry={records.refetch} />
       ) : records.data?.records?.length ? (
         <Card style={{ gap: 2 }} padded={false}>
           {records.data.records.map((r) => (
@@ -142,7 +200,11 @@ function StudentAttendance() {
         </Card>
       ) : (
         <Card>
-          <EmptyState title="No attendance yet" />
+          <EmptyState
+            icon={statusFilter === 'absent' ? CheckCircle2 : ClipboardCheck}
+            title={statusFilter === 'absent' ? 'No absences' : statusFilter === 'present' ? 'No classes marked present' : 'No attendance yet'}
+            text={statusFilter === 'absent' ? 'You haven’t missed any recorded class.' : undefined}
+          />
         </Card>
       )}
 

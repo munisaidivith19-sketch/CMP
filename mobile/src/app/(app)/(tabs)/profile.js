@@ -11,7 +11,7 @@ import { disconnectSocket } from '../../../services/socket';
 import { getPushToken } from '../../../services/push';
 import { loggedOut, selectUser, setUser } from '../../../store/authSlice';
 import { fetchWithTimeout, getApiUrl } from '../../../config';
-import { ROLE_LABELS, colors } from '../../../theme';
+import { ROLE_LABELS, colors, shadowSoft } from '../../../theme';
 import { displayName } from '../../../utils/format';
 
 const Row = ({ label, value }) => (
@@ -81,7 +81,7 @@ export default function Profile() {
       <Card style={{ alignItems: 'center', gap: 8 }}>
         <Pressable onPress={changePhoto} disabled={uploadingAvatar} accessibilityRole="button" accessibilityLabel="Change profile photo">
           <Avatar user={user} size={84} />
-          <View style={{ position: 'absolute', right: -4, bottom: -4, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' }}>
+          <View style={{ position: 'absolute', right: -4, bottom: -4, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff', ...shadowSoft }}>
             <Camera size={14} color="#fff" />
           </View>
         </Pressable>

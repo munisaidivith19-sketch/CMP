@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
 import { useSelector } from 'react-redux';
-import { AlertTriangle, FileText, GraduationCap } from 'lucide-react-native';
-import { Card, Chip, EmptyState, ErrorState, Loading, Segmented, SectionTitle, T, pctColor } from './ui';
+import { AlertTriangle, Download, FileText, GraduationCap } from 'lucide-react-native';
+import { Button, Card, Chip, EmptyState, ErrorState, Loading, Segmented, SectionTitle, T, pctColor } from './ui';
 import DateField from './DateField';
+import Dropdown from './Dropdown';
+import { downloadAttendanceReport } from '../services/reports';
 import { errMsg, useGetAttendanceReportQuery, useGetReportOptionsQuery, useGetReportPeriodsQuery } from '../services/api';
 import { selectUser } from '../store/authSlice';
 import { YEAR_LABELS, colors, fonts } from '../theme';
@@ -104,6 +106,19 @@ export default function AttendanceReports() {
     (type === 'custom' && !(from && to));
   const { data: report, isFetching, error } = useGetAttendanceReportQuery({ type, ...params }, { skip: blocked || (isFaculty && !scope) });
 
+  // Same type + filters as the on-screen preview; the server re-checks scope.
+  const [downloading, setDownloading] = useState(false);
+  const download = async () => {
+    setDownloading(true);
+    try {
+      await downloadAttendanceReport(type, params);
+    } catch (e) {
+      Alert.alert('Could not download report', e?.message || 'Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (loadingOptions || (isFaculty && !scope)) return <Loading />;
   if (optionsError) return <ErrorState error={optionsError} onRetry={refetch} />;
 
@@ -138,15 +153,22 @@ export default function AttendanceReports() {
           ) : null}
           {facultyScope === 'handling' ? (
             <>
-              <T v="label">Subject</T>
               {subjects.length ? (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {subjects.map((s) => (
-                    <Chip key={s._id} label={s.code} active={subjectId === s._id} onPress={() => { setSubjectId(s._id); setSection(''); }} />
-                  ))}
-                </View>
+                <Dropdown
+                  label="Subject"
+                  value={subjectId}
+                  placeholder="Choose a subject"
+                  options={subjects.map((s) => ({ value: s._id, label: `${s.code}${s.name ? ` · ${s.name}` : ''}`, hint: s.semester ? `Semester ${s.semester}` : undefined }))}
+                  onChange={(v) => {
+                    setSubjectId(v);
+                    setSection('');
+                  }}
+                />
               ) : (
-                <T v="small">No subject classes are currently assigned to you.</T>
+                <>
+                  <T v="label">Subject</T>
+                  <T v="small">No subject classes are currently assigned to you.</T>
+                </>
               )}
               <T v="label">Section</T>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -176,20 +198,19 @@ export default function AttendanceReports() {
           ) : null}
           {needsDate ? <DateField label="Date" value={date} onChange={setDate} maximumDate={new Date()} /> : null}
           {needsPeriod ? (
-            <>
-              <T v="label">Period</T>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                <Chip label="All Periods" active={period === 'all'} onPress={() => setPeriod('all')} />
-                {(periodList?.periods || []).map((p) => (
-                  <Chip
-                    key={p.period}
-                    label={`P${p.period} · ${to12h(p.startTime)}${p.completed ? '' : ' ⏳'}`}
-                    active={String(period) === String(p.period)}
-                    onPress={() => setPeriod(String(p.period))}
-                  />
-                ))}
-              </View>
-            </>
+            <Dropdown
+              label="Period"
+              value={period}
+              onChange={(v) => setPeriod(String(v))}
+              options={[
+                { value: 'all', label: 'All Periods' },
+                ...(periodList?.periods || []).map((p) => ({
+                  value: String(p.period),
+                  label: `Period ${p.period} · ${to12h(p.startTime)}`,
+                  hint: p.completed ? undefined : 'Not finished yet',
+                })),
+              ]}
+            />
           ) : null}
           {type === 'custom' ? (
             <>
@@ -198,6 +219,7 @@ export default function AttendanceReports() {
             </>
           ) : null}
           {type === 'current' ? <T v="small">Today’s completed periods only — the server’s clock decides.</T> : null}
+          <Button title="Download PDF" icon={Download} loading={downloading} disabled={blocked} onPress={download} />
         </Card>
       )}
 

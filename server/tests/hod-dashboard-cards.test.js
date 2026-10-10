@@ -24,6 +24,8 @@ before(async () => {
     fyHod: { role: 'hod', department: 'Science & Humanities', employeeId: 'E-FY' },
     principal: { role: 'principal', employeeId: 'E-P' },
     dean: { role: 'dean', employeeId: 'E-D' },
+    chairman: { role: 'chairman', employeeId: 'E-C' },
+    ao: { role: 'ao', employeeId: 'E-AO' },
     admin: { role: 'admin', employeeId: 'E-A' },
     faculty: { role: 'faculty', department: D, employeeId: 'E-F', name: 'Ravi Teacher' },
     student: { department: D, section: 'A', semester: 3, rollNo: 'S-LOGIN' },
@@ -187,18 +189,22 @@ test('study material status: HOD sees own department, uploaded vs not uploaded',
   assert.equal(r.body.subjects.find((s) => s.subject.code === 'CS302').status, 'not_uploaded');
 });
 
-test('study material status: HOD scope is pinned; only HOD and Principal may open it', async () => {
+test('study material status: HOD scope is pinned; only HOD, Principal, Dean and Chairman may open it', async () => {
   assert.equal((await get('hod', '/study-materials/status?department=ECE&semester=3')).status, 403);
   assert.equal((await get('hod', '/study-materials/status?semester=1')).status, 403, '1st year belongs to S&H HOD');
   assert.equal((await get('hod', '/study-materials/status?year=3&semester=3')).status, 422, 'year must match semester');
   assert.equal((await get('hod', '/study-materials/status')).status, 422);
   assert.equal((await get('fyHod', '/study-materials/status?semester=3&department=ECE')).status, 403);
   assert.equal((await get('fyHod', '/study-materials/status?semester=1&department=ECE')).status, 200);
-  for (const who of ['faculty', 'student', 'dean', 'admin']) assert.equal((await get(who, '/study-materials/status?semester=3&department=ECE')).status, 403, who);
+  for (const who of ['faculty', 'student', 'admin', 'ao']) assert.equal((await get(who, '/study-materials/status?semester=3&department=ECE')).status, 403, who);
 
-  const p = await get('principal', '/study-materials/status?department=ECE&year=2&semester=3');
-  assert.equal(p.status, 200);
-  assert.deepEqual(p.body.subjects.map((s) => s.subject.code), ['EC301']);
-  assert.equal((await get('principal', '/study-materials/status?semester=3')).status, 422, 'principal must pick a department');
-  assert.equal((await get('principal', '/study-materials/status?department=Nope&semester=3')).status, 422);
+  // Dean and Chairman get the Principal's college-wide view: any department, never unscoped.
+  for (const who of ['principal', 'dean', 'chairman']) {
+    const p = await get(who, '/study-materials/status?department=ECE&year=2&semester=3');
+    assert.equal(p.status, 200, who);
+    assert.deepEqual(p.body.subjects.map((s) => s.subject.code), ['EC301'], who);
+    assert.equal((await get(who, '/study-materials/status?semester=3')).status, 422, `${who} must pick a department`);
+    assert.equal((await get(who, '/study-materials/status?department=Nope&semester=3')).status, 422, who);
+    assert.equal((await get(who, '/study-materials/status?department[$ne]=x&semester=3')).status, 422, `${who}: operator injection`);
+  }
 });

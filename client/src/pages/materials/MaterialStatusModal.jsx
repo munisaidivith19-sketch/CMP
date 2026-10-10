@@ -3,7 +3,7 @@ import { BookOpen, CheckCircle2, XCircle } from 'lucide-react';
 import { useGetStudyMaterialStatusQuery } from '../../services/api';
 import { EmptyState, ErrorState, Skeleton, cn } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
-import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS, YEAR_LABELS, isFirstYearHod, semestersOfYear } from '../../utils/constants';
+import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS, STUDY_MATERIAL_COLLEGE_STATUS, YEAR_LABELS, isFirstYearHod, semestersOfYear } from '../../utils/constants';
 import { displayName, fmtDateTime, titleCase } from '../../utils/format';
 
 /**
@@ -11,12 +11,13 @@ import { displayName, fmtDateTime, titleCase } from '../../utils/format';
  * semester, who teaches it, what was uploaded and when — or "Not uploaded".
  * HOD: years/semesters of their own department (the server pins it);
  * Science & Humanities HOD: 1st year of a chosen department;
- * Principal: any department, year and semester.
+ * Principal, Dean, Chairman: any department, year and semester.
  */
 export default function MaterialStatusModal({ open, onClose, me }) {
   const fyHod = isFirstYearHod(me);
-  const pickDepartment = me.role === 'principal' || fyHod;
-  const years = me.role === 'principal' ? [1, 2, 3, 4] : fyHod ? [1] : [2, 3, 4];
+  const collegeWide = STUDY_MATERIAL_COLLEGE_STATUS.includes(me.role);
+  const pickDepartment = collegeWide || fyHod;
+  const years = collegeWide ? [1, 2, 3, 4] : fyHod ? [1] : [2, 3, 4];
   const [department, setDepartment] = useState(pickDepartment ? '' : me.department || '');
   const [year, setYear] = useState(years.length === 1 ? String(years[0]) : '');
   const [semester, setSemester] = useState('');

@@ -563,6 +563,12 @@ export default function MasterTimetable() {
           slot={edit}
           klass={editingClass}
           preset={preset}
+          classSlots={slots.filter(
+            (s) =>
+              s.department === editingClass.department &&
+              s.section === editingClass.section &&
+              Number(s.semester) === Number(editingClass.semester)
+          )}
           onClose={() => {
             setEdit(undefined);
             setEditingClass(null);

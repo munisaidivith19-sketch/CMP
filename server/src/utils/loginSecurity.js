@@ -1,31 +1,47 @@
 /**
  * Login Security & Progressive Backoff Rate Limiting
- * Enterprise Grade (8/10 security architecture)
+ *
+ * Per-account counters live on the User document. The counters that have no
+ * account to live on — per client IP, and per IP + unknown email (so an
+ * attacker cannot tell which emails exist) — are kept in MongoDB
+ * (LoginThrottle), not process memory: they survive restarts and deploys and
+ * are shared by every instance. Thresholds and messages are unchanged.
  */
+import crypto from 'node:crypto';
+import LoginThrottle from '../models/LoginThrottle.js';
 
-// In-memory sliding trackers for IP throttling and anonymous email enumeration defense
-const ipTracker = new Map();
-const anonTracker = new Map();
-
-// Periodic prune to prevent memory leaks (every 15 minutes)
-const CLEANUP_INTERVAL = 15 * 60 * 1000;
+// A counter idle this long is removed by the TTL index (longer than any lock).
 const ENTRY_MAX_AGE = 2 * 60 * 60 * 1000; // 2 hours
 
-const cleaner = setInterval(() => {
-  const now = Date.now();
-  for (const [ip, entry] of ipTracker.entries()) {
-    if (now - entry.lastAttempt > ENTRY_MAX_AGE && (!entry.lockUntil || entry.lockUntil < now)) {
-      ipTracker.delete(ip);
-    }
-  }
-  for (const [key, entry] of anonTracker.entries()) {
-    if (now - entry.lastAttempt > ENTRY_MAX_AGE && (!entry.lockUntil || entry.lockUntil < now)) {
-      anonTracker.delete(key);
-    }
-  }
-}, CLEANUP_INTERVAL);
+/** Only a hash of the IP / typed email is stored. */
+const throttleKey = (kind, ...parts) => crypto.createHash('sha256').update([kind, ...parts].join('\u0000')).digest('hex');
+const ipKey = (ip) => throttleKey('ip', ip);
+const anonKey = (ip, email) => throttleKey('anon', ip || 'unknown', String(email).toLowerCase().trim());
 
-cleaner.unref?.();
+/** Count one more failure for `key` atomically and return the updated counter. */
+async function bumpCounter(key, kind) {
+  const now = new Date();
+  return LoginThrottle.findOneAndUpdate(
+    { key },
+    { $inc: { count: 1 }, $set: { kind, lastAttempt: now, expiresAt: new Date(now.getTime() + ENTRY_MAX_AGE) } },
+    { upsert: true, new: true, lean: true }
+  );
+}
+
+async function setLock(key, lockUntilMs) {
+  const lockUntil = new Date(lockUntilMs);
+  await LoginThrottle.updateOne({ key }, { $set: { lockUntil, expiresAt: new Date(Math.max(lockUntilMs, Date.now()) + ENTRY_MAX_AGE) } });
+  return lockUntil;
+}
+
+/** The active lock of `key`, if any. */
+async function activeLock(key) {
+  const entry = await LoginThrottle.findOne({ key }).select('count lockUntil').lean();
+  if (!entry) return { entry: null, lock: null };
+  const now = Date.now();
+  const lockMs = entry.lockUntil ? new Date(entry.lockUntil).getTime() : 0;
+  return { entry, lock: lockMs > now ? lockMs : null };
+}
 
 /**
  * Progressive lockout tiers based on total failed attempts.
@@ -55,24 +71,18 @@ export function getNextLockMinutes(failedCount) {
 /**
  * Check if the given client IP is currently throttled due to high-frequency failed attempts.
  */
-export function checkIpThrottled(ip) {
+export async function checkIpThrottled(ip) {
   if (!ip) return { locked: false };
-  const entry = ipTracker.get(ip);
-  if (!entry) return { locked: false };
-
-  const now = Date.now();
-  if (entry.lockUntil && entry.lockUntil > now) {
-    const retryAfterSeconds = Math.ceil((entry.lockUntil - now) / 1000);
-    const mins = Math.ceil(retryAfterSeconds / 60);
-    return {
-      locked: true,
-      ipLocked: true,
-      lockUntil: new Date(entry.lockUntil).toISOString(),
-      retryAfterSeconds,
-      mins,
-    };
-  }
-  return { locked: false };
+  const { lock } = await activeLock(ipKey(ip));
+  if (!lock) return { locked: false };
+  const retryAfterSeconds = Math.ceil((lock - Date.now()) / 1000);
+  return {
+    locked: true,
+    ipLocked: true,
+    lockUntil: new Date(lock).toISOString(),
+    retryAfterSeconds,
+    mins: Math.ceil(retryAfterSeconds / 60),
+  };
 }
 
 /**
@@ -82,22 +92,10 @@ export function checkIpThrottled(ip) {
  * 20 failed attempts -> 15m lock
  * 30 failed attempts -> 60m lock
  */
-export function recordIpFailure(ip) {
+export async function recordIpFailure(ip) {
   if (!ip) return null;
-  const now = Date.now();
-  let entry = ipTracker.get(ip);
-  if (!entry) {
-    entry = { count: 0, lockUntil: 0, lastAttempt: now };
-    ipTracker.set(ip, entry);
-  }
-
-  // If previous lock expired, reset or decay
-  if (entry.lockUntil && entry.lockUntil <= now) {
-    entry.lockUntil = 0;
-  }
-
-  entry.count += 1;
-  entry.lastAttempt = now;
+  const key = ipKey(ip);
+  const entry = await bumpCounter(key, 'ip');
 
   let lockMs = 0;
   if (entry.count >= 30) lockMs = 60 * 60 * 1000;
@@ -105,13 +103,12 @@ export function recordIpFailure(ip) {
   else if (entry.count >= 10) lockMs = 5 * 60 * 1000;
 
   if (lockMs > 0) {
-    entry.lockUntil = now + lockMs;
-    const retryAfterSeconds = Math.ceil(lockMs / 1000);
+    const lockUntil = await setLock(key, Date.now() + lockMs);
     return {
       locked: true,
       ipLocked: true,
-      lockUntil: new Date(entry.lockUntil).toISOString(),
-      retryAfterSeconds,
+      lockUntil: lockUntil.toISOString(),
+      retryAfterSeconds: Math.ceil(lockMs / 1000),
       mins: Math.round(lockMs / 60000),
     };
   }
@@ -121,13 +118,14 @@ export function recordIpFailure(ip) {
 /**
  * Clear or decay IP failure count upon successful authentication.
  */
-export function clearIpFailure(ip) {
+export async function clearIpFailure(ip) {
   if (!ip) return;
-  const entry = ipTracker.get(ip);
-  if (entry) {
-    entry.count = Math.max(0, entry.count - 2);
-    if (entry.count === 0) ipTracker.delete(ip);
-  }
+  const key = ipKey(ip);
+  const entry = await LoginThrottle.findOneAndUpdate({ key }, [{ $set: { count: { $max: [0, { $subtract: ['$count', 2] }] } } }], {
+    new: true,
+    lean: true,
+  });
+  if (entry && entry.count === 0) await LoginThrottle.deleteOne({ key, count: 0 });
 }
 
 /**
@@ -135,17 +133,14 @@ export function clearIpFailure(ip) {
  * Emulates identical progressive lockout and remaining attempts so attackers
  * cannot enumerate which emails exist.
  */
-export function checkAnonLockout(ip, email) {
-  const key = `${ip || 'unknown'}:${String(email).toLowerCase().trim()}`;
-  const entry = anonTracker.get(key);
+export async function checkAnonLockout(ip, email) {
+  const { entry, lock } = await activeLock(anonKey(ip, email));
   if (!entry) return { locked: false, count: 0 };
-
-  const now = Date.now();
-  if (entry.lockUntil && entry.lockUntil > now) {
-    const retryAfterSeconds = Math.ceil((entry.lockUntil - now) / 1000);
+  if (lock) {
+    const retryAfterSeconds = Math.ceil((lock - Date.now()) / 1000);
     return {
       locked: true,
-      lockUntil: new Date(entry.lockUntil).toISOString(),
+      lockUntil: new Date(lock).toISOString(),
       retryAfterSeconds,
       mins: Math.ceil(retryAfterSeconds / 60),
     };
@@ -153,42 +148,25 @@ export function checkAnonLockout(ip, email) {
   return { locked: false, count: entry.count || 0 };
 }
 
-export function recordAnonFailure(ip, email) {
-  const key = `${ip || 'unknown'}:${String(email).toLowerCase().trim()}`;
-  const now = Date.now();
-  let entry = anonTracker.get(key);
-  if (!entry) {
-    entry = { count: 0, lockUntil: 0, lastAttempt: now };
-    anonTracker.set(key, entry);
-  }
-
-  if (entry.lockUntil && entry.lockUntil <= now) {
-    entry.lockUntil = 0;
-  }
-
-  entry.count += 1;
-  entry.lastAttempt = now;
+export async function recordAnonFailure(ip, email) {
+  const key = anonKey(ip, email);
+  const entry = await bumpCounter(key, 'anon');
 
   const remainder = entry.count % 3;
   if (remainder === 0) {
     const lockMs = calculateLockoutMs(entry.count);
-    entry.lockUntil = now + lockMs;
-    const retryAfterSeconds = Math.ceil(lockMs / 1000);
-    const mins = Math.round(lockMs / 60000);
+    const lockUntil = await setLock(key, Date.now() + lockMs);
     return {
       locked: true,
-      lockUntil: new Date(entry.lockUntil).toISOString(),
-      retryAfterSeconds,
-      mins,
+      lockUntil: lockUntil.toISOString(),
+      retryAfterSeconds: Math.ceil(lockMs / 1000),
+      mins: Math.round(lockMs / 60000),
     };
   }
 
-  const remaining = 3 - remainder;
-  const nextLockMins = getNextLockMinutes(entry.count);
   return {
     locked: false,
-    remainingAttempts: remaining,
-    nextLockMinutes: nextLockMins,
+    remainingAttempts: 3 - remainder,
+    nextLockMinutes: getNextLockMinutes(entry.count),
   };
 }
-

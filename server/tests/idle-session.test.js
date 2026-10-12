@@ -135,7 +135,8 @@ test('refresh-token rotation is not activity, and cannot revive an idle session'
 
 test('client-side idle logout is a real logout', async () => {
   const w = await webUser('student');
-  const res = await ctx.request('POST', '/auth/logout', { cookie: w.cookie, body: { reason: 'idle' } });
+  // Exactly what the web client sends: both cookies plus the X-CSRF-Token echo.
+  const res = await ctx.request('POST', '/auth/logout', { cookie: `${w.cookie}; ${w.csrfCookie}`, headers: { 'x-csrf-token': w.csrf }, body: { reason: 'idle' } });
   assert.equal(res.status, 200);
   const row = await ctx.models.Session.findById(w.sid).lean();
   assert.equal(row.revokedReason, 'idle_timeout_client');

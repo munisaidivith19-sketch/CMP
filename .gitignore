@@ -9,3 +9,8 @@ server/uploads/*
 *.log
 .DS_Store
 .idea/
+# Server env files of any name — only the example is committed.
+server/.env*
+!server/.env.example
+# Generated PDFs (reports, profile directories) contain personal data.
+/*.pdf

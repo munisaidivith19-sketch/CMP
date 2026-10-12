@@ -9,7 +9,11 @@ import { emitToUsers } from '../../config/socket.js';
 import { sameId } from '../../utils/permissions.js';
 import { env } from '../../config/env.js';
 
-const PUBLIC_USER_FIELDS = 'name email role department year avatar phone designation employeeId rollNo';
+import { PARTY_USER_FIELDS, redactParties } from '../../utils/alumniPrivacy.js';
+import { sendCsv } from '../../utils/csv.js';
+
+// Contact fields are populated only for redactParties to decide per viewer.
+const PUBLIC_USER_FIELDS = PARTY_USER_FIELDS;
 
 function checkAudienceMatch(event, user, profile) {
   const { gradYears = [], departments = [], roles = [] } = event.audience || {};
@@ -113,7 +117,7 @@ export const listEvents = asyncHandler(async (req, res) => {
   }
 
   res.json({
-    items,
+    items: await redactParties(items, user, ['createdBy']),
     ...pageMeta(total, page, limit),
   });
 });
@@ -170,7 +174,7 @@ export const createEvent = asyncHandler(async (req, res) => {
   }
 
   logActivity(req, 'alumni.event_created', { entityType: 'alumni_event', entityId: event._id });
-  res.status(201).json(event);
+  res.status(201).json(await redactParties(event, req.user, ['createdBy']));
 });
 
 // ── GET /api/alumni/events/:id ─────────────────────────────────────
@@ -186,7 +190,7 @@ export const getEventById = asyncHandler(async (req, res) => {
   const myRsvp = await AlumniEventRsvp.findOne({ event: event._id, user: user._id });
   const isGoing = myRsvp?.status === 'going';
 
-  const out = event.toObject();
+  const out = await redactParties(event, user, ['createdBy']);
   out.myRsvp = myRsvp;
   out.spotsLeft = event.capacity > 0 ? Math.max(0, event.capacity - event.goingCount) : null;
 
@@ -237,7 +241,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
   }
 
   await event.populate('createdBy', PUBLIC_USER_FIELDS);
-  res.json(event);
+  res.json(await redactParties(event, user, ['createdBy']));
 });
 
 // ── POST /api/alumni/events/:id/approve & /reject ──────────────────
@@ -430,26 +434,26 @@ export const listAttendees = asyncHandler(async (req, res) => {
 
   if (!isOrganizer && !isStaff) throw new ApiError(403, 'Permission denied');
 
-  const rsvps = await AlumniEventRsvp.find({ event: id, status: 'going' })
-    .populate('user', PUBLIC_USER_FIELDS)
-    .sort({ createdAt: 1 })
-    .lean();
+  // An alumnus organizer gets names only: a student's email / phone never
+  // leave the college, and other alumni follow their own privacy settings.
+  const rsvps = await redactParties(
+    await AlumniEventRsvp.find({ event: id, status: 'going' }).populate('user', PUBLIC_USER_FIELDS).sort({ createdAt: 1 }).lean(),
+    user,
+    ['user']
+  );
 
   if (format === 'csv') {
     const headers = ['#', 'Name', 'Email', 'Role', 'Department', 'Phone', 'Checked In'];
     const rows = rsvps.map((r, i) => [
       i + 1,
-      `"${r.user?.name || ''}"`,
-      `"${r.user?.email || ''}"`,
+      r.user?.name || '',
+      r.user?.email || '',
       r.user?.role || '',
-      `"${r.user?.department || ''}"`,
-      `"${r.user?.phone || ''}"`,
+      r.user?.department || '',
+      r.user?.phone || '',
       r.checkedInAt ? 'Yes' : 'No',
     ]);
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename="attendees-${id}.csv"`);
-    return res.send(csv);
+    return sendCsv(res, `attendees-${id}.csv`, [headers, ...rows]);
   }
 
   res.json(rsvps);

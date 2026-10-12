@@ -11,8 +11,13 @@ import { notifyUsers } from '../../utils/notify.js';
 import { emitToUsers } from '../../config/socket.js';
 import { sameId } from '../../utils/permissions.js';
 import { env } from '../../config/env.js';
+import { PARTY_USER_FIELDS, redactParties } from '../../utils/alumniPrivacy.js';
 
-const PUBLIC_USER_FIELDS = 'name email role department year avatar phone designation employeeId rollNo';
+// Contact fields are populated only for redactParties to decide per viewer:
+// a student's email / phone / roll number never reach an alumnus, and an
+// alumnus's contacts follow their own privacy settings.
+const PUBLIC_USER_FIELDS = PARTY_USER_FIELDS;
+const PARTIES = ['student', 'alumni'];
 
 /** A session as `viewerId` may see it: the alumnus's private notes are theirs alone. */
 function sessionFor(session, viewerId) {
@@ -74,10 +79,11 @@ export const createRequest = asyncHandler(async (req, res) => {
     link: '/alumni?tab=mentorship',
   });
 
-  emitToUsers([alumniId], 'alumni:request', request.toJSON());
+  const alumnus = await User.findById(alumniId).select('role department').lean();
+  emitToUsers([alumniId], 'alumni:request', await redactParties(request, alumnus || { _id: alumniId, role: 'alumni' }, PARTIES));
   logActivity(req, 'mentorship.request_created', { entityType: 'mentorship', entityId: request._id });
 
-  res.status(201).json(request);
+  res.status(201).json(await redactParties(request, req.user, PARTIES));
 });
 
 // ── GET /api/mentorship-requests ───────────────────────────────────
@@ -115,7 +121,7 @@ export const listRequests = asyncHandler(async (req, res) => {
   ]);
 
   res.json({
-    items,
+    items: await redactParties(items, user, PARTIES),
     ...pageMeta(total, page, limit),
   });
 });
@@ -139,7 +145,7 @@ export const getRequestById = asyncHandler(async (req, res) => {
     .sort({ scheduledAt: -1 })
     .lean();
 
-  const out = request.toObject();
+  const out = await redactParties(request, user, PARTIES);
   out.sessions = sessions.map((s) => sessionFor(s, user._id));
 
   res.json(out);
@@ -190,10 +196,10 @@ export const respondToRequest = asyncHandler(async (req, res) => {
       link: '/alumni?tab=mentorship',
     });
 
-    emitToUsers([reqDoc.student._id], 'alumni:request_updated', reqDoc.toJSON());
+    emitToUsers([reqDoc.student._id], 'alumni:request_updated', await redactParties(reqDoc, reqDoc.student, PARTIES));
     logActivity(req, 'mentorship.request_accepted', { entityType: 'mentorship', entityId: reqDoc._id });
 
-    return res.json(reqDoc);
+    return res.json(await redactParties(reqDoc, req.user, PARTIES));
   }
 
   // Declined flow
@@ -216,10 +222,10 @@ export const respondToRequest = asyncHandler(async (req, res) => {
     link: '/alumni?tab=mentorship',
   });
 
-  emitToUsers([reqDoc.student._id], 'alumni:request_updated', reqDoc.toJSON());
+  emitToUsers([reqDoc.student._id], 'alumni:request_updated', await redactParties(reqDoc, reqDoc.student, PARTIES));
   logActivity(req, 'mentorship.request_declined', { entityType: 'mentorship', entityId: reqDoc._id });
 
-  res.json(reqDoc);
+  res.json(await redactParties(reqDoc, req.user, PARTIES));
 });
 
 // ── PATCH /api/mentorship-requests/:id/cancel ──────────────────────
@@ -524,8 +530,8 @@ export const bookSession = asyncHandler(async (req, res) => {
     link: '/alumni?tab=mentorship',
   });
 
-  emitToUsers([mentReq.alumni], 'alumni:session', session.toJSON());
-  res.status(201).json(session);
+  emitToUsers([mentReq.alumni], 'alumni:session', await redactParties(session, session.alumni, PARTIES));
+  res.status(201).json(sessionFor(await redactParties(session, req.user, PARTIES), req.user._id));
 });
 
 export const listSessions = asyncHandler(async (req, res) => {
@@ -563,7 +569,7 @@ export const listSessions = asyncHandler(async (req, res) => {
     return s;
   });
 
-  res.json(out);
+  res.json(await redactParties(out, user, PARTIES));
 });
 
 export const rescheduleSession = asyncHandler(async (req, res) => {

@@ -83,6 +83,10 @@ const userSchema = new Schema(
     lockUntil: { type: Date, select: false },
     lastFailedLoginAt: { type: Date, select: false },
     lockoutCount: { type: Number, default: 0, select: false },
+    // Short per-account lease held while one sign-in attempt is being checked,
+    // so parallel password guesses are processed one at a time and cannot all
+    // read the same failedLogins count (racing past the lockout).
+    loginBusyUntil: { type: Date, select: false },
     lastLogin: Date,
     lastSeenAt: Date, // last Socket.io disconnect (chat "last seen")
 

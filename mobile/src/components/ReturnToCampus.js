@@ -130,6 +130,7 @@ export default function ReturnToCampus({ pass }) {
         longitude: fix.coords.longitude,
         accuracy: fix.coords.accuracy ?? 9999,
         timestamp: fix.timestamp,
+        sentAt: Date.now(), // lets the server judge the reading's age on this phone's own clock
       }).unwrap();
       setFresh(res);
       setStep('idle');

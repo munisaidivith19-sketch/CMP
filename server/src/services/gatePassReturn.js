@@ -12,6 +12,10 @@ import { renderExitSms } from './otp/providers/collegeSmsProvider.js';
 
 export const RETURN_QR_PREFIX = 'CCRT:';
 
+// A device whose clock is further off than this is not lined up with ours: its
+// `sentAt` is ignored and the reading's age is judged on the server clock alone.
+export const MAX_CLOCK_SKEW_MS = 24 * 3600 * 1000;
+
 export const LOCATION_MESSAGES = {
   outside_geofence: 'Your current location could not be verified as being within the campus area. Please enter the campus and try again.',
   low_accuracy: 'Your current location is not accurate enough. Please move to an open area and try again.',
@@ -31,14 +35,25 @@ export const LOCATION_MESSAGES = {
  * wherever the student really is within that error, they are on campus. A
  * circle that crosses the boundary cannot be decided and stays low_accuracy;
  * one entirely beyond it is outside_geofence.
+ *
+ * Freshness: `timestamp` is stamped by the device's clock, which on many
+ * phones and PCs is off from ours by more than the whole age limit. When the
+ * client also says when it sent the reading (`sentAt`, same device clock) and
+ * that clock is within MAX_CLOCK_SKEW_MS of ours, the age is measured on the
+ * device clock (sentAt − timestamp), so a wrong clock does not make every
+ * reading look stale. Otherwise the server clock is used. Either way the
+ * reading must be at most maxAgeSeconds old.
  */
-export function evaluateLocation({ latitude, longitude, accuracy, timestamp }, now = Date.now()) {
+export function evaluateLocation({ latitude, longitude, accuracy, timestamp, sentAt }, now = Date.now()) {
   const cfg = env.location;
   const distance = distanceMeters({ latitude: cfg.collegeLatitude, longitude: cfg.collegeLongitude }, { latitude, longitude });
   const d = Math.round(distance * 100) / 100;
   const precise = accuracy <= cfg.maxAccuracyMeters;
+  const takenAt = new Date(timestamp).getTime();
+  const sent = sentAt === undefined || sentAt === null ? NaN : new Date(sentAt).getTime();
+  const reference = Number.isFinite(sent) && Math.abs(now - sent) <= MAX_CLOCK_SKEW_MS ? sent : now;
   let reason = null;
-  if (Math.abs(now - new Date(timestamp).getTime()) > cfg.maxAgeSeconds * 1000) reason = 'stale_location';
+  if (Math.abs(reference - takenAt) > cfg.maxAgeSeconds * 1000) reason = 'stale_location';
   else if (precise) reason = d > cfg.radiusMeters ? 'outside_geofence' : null;
   else if (d + accuracy <= cfg.radiusMeters) reason = null; // certainly inside, even at the edge of the error
   else reason = d - accuracy > cfg.radiusMeters ? 'outside_geofence' : 'low_accuracy';

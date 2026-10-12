@@ -37,7 +37,18 @@ async function deliver({ to, message, templateId }) {
   if (!number) throw new ApiError(422, 'The parent mobile number is not a valid 10-digit number.');
 
   // The API key travels in the query string: never log the URL, the message or the response body.
-  const url = new URL(env.sms.apiUrl);
+  let url;
+  try {
+    url = new URL(env.sms.apiUrl);
+  } catch {
+    throw new ApiError(503, 'The college SMS service is not configured correctly. Ask an administrator.');
+  }
+  // The key, the parent's number and the OTP must never cross the network in
+  // clear text: production sends over HTTPS only (no silent downgrade).
+  if (env.isProd && url.protocol !== 'https:') {
+    console.error('[sms] refusing to send: SMS_API_URL must be an https:// URL in production');
+    throw new ApiError(503, 'The college SMS service is not configured securely. Ask an administrator.');
+  }
   url.searchParams.set('apikey', env.sms.apiKey);
   url.searchParams.set('senderid', env.sms.senderId);
   url.searchParams.set('templateid', templateId);

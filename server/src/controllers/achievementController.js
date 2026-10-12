@@ -6,6 +6,7 @@ import { sameId } from '../utils/permissions.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
 import { PdfDocument, asciiSafe, safeFilename } from '../utils/pdf.js';
+import { sendCsv } from '../utils/csv.js';
 import { ACHIEVEMENT_MODERATE_ROLES, ACHIEVEMENT_POST_ROLES } from '../constants.js';
 
 /** Club admins are students with extra club permissions. */
@@ -366,13 +367,6 @@ export const achievementStats = asyncHandler(async (req, res) => {
   res.json({ total, thisYear, byCategory: rows(byCategory), byLevel: rows(byLevel), byDepartment: rows(byDepartment) });
 });
 
-/** Spreadsheets treat a leading = + - @ as a formula, so neutralise it. */
-const csvCell = (v) => {
-  let s = String(v ?? '');
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return `"${s.replace(/"/g, '""')}"`;
-};
-
 export const exportAchievements = asyncHandler(async (req, res) => {
   const scopeDepartment = req.user.role === 'hod' ? req.user.department : undefined;
   const items = await Achievement.find(buildFilter(req, { scopeDepartment }))
@@ -453,12 +447,7 @@ export const exportAchievements = asyncHandler(async (req, res) => {
   }
 
   const header = ['Date', 'Title', 'Students', 'Departments', 'Category', 'Level', 'Position', 'Event'];
-  const csv = [header, ...rows.map((r) => [r.date, r.title, r.students, r.departments, r.category, r.level, r.position, r.event])]
-    .map((line) => line.map(csvCell).join(','))
-    .join('\r\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
-  return res.send(`\uFEFF${csv}`);
+  return sendCsv(res, `${base}.csv`, [header, ...rows.map((r) => [r.date, r.title, r.students, r.departments, r.category, r.level, r.position, r.event])]);
 });
 
 

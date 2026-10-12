@@ -124,9 +124,9 @@ env.otp = {
   maxAttempts: num('OTP_MAX_ATTEMPTS', 5, { max: 10 }),
   resendCooldownSeconds: num('OTP_RESEND_COOLDOWN_SECONDS', 60, { min: 0, max: 600 }),
   // The older admin-only development OTP portal (/dev/otp) is on outside
-  // production. In production it stays off unless DEV_OTP_PORTAL=true. The
-  // Admin → Security & Logs → OTP dashboard replaces it and is always available.
-  devPortalInProduction: process.env.DEV_OTP_PORTAL === 'true',
+  // production only; in production it is always 404 (DEV_OTP_PORTAL is no
+  // longer honoured there). Admin → Security & Logs → OTP replaces it.
+  devPortalInProduction: false,
 };
 if (isProd && !env.otp.smsEnabled) {
   console.warn('[env] OTP_SMS_ENABLED is off: parent OTPs are not sent by SMS — admins read them in Security & Logs → OTP.');
@@ -136,7 +136,9 @@ env.sms = {
   senderId: (process.env.SMS_SENDER_ID || '').trim(),
   otpTemplateId: (process.env.SMS_OTP_TEMPLATE_ID || '').trim(),
   exitTemplateId: (process.env.SMS_EXIT_TEMPLATE_ID || '').trim(),
-  apiUrl: (process.env.SMS_API_URL || 'http://bulksms.2020sms.com/vb/apikey.php').trim(),
+  // HTTPS by default: the API key and the parent's number travel in the query
+  // string. The provider refuses a non-https URL in production.
+  apiUrl: (process.env.SMS_API_URL || 'https://bulksms.2020sms.com/vb/apikey.php').trim(),
 };
 
 const decimal = (name, fallback, min, max) => {

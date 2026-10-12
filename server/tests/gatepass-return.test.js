@@ -210,6 +210,37 @@ test('stale (or future-dated) readings are rejected using the server clock', asy
   assert.equal((await checkLocation(id, student, north(20, { timestamp: new Date(Date.now() - 5000).toISOString() }))).status, 200);
 });
 
+test('a device whose clock is off is judged on its own clock (sentAt) — fresh readings pass, old ones stay stale', async () => {
+  const { id, student } = await passFor();
+  const max = env.location.maxAgeSeconds * 1000;
+  // Phone clock 10 minutes slow / 7 minutes fast: a 2 s old reading is fresh.
+  for (const skew of [-10 * 60000, 7 * 60000]) {
+    const deviceNow = Date.now() + skew;
+    const res = await checkLocation(id, student, north(20, { timestamp: deviceNow - 2000, sentAt: deviceNow }));
+    assert.equal(res.status, 200, `skew ${skew}: ${JSON.stringify(res.body)}`);
+  }
+  // Same skewed clock, but the reading is older than the limit on that clock.
+  const deviceNow = Date.now() - 10 * 60000;
+  for (const age of [max + 1000, -(max + 1000)]) {
+    const res = await checkLocation(id, student, north(20, { timestamp: deviceNow - age, sentAt: deviceNow }));
+    assert.equal(res.status, 422, `age ${age}`);
+    assert.equal(res.body.errors[0].code, 'stale_location');
+  }
+  // A clock more than a day off is not lined up: the server clock decides, so the reading is stale.
+  const wild = Date.now() - 3 * 86400000;
+  const res = await checkLocation(id, student, north(20, { timestamp: wild, sentAt: wild }));
+  assert.equal(res.status, 422);
+  assert.equal(res.body.errors[0].code, 'stale_location');
+  // sentAt never relaxes the geofence or accuracy policy.
+  const now = Date.now();
+  const far = await checkLocation(id, student, north(env.location.radiusMeters + 1, { timestamp: now, sentAt: now }));
+  assert.equal(far.body.errors[0].code, 'outside_geofence');
+  // A malformed sentAt is rejected before anything is recorded.
+  const before = (await checks(id)).length;
+  assert.equal((await checkLocation(id, student, north(20, { sentAt: 'soon' }))).status, 422);
+  assert.equal((await checks(id)).length, before);
+});
+
 test('impossible or missing coordinates are rejected before anything is recorded', async () => {
   const { id, student } = await passFor();
   const bad = [

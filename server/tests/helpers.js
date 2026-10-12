@@ -88,7 +88,10 @@ export async function startServer() {
       if (res.status !== 200) throw new Error(`login failed ${res.status} ${JSON.stringify(res.body)}`);
       const setCookie = res.headers.get('set-cookie') || '';
       const cookie = setCookie.split(';')[0];
-      return { token: res.body.accessToken, user: res.body.user, cookie };
+      // The double-submit CSRF token the web client echoes in X-CSRF-Token.
+      const csrfCookie = (res.headers.getSetCookie?.() || []).map((c) => c.split(';')[0]).find((c) => /^(__Host-)?cc_csrf=/.test(c)) || '';
+      const csrf = csrfCookie.slice(csrfCookie.indexOf('=') + 1);
+      return { token: res.body.accessToken, user: res.body.user, cookie, csrfCookie, csrf };
     },
 
     /** Sign in as the Android app: refresh token arrives in the body. */

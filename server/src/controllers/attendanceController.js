@@ -29,6 +29,7 @@ import {
 import { buildReport, byRollNo, reportFilename, reportPeriods } from '../services/attendanceReport.js';
 import { renderReportPdf } from '../services/attendanceReportPdf.js';
 import { safeFilename } from '../utils/pdf.js';
+import { markPresentFromClass } from '../services/facultyPresence.js';
 import { appliesTo, assertNotHoliday, findHoliday, holidayMessage, holidaysBetween, toApi as toHolidayApi } from '../services/holidays.js';
 import { ACADEMIC_READ_ONLY_ROLES, COLLEGE_WIDE_ROLES, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
 
@@ -575,6 +576,24 @@ export const markAttendance = asyncHandler(async (req, res) => {
   });
   if (ops.length) await AttendanceRecord.bulkWrite(ops, { ordered: false });
 
+  // Taking attendance in their own class today marks the faculty member
+  // present for the whole day (never overriding an HOD/admin mark). A failure
+  // here must not undo the students' attendance, which is already saved.
+  let facultyMarkedPresent = false;
+  try {
+    facultyMarkedPresent = await markPresentFromClass(user, { ...cls, session });
+    if (facultyMarkedPresent) {
+      logActivity(req, 'attendance.faculty_auto_present', {
+        entityType: 'faculty_attendance',
+        entityId: user._id,
+        summary: `${dayKey(day)}: present (took ${subject.code}${section ? ` ${section}` : ''} P${session?.period ?? period})`,
+      });
+      emitToUsers([user._id], 'attendance:updated', { kind: 'faculty', date: dayKey(day) });
+    }
+  } catch (err) {
+    console.error('[attendance] faculty auto-present failed:', err.message);
+  }
+
   if (sessionCreated) {
     logActivity(req, 'attendance.session_created', {
       entityType: 'attendance_session',
@@ -603,6 +622,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
     modified: changed,
     unchanged: ids.length - created - changed,
     sessionId: session?._id || null,
+    facultyMarkedPresent,
   });
 });
 

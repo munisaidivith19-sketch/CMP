@@ -356,13 +356,13 @@ test('development OTP portal: admin only, shows the active test OTP, absent in p
     assert.equal(env.otp.devPortalInProduction, false, 'off by default');
     assert.equal((await ctx.request('GET', '/dev/otp', { token: admin.token })).status, 404);
 
-    // Explicit opt-in (DEV_OTP_PORTAL=true) for a deployment with no SMS provider yet — still admins only.
+    // The old DEV_OTP_PORTAL=true opt-in is no longer honoured in production:
+    // the page lists live OTPs, so it stays 404 for everyone (admins use the
+    // audited Security & Logs → OTP dashboard instead).
     env.otp.devPortalInProduction = true;
-    const enabled = await ctx.request('GET', '/dev/otp', { token: admin.token });
-    assert.equal(enabled.status, 200);
-    assert.equal(enabled.body.otps.find((o) => String(o.gatePassId) === id).otp, otp);
-    assert.equal((await ctx.request('GET', '/dev/otp', { token: faculty.token })).status, 403);
-    assert.equal((await ctx.request('GET', '/dev/otp', { token: studentA.token })).status, 403);
+    for (const token of [admin.token, faculty.token, studentA.token]) {
+      assert.equal((await ctx.request('GET', '/dev/otp', { token })).status, 404);
+    }
     assert.equal((await ctx.request('GET', '/dev/otp')).status, 401);
   } finally {
     env.isProd = false;

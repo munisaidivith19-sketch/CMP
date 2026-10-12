@@ -242,10 +242,12 @@ test('H10 type confusion and size limits on every field', async () => {
 });
 
 // 11
-test('H11 a parent number with no real digits is refused (it could never receive an OTP)', async () => {
-  const s = await student();
-  for (const phone of ['------', '((()))', '+ + + +', '()- -()', '12345']) {
-    assert.equal((await outing(s, valid({ parentPhone: phone }))).status, 422, phone);
+test('H11 a typed parent number (junk or real) is ignored: the pass always carries the registered number', async () => {
+  for (const phone of ['------', '12345', TYPED]) {
+    const s = await student();
+    const res = await outing(s, valid({ parentPhone: phone }));
+    assert.equal(res.status, 201, `${phone}: ${JSON.stringify(res.body)}`);
+    assert.equal((await passOf(res.body._id)).parentPhone, REGISTERED, phone);
   }
 });
 
@@ -283,21 +285,21 @@ test('H14 cross-class: another section’s faculty, another department’s facul
 });
 
 // 15
-test('H15 the typed number is frozen on the pass: changing the registered number later does not move the OTP', async () => {
+test('H15 the number on the pass is the registered one at submission, frozen: a typed number never reaches it', async () => {
   const s = await student();
   const { body: pass } = await outing(s, valid());
   await ctx.models.User.updateOne({ _id: s.u._id }, { $set: { parentPhone: '9000011111' } });
   assert.equal((await post(staff.faculty, `/gate-pass/${pass._id}/parent-otp`)).status, 200);
   const rec = await ctx.models.OutpassOtp.findOne({ gatePass: pass._id }).sort({ createdAt: -1 }).lean();
-  assert.ok(rec.parentMobileMasked.endsWith(TYPED.slice(-4)), rec.parentMobileMasked);
+  assert.ok(rec.parentMobileMasked.endsWith(REGISTERED.slice(-4)), rec.parentMobileMasked);
   // There is no endpoint for the student to change it after submitting.
   const patch = await ctx.request('PATCH', `/gate-pass/${pass._id}`, { token: s.token, body: { parentPhone: '9999999999' } });
   assert.ok([404, 405].includes(patch.status), String(patch.status));
-  assert.equal((await passOf(pass._id)).parentPhone, TYPED);
+  assert.equal((await passOf(pass._id)).parentPhone, REGISTERED);
 });
 
 // 16
-test('H16 mismatch flag is for reviewers only and never leaks the registered number', async () => {
+test('H16 mismatch flag is for reviewers only, and is false now that the typed number is ignored', async () => {
   const s = await student();
   const { body: pass } = await outing(s, valid());
   const forStudent = await ctx.request('GET', `/gate-pass/${pass._id}`, { token: s.token });
@@ -305,8 +307,8 @@ test('H16 mismatch flag is for reviewers only and never leaks the registered num
   for (const who of [staff.faculty, staff.hod, staff.principal, staff.admin]) {
     const r = await ctx.request('GET', `/gate-pass/${pass._id}`, { token: who.token });
     assert.equal(r.status, 200);
-    assert.equal(r.body.parentPhoneDiffers, true);
-    assert.ok(!JSON.stringify(r.body).includes(REGISTERED), 'registered number not exposed');
+    assert.equal(r.body.parentPhoneDiffers, false);
+    assert.ok(!JSON.stringify(r.body).includes(TYPED), 'the typed number is never stored or shown');
   }
 });
 

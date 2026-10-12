@@ -10,7 +10,9 @@ import { notifyUsers } from '../../utils/notify.js';
 import { emitTo } from '../../config/socket.js';
 import { sameId } from '../../utils/permissions.js';
 
-const PUBLIC_USER_FIELDS = 'name email role department year avatar designation';
+// No contact fields: a chapter feed or member list never hands out email
+// addresses (an alumnus's email follows their privacy settings elsewhere).
+const PUBLIC_USER_FIELDS = 'name role department year avatar designation';
 
 const CHAPTER_STAFF = ['admin', 'hod', 'principal'];
 

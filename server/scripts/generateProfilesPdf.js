@@ -1,37 +1,47 @@
+/**
+ * Generates the profiles directory PDF (it contains personal data).
+ *
+ *   node scripts/generateProfilesPdf.js [output.pdf]
+ *
+ * The file is written only to the path given on the command line, or to the
+ * OS temp directory by default — never into the repository (a path inside it
+ * is refused), so the PDF cannot end up committed. MONGO_URI selects the
+ * database (default: the local development database).
+ */
 import { writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mongoose from 'mongoose';
 import { generateProfilesPdfBuffer } from '../src/services/profilesPdfService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT_DIR = path.resolve(__dirname, '..', '..');
-const CLIENT_PUBLIC_DIR = path.resolve(ROOT_DIR, 'client', 'public');
-const ARTIFACT_DIR = path.resolve('C:\\Users\\GAUTHAM P\\.gemini\\antigravity\\brain\\06621f1c-9342-4327-a188-b135f7f803d3');
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
-async function generate() {
-  await mongoose.connect('mongodb://localhost:27017/campusconnect');
-
-  const buffer = await generateProfilesPdfBuffer();
-
-  const rootTarget = path.join(ROOT_DIR, 'CampusConnect_Profiles_Directory.pdf');
-
-  writeFileSync(rootTarget, buffer);
-  console.log('Saved to:', rootTarget);
-
-  try {
-    const artifactTarget = path.join(ARTIFACT_DIR, 'CampusConnect_Profiles_Directory.pdf');
-    writeFileSync(artifactTarget, buffer);
-    console.log('Saved to artifact:', artifactTarget);
-  } catch (err) {
-    console.warn('Could not save to artifact dir:', err.message);
+export function resolveOutputPath(arg, tmpDir = os.tmpdir()) {
+  const target = path.resolve(arg || path.join(tmpDir, `CampusConnect_Profiles_Directory_${Date.now()}.pdf`));
+  const rel = path.relative(REPO_ROOT, target);
+  if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+    throw new Error(`Refusing to write the profiles PDF inside the repository (${target}). Choose a path outside it.`);
   }
-
-  await mongoose.disconnect();
-  console.log('PDF generation complete. Size:', buffer.length, 'bytes');
+  return target;
 }
 
-generate().catch((err) => {
-  console.error('Error generating PDF:', err);
-  process.exit(1);
-});
+async function generate() {
+  const target = resolveOutputPath(process.argv[2]);
+  await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/campusconnect');
+  try {
+    const buffer = await generateProfilesPdfBuffer();
+    writeFileSync(target, buffer, { mode: 0o600 });
+    console.log('Saved to:', target, `(${buffer.length} bytes) — contains personal data; delete it when done.`);
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  generate().catch((err) => {
+    console.error('Error generating PDF:', err.message);
+    process.exit(1);
+  });
+}

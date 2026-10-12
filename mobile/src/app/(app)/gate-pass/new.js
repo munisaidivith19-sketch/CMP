@@ -21,7 +21,6 @@ function OutingForm() {
   const [create, { isLoading }] = useCreateDayScholarOutingMutation();
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
-  const [parentPhone, setParentPhone] = useState(me?.parentPhone || '');
   const [doc, setDoc] = useState(null);
   const [errors, setErrors] = useState({});
 
@@ -29,12 +28,10 @@ function OutingForm() {
     const e = {};
     if (subject.trim().length < 2) e.subject = 'At least 2 characters';
     if (description.trim().length < 5) e.description = 'At least 5 characters';
-    const digits = parentPhone.replace(/\D/g, '').length;
-    if (!/^[0-9+\-\s()]*$/.test(parentPhone) || digits < 6 || digits > 15) e.parentPhone = 'Enter a valid mobile number';
     setErrors(e);
     if (Object.keys(e).length) return;
     try {
-      await create({ subject: subject.trim(), description: description.trim(), parentPhone: parentPhone.trim(), ...(doc ? { supportingDocument: doc } : {}) }).unwrap();
+      await create({ subject: subject.trim(), description: description.trim(), ...(doc ? { supportingDocument: doc } : {}) }).unwrap();
       Alert.alert('Outing requested', 'Your class faculty has been notified.');
       router.back();
     } catch (err) {
@@ -46,7 +43,7 @@ function OutingForm() {
     <Card style={{ gap: 14 }}>
       <Input label="Subject" value={subject} onChangeText={setSubject} maxLength={120} placeholder="e.g. Doctor appointment" error={errors.subject} />
       <Input label="Description" value={description} onChangeText={setDescription} multiline maxLength={500} placeholder="Why do you need to go out today?" error={errors.description} />
-      <Input label="Parent mobile" value={parentPhone} onChangeText={setParentPhone} keyboardType="phone-pad" maxLength={20} hint="The parent verification OTP is sent to this number." error={errors.parentPhone} />
+      <Input label="Parent's mobile number (registered)" value={me?.parentPhone || 'Not on file — ask the administrator'} editable={false} hint="The parent verification OTP is sent to this registered number." />
       <AttachDocument value={doc} onChange={setDoc} />
       <T v="small">For today only. No return check-in is needed — the pass is complete once security records your exit.</T>
       <Button title="Request outing" onPress={submit} loading={isLoading} />

@@ -99,12 +99,16 @@ function Participants({ event, canMarkAttendance, isPast }) {
   const handleMark = async (userId, attended) => {
     try {
       setMarkingId(userId);
-      await mark({
-        id: eventId,
-        userId,
-        attended,
-        date: selectedDate,
-      }).unwrap();
+      const body = { id: eventId, userId, attended, date: selectedDate };
+      try {
+        await mark(body).unwrap();
+      } catch (e) {
+        // The student already has class attendance recorded for that day:
+        // the server asks before replacing it (and tells the class in-charge).
+        if (e?.status !== 409 || !e?.data?.requiresConfirmation) throw e;
+        if (!window.confirm(`${errMsg(e)}\n\nThe class in-charge will be notified.`)) return;
+        await mark({ ...body, confirmOverwrite: true }).unwrap();
+      }
       toast.success(
         attended
           ? 'Marked present (OD credit granted)'

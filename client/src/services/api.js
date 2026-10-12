@@ -2,9 +2,11 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { loggedOut, setCredentials } from '../features/authSlice';
 import { broadcastSession, markIdleLogout } from './sessionSync';
 
-function getCsrfCookie() {
+/** The double-submit CSRF token; every cookie-carrying write must echo it in X-CSRF-Token. */
+export function getCsrfCookie() {
   if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(/(^|;\s*)cc_csrf=([^;]*)/);
+  // __Host-cc_csrf in production, cc_csrf in development.
+  const match = document.cookie.match(/(^|;\s*)(?:__Host-)?cc_csrf=([^;]*)/);
   return match ? decodeURIComponent(match[2]) : null;
 }
 
@@ -188,10 +190,10 @@ export const api = createApi({
     }),
     getParticipants: b.query({ query: (id) => `/events/${id}/participants`, providesTags: ['Event'] }),
     markAttendance: b.mutation({
-      query: ({ id, userId, attended, date }) => ({
+      query: ({ id, userId, attended, date, confirmOverwrite }) => ({
         url: `/events/${id}/attendance/${userId}`,
         method: 'PATCH',
-        body: { attended, date },
+        body: { attended, date, ...(confirmOverwrite ? { confirmOverwrite: true } : {}) },
       }),
       invalidatesTags: ['Event', 'Attendance'],
     }),
@@ -416,7 +418,8 @@ export const api = createApi({
     getRoster: b.query({ query: (params) => ({ url: '/attendance/roster', params }), providesTags: ['Attendance'] }),
     markClassAttendance: b.mutation({
       query: (body) => ({ url: '/attendance/mark', method: 'POST', body }),
-      invalidatesTags: ['Attendance', 'Analytics'],
+      // Also refreshes staff attendance: taking a class marks the faculty present for the day.
+      invalidatesTags: ['Attendance', 'Analytics', 'StaffAttendance'],
     }),
     getAttendanceSessions: b.query({ query: (params) => ({ url: '/attendance/sessions', params }), providesTags: ['Attendance'] }),
     getLowAttendance: b.query({ query: (params) => ({ url: '/attendance/low', params }), providesTags: ['Attendance'] }),

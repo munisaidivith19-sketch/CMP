@@ -171,20 +171,24 @@ export const createGatePass = asyncHandler(async (req, res) => {
   }
   data.parentPhone = req.user.parentPhone;
 
-  const existing = await GatePass.exists({
-    student: req.user._id,
-    status: { $in: [...GATE_PASS_PENDING_STATUSES, 'approved', 'active'] },
-  });
-  if (existing) throw new ApiError(409, 'You already have a pending or active gate pass');
+  // "No open pass yet, so create one" runs under the per-student lock, so a
+  // double-tap or two parallel requests can never create two passes.
+  const pass = await withGatePassLock(req.user._id, async () => {
+    const existing = await GatePass.exists({
+      student: req.user._id,
+      status: { $in: [...GATE_PASS_PENDING_STATUSES, 'approved', 'active'] },
+    });
+    if (existing) throw new ApiError(409, 'You already have a pending or active gate pass');
 
-  const pass = await GatePass.create({
-    ...data,
-    destination,
-    fromDate: from,
-    toDate: to,
-    student: req.user._id,
-    department: req.user.department,
-    section: req.user.section,
+    return GatePass.create({
+      ...data,
+      destination,
+      fromDate: from,
+      toDate: to,
+      student: req.user._id,
+      department: req.user.department,
+      section: req.user.section,
+    });
   });
   logActivity(req, 'gate_pass.create', { entityType: 'gate_pass', entityId: pass._id, summary: pass.regarding });
 
@@ -211,8 +215,10 @@ export const createGatePass = asyncHandler(async (req, res) => {
 // ── Day scholar: same-day Outing ───────────────────────────────────
 
 /**
- * A day scholar's Outing: subject, description, the parent mobile they type,
- * and an optional attachment. It is for today only (the server's day — no
+ * A day scholar's Outing: subject, description and an optional attachment.
+ * The parent OTP goes to the parent number the administrator registered on
+ * the student's account — never to a number typed on the request, which would
+ * let a student send the "parent" OTP to their own or a friend's phone. It is for today only (the server's day — no
  * date is read from the request) and follows the normal approval chain:
  * Class In-Charge (parent OTP) → HOD → Principal. There is no return step:
  * the pass completes when security records the exit.
@@ -221,6 +227,9 @@ export const createDayScholarOuting = asyncHandler(async (req, res) => {
   if (req.user.stayType !== 'day_scholar') throw new ApiError(403, 'Outing passes are for day scholars only');
   if (!req.user.department || !req.user.section) {
     throw new ApiError(422, 'Your account has no department/section on file — ask an admin to set it');
+  }
+  if (!req.user.parentPhone) {
+    throw new ApiError(422, 'Your parent’s mobile number is not on file — ask the administrator to add it before requesting an outing');
   }
   const pass = await withGatePassLock(req.user._id, async () => {
     const existing = await GatePass.exists({
@@ -270,7 +279,8 @@ function createOutingPass(req) {
     regarding: 'outing',
     subject: req.body.subject,
     description: req.body.description,
-    parentPhone: req.body.parentPhone,
+    // Always the registered number; anything sent on the request is ignored.
+    parentPhone: req.user.parentPhone,
     fromDate: day,
     toDate: day,
     ...(doc.url ? { supportingDocument: doc } : {}),
@@ -299,9 +309,10 @@ async function notifyOutingFaculty(req, pass) {
 const digitsOf = (v) => String(v || '').replace(/\D/g, '');
 
 /**
- * On an Outing the student types the parent number, so reviewers are told
- * when it is not the number registered on the account (a flag only — the
- * registered number itself is not sent).
+ * Older Outings carried a parent number the student typed, so reviewers are
+ * told when a pass's number is not the one registered on the account (a flag
+ * only — the registered number itself is not sent). New Outings always use
+ * the registered number, so the flag is false for them.
  */
 async function flagOutingParent(passes, user) {
   if (STUDENT_ROLES.includes(user.role) || user.role === 'security') return passes;
@@ -336,6 +347,13 @@ export const listGatePasses = asyncHandler(async (req, res) => {
     // notification sent when a request has no in-charge to reach — they see every
     // pending request in their department instead of matching nothing at all.
     const scope = req.user.section ? { department: req.user.department, section: req.user.section } : { department: req.user.department };
+    // The section letter repeats in every year: with the in-charge year on
+    // file, only that year's class is theirs (3rd Year A never sees 1st Year A).
+    if (req.user.section && req.user.inChargeYear) {
+      scope.student = {
+        $in: await User.find({ role: { $in: STUDENT_ROLES }, department: req.user.department, section: req.user.section, year: req.user.inChargeYear }).distinct('_id'),
+      };
+    }
     filter = { $or: [{ 'facultyReview.by': req.user._id }, { status: { $in: FACULTY_STAGE }, ...scope }] };
   } else if (role === 'hod') {
     const firstYearStudents = await User.find({ year: 1, role: { $in: STUDENT_ROLES } }).distinct('_id');
@@ -399,13 +417,27 @@ export const listGatePasses = asyncHandler(async (req, res) => {
 
 // ── Get single gate pass ───────────────────────────────────────────
 
-function canView(pass, user) {
+async function canView(pass, user) {
   if (sameId(pass.student, user)) return true;
   if (['admin', 'security'].includes(user.role)) return true;
   // Emergency passes bypass faculty and HOD; they see one only once the student
   // has actually left (for "outside now" and the return notice).
   if (pass.passType === 'emergency' && ['faculty', 'hod'].includes(user.role) && !pass.actualExit) return false;
-  if (user.role === 'faculty') return pass.department === user.department && (!user.section || pass.section === user.section);
+  if (user.role === 'faculty') {
+    if (sameId(pass.facultyReview?.by, user)) return true;
+    if (pass.department !== user.department) return false;
+    // No class assigned: the department-wide fallback queue (see listGatePasses).
+    if (!user.section) return true;
+    // A class they actually handle (department + year + section + semester —
+    // the check that gates the review actions) is always theirs to open.
+    if (await isClassFaculty(pass, user)) return true;
+    // Otherwise exactly what their queue lists: their section letter, and
+    // with an in-charge year on file only that year's class (a 3rd Year A
+    // in-charge never opens a 1st Year A pass). The parent number stays
+    // masked for anyone not assigned to the class (parentPhoneGuard).
+    if (pass.section !== user.section) return false;
+    return !user.inChargeYear || pass.student?.year === user.inChargeYear;
+  }
   if (user.role === 'hod') {
     const isFirstYear = pass.student?.year === 1;
     if (isFirstYearHod(user)) return Boolean(isFirstYear);
@@ -419,7 +451,7 @@ function canView(pass, user) {
 export const getGatePass = asyncHandler(async (req, res) => {
   const pass = await populateAll(GatePass.findById(req.params.id));
   if (!pass) throw new ApiError(404, 'Gate pass not found');
-  if (!canView(pass, req.user)) throw new ApiError(403, 'Not authorized');
+  if (!(await canView(pass, req.user))) throw new ApiError(403, 'Not authorized');
   await logEmergencyViewed(req, [pass]);
   const [flagged] = await flagOutingParent([withFlags(pass)], req.user);
   res.json((await parentPhoneGuard(req.user))(flagged));
@@ -626,29 +658,31 @@ export const createEmergencyGatePass = asyncHandler(async (req, res) => {
     throw new ApiError(422, 'Your account has no department/section on file — ask an admin to set it');
   }
 
-  const existing = await GatePass.exists({ student: req.user._id, status: { $in: [...GATE_PASS_PENDING_STATUSES, 'approved', 'active'] } });
-  if (existing) throw new ApiError(409, 'You already have a pending or active gate pass');
-
   const authorityIds = await User.find({ role: authority, isActive: true }).distinct('_id');
   if (!authorityIds.length) throw new ApiError(422, `No ${AUTHORITY_LABELS[authority]} account is available right now — choose another authority`);
 
   const doc = pick(req.body.supportingDocument || {}, ['url', 'name', 'mimeType']);
   // Student identity, class and parent number come from the signed-in account, never the request.
-  const pass = await GatePass.create({
-    passType: 'emergency',
-    status: 'pending_authority',
-    emergencyAuthority: authority,
-    student: req.user._id,
-    department: req.user.department,
-    section: req.user.section,
-    parentPhone: req.user.parentPhone || undefined,
-    description: req.body.reason,
-    destination: { area: req.body.destination },
-    leaveAt,
-    expectedReturnAt,
-    fromDate: toDay(leaveAt),
-    toDate: toDay(expectedReturnAt),
-    ...(doc.url ? { supportingDocument: doc } : {}),
+  // Checked and created under the per-student lock (no duplicate on a double submit).
+  const pass = await withGatePassLock(req.user._id, async () => {
+    const existing = await GatePass.exists({ student: req.user._id, status: { $in: [...GATE_PASS_PENDING_STATUSES, 'approved', 'active'] } });
+    if (existing) throw new ApiError(409, 'You already have a pending or active gate pass');
+    return GatePass.create({
+      passType: 'emergency',
+      status: 'pending_authority',
+      emergencyAuthority: authority,
+      student: req.user._id,
+      department: req.user.department,
+      section: req.user.section,
+      parentPhone: req.user.parentPhone || undefined,
+      description: req.body.reason,
+      destination: { area: req.body.destination },
+      leaveAt,
+      expectedReturnAt,
+      fromDate: toDay(leaveAt),
+      toDate: toDay(expectedReturnAt),
+      ...(doc.url ? { supportingDocument: doc } : {}),
+    });
   });
   logActivity(req, 'gate_pass.emergency_create', { entityType: 'gate_pass', entityId: pass._id, summary: `Sent to ${AUTHORITY_LABELS[authority]}` });
 
@@ -945,7 +979,7 @@ export const verifyReturnLocation = asyncHandler(async (req, res) => {
     throw new ApiError(422, NOT_OUTSIDE[pass.status] || (pass.status.startsWith('pending') || pass.status === 'parent_verified' ? 'This gate pass has not been approved yet' : `This gate pass is ${pass.status}`));
   }
 
-  const reading = pick(req.body, ['latitude', 'longitude', 'accuracy', 'timestamp']);
+  const reading = pick(req.body, ['latitude', 'longitude', 'accuracy', 'timestamp', 'sentAt']);
   const { distance, reason } = returnSvc.evaluateLocation(reading);
   const now = new Date();
   await ReturnLocationCheck.create({
@@ -1345,15 +1379,23 @@ export const massApproveGatePass = asyncHandler(async (req, res) => {
   const excludedSet = new Set(activeOrApprovedStudentIds.map(String));
 
   // Eligible hostellers: active hostellers currently inside campus with no active/approved pass
-  const eligibleHostellers = hostellers.filter((h) => !excludedSet.has(String(h._id)));
+  const withoutPass = hostellers.filter((h) => !excludedSet.has(String(h._id)));
+  // A pass carries the registered parent number (exit / return SMS go to it).
+  // Never invent one: a student with no parent number on file is skipped and
+  // reported, so their exit notice can never reach a stranger's phone.
+  const eligibleHostellers = withoutPass.filter((h) => String(h.parentPhone || '').trim());
+  const missingParentPhone = withoutPass.length - eligibleHostellers.length;
 
   if (!eligibleHostellers.length) {
     return res.json({
       success: true,
-      message: 'All hostellers already have an active or approved gate pass',
+      message: missingParentPhone
+        ? `No passes issued: ${missingParentPhone} hosteller(s) have no parent mobile number on file`
+        : 'All hostellers already have an active or approved gate pass',
       count: 0,
       totalHostelers: hostellers.length,
       skippedCount: hostellers.length,
+      missingParentPhone,
     });
   }
 
@@ -1391,7 +1433,7 @@ export const massApproveGatePass = asyncHandler(async (req, res) => {
     description: description.trim(),
     fromDate: from,
     toDate: to,
-    parentPhone: student.parentPhone || '9876543210',
+    parentPhone: student.parentPhone,
     destination,
     status: 'approved',
     principalReview: {
@@ -1426,10 +1468,11 @@ export const massApproveGatePass = asyncHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: `Successfully issued ${inserted.length} institutional mass outpass(es)`,
+    message: `Successfully issued ${inserted.length} institutional mass outpass(es)${missingParentPhone ? ` · ${missingParentPhone} skipped (no parent mobile number on file)` : ''}`,
     count: inserted.length,
     totalHostelers: hostellers.length,
     skippedCount: hostellers.length - inserted.length,
+    missingParentPhone,
   });
 });
 

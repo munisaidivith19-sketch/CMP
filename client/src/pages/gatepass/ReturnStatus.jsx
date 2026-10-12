@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, LocateFixed, QrCode } from 'lucide-react';
 import { useGetReturnCredentialQuery, useVerifyReturnLocationMutation } from '../../services/api';
 import { Button, Skeleton } from '../../components/ui/primitives';
-import { errMsg } from '../../utils/format';
-
-const SAMPLE_MS = 12000; // keep listening this long for a precise fix
-const GOOD_ENOUGH_M = 20; // stop early once the fix is this precise
+import { locationProblem, permissionState, preflight, readFreshFix, readingBody, verifyProblem } from '../../utils/returnLocation';
 
 function useNow(active) {
   const [now, setNow] = useState(() => Date.now());
@@ -18,44 +15,6 @@ function useNow(active) {
   return now;
 }
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-
-/** The student's own device accuracy on a "not accurate enough" rejection — never the campus distance. */
-const accuracyHint = (e, fix) =>
-  e?.data?.errors?.[0]?.code === 'low_accuracy' && fix
-    ? ` This device's location is accurate to about ±${Math.round(fix.coords.accuracy)} m right now — laptops and phones without GPS are often too imprecise indoors; try the Vexon app on your phone with GPS on.`
-    : '';
-
-const PERMISSION_TEXT = 'Location permission is required to verify your return to campus. Allow location for this site in your browser settings, then try again.';
-
-/**
- * Fresh high-accuracy fixes for a few seconds, keeping the most precise one —
- * never a cached position. Resolves null on timeout with no fix; rejects with
- * the browser's GeolocationPositionError otherwise. Stops listening before it returns.
- */
-function bestFreshFix(signal) {
-  return new Promise((resolve, reject) => {
-    let best = null;
-    let watchId;
-    let timer;
-    const finish = (err) => {
-      navigator.geolocation.clearWatch(watchId);
-      clearTimeout(timer);
-      if (best) resolve(best);
-      else if (err) reject(err);
-      else resolve(null);
-    };
-    watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos;
-        if (pos.coords.accuracy <= GOOD_ENOUGH_M) finish();
-      },
-      (err) => finish(err),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: SAMPLE_MS }
-    );
-    timer = setTimeout(() => finish(), SAMPLE_MS);
-    signal?.addEventListener('abort', () => finish());
-  });
-}
 
 /**
  * Student's pass while outside campus. One tap reads the browser's location
@@ -70,40 +29,43 @@ export function ReturnStatus({ pass }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
   const abort = useRef(null);
+  const inFlight = useRef(false);
   const now = useNow(Boolean(data));
   const left = data ? Math.max(0, Math.ceil((new Date(data.expiresAt).getTime() - now) / 1000)) : 0;
 
   useEffect(() => () => abort.current?.abort(), []);
 
   const checkLocation = async () => {
+    if (inFlight.current) return; // one check at a time
     setProblem('');
-    if (!('geolocation' in navigator) || !window.isSecureContext) {
-      setProblem('This browser cannot share its location here. Open Vexon over HTTPS in a browser that supports location, or use the Vexon app.');
+    const blocked = preflight(window);
+    if (blocked) {
+      setProblem(locationProblem(blocked));
       return;
     }
+    inFlight.current = true;
     setBusy(true);
-    abort.current = new AbortController();
+    const controller = new AbortController();
+    abort.current = controller;
     let fix = null;
     try {
-      fix = await bestFreshFix(abort.current.signal);
-      if (!fix) {
-        setProblem('Could not get your location. Turn on location (GPS) and try again.');
+      const permissionBefore = await permissionState(navigator);
+      try {
+        fix = await readFreshFix(navigator.geolocation, { signal: controller.signal });
+      } catch (e) {
+        if (e?.kind !== 'aborted') setProblem(locationProblem(e?.kind, permissionBefore));
         return;
       }
-      await verify({
-        id: pass._id,
-        latitude: fix.coords.latitude,
-        longitude: fix.coords.longitude,
-        accuracy: fix.coords.accuracy,
-        timestamp: fix.timestamp,
-      }).unwrap();
-      setShowQr(false);
-    } catch (e) {
-      if (e?.code === 1) setProblem(PERMISSION_TEXT); // GeolocationPositionError.PERMISSION_DENIED
-      else if (e?.code === 2 || e?.code === 3) setProblem('Could not get your location. Turn on location (GPS) and try again.');
-      else setProblem(errMsg(e, 'Could not verify your location. Please try again.') + accuracyHint(e, fix));
+      if (controller.signal.aborted) return;
+      try {
+        await verify({ id: pass._id, ...readingBody(fix) }).unwrap();
+        setShowQr(false);
+      } catch (e) {
+        if (!controller.signal.aborted) setProblem(verifyProblem(e, fix));
+      }
     } finally {
-      setBusy(false);
+      inFlight.current = false;
+      if (!controller.signal.aborted) setBusy(false);
     }
   };
 
@@ -122,7 +84,7 @@ export function ReturnStatus({ pass }) {
           </p>
         )}
         <Button icon={LocateFixed} loading={busy} onClick={checkLocation} className="w-full sm:w-auto">
-          {busy ? 'Finding your location…' : 'Verify my location'}
+          {busy ? 'Finding your location…' : problem ? 'Try again' : 'Verify my location'}
         </Button>
       </div>
     );

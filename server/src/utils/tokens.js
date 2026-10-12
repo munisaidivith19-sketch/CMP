@@ -2,7 +2,20 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 
-export const REFRESH_COOKIE = 'cc_refresh';
+/**
+ * The refresh cookie. In production it carries the __Secure- prefix, so a
+ * browser only accepts it over HTTPS with the Secure flag (it cannot be
+ * planted or overwritten from plain HTTP or a sibling subdomain). Path stays
+ * /api/auth: the token is sent to the auth endpoints only. Development keeps
+ * the plain name (no HTTPS on localhost).
+ */
+export const refreshCookieName = () => (env.isProd ? '__Secure-cc_refresh' : 'cc_refresh');
+
+/** The refresh token a browser sent (the one place the cookie is read). */
+export const readRefreshCookie = (req) => {
+  const v = req.cookies?.[refreshCookieName()];
+  return typeof v === 'string' && v ? v : null;
+};
 const REFRESH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const newJti = () => crypto.randomBytes(18).toString('base64url');
@@ -26,7 +39,7 @@ export const verifyRefreshToken = (token) => jwt.verify(token, env.refreshSecret
 export const refreshExpiry = () => new Date(Date.now() + REFRESH_MAX_AGE_MS);
 
 export function setRefreshCookie(res, token) {
-  res.cookie(REFRESH_COOKIE, token, {
+  res.cookie(refreshCookieName(), token, {
     httpOnly: true,
     secure: env.isProd,
     sameSite: 'strict',
@@ -36,7 +49,7 @@ export function setRefreshCookie(res, token) {
 }
 
 export function clearRefreshCookie(res) {
-  res.clearCookie(REFRESH_COOKIE, { httpOnly: true, secure: env.isProd, sameSite: 'strict', path: '/api/auth' });
+  res.clearCookie(refreshCookieName(), { httpOnly: true, secure: env.isProd, sameSite: 'strict', path: '/api/auth' });
 }
 
 /**

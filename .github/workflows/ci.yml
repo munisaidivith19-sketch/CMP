@@ -1,0 +1,69 @@
+name: CI
+
+# On every pull request (and pushes to main): dependency audit, the server
+# test suite against a throw-away MongoDB, the web build, and the bundle
+# secret scan. No secrets are needed — the tests generate their own.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: npm audit (high+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Audit server dependencies
+        run: npm audit --audit-level=high --omit=dev
+        working-directory: server
+      - name: Audit client dependencies
+        run: npm audit --audit-level=high --omit=dev
+        working-directory: client
+
+  test:
+    name: Server tests + client build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_MONGO_URI: mongodb://127.0.0.1:27017/cmp_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm test
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - run: npm run build
+        working-directory: client
+      - name: Scan the built bundle for secrets
+        run: node scripts/verify-bundle.mjs client/dist

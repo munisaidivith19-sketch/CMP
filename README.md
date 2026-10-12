@@ -5,29 +5,10 @@ A full-stack **MERN** platform (MongoDB · Express · React · Node.js) that bri
 
 The UI is a **glassmorphism** take on a modern education admin dashboard. It uses frosted-glass cards, soft gradient backdrops, rounded 28–32 px corners, smooth easing, animated pill buttons and a light and dark theme.
 
-| Dark mode | Analytics |
-|---|---|
-| ![Dark](docs/screenshots/dashboard-dark.png) | ![Analytics](docs/screenshots/analytics.png) |
+| Dark mode | Analytics | Mobile app |
+|---|---|---|
+| ![Dark mode](docs/screenshots/dashboard-dark.png) | ![Analytics](docs/screenshots/analytics.png) | ![Mobile app](docs/screenshots/mobileui.png) |
 
-
-
-
-
-|MOBILE APP UI |
-
-|---|---|
-
-| ![MOBIILE UI](docs/screenshots/mobileui.png) | 
-
-
-
-
-
-
-
-
-
-|---|---|
 ---
 
 ## 1. Quick start (local MongoDB Community Server)
@@ -217,7 +198,7 @@ All routes are prefixed with `/api`. Every route except register, login, refresh
 |---|---|---|---|
 | **Chat**: private + group chats, live delivery, typing, online/last seen, read receipts, unread counts, reply, delete, search | `/chat` | Chat tab | `/api/chat/*` + Socket.io |
 | **Attendance**: student view (overall = Σ present ÷ Σ conducted, subject-wise, daily/weekly/monthly trend, history, correction requests, low-attendance warning); faculty console (roster from timetable, mark/edit within 7 days, history, low attendance, corrections, class overview) | `/attendance` | Attendance (student view) | `/api/attendance/*` |
-| **Smart timetable**: today/next class, week grid, staff lookup by section, admin CRUD with section/faculty/room clash checks | `/timetable`, `/admin/academics` | Timetable | `/api/timetable`, `/api/subjects` |
+| **Smart timetable**: today/next class, week grid, staff lookup by section, Master Timetable and Faculty Availability for HODs, **HOD Edit Timetable** (see below), admin CRUD with section/faculty/room clash checks | `/timetable`, `/admin/academics` | Timetable | `/api/timetable`, `/api/subjects` |
 | **Digital gate pass**: request, cancel, approve/reject, owner-only QR (opaque 60-bit code, no student data), verify → exit → return (single use), expiry sweep, revoke, overdue tracking | `/gate-pass` | Gate pass (request + QR) | `/api/gate-pass/*` |
 | **Lost & found**: report with photo, search/filters, possible-match suggestions (never an ownership claim), staff linking/handover, owner close/withdraw | `/lost-found` | Lost & found | `/api/lost-found/*` |
 | **Advanced analytics** (day/week/month/semester/custom): student, faculty classes, department/section, college, club, gate | `/analytics`, club “Insights” tab | Home tiles | `/api/analytics/*` |
@@ -225,6 +206,38 @@ All routes are prefixed with `/api`. Every route except register, login, refresh
 | **Account security**: change password, authorized password reset by the Class In-Charge (own students) or Admin, per-device sessions, sign out one/other devices, login history (incl. failures), new-device alerts | `/settings/security`, `/class/students`, `/admin/users` | Login, Security | `/api/auth/*`, `/api/users/:id/reset-password` |
 
 Students are placed in a class by an admin (**User management → click the department cell** to set department, year, section, semester, roll no). Subjects and timetables are managed at **Administration → Academics**.
+
+### Timetable editing (HOD)
+HOD → **Timetable** → **Edit Timetable**:
+
+1. Choose **Year**, **Section** and **Semester**. The **Department** is always the HOD's own assigned department; it is shown but cannot be changed.
+   - A branch HOD can choose **2nd–4th year** only.
+   - The **Science & Humanities HOD** owns 1st year for every branch, so they choose the **Department** instead and the year is fixed to **1st Year**.
+2. The class's weekly grid opens. Add, edit or delete periods and breaks with the **+** buttons in empty cells, **Add period**, or the pencil and bin icons on each slot.
+
+The server enforces the same scope on every read and write (`server/src/controllers/timetableController.js`). Sending another department, another HOD's slot id or a 1st-year class (for a branch HOD) is refused, whatever the browser sends.
+
+### Period numbering — breaks are not periods
+- Only classes are periods: **P1, P2, P3…** in time order. A break (lunch, recess) is shown by its name only and never takes a period number. A class after a break continues the count, so the day reads P1 P2 P3 [Lunch] P4 P5.
+- When a class is added, its period number is suggested from the start time. The server rejects a duplicate number on the same day, or a number out of time order.
+- A genuine free period keeps its gap: if a class has no P2 on a day, its P3 stays P3.
+- Internally a break is stored under a spare, hidden key (12, 11, …) to satisfy the timetable's unique index. That number is never shown.
+- **Old data:** class days saved while a break still took a number (P1 P2 P3 [Break P4] P5) are renumbered to P1 P2 P3 [Break] P4. This runs automatically when the server starts and is safe to repeat. To run it by hand:
+  ```bash
+  npm run migrate:break-periods --prefix server              # dry run: shows what would change
+  npm run migrate:break-periods --prefix server -- --apply   # writes the changes
+  ```
+  Attendance already taken is not touched. Each class session keeps the period number it was held under.
+
+Rules: `server/src/services/timetablePeriods.js`.
+
+### Faculty attendance from class attendance
+- The first time a faculty member takes attendance in **their own scheduled class today**, they are marked **present for the whole day**. Later periods that day change nothing. An HOD who teaches their own period is covered too.
+- The faculty member sees *"You are marked present for today"*. On the HOD's faculty attendance screen the row reads *"Auto-marked present · took attendance in P1 (CS501 · A)"*.
+- It **never overwrites** a status an HOD or admin has already recorded (present, absent or leave). The HOD can still change an automatic mark, which then counts as a manual one.
+- Nobody is auto-marked when an admin corrects someone else's class, when an HOD edits another faculty member's class, or when attendance is entered for a past date.
+
+Rules: `server/src/services/facultyPresence.js`. The record carries `source: 'auto' | 'manual'` (`server/src/models/FacultyAttendance.js`).
 
 ### Web idle-session timeout
 Web sessions end after **2 minutes without user activity** (pointer, key, scroll, touch). The browser reports activity to `POST /api/auth/activity` at most every 30 s; the **server is the authority** (the same check runs in the REST middleware, the Socket.IO handshake and the refresh endpoint, and a 30 s sweep disconnects idle sockets). Ordinary API calls, polling and token refresh never extend a session. Logging out or timing out in one tab signs out every tab (`client/src/services/sessionSync.js`). Chairman, security, admin and principal web sessions, and all mobile sessions, keep the previous 7-day idle rule. The rule lives in `server/src/utils/sessionIdle.js`.
@@ -289,7 +302,7 @@ Reliability on mobile networks: every request has a 20 s timeout, reads retry au
 
 ### Tests
 ```bash
-npm test --prefix server                     # integration + security tests (346 at last run; uses the separate cmp_test database)
+npm test --prefix server                     # integration + security tests (637 at last run; uses the separate cmp_test database)
 npm test --prefix client                     # client unit tests (idle-session tracker)
 node server/scripts/realtime-smoke.mjs       # against a RUNNING server: web ↔ Android chat round-trip
 ```

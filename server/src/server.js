@@ -7,6 +7,7 @@ import { expireGatePasses } from './controllers/gatePassController.js';
 import { startGatePassCodeQueue } from './services/gatePassCodeQueue.js';
 import { startKeepAlive } from './utils/keepAlive.js';
 import { syncSubjects } from './utils/syncSubjects.js';
+import { normaliseBreakPeriods } from './services/timetablePeriods.js';
 import { startAlumniSchedulers } from './utils/alumniSchedulers.js';
 import { startIdleSessionSweeper } from './utils/sessionIdle.js';
 
@@ -16,6 +17,11 @@ async function start() {
   await syncSubjects()
     .then((n) => n && console.log(`[subjects] added ${n} subject(s) from data/timetableData.js`))
     .catch((err) => console.error('[subjects] sync failed:', err.message));
+  // Breaks are not periods: renumber any class day saved while a break still
+  // took a period number (P1 P2 P3 [Break P4] P5 → … [Break] P4). Idempotent.
+  await normaliseBreakPeriods({ log: console.log })
+    .then(({ days }) => days && console.log(`[timetable] renumbered periods on ${days} class day(s)`))
+    .catch((err) => console.error('[timetable] period renumbering failed:', err.message));
   const app = createApp();
   const server = http.createServer(app);
   initSocket(server);

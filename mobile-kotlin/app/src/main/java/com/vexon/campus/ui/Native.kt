@@ -10,11 +10,17 @@ import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.location.Location
 import android.net.Uri
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.Build
+import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -68,17 +74,29 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.common.api.ResolvableApiException
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
 import com.google.android.gms.location.Priority
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.vexon.campus.core.Fix
+import com.vexon.campus.core.FixSampler
 import com.vexon.campus.core.GateQr
+import com.vexon.campus.core.LocationRead
+import com.vexon.campus.core.ReturnLocation
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 
@@ -255,50 +273,149 @@ private fun CameraPreview(onCode: (String) -> Unit, onError: () -> Unit) {
 
 /* ── Location (return-to-campus check) ──────────────────────────── */
 
-data class Fix(val latitude: Double, val longitude: Double, val accuracy: Float, val timestamp: Long, val mocked: Boolean)
+/** Monotonic fix time; falls back to the wall-clock fix time when a provider leaves it unset. */
+private fun Location.elapsedMs(): Long =
+    if (elapsedRealtimeNanos > 0) elapsedRealtimeNanos / 1_000_000
+    else SystemClock.elapsedRealtime() - (System.currentTimeMillis() - time)
 
 private fun Location.toFix() = Fix(
-    latitude, longitude, if (hasAccuracy()) accuracy else 9999f, time,
+    latitude, longitude, if (hasAccuracy()) accuracy else Float.NaN, elapsedMs(),
     if (Build.VERSION.SDK_INT >= 31) isMock else @Suppress("DEPRECATION") isFromMockProvider,
 )
 
+fun hasPreciseLocation(context: Context) =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+fun hasAnyLocation(context: Context) = hasPreciseLocation(context) ||
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+private fun hasPlayServices(context: Context) =
+    runCatching { GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS }.getOrDefault(false)
+
+fun isLocationOn(context: Context): Boolean {
+    val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
+    return LocationManagerCompat.isLocationEnabled(lm)
+}
+
+fun openLocationSettings(context: Context) {
+    runCatching { context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        .onFailure { openAppSettings(context) }
+}
+
+private fun highAccuracyRequest(sampleMs: Long) =
+    LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000)
+        .setMinUpdateIntervalMillis(500)
+        .setMaxUpdateAgeMillis(0) // never a cached position
+        .setDurationMillis(sampleMs + 2_000) // the OS stops it even if we were never called back
+        .build()
+
 /**
- * Fresh high-accuracy fixes for a few seconds, keeping the most precise one —
- * never a cached last-known position. Stops listening as soon as it returns.
+ * When Play services can fix the device's location settings with its in-app
+ * dialog (Location off, or Google Location Accuracy off on phones like Redmi /
+ * MIUI that then fall back to slow GPS-only fixes), the request to launch;
+ * null when settings are already fine or cannot be fixed in-app.
  */
-@SuppressLint("MissingPermission")
-suspend fun bestFreshFix(context: Context, sampleMs: Long = 12_000, goodEnoughM: Float = 20f): Fix? {
-    val client = LocationServices.getFusedLocationProviderClient(context)
-    return suspendCancellableCoroutine { cont ->
-        var best: Fix? = null
+suspend fun locationSettingsResolution(context: Context): IntentSenderRequest? {
+    if (!hasPlayServices(context)) return null
+    return try {
+        LocationServices.getSettingsClient(context)
+            .checkLocationSettings(LocationSettingsRequest.Builder().addLocationRequest(highAccuracyRequest(ReturnLocation.SAMPLE_MS)).setAlwaysShow(true).build())
+            .await()
+        null
+    } catch (e: ResolvableApiException) {
+        IntentSenderRequest.Builder(e.resolution).build()
+    } catch (e: Exception) {
+        null // not resolvable here: reading the location reports what is wrong
+    }
+}
+
+/**
+ * Fresh high-accuracy fixes for up to [sampleMs], keeping the most precise one
+ * that is still fresh — never a cached last-known position. Uses Play services'
+ * fused provider, or the platform GPS / network providers on devices without
+ * it. Every failure is reported as its own [LocationRead]; listening always
+ * stops before this returns or when the caller is cancelled.
+ */
+suspend fun readFreshLocation(context: Context, sampleMs: Long = ReturnLocation.SAMPLE_MS): LocationRead {
+    if (!hasAnyLocation(context)) return LocationRead.PermissionDenied
+    if (!isLocationOn(context)) return LocationRead.ServicesOff
+    return if (hasPlayServices(context)) fusedRead(context, sampleMs) else platformRead(context, sampleMs)
+}
+
+/**
+ * Runs [start] — which begins listening and returns how to stop — and settles
+ * exactly once, on the main thread: when a reading is good enough, when
+ * [sampleMs] runs out, on a provider failure, or on cancellation.
+ */
+private suspend fun listen(
+    sampleMs: Long,
+    start: (offer: (Location) -> Unit, fail: (LocationRead) -> Unit) -> (() -> Unit),
+): LocationRead = withContext(Dispatchers.Main) {
+    suspendCancellableCoroutine { cont ->
+        val sampler = FixSampler()
+        val handler = Handler(Looper.getMainLooper())
+        var stop: (() -> Unit)? = null
         var finished = false
-        lateinit var callback: LocationCallback
-        val handler = android.os.Handler(Looper.getMainLooper())
-        fun finish() {
+        fun finish(failure: LocationRead? = null) {
             if (finished) return
             finished = true
-            client.removeLocationUpdates(callback)
             handler.removeCallbacksAndMessages(null)
-            if (cont.isActive) cont.resume(best)
+            runCatching { stop?.invoke() }
+            if (cont.isActive) cont.resume(failure ?: sampler.result(SystemClock.elapsedRealtime()))
         }
-        callback = object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                result.locations.forEach { loc ->
-                    val fix = loc.toFix()
-                    if (fix.accuracy < (best?.accuracy ?: Float.POSITIVE_INFINITY)) best = fix
-                    if (fix.accuracy <= goodEnoughM) finish()
-                }
-            }
+        val offer: (Location) -> Unit = { loc ->
+            if (!finished && sampler.offer(loc.toFix(), SystemClock.elapsedRealtime())) finish()
         }
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000).setMinUpdateIntervalMillis(500).setMaxUpdateAgeMillis(0).build()
+        handler.postDelayed({ finish() }, sampleMs)
         try {
-            client.requestLocationUpdates(request, callback, Looper.getMainLooper())
-            handler.postDelayed({ finish() }, sampleMs)
+            stop = start(offer) { failure -> handler.post { finish(failure) } }
+            if (finished) runCatching { stop?.invoke() } // settled before `stop` was known
+        } catch (e: SecurityException) {
+            finish(LocationRead.PermissionDenied)
         } catch (e: Exception) {
-            finished = true
-            if (cont.isActive) cont.resume(null)
+            finish(LocationRead.Unavailable)
         }
-        cont.invokeOnCancellation { if (!finished) { finished = true; client.removeLocationUpdates(callback); handler.removeCallbacksAndMessages(null) } }
+        // Cancellation (screen left) can come from any thread: stop on the main thread.
+        cont.invokeOnCancellation { handler.post { finish() } }
+    }
+}
+
+@SuppressLint("MissingPermission")
+private suspend fun fusedRead(context: Context, sampleMs: Long): LocationRead {
+    val client = LocationServices.getFusedLocationProviderClient(context)
+    return listen(sampleMs) { offer, fail ->
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) = result.locations.forEach(offer)
+        }
+        client.requestLocationUpdates(highAccuracyRequest(sampleMs), callback, Looper.getMainLooper())
+            // The request is asynchronous: its failure arrives here, never as an exception.
+            .addOnFailureListener { e -> fail(if (e is SecurityException) LocationRead.PermissionDenied else LocationRead.Unavailable) }
+        val stop: () -> Unit = { client.removeLocationUpdates(callback) }
+        stop
+    }
+}
+
+@SuppressLint("MissingPermission")
+private suspend fun platformRead(context: Context, sampleMs: Long): LocationRead {
+    val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return LocationRead.Unavailable
+    // GPS needs precise permission; the network provider works with approximate.
+    val providers = buildList {
+        if (hasPreciseLocation(context) && lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) add(LocationManager.GPS_PROVIDER)
+        if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) add(LocationManager.NETWORK_PROVIDER)
+    }
+    if (providers.isEmpty()) return LocationRead.Unavailable
+    return listen(sampleMs) { offer, _ ->
+        // Every method implemented: before Android 11 the platform calls them all and has no defaults.
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) = offer(location)
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+            @Suppress("OVERRIDE_DEPRECATION")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+        }
+        providers.forEach { lm.requestLocationUpdates(it, 500L, 0f, listener, Looper.getMainLooper()) }
+        val stop: () -> Unit = { lm.removeUpdates(listener) }
+        stop
     }
 }
 

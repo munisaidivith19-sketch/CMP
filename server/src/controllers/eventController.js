@@ -407,10 +407,52 @@ export const markAttendance = asyncHandler(async (req, res) => {
   const evStartDay = toDay(event.startDate);
   const evEndDay = toDay(event.endDate);
 
-  let studentDay = targetDay;
   if (targetDay < evStartDay || targetDay > evEndDay) {
     targetDateStr = targetDay < evStartDay ? dayKey(evStartDay) : dayKey(evEndDay);
-    studentDay = toDay(targetDateStr);
+  }
+  const studentDay = toDay(targetDateStr);
+
+  // The academic side of this mark: that day's timetabled classes for the
+  // student, and any attendance already recorded for them.
+  const student = await User.findById(req.params.userId).select('name rollNo department year section email').lean();
+  const targetStatus = attended ? 'od' : 'absent';
+  let scheduledSlots = [];
+  let existingRecords = [];
+  if (student) {
+    const studentSection = String(student.section || '').trim().toUpperCase();
+    scheduledSlots = await TimetableSlot.find({
+      department: student.department,
+      isActive: true,
+      isBreak: { $ne: true },
+      dayOfWeek: weekdayOf(studentDay),
+      ...(studentSection ? { section: studentSection } : {}),
+      ...(student.year ? { year: student.year } : {}),
+    }).lean();
+    const periods = scheduledSlots.map((s) => s.period);
+    existingRecords = await AttendanceRecord.find({
+      student: student._id,
+      date: studentDay,
+      ...(periods.length > 0 ? { period: { $in: periods } } : {}),
+    });
+  }
+
+  // An event coordinator is not the class's teacher: replacing attendance a
+  // period teacher (or anyone else) already recorded needs an explicit
+  // confirmation, so one mis-tap can never silently rewrite a student's whole
+  // academic day. Records already at the target status, or written by this
+  // same coordinator, are not an overwrite.
+  const overwritten = existingRecords.filter((r) => r.status !== targetStatus && !sameId(r.markedBy, req.user));
+  if (overwritten.length && req.body.confirmOverwrite !== true) {
+    throw new ApiError(
+      409,
+      `${student.name} already has attendance recorded for ${overwritten.length} class period(s) on ${targetDateStr}. Confirm to replace it with ${attended ? 'On Duty' : 'Absent'}.`,
+      null,
+      {
+        requiresConfirmation: true,
+        date: targetDateStr,
+        periods: overwritten.map((r) => ({ period: r.period, status: r.status })).sort((a, b) => a.period - b.period),
+      }
+    );
   }
 
   if (!reg.attendanceDays) reg.attendanceDays = [];
@@ -442,27 +484,27 @@ export const markAttendance = asyncHandler(async (req, res) => {
   reg.status = hasAttendedAny ? 'attended' : 'registered';
   await event.save();
 
-  const student = await User.findById(req.params.userId).select('name rollNo department year section email').lean();
-
   if (student) {
-    const studentDay = toDay(targetDateStr);
-    const dayOfWeek = weekdayOf(studentDay);
-    const studentSection = String(student.section || '').trim().toUpperCase();
+    const reason = attended ? `Attended event: ${event.title}` : `Did not attend registered event: ${event.title}`;
 
-    const scheduledSlots = await TimetableSlot.find({
-      department: student.department,
-      isActive: true,
-      isBreak: { $ne: true },
-      dayOfWeek,
-      ...(studentSection ? { section: studentSection } : {}),
-      ...(student.year ? { year: student.year } : {}),
-    }).lean();
+    // Existing records change in place with a history entry (who, from, to,
+    // why), so the class in-charge and period teachers can see and undo it.
+    for (const rec of existingRecords) {
+      if (rec.status === targetStatus) continue;
+      const prevStatus = rec.status;
+      rec.status = targetStatus;
+      rec.markedBy = req.user._id;
+      rec.markedAt = new Date();
+      rec.correctionReason = reason;
+      rec.history.push({ from: prevStatus, to: targetStatus, by: req.user._id, at: new Date(), reason });
+      await rec.save();
+    }
 
-    const periods = scheduledSlots.map((s) => s.period);
-
-    if (attended) {
-      if (scheduledSlots.length > 0) {
-        const ops = scheduledSlots.map((slot) => ({
+    const recordedPeriods = new Set(existingRecords.map((r) => r.period));
+    const missingSlots = scheduledSlots.filter((s) => !recordedPeriods.has(s.period));
+    if (missingSlots.length > 0) {
+      await AttendanceRecord.bulkWrite(
+        missingSlots.map((slot) => ({
           updateOne: {
             filter: { student: student._id, subject: slot.subject, date: studentDay, period: slot.period },
             update: {
@@ -474,90 +516,44 @@ export const markAttendance = asyncHandler(async (req, res) => {
                 department: student.department,
                 section: student.section,
               },
-              $set: {
-                status: 'od',
-                markedBy: req.user._id,
-                markedAt: new Date(),
-                correctionReason: `Attended event: ${event.title}`,
-              },
+              $set: { status: targetStatus, markedBy: req.user._id, markedAt: new Date(), correctionReason: reason },
             },
             upsert: true,
           },
-        }));
-        await AttendanceRecord.bulkWrite(ops);
-      }
+        }))
+      );
+    }
 
+    const cic = await User.findOne({
+      role: 'faculty',
+      department: student.department,
+      section: student.section,
+      inChargeYear: student.year,
+      isActive: true,
+    }).select('_id name');
+
+    if (attended) {
       await notifyUsers([student._id], {
         type: 'attendance',
         title: 'Event Attendance Marked: Present',
         message: `You have been marked present (On Duty) for "${event.title}" on ${targetDateStr} by ${req.user.name}.`,
         link: '/attendance',
       });
-    } else {
-      const existingRecords = await AttendanceRecord.find({
-        student: student._id,
-        date: studentDay,
-        ...(periods.length > 0 ? { period: { $in: periods } } : {}),
-      });
-
-      for (const rec of existingRecords) {
-        const prevStatus = rec.status;
-        rec.status = 'absent';
-        rec.markedBy = req.user._id;
-        rec.markedAt = new Date();
-        rec.history.push({
-          from: prevStatus,
-          to: 'absent',
-          by: req.user._id,
-          at: new Date(),
-          reason: `Did not attend registered event: ${event.title}`,
+      // A confirmed overwrite of recorded attendance is always reported to the class in-charge.
+      if (cic && overwritten.length) {
+        await notifyUsers([cic._id], {
+          type: 'attendance',
+          title: `Event Attendance Override: ${student.name}`,
+          message: `${req.user.name} replaced ${overwritten.length} recorded class period(s) of ${student.name} (${student.rollNo || student.department}) on ${targetDateStr} with On Duty for event "${event.title}".`,
+          link: '/attendance',
         });
-        await rec.save();
       }
-
-      if (periods.length > 0) {
-        const recordedPeriods = new Set(existingRecords.map((r) => r.period));
-        const missingSlots = scheduledSlots.filter((s) => !recordedPeriods.has(s.period));
-        if (missingSlots.length > 0) {
-          const ops = missingSlots.map((slot) => ({
-            updateOne: {
-              filter: { student: student._id, subject: slot.subject, date: studentDay, period: slot.period },
-              update: {
-                $setOnInsert: {
-                  student: student._id,
-                  subject: slot.subject,
-                  date: studentDay,
-                  period: slot.period,
-                  department: student.department,
-                  section: student.section,
-                },
-                $set: {
-                  status: 'absent',
-                  markedBy: req.user._id,
-                  markedAt: new Date(),
-                  correctionReason: `Did not attend registered event: ${event.title}`,
-                },
-              },
-              upsert: true,
-            },
-          }));
-          await AttendanceRecord.bulkWrite(ops);
-        }
-      }
-
-      const cic = await User.findOne({
-        role: 'faculty',
-        department: student.department,
-        section: student.section,
-        inChargeYear: student.year,
-        isActive: true,
-      }).select('_id name');
-
+    } else {
       if (cic) {
         await notifyUsers([cic._id], {
           type: 'attendance',
           title: `Event Absence Alert: ${student.name}`,
-          message: `${student.name} (${student.rollNo || student.department}) did not attend registered event "${event.title}" on ${targetDateStr}. Academic attendance has been marked absent.`,
+          message: `${student.name} (${student.rollNo || student.department}) did not attend registered event "${event.title}" on ${targetDateStr}. Academic attendance has been marked absent${overwritten.length ? ` (${overwritten.length} recorded period(s) replaced by ${req.user.name})` : ''}.`,
           link: '/attendance',
         });
       }
@@ -574,7 +570,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
   logActivity(req, 'event.attendance', {
     entityType: 'event',
     entityId: event._id,
-    summary: `${event.title} - ${student?.name || 'Student'}: ${attended ? 'Attended' : 'Absent'} (${targetDateStr})`,
+    summary: `${event.title} - ${student?.name || 'Student'}: ${attended ? 'Attended' : 'Absent'} (${targetDateStr})${overwritten.length ? ` · replaced ${overwritten.length} recorded period(s)` : ''}`,
   });
 
   res.json({
@@ -582,5 +578,6 @@ export const markAttendance = asyncHandler(async (req, res) => {
     attended,
     date: targetDateStr,
     attendanceDays: reg.attendanceDays,
+    overwrittenPeriods: overwritten.length,
   });
 });

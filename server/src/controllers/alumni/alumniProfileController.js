@@ -14,7 +14,9 @@ import { sameId } from '../../utils/permissions.js';
 import { env } from '../../config/env.js';
 import { DEPARTMENTS, MENTORSHIP_DOMAINS, PRIVACY_FIELDS, PRIVACY_LEVELS } from '../../constants.js';
 
-const PUBLIC_USER_FIELDS = 'name email role department year avatar phone designation employeeId rollNo';
+// email / phone are populated so applyPrivacy can decide per viewer; roll and
+// employee numbers are never part of an alumni profile response.
+const PUBLIC_USER_FIELDS = 'name email role department year avatar phone designation';
 
 function calculateCompleteness(profile, user) {
   let score = 0;
@@ -297,10 +299,10 @@ export const listAlumniDirectory = asyncHandler(async (req, res) => {
 
   if (search && search.trim()) {
     const q = escapeRegex(search.trim());
-    userFilter.$or = [
-      { name: new RegExp(q, 'i') },
-      { email: new RegExp(q, 'i') },
-    ];
+    // Search by name only. Matching email addresses would let anyone probe a
+    // hidden email ("is x@y.com an alumnus?") through the result count. An
+    // admin, who sees every email anyway, may also search by email.
+    userFilter.$or = viewer.role === 'admin' ? [{ name: new RegExp(q, 'i') }, { email: new RegExp(q, 'i') }] : [{ name: new RegExp(q, 'i') }];
   }
 
   const matchingUsers = await User.find(userFilter).distinct('_id');

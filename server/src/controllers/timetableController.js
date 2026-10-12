@@ -9,6 +9,7 @@ import { COLLEGE_WIDE_ROLES, FIRST_YEAR_HOD_DEPT, TIMETABLE_VIEW_ROLES, isBranch
 import { STUDENT_ROLES, classInChargeFilter, facultyClassInChargeScope, ownDepartment } from '../utils/academicScope.js';
 import { annotateWeek, findHoliday, toApi as toHolidayApi } from '../services/holidays.js';
 import { clock } from '../utils/clock.js';
+import { assertPeriodOrder, spareBreakPeriod, suggestClassPeriod } from '../services/timetablePeriods.js';
 
 // Warden/Security must never receive a timetable event, even a bare
 // department/section identifier — emit only to the roles that can see timetables.
@@ -831,6 +832,11 @@ export const createSlot = asyncHandler(async (req, res) => {
   }
   await assertSubjectFaculty(data);
   await assertNoConflict(data);
+  // Only classes are periods: a break never takes a class number (it gets a
+  // hidden spare key), and a class sent without a number gets the next one.
+  if (data.isBreak) data.period = await spareBreakPeriod(data);
+  else if (data.period == null) data.period = await suggestClassPeriod(data);
+  await assertPeriodOrder(data);
   const slot = await TimetableSlot.create(data);
   // The faculty→subject link write and the populated re-read don't depend on
   // each other, so run them together instead of back to back.
@@ -858,6 +864,7 @@ export const updateSlot = asyncHandler(async (req, res) => {
   const before = { section: slot.section, department: slot.department };
   const AUDITED = ['subject', 'faculty', 'dayOfWeek', 'period', 'startTime', 'endTime', 'room', 'section', 'department', 'semester', 'year'];
   const prior = Object.fromEntries(AUDITED.map((k) => [k, slot[k] == null ? '' : String(slot[k])]));
+  const wasBreak = Boolean(slot.isBreak);
   Object.assign(slot, data);
   if (slot.isBreak) {
     slot.subject = undefined;
@@ -865,6 +872,9 @@ export const updateSlot = asyncHandler(async (req, res) => {
   }
   await assertSubjectFaculty(slot);
   await assertNoConflict(slot, slot._id);
+  if (slot.isBreak) slot.period = await spareBreakPeriod(slot, slot._id);
+  else if (wasBreak && data.period === undefined) slot.period = await suggestClassPeriod(slot, slot._id);
+  await assertPeriodOrder(slot, slot._id);
   await slot.save();
   const linked = linkFacultyToSubject(slot);
   // Past attendance keeps its own session snapshot; only future sessions pick this up.

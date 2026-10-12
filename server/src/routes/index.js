@@ -413,6 +413,9 @@ router.patch(
   '/events/:id/attendance/:userId',
   idParam('id', 'userId'),
   body('attended').isBoolean(),
+  body('date').optional({ values: 'falsy' }).isString().matches(/^\d{4}-\d{2}-\d{2}/).withMessage('Invalid date'),
+  // Required (true) to replace attendance already recorded for that day's classes.
+  body('confirmOverwrite').optional().isBoolean({ strict: true }).toBoolean(),
   validate,
   events.markAttendance
 );
@@ -919,7 +922,7 @@ router.post(
   body('replyTo').optional({ values: 'falsy' }).isMongoId(),
   body('attachment.url')
     .optional({ values: 'falsy' })
-    .custom((v) => String(v).startsWith('/uploads/') || /^https:\/\//.test(v))
+    .custom((v) => (String(v).startsWith('/uploads/') && insideUploads(String(v))) || /^https:\/\//.test(v))
     .withMessage('Attachments must be uploaded files'),
   body('attachment.name').optional().trim().isLength({ max: 200 }),
   body('attachment.mimeType').optional().trim().isLength({ max: 50 }),
@@ -1194,7 +1197,9 @@ const slotRules = (optional = false) => {
     o(body('section')).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
     o(body('department')).trim().isLength({ min: 1, max: 80 }).withMessage('Department is required'),
     o(body('dayOfWeek')).isIn(WEEKDAYS).withMessage('Choose a day'),
-    o(body('period')).isInt({ min: 1, max: 12 }).toInt(),
+    // Optional: a break never has a period number, and a class sent without
+    // one gets the next free number after the classes before it.
+    body('period').optional({ values: 'null' }).isInt({ min: 1, max: 12 }).withMessage('Period must be 1–12').toInt(),
     o(body('startTime')).matches(HHMM).withMessage('Start time must be HH:mm'),
     o(body('endTime')).matches(HHMM).withMessage('End time must be HH:mm'),
     o(body('semester')).isIn(SEMESTERS).withMessage('Choose a semester (1–8)').toInt(),
@@ -1414,27 +1419,17 @@ const gateReviewRules = (actions) => [
 ];
 
 router.post('/gate-pass', writeLimiter, authorize(...STUDENT_ROLES), ...gateDestinationRules, validate, gatePass.createGatePass);
-// Day scholar Outing: today only, no destination, and the parent number typed
-// on the request. Only an account whose stay type is day scholar may use it.
+// Day scholar Outing: today only, no destination. The parent OTP goes to the
+// registered parent number on the account; a number sent here is ignored.
+// Only an account whose stay type is day scholar may use it.
 router.post(
   '/gate-pass/outing',
   writeLimiter,
   authorize(...STUDENT_ROLES),
   body('subject').isString().trim().isLength({ min: 2, max: 120 }).withMessage('Subject is required (2–120 characters)'),
   body('description').isString().trim().isLength({ min: 5, max: 500 }).withMessage('Please describe the reason (5+ characters)'),
-  body('parentPhone')
-    .isString()
-    .trim()
-    .isLength({ min: 6, max: 20 })
-    .withMessage("Parent's mobile number is required")
-    .matches(PHONE_CHARS)
-    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets")
-    // The OTP is sent to this number, so it must be a real one, not just symbols.
-    .custom((v) => {
-      const digits = v.replace(/\D/g, '').length;
-      return digits >= 6 && digits <= 15;
-    })
-    .withMessage("Enter the parent's mobile number (6–15 digits)"),
+  // Ignored if sent (older clients still send it): the registered number is always used.
+  body('parentPhone').optional().isString().isLength({ max: 20 }),
   safeUrl('supportingDocument.url'),
   body('supportingDocument.name').optional().isString().trim().isLength({ max: 200 }),
   body('supportingDocument.mimeType').optional().isString().trim().isLength({ max: 100 }),
@@ -1600,6 +1595,11 @@ router.post(
   body('timestamp')
     .custom((v) => (typeof v === 'number' || typeof v === 'string') && Number.isFinite(new Date(v).getTime()))
     .withMessage('Location timestamp is required'),
+  // Optional: the device clock when the reading was sent, so a device whose clock is off is not judged stale.
+  body('sentAt')
+    .optional({ values: 'null' })
+    .custom((v) => (typeof v === 'number' || typeof v === 'string') && Number.isFinite(new Date(v).getTime()))
+    .withMessage('Invalid sent time'),
   validate,
   gatePass.verifyReturnLocation
 );
@@ -1625,8 +1625,10 @@ router.patch(
 );
 
 // ── Development OTP portal — stand-in for the college SMS vendor ───
-// Admins only. Not found in production unless DEV_OTP_PORTAL=true is set explicitly.
-const devOnly = (_req, _res, next) => (env.isProd && !env.otp.devPortalInProduction ? next(new ApiError(404, 'Not found')) : next());
+// Admins only, and never in production: it lists live parent OTPs and the SMS
+// text sent, so it is 404 there regardless of DEV_OTP_PORTAL. Admins use
+// Security & Logs → OTP (audited) instead.
+const devOnly = (_req, _res, next) => (env.isProd ? next(new ApiError(404, 'Not found')) : next());
 router.get('/dev/otp', devOnly, authorize('admin'), gatePass.listDevOtps);
 
 // ── Lost & Found ───────────────────────────────────────────────────
@@ -1694,7 +1696,7 @@ const complaintCreateRules = [
   body('attachments.*.url')
     .optional()
     .isString()
-    .custom((v) => v.startsWith('/uploads/') || /^https:\/\//.test(v))
+    .custom((v) => (v.startsWith('/uploads/') && insideUploads(v)) || /^https:\/\//.test(v))
     .withMessage('Attachment must be an uploaded file or https URL'),
   body('attachments.*.name').optional().trim().isLength({ max: 150 }),
   body('attachments.*.mimeType').optional().trim().isLength({ max: 100 }),

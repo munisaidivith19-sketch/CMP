@@ -784,6 +784,8 @@ function MarkAttendance({ preset, onPresetUsed }) {
           : { subjectId: form.subjectId, date: form.date, period: Number(form.period), section: form.section || undefined, records }
       ).unwrap();
       toast.success(`${res.message} · ${res.created} new, ${res.modified} updated`);
+      // The first class you mark today records you present for the whole day.
+      if (res.facultyMarkedPresent) toast.success('You are marked present for today');
     } catch (e) {
       toast.error(errMsg(e));
     }

@@ -1,6 +1,6 @@
 import { store } from '../app/store';
 import { loggedOut, setCredentials } from '../features/authSlice';
-import { refreshSession } from './api';
+import { getCsrfCookie, refreshSession } from './api';
 
 /**
  * Streamed chat with the JNN Study Assistant (Server-Sent Events over a
@@ -20,6 +20,7 @@ export async function streamAssistantChat(body, { onDelta, signal } = {}) {
         'content-type': 'application/json',
         accept: 'text/event-stream',
         ...(store.getState().auth.accessToken ? { authorization: `Bearer ${store.getState().auth.accessToken}` } : {}),
+        ...(getCsrfCookie() ? { 'x-csrf-token': getCsrfCookie() } : {}),
       },
       body: JSON.stringify({ ...body, stream: true }),
     });

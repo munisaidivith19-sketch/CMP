@@ -277,7 +277,7 @@ export const summaryFaculty = asyncHandler(async (req, res) => {
   const rows = staff
     .map((f) => {
       const st = status.get(String(f._id));
-      return { ...f, status: st?.status || 'unmarked', note: st?.note || null, markedBy: st?.markedBy || null, markedAt: st?.markedAt || null };
+      return { ...f, status: st?.status || 'unmarked', note: st?.note || null, source: st?.source || null, autoFrom: st?.autoFrom || null, markedBy: st?.markedBy || null, markedAt: st?.markedAt || null };
     })
     .filter((f) => !wanted || f.status === wanted);
 
@@ -305,7 +305,10 @@ export const facultyRoster = asyncHandler(async (req, res) => {
     // An HOD does not mark their own attendance — an admin does.
     faculty: staff
       .filter((f) => !(req.user.role === 'hod' && String(f._id) === String(req.user._id)))
-      .map((f) => ({ ...f, status: status.get(String(f._id))?.status || null, note: status.get(String(f._id))?.note || null })),
+      .map((f) => {
+        const st = status.get(String(f._id));
+        return { ...f, status: st?.status || null, note: st?.note || null, source: st?.source || null, autoFrom: st?.autoFrom || null };
+      }),
   });
 });
 
@@ -331,7 +334,7 @@ export const markFaculty = asyncHandler(async (req, res) => {
   const now = new Date();
   await FacultyAttendance.bulkWrite(
     ids.map((id) => {
-      const set = { status: byId.get(id).status, markedBy: req.user._id, markedAt: now };
+      const set = { status: byId.get(id).status, markedBy: req.user._id, markedAt: now, source: 'manual' };
       if (byId.get(id).note) set.note = byId.get(id).note;
       if (deptOf[id]) set.department = deptOf[id];
       return {

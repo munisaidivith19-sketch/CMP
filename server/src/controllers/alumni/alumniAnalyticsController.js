@@ -9,6 +9,8 @@ import Chapter from '../../models/Chapter.js';
 import ChapterPost from '../../models/ChapterPost.js';
 import User from '../../models/User.js';
 import { ApiError, asyncHandler } from '../../utils/http.js';
+import { batchApplyPrivacy } from '../../utils/alumniPrivacy.js';
+import { sendCsv } from '../../utils/csv.js';
 
 let cache = { data: null, expiresAt: 0, dept: null };
 
@@ -243,23 +245,25 @@ export const exportDirectoryCSV = asyncHandler(async (req, res) => {
     .sort({ gradYear: -1 })
     .lean();
 
+  // The export honours each alumnus's privacy settings exactly like the
+  // directory: a HOD gets "staff"-level fields of their own department only,
+  // and a "hidden" email / phone stays out of the file.
+  const visible = await batchApplyPrivacy(profiles, user);
+
   const headers = ['#', 'Name', 'Email', 'Department', 'Grad Year', 'Company', 'Designation', 'Location', 'Phone', 'Mentorship Available', 'Rating'];
-  const rows = profiles.map((p, idx) => [
+  const rows = visible.map((p, idx) => [
     idx + 1,
-    `"${p.user?.name || ''}"`,
-    `"${p.user?.email || ''}"`,
-    `"${p.user?.department || ''}"`,
+    p.user?.name || '',
+    p.user?.email || '',
+    p.user?.department || '',
     p.gradYear || '',
-    `"${p.company || ''}"`,
-    `"${p.designation || ''}"`,
-    `"${p.location || ''}"`,
-    `"${p.user?.phone || ''}"`,
+    p.company || '',
+    p.designation || '',
+    p.location || '',
+    p.user?.phone || '',
     p.mentorshipAvailable ? 'Yes' : 'No',
     p.ratingAvg || 0,
   ]);
 
-  const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename="alumni-directory-${Date.now()}.csv"`);
-  res.send(csv);
+  sendCsv(res, `alumni-directory-${Date.now()}.csv`, [headers, ...rows]);
 });

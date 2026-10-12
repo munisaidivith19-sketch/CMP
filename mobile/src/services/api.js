@@ -103,7 +103,7 @@ export const api = createApi({
     // Participants (organiser / coordinators / staff, server-decided) and per-day attendance (coordinators / hosting HOD).
     getParticipants: b.query({ query: (id) => `/events/${id}/participants`, providesTags: ['Event'] }),
     markEventAttendance: b.mutation({
-      query: ({ id, userId, attended, date }) => ({ url: `/events/${id}/attendance/${userId}`, method: 'PATCH', body: { attended, date } }),
+      query: ({ id, userId, attended, date, confirmOverwrite }) => ({ url: `/events/${id}/attendance/${userId}`, method: 'PATCH', body: { attended, date, ...(confirmOverwrite ? { confirmOverwrite: true } : {}) } }),
       invalidatesTags: ['Event', 'Attendance'],
     }),
     getClubs: b.query({ query: (params) => ({ url: '/clubs', params }), providesTags: ['Club'] }),

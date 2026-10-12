@@ -8,6 +8,7 @@
     "seed": "npm run seed --prefix server",
     "dev": "concurrently -k -n API,WEB -c magenta,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm run build --prefix client",
+    "verify:bundle": "node scripts/verify-bundle.mjs",
     "start": "npm start --prefix server",
     "test": "npm test --prefix server",
     "seed:academic": "npm run seed:academic --prefix server",

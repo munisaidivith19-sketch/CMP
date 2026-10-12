@@ -12,7 +12,7 @@ import { sendMail } from '../utils/mailer.js';
 import { parseDevice } from '../utils/device.js';
 import { logSecurity } from '../utils/securityLog.js';
 import {
-  REFRESH_COOKIE,
+  readRefreshCookie,
   clearRefreshCookie,
   isMobileClient,
   newJti,
@@ -32,7 +32,7 @@ import {
   checkAnonLockout,
   recordAnonFailure,
 } from '../utils/loginSecurity.js';
-import { CSRF_COOKIE, generateCsrfToken } from '../middleware/security.js';
+import { clearCsrfCookie, generateCsrfToken, setCsrfCookie } from '../middleware/security.js';
 import { IDLE_MESSAGE, expireIdleSession, idleTimeoutFor, isIdleExpired, recordSessionActivity } from '../utils/sessionIdle.js';
 
 const MAX_PUSH_TOKENS = 5;
@@ -42,6 +42,30 @@ const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 12);
 
 /** A readable device label, e.g. "Chrome on Windows" or "Mobile app · Pixel 7". */
 export { parseDevice };
+
+// Per-account sign-in lease (User.loginBusyUntil). It expires on its own, so a
+// crashed request can never block an account for longer than LOGIN_LEASE_MS.
+const LOGIN_LEASE_MS = 5000;
+const LOGIN_LEASE_WAIT_MS = 4000;
+
+/** Take the account's sign-in lease, waiting briefly for a parallel attempt to finish. */
+async function acquireLoginLease(userId) {
+  const deadline = Date.now() + LOGIN_LEASE_WAIT_MS;
+  for (;;) {
+    const now = new Date();
+    const { modifiedCount } = await User.updateOne(
+      { _id: userId, $or: [{ loginBusyUntil: null }, { loginBusyUntil: { $lte: now } }] },
+      { $set: { loginBusyUntil: new Date(now.getTime() + LOGIN_LEASE_MS) } }
+    );
+    if (modifiedCount) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+function releaseLoginLease(userId) {
+  User.updateOne({ _id: userId }, { $unset: { loginBusyUntil: 1 } }).catch(() => null);
+}
 
 const clientMeta = (req) => ({
   client: isMobileClient(req) ? 'mobile' : 'web',
@@ -95,15 +119,8 @@ async function issueSession(req, res, user, existingSession) {
     body.refreshToken = refreshToken;
   } else {
     setRefreshCookie(res, refreshToken);
-    // Double-submit CSRF cookie for browser clients
-    const csrfToken = generateCsrfToken();
-    res.cookie(CSRF_COOKIE, csrfToken, {
-      httpOnly: false, // Accessible to client-side JS to attach to X-CSRF-Token header
-      secure: env.isProd,
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    // Double-submit CSRF cookie for browser clients (echoed in X-CSRF-Token).
+    setCsrfCookie(res, generateCsrfToken());
   }
   return body;
 }
@@ -156,7 +173,7 @@ export const login = asyncHandler(async (req, res) => {
   const normalizedEmail = String(email || '').toLowerCase().trim();
 
   // 1. IP-Level Throttling Check (protects against distributed attacks from a single IP)
-  const ipCheck = checkIpThrottled(req.ip);
+  const ipCheck = await checkIpThrottled(req.ip);
   if (ipCheck.locked) {
     throw new ApiError(423, `Too many failed sign-in attempts from this network. Try again in ${ipCheck.mins} minute(s).`, null, {
       locked: true,
@@ -167,13 +184,23 @@ export const login = asyncHandler(async (req, res) => {
     });
   }
 
-  const user = await User.findOne({ email: normalizedEmail }).select(
-    '+password +failedLogins +lockUntil +lastFailedLoginAt +lockoutCount +tokenVersion'
-  );
+  const LOGIN_FIELDS = '+password +failedLogins +lockUntil +lastFailedLoginAt +lockoutCount +tokenVersion';
+  let user = await User.findOne({ email: normalizedEmail }).select(LOGIN_FIELDS);
+
+  // Serialize attempts on one account: every attempt reads, decides and writes
+  // the failure counter while holding the lease, then re-reads it fresh.
+  if (user) {
+    if (!(await acquireLoginLease(user._id))) {
+      throw new ApiError(429, 'A sign-in for this account is already in progress. Please try again in a moment.');
+    }
+    const leaseId = user._id;
+    res.once('close', () => releaseLoginLease(leaseId));
+    user = await User.findById(leaseId).select(LOGIN_FIELDS);
+  }
 
   // 2. Anti-Enumeration Defense for Non-Existent Users
   if (!user) {
-    const anonCheck = checkAnonLockout(req.ip, normalizedEmail);
+    const anonCheck = await checkAnonLockout(req.ip, normalizedEmail);
     if (anonCheck.locked) {
       await bcrypt.compare(String(password), DUMMY_HASH); // equalize response timing
       throw new ApiError(423, `Too many failed attempts. Try again in ${anonCheck.mins} minute(s).`, null, {
@@ -185,9 +212,9 @@ export const login = asyncHandler(async (req, res) => {
     }
 
     await bcrypt.compare(String(password), DUMMY_HASH); // equalize response timing
-    recordIpFailure(req.ip);
+    await recordIpFailure(req.ip);
     logSecurity(req, 'LOGIN_FAILED', { actor: null, success: false, identifier: normalizedEmail, reason: 'unknown_account' });
-    const anonRes = recordAnonFailure(req.ip, normalizedEmail);
+    const anonRes = await recordAnonFailure(req.ip, normalizedEmail);
 
     if (anonRes.locked) {
       throw new ApiError(423, `Too many failed attempts. Account locked for ${anonRes.mins} minute(s).`, null, {
@@ -231,7 +258,7 @@ export const login = asyncHandler(async (req, res) => {
   // 5. Password Verification
   const ok = await user.comparePassword(password);
   if (!ok) {
-    recordIpFailure(req.ip);
+    await recordIpFailure(req.ip);
     logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'invalid_password' });
     user.failedLogins = (user.failedLogins || 0) + 1;
     user.lastFailedLoginAt = new Date();
@@ -307,7 +334,7 @@ export const login = asyncHandler(async (req, res) => {
   user.lastFailedLoginAt = undefined;
   user.lastLogin = new Date();
   await user.save({ validateModifiedOnly: true });
-  clearIpFailure(req.ip);
+  await clearIpFailure(req.ip);
 
   // New-device detection: first successful sign-in from this device label.
   const device = parseDevice(req.headers['user-agent'], req);
@@ -336,7 +363,7 @@ export const login = asyncHandler(async (req, res) => {
 /** Rotate the refresh token and hand back a fresh access token. */
 export const refresh = asyncHandler(async (req, res) => {
   const mobile = isMobileClient(req);
-  const token = mobile ? req.body?.refreshToken : req.cookies?.[REFRESH_COOKIE];
+  const token = mobile ? req.body?.refreshToken : readRefreshCookie(req);
   if (!token || typeof token !== 'string') throw new ApiError(401, 'No active session');
 
   const fail = (message) => {
@@ -392,7 +419,7 @@ export const refresh = asyncHandler(async (req, res) => {
 
 /** Sign out this device only. */
 export const logout = asyncHandler(async (req, res) => {
-  const token = isMobileClient(req) ? req.body?.refreshToken : req.cookies?.[REFRESH_COOKIE];
+  const token = isMobileClient(req) ? req.body?.refreshToken : readRefreshCookie(req);
   if (token && typeof token === 'string') {
     try {
       const { sid, sub } = verifyRefreshToken(token);
@@ -414,6 +441,7 @@ export const logout = asyncHandler(async (req, res) => {
     }
   }
   clearRefreshCookie(res);
+  clearCsrfCookie(res);
   res.json({ message: 'Signed out' });
 });
 

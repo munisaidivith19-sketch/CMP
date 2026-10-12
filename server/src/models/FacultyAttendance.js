@@ -5,7 +5,8 @@ const { Schema } = mongoose;
 /**
  * One row per staff member per campus day — the faculty counterpart of
  * AttendanceRecord (which is per student per period). Marked by the HOD for
- * their department, or by an admin for anyone.
+ * their department, or by an admin for anyone — or automatically as present
+ * for the whole day once the faculty member takes attendance in their class.
  */
 const facultyAttendanceSchema = new Schema(
   {
@@ -17,6 +18,17 @@ const facultyAttendanceSchema = new Schema(
     markedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     markedAt: { type: Date, default: Date.now },
     note: { type: String, trim: true, maxlength: 200 },
+    // 'auto': created when the faculty member took attendance in their own
+    // class that day (services/facultyPresence.js); 'manual': HOD / admin.
+    source: { type: String, enum: ['manual', 'auto'], default: 'manual' },
+    // The class that produced an automatic mark (kept for the record).
+    autoFrom: {
+      period: Number,
+      subjectCode: { type: String, maxlength: 20 },
+      department: { type: String, maxlength: 80 },
+      section: { type: String, maxlength: 10 },
+      at: Date,
+    },
   },
   { timestamps: true, toJSON: { versionKey: false } }
 );

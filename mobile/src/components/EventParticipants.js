@@ -30,12 +30,21 @@ export default function EventParticipants({ event }) {
   const counts = data.reduce((acc, r) => ({ ...acc, [statusOnDay(r, day)]: (acc[statusOnDay(r, day)] || 0) + 1 }), {});
 
   const setAttendance = (r, attended) => {
-    const go = async () => {
+    const go = async (confirmOverwrite = false) => {
       setBusyId(r.user._id);
       try {
-        await mark({ id: event._id, userId: r.user._id, attended, date: day }).unwrap();
+        await mark({ id: event._id, userId: r.user._id, attended, date: day, confirmOverwrite }).unwrap();
       } catch (e) {
-        Alert.alert('Could not update', errMsg(e));
+        // Class attendance is already recorded for that day: the server asks
+        // before replacing it (and tells the class in-charge).
+        if (e?.status === 409 && e?.data?.requiresConfirmation && !confirmOverwrite) {
+          Alert.alert('Replace recorded attendance?', `${errMsg(e)}\n\nThe class in-charge will be notified.`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Replace', style: 'destructive', onPress: () => go(true) },
+          ]);
+        } else {
+          Alert.alert('Could not update', errMsg(e));
+        }
       } finally {
         setBusyId(null);
       }

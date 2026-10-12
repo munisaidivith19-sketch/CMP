@@ -684,6 +684,13 @@ export function FacultyMarking() {
                           .filter(Boolean)
                           .join(' · ')}
                       </p>
+                      {f.source === 'auto' && f.status === 'present' && (
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          Auto-marked present · took attendance
+                          {f.autoFrom?.period ? ` in P${f.autoFrom.period}` : ''}
+                          {f.autoFrom?.subjectCode ? ` (${f.autoFrom.subjectCode}${f.autoFrom.section ? ` · ${f.autoFrom.section}` : ''})` : ''}
+                        </p>
+                      )}
                     </div>
                   </div>
 

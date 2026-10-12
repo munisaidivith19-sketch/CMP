@@ -1,0 +1,6 @@
+Contact: mailto:security@example.edu
+Expires: 2027-10-12T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://jnn.onrender.com/.well-known/security.txt
+# Please report suspected vulnerabilities privately to the contact above.
+# Placeholder address: replace it with the college security contact before going live.

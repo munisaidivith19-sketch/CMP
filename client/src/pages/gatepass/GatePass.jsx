@@ -200,7 +200,7 @@ function OutingForm({ formId, onSubmitted, onBusy }) {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm({ defaultValues: { subject: '', description: '', parentPhone: me?.parentPhone || '' } });
+  } = useForm({ defaultValues: { subject: '', description: '' } });
 
   useEffect(() => onBusy?.(isLoading || uploading), [isLoading, uploading, onBusy]);
 
@@ -220,7 +220,6 @@ function OutingForm({ formId, onSubmitted, onBusy }) {
       await create({
         subject: v.subject.trim(),
         description: v.description.trim(),
-        parentPhone: v.parentPhone.trim(),
         ...(doc ? { supportingDocument: { url: doc.url, name: doc.name, mimeType: doc.mimeType } } : {}),
       }).unwrap();
       toast.success('Outing requested — your class faculty has been notified');
@@ -250,16 +249,11 @@ function OutingForm({ formId, onSubmitted, onBusy }) {
         {...register('description', { required: 'Please add details', validate: (x) => x.trim().length >= 5 || 'At least 5 characters' })}
       />
       <Input
-        label="Parent mobile"
-        type="tel"
-        maxLength={20}
-        hint="The parent verification OTP is sent to this number."
-        error={errors.parentPhone}
-        {...register('parentPhone', {
-          required: 'Required',
-          validate: (x) => x.replace(/\D/g, '').length >= 6 || 'Enter a valid mobile number',
-          pattern: { value: /^[0-9+\-\s()]*$/, message: 'Digits, +, spaces, - and brackets only' },
-        })}
+        label="Parent's mobile number (registered)"
+        value={me?.parentPhone || 'Not on file — ask the administrator'}
+        readOnly
+        disabled
+        hint="The parent verification OTP is sent to this registered number."
       />
       <div>
         <span className="label">Attachment (optional)</span>
@@ -647,7 +641,7 @@ export function ReviewCard({ pass, onDone }) {
                 <span className="font-bold">{pass.subject}:</span> {pass.description}
               </p>
               <p className="mt-0.5 text-xs muted">
-                Today, {fmtClassDay(pass.fromDate)} · Parent (entered by student): {pass.parentPhone}
+                Today, {fmtClassDay(pass.fromDate)} · Parent: {pass.parentPhone}
               </p>
               {pass.parentPhoneDiffers && (
                 <p className="mt-1.5 flex items-start gap-1.5 rounded-xl bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300">

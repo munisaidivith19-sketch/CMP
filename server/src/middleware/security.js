@@ -1,9 +1,32 @@
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/http.js';
-import { isMobileClient } from '../utils/tokens.js';
+import { isMobileClient, readRefreshCookie } from '../utils/tokens.js';
 
-export const CSRF_COOKIE = 'cc_csrf';
+/**
+ * The double-submit CSRF cookie. In production it is __Host-cc_csrf: the
+ * browser accepts it only with Secure, Path=/ and no Domain, so a sibling
+ * subdomain or a plain-HTTP response can never plant a value of its own
+ * (which would defeat the double-submit check). Development keeps cc_csrf.
+ * It is readable by page script on purpose — the web client echoes it in
+ * the X-CSRF-Token header.
+ */
+export const csrfCookieName = () => (env.isProd ? '__Host-cc_csrf' : 'cc_csrf');
+const CSRF_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The CSRF cookie a browser sent (the one place it is read). */
+export const readCsrfCookie = (req) => {
+  const v = req.cookies?.[csrfCookieName()];
+  return typeof v === 'string' && v ? v : null;
+};
+
+export function setCsrfCookie(res, token) {
+  res.cookie(csrfCookieName(), token, { httpOnly: false, secure: env.isProd, sameSite: 'strict', path: '/', maxAge: CSRF_MAX_AGE_MS });
+}
+
+export function clearCsrfCookie(res) {
+  res.clearCookie(csrfCookieName(), { httpOnly: false, secure: env.isProd, sameSite: 'strict', path: '/' });
+}
 
 /**
  * Generate a cryptographically secure token for CSRF protection.
@@ -72,14 +95,35 @@ export function csrfAndOriginGuard(req, res, next) {
     }
   }
 
-  // Double-submit CSRF check: If client sent an X-CSRF-Token header or cookie, verify matching
-  const csrfCookie = req.cookies?.[CSRF_COOKIE];
-  const csrfHeader = req.headers['x-csrf-token'];
-  if (csrfCookie && csrfHeader && csrfCookie !== csrfHeader) {
-    return next(new ApiError(403, 'Invalid or expired CSRF token'));
+  // Double-submit CSRF check for browser writes. A request is a browser's
+  // when it carries a cookie credential (the CSRF or refresh cookie, which
+  // the browser attaches on its own) or Sec-Fetch-Site (every current
+  // browser sends it; page script cannot remove it; the native app never
+  // sends it). Such a request MUST carry the CSRF cookie AND a matching
+  // X-CSRF-Token header: a missing cookie or header is rejected exactly like
+  // a mismatch, so leaving either out is not a bypass. The mobile app
+  // returned above. The endpoints that issue the token pair are exempt.
+  if (!CSRF_EXEMPT_PATHS.some((p) => req.path === p || req.path.startsWith(`${p}/`))) {
+    const csrfCookie = readCsrfCookie(req);
+    const isBrowser = Boolean(csrfCookie || readRefreshCookie(req) || req.get('sec-fetch-site'));
+    if (isBrowser && !csrfTokensMatch(csrfCookie, req.get('x-csrf-token'))) {
+      return next(new ApiError(403, 'Invalid or expired CSRF token'));
+    }
   }
 
   next();
+}
+
+// Relative to the /api mount. Sign-in and refresh issue a fresh CSRF cookie
+// (the browser may not hold one yet); the alumni claim flow is public.
+const CSRF_EXEMPT_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/alumni-claim'];
+
+/** Constant-time comparison of the CSRF cookie and header (both required). */
+function csrfTokensMatch(cookie, header) {
+  if (typeof cookie !== 'string' || typeof header !== 'string' || !cookie || !header) return false;
+  const a = Buffer.from(cookie);
+  const b = Buffer.from(header);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 /**

@@ -9,7 +9,10 @@ import { emitToUsers } from '../../config/socket.js';
 import { sameId } from '../../utils/permissions.js';
 import { env } from '../../config/env.js';
 
-const PUBLIC_USER_FIELDS = 'name email role department year avatar phone designation employeeId rollNo';
+import { PARTY_USER_FIELDS, redactParties } from '../../utils/alumniPrivacy.js';
+
+// Contact fields are populated only for redactParties to decide per viewer.
+const PUBLIC_USER_FIELDS = PARTY_USER_FIELDS;
 
 // ── GET /api/alumni/jobs ───────────────────────────────────────────
 export const listJobs = asyncHandler(async (req, res) => {
@@ -55,11 +58,20 @@ export const listJobs = asyncHandler(async (req, res) => {
 
   if (search && search.trim()) {
     const q = escapeRegex(search.trim());
-    filter.$or = [
+    const searchOr = [
       { title: new RegExp(q, 'i') },
       { company: new RegExp(q, 'i') },
       { skills: new RegExp(q, 'i') },
     ];
+    // AND the search with any existing $or (a student's "deadline not passed"
+    // rule) — assigning filter.$or here used to replace it, so a student's
+    // search listed jobs whose deadline had already passed.
+    if (filter.$or) {
+      filter.$and = [...(filter.$and || []), { $or: filter.$or }, { $or: searchOr }];
+      delete filter.$or;
+    } else {
+      filter.$or = searchOr;
+    }
   }
 
   const [items, total] = await Promise.all([
@@ -84,7 +96,7 @@ export const listJobs = asyncHandler(async (req, res) => {
   }
 
   res.json({
-    items,
+    items: await redactParties(items, user, ['postedBy']),
     ...pageMeta(total, page, limit),
   });
 });
@@ -160,7 +172,7 @@ export const createJob = asyncHandler(async (req, res) => {
   }
 
   logActivity(req, 'alumni.job_posted', { entityType: 'alumni_job', entityId: job._id });
-  res.status(201).json(job);
+  res.status(201).json(await redactParties(job, req.user, ['postedBy']));
 });
 
 // ── GET /api/alumni/jobs/:id ───────────────────────────────────────
@@ -180,7 +192,7 @@ export const getJobById = asyncHandler(async (req, res) => {
   // Increment view count asynchronously
   AlumniJob.updateOne({ _id: job._id }, { $inc: { viewCount: 1 } }).exec();
 
-  const out = job.toObject();
+  const out = await redactParties(job, user, ['postedBy']);
 
   if (['student', 'club_admin'].includes(user.role)) {
     const myApp = await JobApplication.findOne({ job: job._id, student: user._id }).lean();
@@ -212,7 +224,7 @@ export const updateJob = asyncHandler(async (req, res) => {
   await job.save();
 
   await job.populate('postedBy', PUBLIC_USER_FIELDS);
-  res.json(job);
+  res.json(await redactParties(job, user, ['postedBy']));
 });
 
 // ── PATCH /api/alumni/jobs/:id/close & /reopen ──────────────────────
@@ -342,8 +354,9 @@ export const applyToJob = asyncHandler(async (req, res) => {
     link: `/alumni/jobs/${job._id}`,
   });
 
-  emitToUsers([job.postedBy], 'alumni:job_application', application.toJSON());
-  res.status(201).json(application);
+  const poster = await User.findById(job.postedBy).select('role department').lean();
+  emitToUsers([job.postedBy], 'alumni:job_application', await redactParties(application, poster || { _id: job.postedBy, role: 'alumni' }, ['student']));
+  res.status(201).json(await redactParties(application, req.user, ['student']));
 });
 
 // ── GET /api/alumni/jobs/:id/applications ──────────────────────────
@@ -376,7 +389,7 @@ export const listJobApplications = asyncHandler(async (req, res) => {
   ]);
 
   res.json({
-    items,
+    items: await redactParties(items, user, ['student']),
     ...pageMeta(total, page, limit),
   });
 });
@@ -398,7 +411,7 @@ export const listMyJobApplications = asyncHandler(async (req, res) => {
   ]);
 
   res.json({
-    items,
+    items: await redactParties(items, req.user, ['poster']),
     ...pageMeta(total, page, limit),
   });
 });

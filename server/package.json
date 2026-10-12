@@ -12,6 +12,7 @@
     "seed:academic": "node src/seed/academic.js",
     "seed:alumni": "node src/seed/alumniUsers.js",
     "migrate:academic": "node scripts/migrate-academic-year.mjs",
+    "migrate:break-periods": "node scripts/fix-break-periods.mjs",
     "test": "node --test --test-concurrency=1 \"tests/*.test.js\""
   },
   "engines": {

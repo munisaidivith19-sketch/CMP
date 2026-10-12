@@ -717,7 +717,8 @@ export default function AlumniJobsTab() {
                           <div>
                             <p className="font-bold text-sm text-ink dark:text-white">{displayName(app.student)}</p>
                             <p className="text-slate-500 dark:text-slate-400">
-                              {app.student?.department} • Year {app.student?.year || '—'} • {app.student?.email}
+                              {app.student?.department} • Year {app.student?.year || '—'}
+                              {app.student?.email ? ` • ${app.student.email}` : ''}
                             </p>
                             {app.note && <p className="mt-1 text-slate-700 italic dark:text-slate-300">"{app.note}"</p>}
                             {app.resumeUrl && (

@@ -1,0 +1,43 @@
+name: OWASP ZAP baseline
+
+# Weekly passive DAST scan of the STAGING deployment (never production).
+# Set the repository secret ZAP_STAGING_URL (Settings → Secrets and
+# variables → Actions), e.g. https://jnn-staging.onrender.com — until it is
+# set, the job is skipped. The baseline scan is passive: it spiders the site
+# and reports missing headers, cookie flags, information leaks, etc. without
+# attacking it. Findings are uploaded as the "zap_scan" artifact.
+
+on:
+  schedule:
+    - cron: '30 21 * * 0' # Sundays 21:30 UTC (Monday 03:00 IST)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET: ${{ secrets.ZAP_STAGING_URL }}
+    steps:
+      - name: Check that a staging URL is configured
+        id: target
+        run: |
+          if [ -z "$TARGET" ]; then
+            echo "ZAP_STAGING_URL is not set — skipping the scan."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.target.outputs.ok == 'true'
+      - name: ZAP baseline scan
+        if: steps.target.outputs.ok == 'true'
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ secrets.ZAP_STAGING_URL }}
+          allow_issue_writing: false
+          fail_action: false
+          cmd_options: '-a'

@@ -16,12 +16,36 @@ import { UPLOAD_ROOT, readStoredFile } from './utils/storage.js';
 import { inputHygieneGuard, csrfAndOriginGuard } from './middleware/security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CLIENT_DIST = path.resolve(__dirname, '../../client/dist');
+const DEFAULT_CLIENT_DIST = path.resolve(__dirname, '../../client/dist');
+
+/**
+ * How many reverse-proxy hops to trust for X-Forwarded-For, so req.ip (rate
+ * limits, sign-in lockouts, audit logs) is the real visitor and not the proxy.
+ * TRUST_PROXY=<hops> sets it (1 = Render; 2 = Cloudflare in front of Render),
+ * TRUST_PROXY=false turns it off. Unset: 1 in production — the app is always
+ * deployed behind a proxy there, and trusting none would make every visitor
+ * share the proxy's IP (one attacker could lock everyone out) — and off in
+ * development, where a client could otherwise spoof its IP with the header.
+ * A hop count, never `true`: trusting every hop lets a client pick its own IP.
+ */
+export function trustProxySetting(raw = process.env.TRUST_PROXY, isProd = env.isProd) {
+  const v = String(raw ?? '').trim().toLowerCase();
+  if (v === 'false' || v === '0' || v === 'off') return false;
+  const hops = Number.parseInt(v, 10);
+  if (Number.isInteger(hops) && hops > 0) return Math.min(hops, 5);
+  return isProd ? 1 : false;
+}
+
+// SPA routes never contain a dot; anything that looks like a file path and is
+// not a real built asset (/.env, /server/src/app.js, /render.yaml, *.map) is a
+// plain 404 — never the backend file, and not index.html either.
+const looksLikeFile = (p) => p.split('/').some((seg) => seg.includes('.'));
 
 export function createApp() {
   const app = express();
+  const CLIENT_DIST = process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : DEFAULT_CLIENT_DIST;
   app.disable('x-powered-by');
-  if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+  app.set('trust proxy', trustProxySetting());
 
   // Enterprise Security Headers
   app.use(
@@ -30,6 +54,9 @@ export function createApp() {
       crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
       dnsPrefetchControl: { allow: false },
+      // HTTPS only, for a year, subdomains included — production only, so a
+      // plain-HTTP campus/dev server is never pinned to HTTPS by accident.
+      strictTransportSecurity: env.isProd ? { maxAge: 31536000, includeSubDomains: true } : false,
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
@@ -97,10 +124,15 @@ export function createApp() {
   app.use('/api', apiLimiter, csrfAndOriginGuard, routes);
   app.use('/api', notFound);
 
-  // RENDER 
+  // The built web app (client/dist) is the only other thing served — never
+  // server/, .env, config or source. express.static ignores dotfiles, and
+  // source maps are refused even if a build ever emits them.
   if (fs.existsSync(CLIENT_DIST)) {
-    app.use(express.static(CLIENT_DIST, { index: false, maxAge: '1h' }));
-    app.get('*', (_req, res) => res.sendFile(path.join(CLIENT_DIST, 'index.html')));
+    // Vulnerability-report contact (RFC 9116), from client/public/.well-known.
+    app.use('/.well-known', express.static(path.join(CLIENT_DIST, '.well-known'), { index: false, dotfiles: 'deny', fallthrough: true }));
+    app.use((req, res, next) => (/\.map$/i.test(req.path) ? notFound(req, res) : next()));
+    app.use(express.static(CLIENT_DIST, { index: false, maxAge: '1h', dotfiles: 'ignore' }));
+    app.get('*', (req, res, next) => (looksLikeFile(req.path) ? next() : res.sendFile(path.join(CLIENT_DIST, 'index.html'))));
   }
 
   app.use(notFound);

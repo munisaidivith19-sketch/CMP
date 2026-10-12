@@ -34,15 +34,16 @@ services:
         value: https://jnn.onrender.com
       - key: APP_URL
         value: https://jnn.onrender.com
-      # Parent OTP SMS is OFF until the college SMS API is connected: OTPs are
-      # generated and verified normally and shown to ADMINS only in
-      # Security & Logs → OTP. To go live set this to "true" with
-      # OTP_PROVIDER=college_sms and the SMS_* secrets.
+      # Parent OTP SMS is ON: OTPs are sent through the college SMS gateway
+      # (OTP_PROVIDER=college_sms + the SMS_* secrets set in the dashboard).
+      # Set it to "false" to stop sending; OTPs are then still generated and
+      # verified, and shown to ADMINS only in Security & Logs → OTP.
       - key: OTP_SMS_ENABLED
         value: "true"
       # Legacy admin-only /dev/otp page (superseded by Security & Logs → OTP).
+      # It is always 404 in production, whatever this says.
       - key: DEV_OTP_PORTAL
-        value: "true"
+        value: "false"
       # Auto-generated securely by Render — you never see or set these yourself.
       - key: JWT_ACCESS_SECRET
         generateValue: true

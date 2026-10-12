@@ -1,8 +1,10 @@
 package com.vexon.campus.screens
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -67,6 +69,8 @@ import com.vexon.campus.core.Api
 import com.vexon.campus.core.ApiException
 import com.vexon.campus.core.Fmt
 import com.vexon.campus.core.GateQr
+import com.vexon.campus.core.LocationRead
+import com.vexon.campus.core.ReturnLocation
 import com.vexon.campus.core.merge
 import com.vexon.campus.core.Omit
 import com.vexon.campus.core.QueryClient
@@ -125,9 +129,15 @@ import com.vexon.campus.ui.Tone
 import com.vexon.campus.ui.Type
 import com.vexon.campus.ui.Variant
 import com.vexon.campus.ui.YEAR_LABELS
-import com.vexon.campus.ui.bestFreshFix
+import com.vexon.campus.ui.hasAnyLocation
+import com.vexon.campus.ui.hasPreciseLocation
+import com.vexon.campus.ui.isLocationOn
+import com.vexon.campus.ui.locationSettingsResolution
+import com.vexon.campus.ui.openLocationSettings
+import com.vexon.campus.ui.readFreshLocation
 import com.vexon.campus.ui.findActivity
 import com.vexon.campus.ui.openAppSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1098,9 +1108,16 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
 
 /* ── Return to campus (student, pass "active") ──────────────────── */
 
-private const val PERMISSION_TEXT = "Location permission is required to verify your return to campus."
+private val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
 
-/** Student outside campus: location check → temporary return QR/code for security. */
+/** What the button under a failure does — each problem gets its own way out, not "turn on GPS". */
+private enum class Recovery { Retry, LocationSettings, AllowPrecise, AppSettings }
+
+/**
+ * Student outside campus: one explicit location check → temporary return
+ * QR/code for security. The phone sends only the raw reading; the server
+ * decides. A failed check never marks the student as returned.
+ */
 @Composable
 private fun ReturnToCampus(pass: JsonElement) {
     val context = LocalContext.current
@@ -1109,7 +1126,10 @@ private fun ReturnToCampus(pass: JsonElement) {
     val existing = Api.returnCredential(id)
     var step by remember { mutableStateOf("idle") } // idle | intro | locating | denied | failed
     var failure by remember { mutableStateOf("") }
+    var recovery by remember { mutableStateOf(Recovery.Retry) }
     var canAskAgain by remember { mutableStateOf(true) }
+    var askedPrecise by remember { mutableStateOf(false) }
+    var askedSettings by remember { mutableStateOf(false) }
     var fresh by remember { mutableStateOf<JsonElement?>(null) }
     var showQr by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
@@ -1118,29 +1138,63 @@ private fun ReturnToCampus(pass: JsonElement) {
     val left = countdown(credential["expiresAt"].str)
     val live = credential != null && left > 0
 
+    fun fail(message: String, how: Recovery = Recovery.Retry) {
+        failure = message
+        recovery = how
+        step = "failed"
+    }
+
     suspend fun locateAndVerify() {
         step = "locating"
-        val fix = runCatching { bestFreshFix(context) }.getOrNull()
-        when {
-            fix == null -> { failure = "Could not get your location. Turn on location (GPS) and try again."; step = "failed" }
-            fix.mocked -> { failure = "A mock-location app appears to be active. Turn it off and try again."; step = "failed" }
-            else -> {
+        when (val read = readFreshLocation(context)) {
+            LocationRead.PermissionDenied -> { canAskAgain = true; step = "denied" }
+            LocationRead.ServicesOff -> fail(ReturnLocation.SERVICES_OFF, Recovery.LocationSettings)
+            is LocationRead.Ok -> {
+                val fix = read.fix
+                if (fix.mocked) return fail(ReturnLocation.MOCKED)
                 sending = true
                 try {
-                    fresh = Api.verifyReturnLocation(id, jsonOf("latitude" to fix.latitude, "longitude" to fix.longitude, "accuracy" to fix.accuracy, "timestamp" to fix.timestamp))
+                    val body = ReturnLocation.body(fix, SystemClock.elapsedRealtime(), System.currentTimeMillis())
+                    fresh = Api.verifyReturnLocation(id, body)
                     step = "idle"
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    failure = errMsg(e, "Could not verify your location. Please try again.")
-                    step = "failed"
+                    val precise = hasPreciseLocation(context)
+                    fail(ReturnLocation.verifyProblem(e, fix, precise), if (ReturnLocation.needsPrecise(e, fix, precise)) Recovery.AllowPrecise else Recovery.Retry)
                 } finally {
                     sending = false
                 }
             }
+            else -> fail(ReturnLocation.problem(read))
+        }
+    }
+
+    // Play services' "turn on location / improve accuracy" dialog.
+    val settingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        when {
+            result.resultCode == Activity.RESULT_OK || isLocationOn(context) -> scope.launch { locateAndVerify() }
+            else -> fail(ReturnLocation.SERVICES_OFF, Recovery.LocationSettings)
+        }
+    }
+
+    fun startLocating() {
+        step = "locating"
+        scope.launch {
+            if (!askedSettings) {
+                askedSettings = true
+                val resolution = locationSettingsResolution(context)
+                if (resolution != null) {
+                    runCatching { settingsLauncher.launch(resolution) }.onFailure { locateAndVerify() }
+                    return@launch
+                }
+            }
+            locateAndVerify()
         }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if (result.values.any { it }) scope.launch { locateAndVerify() }
+        if (result.values.any { it }) startLocating()
         else {
             val activity = context.findActivity()
             canAskAgain = activity?.shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) ?: true
@@ -1148,13 +1202,37 @@ private fun ReturnToCampus(pass: JsonElement) {
         }
     }
 
+    // Upgrading approximate → precise (Android 12+ shows the "precise" choice again).
+    val preciseLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (hasPreciseLocation(context)) startLocating()
+        else fail(ReturnLocation.APPROXIMATE, Recovery.AppSettings)
+    }
+
     fun checkLocation() {
+        if (step == "locating") return // one check at a time
         failure = ""
         showQr = false
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (granted) scope.launch { locateAndVerify() }
-        else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        when {
+            !hasAnyLocation(context) -> permissionLauncher.launch(LOCATION_PERMISSIONS)
+            // Approximate only: offer precise once; if declined, still try (the server may accept it).
+            !hasPreciseLocation(context) && !askedPrecise -> { askedPrecise = true; permissionLauncher.launch(LOCATION_PERMISSIONS) }
+            else -> startLocating()
+        }
+    }
+
+    fun recover() {
+        when (recovery) {
+            Recovery.Retry -> checkLocation()
+            Recovery.LocationSettings -> if (isLocationOn(context)) checkLocation() else scope.launch {
+                // Play services' one-tap "turn on location" dialog first; the system Location page where it is unavailable.
+                val resolution = locationSettingsResolution(context)
+                if (resolution == null || runCatching { settingsLauncher.launch(resolution) }.isFailure) openLocationSettings(context)
+            }
+            // Always ask the system first: after "Keep approximate" the rationale flag is false although the
+            // upgrade dialog can still be shown. Only if it is not granted is Settings offered (never opened unasked).
+            Recovery.AllowPrecise -> { askedPrecise = true; preciseLauncher.launch(LOCATION_PERMISSIONS) }
+            Recovery.AppSettings -> if (hasPreciseLocation(context)) checkLocation() else openAppSettings(context)
+        }
     }
 
     if (existing.isLoading) { Loading(); return }
@@ -1192,20 +1270,24 @@ private fun ReturnToCampus(pass: JsonElement) {
         if (step == "denied") {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Rounded.LocationOff, null, Modifier.size(16.dp), tint = C.danger)
-                Small(PERMISSION_TEXT, Modifier.weight(1f), C.danger)
+                Small(if (canAskAgain) ReturnLocation.PERMISSION else ReturnLocation.PERMISSION_BLOCKED, Modifier.weight(1f), C.danger)
             }
             Button(if (canAskAgain) "Allow location" else "Open settings", { if (canAskAgain) checkLocation() else openAppSettings(context) }, Wide, icon = Icons.Rounded.MyLocation)
         } else {
             Small("We need your current location to verify that you have returned to the college campus. It is read once, only now.")
             if (step == "failed" && failure.isNotEmpty()) Small(failure, color = C.danger)
             Button(
-                when (step) {
-                    "locating" -> if (sending) "Verifying…" else "Finding your location…"
-                    "failed" -> "Try again"
-                    else -> "Verify my location"
+                when {
+                    step == "locating" -> if (sending) "Verifying…" else "Finding your location…"
+                    step != "failed" -> "Verify my location"
+                    recovery == Recovery.LocationSettings -> "Turn on location"
+                    recovery == Recovery.AllowPrecise -> "Allow precise location"
+                    recovery == Recovery.AppSettings -> "Open settings"
+                    else -> "Try again"
                 },
-                ::checkLocation, Wide, icon = Icons.Rounded.MyLocation, loading = step == "locating",
+                { if (step == "failed") recover() else checkLocation() }, Wide, icon = Icons.Rounded.MyLocation, loading = step == "locating",
             )
+            if (step == "failed" && recovery != Recovery.Retry) Button("Try again", ::checkLocation, Wide, variant = Variant.Outline)
         }
         Button("Cancel", { step = "idle" }, Wide, variant = Variant.Ghost, enabled = step != "locating")
     }

@@ -44,7 +44,12 @@
     "export": "expo export -p android",
     "test": "node --no-warnings --test \"tests/*.test.mjs\"",
     "native:check": "node scripts/native-build-check.js check",
-    "native:record": "node scripts/native-build-check.js record"
+    "native:record": "node scripts/native-build-check.js record",
+    "lint": "expo lint"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2"
+  }
 }

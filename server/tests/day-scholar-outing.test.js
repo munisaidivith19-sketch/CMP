@@ -57,7 +57,7 @@ async function approve(id) {
   return rec;
 }
 
-test('A day scholar creates an Outing for today with subject, description, typed parent number and an attachment', async () => {
+test('A day scholar creates an Outing for today with subject, description and an attachment; the parent number is the registered one', async () => {
   const s = await newStudent('day_scholar');
   const res = await outing(s, validOuting({ supportingDocument: { url: '/uploads/note.pdf', name: 'note.pdf', mimeType: 'application/pdf' } }));
   assert.equal(res.status, 201, JSON.stringify(res.body));
@@ -65,7 +65,7 @@ test('A day scholar creates an Outing for today with subject, description, typed
   assert.equal(res.body.passType, 'normal');
   assert.equal(res.body.status, 'pending_faculty', 'the normal approval chain');
   assert.equal(res.body.subject, 'Dental appointment');
-  assert.equal(res.body.parentPhone, TYPED);
+  assert.equal(res.body.parentPhone, REGISTERED, 'a typed number is ignored: the OTP goes to the registered parent');
   assert.equal(res.body.supportingDocument.name, 'note.pdf');
   assert.equal(res.body.fromDate, res.body.toDate, 'one day');
   const today = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
@@ -84,13 +84,15 @@ test('The attachment is optional; dates and destination sent by the client are i
   assert.equal(res.body.status, 'pending_faculty');
 });
 
-test('Outing validation: subject, description and a valid parent number are required', async () => {
+test('Outing validation: subject and description are required; a registered parent number must be on file', async () => {
   const s = await newStudent('day_scholar');
   assert.equal((await outing(s, validOuting({ subject: '' }))).status, 422);
   assert.equal((await outing(s, validOuting({ description: 'hi' }))).status, 422);
-  assert.equal((await outing(s, validOuting({ parentPhone: '' }))).status, 422);
-  assert.equal((await outing(s, validOuting({ parentPhone: 'call-me<b>' }))).status, 422);
-  assert.equal((await outing(s, validOuting({ parentPhone: { $ne: null } }))).status, 422);
+  assert.equal((await outing(s, validOuting({ parentPhone: { $ne: null } }))).status, 422, 'a non-string number is still malformed input');
+  // No parent number on the account: refused, whatever number is typed.
+  const none = await ctx.createUser({ department: 'CSE', section: 'A', year: 3, stayType: 'day_scholar' });
+  const noneLogin = await ctx.loginWeb(none);
+  assert.equal((await outing(noneLogin, validOuting({ parentPhone: TYPED }))).status, 422);
   assert.equal((await outing(s, validOuting({ supportingDocument: { url: 'javascript:alert(1)' } }))).status, 422);
   assert.equal((await outing(s, validOuting({ supportingDocument: { url: 'http://evil.example/x' } }))).status, 422);
 });
@@ -123,29 +125,24 @@ test('Only one open pass at a time', async () => {
   assert.equal((await outing(s, validOuting())).status, 409);
 });
 
-test('Parent OTP goes to the typed number; reviewers are warned when it differs from the registered one', async () => {
+test('Parent OTP goes to the registered number even when the request types another one', async () => {
   const s = await newStudent('day_scholar');
-  const { body: pass } = await outing(s, validOuting());
+  const { body: pass } = await outing(s, validOuting({ parentPhone: TYPED }));
 
   const list = await ctx.request('GET', '/gate-pass', { token: staff.faculty.token });
   const row = list.body.passes.find((p) => p._id === pass._id);
   assert.ok(row, 'the class in-charge sees it');
-  assert.equal(row.parentPhoneDiffers, true);
+  assert.equal(row.parentPhoneDiffers, false, 'new Outings always carry the registered number');
   const detail = await ctx.request('GET', `/gate-pass/${pass._id}`, { token: staff.faculty.token });
-  assert.equal(detail.body.parentPhoneDiffers, true);
-  assert.ok(!JSON.stringify(detail.body).includes(REGISTERED), 'the registered number itself is not sent');
+  assert.ok(!JSON.stringify(detail.body).includes(TYPED), 'the typed number is not stored anywhere');
 
   const mine = await ctx.request('GET', `/gate-pass/${pass._id}`, { token: s.token });
   assert.equal(mine.body.parentPhoneDiffers, undefined, 'the flag is for reviewers only');
 
   assert.equal((await ctx.request('POST', `/gate-pass/${pass._id}/parent-otp`, { token: staff.faculty.token })).status, 200);
   const rec = await ctx.models.OutpassOtp.findOne({ gatePass: pass._id }).sort({ createdAt: -1 }).lean();
-  assert.ok(rec.parentMobileMasked.endsWith(TYPED.slice(-4)), `OTP went to the typed number (${rec.parentMobileMasked})`);
-
-  const same = await newStudent('day_scholar');
-  const { body: samePass } = await outing(same, validOuting({ parentPhone: `+91 ${REGISTERED}`.replace('+91 ', '') }));
-  const sameRow = (await ctx.request('GET', `/gate-pass/${samePass._id}`, { token: staff.faculty.token })).body;
-  assert.equal(sameRow.parentPhoneDiffers, false);
+  assert.ok(rec.parentMobileMasked.endsWith(REGISTERED.slice(-4)), `OTP went to the registered number (${rec.parentMobileMasked})`);
+  assert.ok(!rec.parentMobileMasked.endsWith(TYPED.slice(-4)));
 });
 
 test('Approval chain is unchanged: no OTP, no forward; HOD and Principal cannot be skipped', async () => {

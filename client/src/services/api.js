@@ -1,13 +1,13 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { loggedOut, setCredentials } from '../features/authSlice';
 import { broadcastSession, markIdleLogout } from './sessionSync';
+import { readCsrfToken } from './csrfCookie';
 
 /** The double-submit CSRF token; every cookie-carrying write must echo it in X-CSRF-Token. */
 export function getCsrfCookie() {
   if (typeof document === 'undefined') return null;
-  // __Host-cc_csrf in production, cc_csrf in development.
-  const match = document.cookie.match(/(^|;\s*)(?:__Host-)?cc_csrf=([^;]*)/);
-  return match ? decodeURIComponent(match[2]) : null;
+  // __Host-cc_csrf in production (preferred over a stale legacy cc_csrf), cc_csrf in development.
+  return readCsrfToken(document.cookie);
 }
 
 const rawBaseQuery = fetchBaseQuery({

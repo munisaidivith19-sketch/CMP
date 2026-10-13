@@ -20,11 +20,21 @@ export const readCsrfCookie = (req) => {
   return typeof v === 'string' && v ? v : null;
 };
 
+// Browsers that signed in before production switched to __Host-cc_csrf still
+// hold the old cc_csrf; a client that echoed it would fail every write with
+// 403. Production expires it whenever the real cookie is issued or cleared.
+const LEGACY_CSRF_COOKIE = 'cc_csrf';
+const expireLegacyCsrfCookie = (res) => {
+  if (env.isProd) res.clearCookie(LEGACY_CSRF_COOKIE, { httpOnly: false, sameSite: 'strict', path: '/' });
+};
+
 export function setCsrfCookie(res, token) {
+  expireLegacyCsrfCookie(res);
   res.cookie(csrfCookieName(), token, { httpOnly: false, secure: env.isProd, sameSite: 'strict', path: '/', maxAge: CSRF_MAX_AGE_MS });
 }
 
 export function clearCsrfCookie(res) {
+  expireLegacyCsrfCookie(res);
   res.clearCookie(csrfCookieName(), { httpOnly: false, secure: env.isProd, sameSite: 'strict', path: '/' });
 }
 

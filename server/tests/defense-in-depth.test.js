@@ -166,7 +166,11 @@ test('L2.4 cookies: production uses __Secure-cc_refresh (Path=/api/auth) and __H
     assert.match(csrf, /Path=\/(;|$)/);
     assert.match(csrf, /Secure/);
     assert.doesNotMatch(csrf, /Domain=/i);
-    assert.equal(cookieNamed(res, 'cc_refresh'), undefined, 'the unprefixed names are not used in production');
+    // The unprefixed names are not used in production — at most expired (legacy clean-up).
+    for (const legacy of ['cc_refresh', 'cc_csrf']) {
+      const c = cookieNamed(res, legacy);
+      if (c) assert.match(c, new RegExp(`^${legacy}=;.*Expires=Thu, 01 Jan 1970`), `${legacy} is only ever expired: ${c}`);
+    }
 
     const refreshPair = refresh.split(';')[0];
     const csrfPair = csrf.split(';')[0];

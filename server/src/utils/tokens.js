@@ -38,7 +38,14 @@ export const verifyRefreshToken = (token) => jwt.verify(token, env.refreshSecret
 
 export const refreshExpiry = () => new Date(Date.now() + REFRESH_MAX_AGE_MS);
 
+// The pre-rename production refresh cookie; expired so it stops riding along.
+const LEGACY_REFRESH_COOKIE = 'cc_refresh';
+const expireLegacyRefreshCookie = (res) => {
+  if (env.isProd) res.clearCookie(LEGACY_REFRESH_COOKIE, { httpOnly: true, sameSite: 'strict', path: '/api/auth' });
+};
+
 export function setRefreshCookie(res, token) {
+  expireLegacyRefreshCookie(res);
   res.cookie(refreshCookieName(), token, {
     httpOnly: true,
     secure: env.isProd,
@@ -49,6 +56,7 @@ export function setRefreshCookie(res, token) {
 }
 
 export function clearRefreshCookie(res) {
+  expireLegacyRefreshCookie(res);
   res.clearCookie(refreshCookieName(), { httpOnly: true, secure: env.isProd, sameSite: 'strict', path: '/api/auth' });
 }
 

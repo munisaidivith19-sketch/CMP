@@ -7,14 +7,14 @@ import { ApiError } from '../../../utils/http.js';
  * (the {#alp#} / {#num#} slots are filled by the render functions below).
  */
 export const OTP_SMS_TEMPLATE =
-  'Dear Parent, {#alp#} has Requested a Gate Pass. For Confirmation, Your OTP is {#num#}. This OTP is valid for 10 minutes. Do not share this OTP with anyone except the authorized college faculty. J.N.N Institute of Engineering';
+  'Dear Parent, {#alp#} has requested a Gate Pass. OTP to approve is {#num#}. Valid 10 min. J.N.N Institute of Engineering';
 
 export const renderOtpSms = ({ studentName, otp }) =>
   OTP_SMS_TEMPLATE.replace('{#alp#}', () => studentName).replace('{#num#}', () => otp);
 
 /** Parent notice once security records the student leaving campus. */
 export const EXIT_SMS_TEMPLATE =
-  'Dear Parent, {#alp#} has left the college campus on {#alp#} at {#alp#} with an approved gate pass. This is an automated notification from J.N.N Institute of Engineering';
+  'Dear Parent, {#alp#} has left the campus on {#alp#} at {#alp#} with an approved Gate Pass. J.N.N Institute of Engineering';
 
 export const renderExitSms = ({ studentName, date, time }) =>
   [studentName, date, time].reduce((text, value) => text.replace('{#alp#}', () => value), EXIT_SMS_TEMPLATE);

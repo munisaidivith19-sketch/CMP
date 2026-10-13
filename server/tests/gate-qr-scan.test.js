@@ -87,7 +87,7 @@ test('exit: Security confirming the exit sends one SMS to the registered parent 
   assert.equal(sent[0].to, '******0000', 'registered parent mobile, not the request value');
   assert.match(
     sent[0].message,
-    new RegExp(`^Dear Parent, ${student.u.name} has left the college campus on \\d{2}/\\d{2}/\\d{4} at \\d{1,2}:\\d{2} (AM|PM) with an approved gate pass\\. This is an automated notification from J\\.N\\.N Institute of Engineering$`)
+    new RegExp(`^Dear Parent, ${student.u.name} has left the campus on \\d{2}/\\d{2}/\\d{4} at \\d{1,2}:\\d{2} (AM|PM) with an approved Gate Pass\\. J\\.N\\.N Institute of Engineering$`)
   );
 
   // A replay or second guard cannot send another one.

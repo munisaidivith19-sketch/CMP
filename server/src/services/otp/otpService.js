@@ -106,7 +106,8 @@ function publicState(record) {
     sentAt: record.lastSentAt,
     expiresAt: record.expiresAt,
     attemptsLeft: Math.max(0, record.maxAttempts - record.attempts),
-    resendAvailableAt: new Date(record.lastSentAt.getTime() + cooldownMs()),
+    // Nothing reached the parent after a failed send, so no wait before retrying.
+    resendAvailableAt: record.status === 'failed' ? null : new Date(record.lastSentAt.getTime() + cooldownMs()),
   };
 }
 
@@ -125,7 +126,8 @@ export async function requestOtp({ pass, studentName, faculty }) {
   const provider = getOtpProvider();
   const now = new Date();
   const latest = await latestFor(pass._id);
-  if (latest && now - latest.lastSentAt < cooldownMs()) {
+  // The cooldown guards the parent's phone; a send that failed delivered nothing.
+  if (latest && latest.status !== 'failed' && now - latest.lastSentAt < cooldownMs()) {
     const wait = Math.ceil((latest.lastSentAt.getTime() + cooldownMs() - now) / 1000);
     throw new ApiError(429, `Please wait ${wait} second${wait === 1 ? '' : 's'} before requesting another OTP`);
   }

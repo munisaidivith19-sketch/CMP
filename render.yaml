@@ -42,8 +42,8 @@ services:
         value: "true"
       # College SMS gateway credentials — required while OTP_SMS_ENABLED is
       # "true", or "Send OTP" fails with "not configured yet". Set the values
-      # in the Render dashboard (never in this file). SMS_API_URL is optional
-      # and must be https:// in production.
+      # in the Render dashboard (never in this file). SMS_API_URL must be
+      # https:// in production unless SMS_ALLOW_INSECURE_HTTP is "true".
       - key: SMS_API_KEY
         sync: false
       - key: SMS_SENDER_ID
@@ -54,6 +54,10 @@ services:
         sync: false
       - key: SMS_API_URL
         sync: false
+      # The college vendor (bulksms.2020sms.com) has no HTTPS endpoint, so
+      # production must opt in to plain http to send SMS at all.
+      - key: SMS_ALLOW_INSECURE_HTTP
+        value: "true"
       # Legacy admin-only /dev/otp page (superseded by Security & Logs → OTP).
       # It is always 404 in production, whatever this says.
       - key: DEV_OTP_PORTAL

@@ -139,7 +139,13 @@ env.sms = {
   // HTTPS by default: the API key and the parent's number travel in the query
   // string. The provider refuses a non-https URL in production.
   apiUrl: (process.env.SMS_API_URL || 'https://bulksms.2020sms.com/vb/apikey.php').trim(),
+  // Explicit opt-in for a vendor that has no HTTPS endpoint: production then
+  // sends over plain http (server-to-server) and logs a warning on each send.
+  allowInsecureHttp: process.env.SMS_ALLOW_INSECURE_HTTP === 'true',
 };
+if (isProd && env.sms.allowInsecureHttp) {
+  console.warn('[env] SMS_ALLOW_INSECURE_HTTP is on: the SMS API key, parent numbers and OTPs may cross the network unencrypted.');
+}
 
 const decimal = (name, fallback, min, max) => {
   const raw = process.env[name];

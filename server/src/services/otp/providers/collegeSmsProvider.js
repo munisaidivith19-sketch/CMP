@@ -44,10 +44,14 @@ async function deliver({ to, message, templateId }) {
     throw new ApiError(503, 'The college SMS service is not configured correctly. Ask an administrator.');
   }
   // The key, the parent's number and the OTP must never cross the network in
-  // clear text: production sends over HTTPS only (no silent downgrade).
+  // clear text: production sends over HTTPS only (no silent downgrade),
+  // unless SMS_ALLOW_INSECURE_HTTP=true opts in for a vendor without HTTPS.
   if (env.isProd && url.protocol !== 'https:') {
-    console.error('[sms] refusing to send: SMS_API_URL must be an https:// URL in production');
-    throw new ApiError(503, 'The college SMS service is not configured securely. Ask an administrator.');
+    if (!env.sms.allowInsecureHttp) {
+      console.error('[sms] refusing to send: SMS_API_URL must be an https:// URL in production (or set SMS_ALLOW_INSECURE_HTTP=true)');
+      throw new ApiError(503, 'The college SMS service is not configured securely. Ask an administrator.');
+    }
+    console.warn('[sms] sending over plain http (SMS_ALLOW_INSECURE_HTTP=true)');
   }
   url.searchParams.set('apikey', env.sms.apiKey);
   url.searchParams.set('senderid', env.sms.senderId);

@@ -24,3 +24,16 @@ export function readCsrfToken(cookieString) {
   }
   return values['__Host-cc_csrf'] || values.cc_csrf || null;
 }
+
+/** The server's message when a write's CSRF cookie/header pair is missing or stale. */
+export const CSRF_REJECTION_MESSAGE = 'Invalid or expired CSRF token';
+
+/**
+ * True when an RTK Query error is the CSRF guard's 403. The browser's token
+ * can go stale (cookie expired or cleared, rotated by a refresh in another
+ * tab, a pre-rename legacy cookie); a refresh issues a fresh pair, so the
+ * client refreshes once and replays the write instead of failing it.
+ */
+export function isCsrfRejection(error) {
+  return error?.status === 403 && error?.data?.message === CSRF_REJECTION_MESSAGE;
+}

@@ -40,6 +40,20 @@ services:
       # verified, and shown to ADMINS only in Security & Logs → OTP.
       - key: OTP_SMS_ENABLED
         value: "true"
+      # College SMS gateway credentials — required while OTP_SMS_ENABLED is
+      # "true", or "Send OTP" fails with "not configured yet". Set the values
+      # in the Render dashboard (never in this file). SMS_API_URL is optional
+      # and must be https:// in production.
+      - key: SMS_API_KEY
+        sync: false
+      - key: SMS_SENDER_ID
+        sync: false
+      - key: SMS_OTP_TEMPLATE_ID
+        sync: false
+      - key: SMS_EXIT_TEMPLATE_ID
+        sync: false
+      - key: SMS_API_URL
+        sync: false
       # Legacy admin-only /dev/otp page (superseded by Security & Logs → OTP).
       # It is always 404 in production, whatever this says.
       - key: DEV_OTP_PORTAL

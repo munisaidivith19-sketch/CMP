@@ -1,5 +1,6 @@
 import multer from 'multer';
 import { env } from '../config/env.js';
+import { ApiError } from '../utils/http.js';
 
 export const notFound = (req, res) => {
   res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
@@ -32,7 +33,10 @@ export const errorHandler = (err, req, res, _next) => {
 
   if (status >= 500) {
     console.error('[error]', err);
-    if (env.isProd) message = 'Internal server error';
+    // An ApiError's message is written for the user (e.g. "The college SMS
+    // service is not configured yet") and says what to fix; only unexpected
+    // errors, whose text can expose internals, are masked in production.
+    if (env.isProd && !(err instanceof ApiError)) message = 'Internal server error';
   }
 
   const extra = err.data || (errors && !Array.isArray(errors) ? errors : null);

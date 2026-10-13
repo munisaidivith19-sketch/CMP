@@ -1,7 +1,7 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { loggedOut, setCredentials } from '../features/authSlice';
 import { broadcastSession, markIdleLogout } from './sessionSync';
-import { readCsrfToken } from './csrfCookie';
+import { isCsrfRejection, readCsrfToken } from './csrfCookie';
 
 /** The double-submit CSRF token; every cookie-carrying write must echo it in X-CSRF-Token. */
 export function getCsrfCookie() {
@@ -67,6 +67,15 @@ const baseQueryWithReauth = async (args, api, extra) => {
       result = await rawBaseQuery(args, api, extra);
     } else {
       api.dispatch(loggedOut());
+    }
+  }
+  // A stale or missing CSRF cookie: /auth/refresh (CSRF-exempt) issues a
+  // fresh token pair, then the write is replayed once with the new header.
+  if (isCsrfRejection(result.error) && !NO_RETRY.some((p) => url.startsWith(p))) {
+    const session = await refreshSession();
+    if (session?.accessToken) {
+      api.dispatch(setCredentials(session));
+      result = await rawBaseQuery(args, api, extra);
     }
   }
   return result;

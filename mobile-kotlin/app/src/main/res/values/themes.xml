@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">JNN</string>
 
     <color name="splashscreen_background">#EFF5FC</color>
@@ -10,6 +10,10 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
+        <!-- The app draws its own light and dark themes. Stop the phone's
+             "force dark" from recolouring it (it made typed text invisible
+             on some Xiaomi/Realme/Oppo/Vivo/Samsung phones). -->
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
     </style>
 
     <style name="Theme.Vexon.Splash" parent="Theme.SplashScreen">

@@ -127,7 +127,7 @@ fun DialogHost() {
                     }
                 }
             },
-            containerColor = Color.White,
+            containerColor = C.surface,
         )
     }
     Dialogs.prompts.firstOrNull()?.let { spec ->
@@ -148,7 +148,7 @@ fun DialogHost() {
                     Text(spec.confirm, fontFamily = Jakarta, fontWeight = FontWeight.Bold, color = C.primary)
                 }
             },
-            containerColor = Color.White,
+            containerColor = C.surface,
         )
     }
 }
@@ -161,7 +161,7 @@ private fun FieldBox(label: String?, error: String?, onClick: () -> Unit, conten
         if (label != null) Label(label, Modifier.padding(bottom = 6.dp))
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.whiteGlass)
-                .border(1.dp, if (error != null) C.danger else Color(0xD9FFFFFF), RoundedCornerShape(18.dp))
+                .border(1.dp, if (error != null) C.danger else C.border, RoundedCornerShape(18.dp))
                 .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -251,7 +251,7 @@ fun PickerField(label: String?, value: String?, onChange: (String) -> Unit, opti
                         Box(Modifier.fillMaxWidth().clickable { onChange(item); open = false; q = "" }.padding(vertical = 14.dp)) {
                             T(item, if (item == value) Type.body.copy(fontWeight = FontWeight.Bold, color = C.primary) else Type.body)
                         }
-                        HorizontalDivider(color = Color(0x1A1D6FEB))
+                        HorizontalDivider(color = C.divider)
                     }
                 }
                 Box(Modifier.fillMaxWidth().clickable { open = false }.padding(vertical = 14.dp), contentAlignment = Alignment.Center) { Strong("Close", color = C.primary) }
@@ -270,7 +270,7 @@ fun <V> SelectField(label: String?, value: V?, options: List<Opt<V>>, onChange: 
             T(current ?: placeholder, Type.body.copy(fontWeight = FontWeight.SemiBold), Modifier.weight(1f), if (current == null) C.muted else C.ink, maxLines = 1)
             Icon(Icons.Rounded.KeyboardArrowDown, null, Modifier.size(16.dp), tint = C.muted)
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = Color.White) {
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = C.surface) {
             options.forEach { o ->
                 DropdownMenuItem(text = { T(o.label, if (o.value == value) Type.strong.copy(color = C.primary) else Type.body) }, onClick = { open = false; onChange(o.value) })
             }
@@ -315,10 +315,10 @@ fun fmtHolidayDates(h: JsonElement): String {
 @Composable
 fun HolidayCard(holiday: JsonElement?, text: String? = "Attendance cannot be taken for this class on this date.") {
     if (holiday == null) return
-    RowCard(Modifier.fillMaxWidth(), background = C.dangerSoft, border = Color(0x4DF43F5E), gap = 10.dp, verticalAlignment = Alignment.Top) {
+    RowCard(Modifier.fillMaxWidth(), background = C.dangerSoft, border = C.dangerBorder, gap = 10.dp, verticalAlignment = Alignment.Top) {
         Icon(Icons.Rounded.EventBusy, null, Modifier.size(20.dp), tint = C.danger)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Label("HOLIDAY", color = Color(0xFFBE123C))
+            Label("HOLIDAY", color = C.dangerText)
             Strong(holiday["reason"].str)
             Small("${holiday["scope"].str ?: ""} · ${fmtHolidayDates(holiday)}")
             if (text != null) Small(text)
@@ -328,7 +328,7 @@ fun HolidayCard(holiday: JsonElement?, text: String? = "Attendance cannot be tak
 
 /* ── Markdown (Study Assistant answers) ─────────────────────────── */
 
-private val base = TextStyle(fontFamily = Jakarta, fontSize = 14.sp, lineHeight = 21.sp, color = C.ink)
+private val base get() = TextStyle(fontFamily = Jakarta, fontSize = 14.sp, lineHeight = 21.sp, color = C.ink)
 private val INLINE = Regex("(`[^`\\n]+`)|(\\*\\*[^*\\n]+\\*\\*)|(\\*[^*\\n]+\\*)|(\\[([^\\]\\n]+)\\]\\((https?://[^)\\s]+)\\))|(\\[S\\d+\\])")
 
 private fun AnnotatedString.Builder.inline(text: String) {
@@ -381,7 +381,7 @@ fun MarkdownText(text: String?) {
                 i++
                 while (i < lines.size && !Regex("^\\s*```").containsMatchIn(lines[i])) body += lines[i++]
                 i++
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.ink).padding(10.dp)) {
+                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF0F172A)).padding(10.dp)) {
                     Text(body.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 18.sp, color = Color(0xFFE2E8F0))
                 }
                 continue

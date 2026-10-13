@@ -204,8 +204,8 @@ private fun TimetableSlot(s: JsonElement, isToday: Boolean, now: String, isNext:
     val start = s["startTime"].str.orEmpty()
     val end = s["endTime"].str.orEmpty()
     when {
-        holiday != null -> Card(Wide, background = C.dangerSoft, border = Color(0x4DF43F5E), gap = 4.dp) {
-            Label("HOLIDAY · Period ${s["period"].str ?: ""}", color = Color(0xFFBE123C))
+        holiday != null -> Card(Wide, background = C.dangerSoft, border = C.dangerBorder, gap = 4.dp) {
+            Label("HOLIDAY · Period ${s["period"].str ?: ""}", color = C.dangerText)
             Strong(holiday["reason"].str)
             T("${s["subject"]["code"].str ?: ""} · ${s["subject"]["name"].str ?: ""}", Type.small.copy(textDecoration = TextDecoration.LineThrough))
             Small("${Fmt.to12h(start)} – ${Fmt.to12h(end)} · No class · Attendance unavailable")
@@ -301,10 +301,10 @@ private fun StudentAttendance() {
             data == null && summary.error != null -> ErrorState(summary.error) { summary.refetch() }
             data == null -> Loading()
             else -> {
-                if (low) RowCard(Wide, background = C.dangerSoft, border = Color(0x4DF43F5E), gap = 10.dp, verticalAlignment = Alignment.Top) {
+                if (low) RowCard(Wide, background = C.dangerSoft, border = C.dangerBorder, gap = 10.dp, verticalAlignment = Alignment.Top) {
                     Icon(Icons.Rounded.Warning, null, Modifier.size(20.dp), tint = C.danger)
                     val must = o["mustAttend"].int ?: 0
-                    Small("Below ${num(threshold)}%. Attend the next $must class${if (must == 1) "" else "es"} to recover.", Modifier.weight(1f), Color(0xFFBE123C))
+                    Small("Below ${num(threshold)}%. Attend the next $must class${if (must == 1) "" else "es"} to recover.", Modifier.weight(1f), C.dangerText)
                 }
                 RowCard(Wide, gap = 16.dp) {
                     PercentRing(o["percentage"].dbl, threshold = threshold, sub = "${num(o["presentPeriods"])}/${num(o["totalPeriods"])}")
@@ -404,7 +404,7 @@ private fun StatusButtons(value: String?, options: List<StatusOpt>, enabled: Boo
             val on = value == o.value
             Row(
                 Modifier.alpha(if (enabled) 1f else 0.5f).clip(RoundedCornerShape(12.dp))
-                    .background(if (on) o.color else Color(0xB3FFFFFF)).border(1.dp, if (on) o.color else C.border, RoundedCornerShape(12.dp))
+                    .background(if (on) o.color else C.glass(0.7f)).border(1.dp, if (on) o.color else C.border, RoundedCornerShape(12.dp))
                     .clickable(enabled = enabled) { onChange(o.value) }.padding(horizontal = 10.dp, vertical = 8.dp)
                     .semantics { contentDescription = o.label },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -534,7 +534,7 @@ private fun MarkClass(preset: MarkPreset? = null, onPresetUsed: () -> Unit = {})
             }
             Card(Wide, padded = false) {
                 students.forEachIndexed { i, s ->
-                    if (i > 0) Box(Modifier.fillMaxWidth().background(Color(0x1A1D6FEB)).padding(top = 1.dp))
+                    if (i > 0) Box(Modifier.fillMaxWidth().background(C.divider).padding(top = 1.dp))
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Column(Modifier.weight(1f)) {
                             Strong(s["name"].str, maxLines = 1)
@@ -602,7 +602,7 @@ private fun DailySummary() {
         rows.isEmpty() -> Card(Wide) { EmptyState(Icons.Rounded.Group, "Nobody here", "No one matches this filter for the day.") }
         else -> Card(Wide, padded = false) {
             rows.forEachIndexed { i, row ->
-                if (i > 0) Box(Modifier.fillMaxWidth().background(Color(0x1A1D6FEB)).padding(top = 1.dp))
+                if (i > 0) Box(Modifier.fillMaxWidth().background(C.divider).padding(top = 1.dp))
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Avatar(row, size = 36.dp)
                     Column(Modifier.weight(1f)) {
@@ -652,7 +652,7 @@ private fun FacultyMarking() {
             if (!editable) LockNote(r["lockedReason"].str)
             Card(Wide, padded = false) {
                 r["faculty"].list.forEachIndexed { i, f ->
-                    if (i > 0) Box(Modifier.fillMaxWidth().background(Color(0x1A1D6FEB)).padding(top = 1.dp))
+                    if (i > 0) Box(Modifier.fillMaxWidth().background(C.divider).padding(top = 1.dp))
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column {
                             Strong(f["name"].str, maxLines = 1)
@@ -733,7 +733,7 @@ private val OUR_RANGES = listOf(Opt("day", "Today"), Opt("week", "Week"), Opt("m
 
 @Composable
 private fun MiniStat(label: String, value: String, modifier: Modifier) {
-    Column(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0x99FFFFFF)).padding(10.dp)) {
+    Column(modifier.clip(RoundedCornerShape(14.dp)).background(C.glass(0.6f)).padding(10.dp)) {
         Small(label)
         H3(value)
     }

@@ -273,7 +273,7 @@ private fun ChoiceGroup(label: String, options: List<Pair<String, String>>, valu
 @Composable
 private fun IdentityOption(icon: ImageVector, label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Row(
-        modifier.clip(RoundedCornerShape(18.dp)).background(if (active) C.primary50 else Color(0xCCFFFFFF))
+        modifier.clip(RoundedCornerShape(18.dp)).background(if (active) C.primary50 else C.glass(0.8f))
             .border(2.dp, if (active) C.primary else C.border, RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
     ) {

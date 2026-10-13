@@ -129,7 +129,7 @@ private fun PercentText(value: JsonElement?, threshold: Double = 75.0, hasData: 
 
 @Composable
 private fun MiniStatCell(label: String, value: String, modifier: Modifier) {
-    Column(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0x99FFFFFF)).padding(10.dp)) {
+    Column(modifier.clip(RoundedCornerShape(14.dp)).background(C.glass(0.6f)).padding(10.dp)) {
         Small(label)
         H3(value)
     }

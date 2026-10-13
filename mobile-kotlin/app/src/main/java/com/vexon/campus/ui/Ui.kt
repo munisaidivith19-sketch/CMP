@@ -37,6 +37,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -167,7 +170,19 @@ fun Header(title: String?, subtitle: String? = null, back: Boolean = false, righ
             if (!subtitle.isNullOrEmpty()) Small(subtitle, maxLines = 2)
         }
         right?.invoke()
+        ThemeToggle()
     }
+}
+
+/** Top-right light/dark switch, shown in every screen header. */
+@Composable
+fun ThemeToggle() {
+    val dark = ThemeState.dark
+    IconButton(
+        if (dark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+        if (dark) "Switch to light mode" else "Switch to dark mode",
+        color = if (dark) C.warning else C.ink,
+    ) { ThemeState.toggle() }
 }
 
 /** Press feedback: scale down slightly while pressed. */
@@ -269,7 +284,7 @@ fun Button(
         Variant.Primary -> Color.Transparent to Color.White
         Variant.Soft -> C.primarySoft to C.primary600
         Variant.Ghost -> Color.Transparent to C.soft
-        Variant.Outline -> Color(0x99FFFFFF) to C.ink
+        Variant.Outline -> C.glass(0.6f) to C.ink
         Variant.Danger -> C.dangerSoft to C.roseText
         Variant.Success -> C.successSoft to C.emeraldText
     }
@@ -300,7 +315,7 @@ fun IconButton(icon: ImageVector, label: String, color: Color = C.ink, modifier:
             .size(40.dp)
             .pressable(onClick, 0.92f)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xE0FFFFFF))
+            .background(C.glass(0.88f))
             .border(1.dp, C.border, RoundedCornerShape(16.dp))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
@@ -346,9 +361,21 @@ fun Input(
             trailingIcon = trailing,
             shape = RoundedCornerShape(Radius.md),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color(0xEBFFFFFF),
-                unfocusedContainerColor = Color(0xEBFFFFFF),
-                disabledContainerColor = Color(0x99FFFFFF),
+                // Explicit text colours: typed text must never take the card's colour
+                // (some phones' system dark mode recoloured it until it was invisible).
+                focusedTextColor = C.ink,
+                unfocusedTextColor = C.ink,
+                disabledTextColor = C.soft,
+                errorTextColor = C.ink,
+                focusedContainerColor = C.glass(0.92f),
+                unfocusedContainerColor = C.glass(0.92f),
+                disabledContainerColor = C.glass(0.6f),
+                errorContainerColor = C.glass(0.92f),
+                focusedPlaceholderColor = C.muted,
+                unfocusedPlaceholderColor = C.muted,
+                focusedTrailingIconColor = C.soft,
+                unfocusedTrailingIconColor = C.soft,
+                selectionColors = TextSelectionColors(handleColor = C.primary, backgroundColor = C.primary.copy(alpha = 0.3f)),
                 focusedBorderColor = C.primary400,
                 unfocusedBorderColor = C.border,
                 errorBorderColor = C.danger,
@@ -371,7 +398,7 @@ fun <V> Segmented(options: List<Opt<V>>, value: V, onChange: (V) -> Unit, modifi
         modifier
             .horizontalScroll(rememberScrollState())
             .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xBFFFFFFF))
+            .background(C.glass(0.75f))
             .border(1.dp, C.border, RoundedCornerShape(18.dp))
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -381,7 +408,7 @@ fun <V> Segmented(options: List<Opt<V>>, value: V, onChange: (V) -> Unit, modifi
             Box(
                 Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (active) Color.White else Color.Transparent)
+                    .background(if (active) C.surface else Color.Transparent)
                     .clickable(role = Role.Tab) { onChange(o.value) }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
@@ -400,7 +427,7 @@ fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(CircleShape)
-            .background(if (active) C.primary else Color(0xCCFFFFFF))
+            .background(if (active) C.primary else C.glass(0.8f))
             .border(1.dp, if (active) C.primary else C.border, CircleShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 7.dp),
@@ -415,13 +442,18 @@ fun ChipRow(content: @Composable RowScope.() -> Unit) {
 
 /* ── Status + identity ──────────────────────────────────────────── */
 
-enum class Tone(val bg: Color, val fg: Color) {
-    Primary(C.primarySoft, C.primary600),
-    Success(C.successSoft, C.emeraldText),
-    Warning(C.warningSoft, C.amberText),
-    Danger(C.dangerSoft, C.roseText),
-    Info(C.infoSoft, C.skyText),
-    Neutral(C.neutralSoft, C.slateText),
+// Colours are read on use (not captured once), so badges follow light/dark mode.
+enum class Tone(private val bgOf: () -> Color, private val fgOf: () -> Color) {
+    Primary({ C.primarySoft }, { C.primary600 }),
+    Success({ C.successSoft }, { C.emeraldText }),
+    Warning({ C.warningSoft }, { C.amberText }),
+    Danger({ C.dangerSoft }, { C.roseText }),
+    Info({ C.infoSoft }, { C.skyText }),
+    Neutral({ C.neutralSoft }, { C.slateText }),
+    ;
+
+    val bg: Color get() = bgOf()
+    val fg: Color get() = fgOf()
 }
 
 @Composable
@@ -471,7 +503,7 @@ fun Avatar(user: JsonElement? = null, name: String? = null, uri: String? = null,
         if (online) {
             Box(
                 Modifier.align(Alignment.BottomEnd).offset(1.dp, 1.dp).size(size * 0.3f).clip(CircleShape)
-                    .background(C.success).border(2.dp, Color.White, CircleShape).semantics { contentDescription = "online" },
+                    .background(C.success).border(2.dp, C.surface, CircleShape).semantics { contentDescription = "online" },
             )
         }
     }
@@ -555,7 +587,7 @@ fun PercentRing(value: Double?, size: Dp = 120.dp, stroke: Dp = 11.dp, threshold
             val d = this.size.minDimension - s
             val tl = Offset(s / 2, s / 2)
             val sz = androidx.compose.ui.geometry.Size(d, d)
-            drawArc(Color(0x241D6FEB), 0f, 360f, false, tl, sz, style = Stroke(s))
+            drawArc(C.border, 0f, 360f, false, tl, sz, style = Stroke(s))
             drawArc(color, -90f, (pct / 100 * 360).toFloat(), false, tl, sz, style = Stroke(s, cap = StrokeCap.Round))
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -616,4 +648,4 @@ fun Spacer(h: Dp) = androidx.compose.foundation.layout.Spacer(Modifier.height(h)
 @Composable
 fun BottomInset() = androidx.compose.foundation.layout.Spacer(Modifier.navigationBarsPadding())
 
-val BorderThin = BorderStroke(1.dp, C.border)
+val BorderThin get() = BorderStroke(1.dp, C.border)

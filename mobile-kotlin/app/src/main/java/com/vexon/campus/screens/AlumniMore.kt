@@ -214,7 +214,7 @@ fun AlumniJobDetailScreen(id: String) {
                             }
                             StatusBadge(app["status"].str)
                         }
-                        app["note"].text?.let { Small("\"$it\"", Wide.clip(RoundedCornerShape(8.dp)).background(Color.White).padding(8.dp), C.ink) }
+                        app["note"].text?.let { Small("\"$it\"", Wide.clip(RoundedCornerShape(8.dp)).background(C.surface).padding(8.dp), C.ink) }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Label("Update Status")
                             ChipRow {

@@ -1,8 +1,19 @@
 package com.vexon.campus.ui
 
+import android.content.Context
+import android.content.SharedPreferences
+import android.content.res.Configuration
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -13,41 +24,102 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vexon.campus.R
 
+/** Which look the app uses. System follows the phone's dark-mode setting. */
+enum class ThemeMode { System, Light, Dark }
+
 /**
- * Vexon design tokens (port of src/theme.js) — a "classic" light glass look
- * (sky-blue, airline-style): crisp white cards with just enough translucency to
- * read as glass, high-contrast navy text, no dark backgrounds.
+ * The app's light/dark state. Every colour in [C] and every [Type] style reads
+ * [dark], and because these are Compose snapshot states, switching repaints
+ * the whole app at once. The user's choice is kept in SharedPreferences.
+ */
+object ThemeState {
+    private const val PREFS = "vexon_ui"
+    private const val KEY = "theme_mode"
+    private var prefs: SharedPreferences? = null
+
+    var mode by mutableStateOf(ThemeMode.System)
+        private set
+
+    /** The phone's own dark-mode setting (kept current by [VexonTheme]). */
+    var systemDark by mutableStateOf(false)
+        internal set
+
+    val dark: Boolean get() = when (mode) {
+        ThemeMode.System -> systemDark
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
+
+    fun init(context: Context) {
+        val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs = p
+        mode = runCatching { ThemeMode.valueOf(p.getString(KEY, null) ?: "") }.getOrDefault(ThemeMode.System)
+        systemDark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    fun select(m: ThemeMode) {
+        mode = m
+        prefs?.edit()?.putString(KEY, m.name)?.apply()
+    }
+
+    /**
+     * One tap: switch to the opposite of what is on screen now. Landing back on
+     * the phone's own setting returns to "System", so the app follows the phone again.
+     */
+    fun toggle() {
+        val wantDark = !dark
+        select(if (wantDark == systemDark) ThemeMode.System else if (wantDark) ThemeMode.Dark else ThemeMode.Light)
+    }
+}
+
+private fun pick(light: Color, dark: Color) = if (ThemeState.dark) dark else light
+
+/**
+ * Vexon design tokens (port of src/theme.js). Light: crisp white glass cards
+ * with black text. Dark: deep navy cards with white text. Read through
+ * getters, so they always match the current [ThemeState].
  */
 object C {
-    val bg = Color(0xFFEFF5FC)
-    val card = Color(0xF0FFFFFF) // rgba(255,255,255,0.94) — Android variant of the glass card
-    val border = Color(0x241F6FEB) // rgba(31,111,235,0.14)
-    val ink = Color(0xFF101B2D)
-    val soft = Color(0xFF48566C)
-    val muted = Color(0xFF8592A6)
-    val primary50 = Color(0xFFEAF3FF)
-    val primary100 = Color(0xFFD2E6FF)
+    private val darkSurface = Color(0xFF1A2536)
+
+    val bg get() = pick(Color(0xFFEFF5FC), Color(0xFF0B1220))
+    val card get() = pick(Color(0xF0FFFFFF), Color(0xF0152033)) // the glass card
+    /** Opaque panels: text boxes, menus, dialogs, sheets, other people's chat bubbles. */
+    val surface get() = pick(Color.White, darkSurface)
+    /** Translucent panel (light: white at [alpha], dark: navy at [alpha]). */
+    fun glass(alpha: Float) = pick(Color.White.copy(alpha = alpha), darkSurface.copy(alpha = alpha))
+    val border get() = pick(Color(0x241F6FEB), Color(0x3D7EB6F7))
+    val divider get() = pick(Color(0x1A1D6FEB), Color(0x267EB6F7))
+    /** Main text: black in light mode, white in dark mode. */
+    val ink get() = pick(Color.Black, Color.White)
+    val soft get() = pick(Color(0xFF3B4658), Color(0xFFCBD5E1))
+    val muted get() = pick(Color(0xFF5B6779), Color(0xFF94A3B8))
+    val primary50 get() = pick(Color(0xFFEAF3FF), Color(0xFF13243D))
+    val primary100 get() = pick(Color(0xFFD2E6FF), Color(0xFF1A3253))
     val primary300 = Color(0xFF7EB6F7)
     val primary400 = Color(0xFF4396EF)
-    val primary = Color(0xFF1D6FEB)
-    val primary600 = Color(0xFF1257C4)
+    val primary get() = pick(Color(0xFF1D6FEB), Color(0xFF4D94F5))
+    val primary600 get() = pick(Color(0xFF1257C4), Color(0xFF8CC0FA))
     val success = Color(0xFF10B981)
-    val successSoft = Color(0x1F10B981)
-    val danger = Color(0xFFF43F5E)
-    val dangerSoft = Color(0x1FF43F5E)
+    val successSoft get() = pick(Color(0x1F10B981), Color(0x3310B981))
+    val danger get() = pick(Color(0xFFF43F5E), Color(0xFFFB7185))
+    val dangerSoft get() = pick(Color(0x1FF43F5E), Color(0x33F43F5E))
+    val dangerBorder = Color(0x4DF43F5E)
+    val dangerText get() = pick(Color(0xFFBE123C), Color(0xFFFDA4AF))
     val warning = Color(0xFFF59E0B)
-    val warningSoft = Color(0x26F59E0B)
+    val warningSoft get() = pick(Color(0x26F59E0B), Color(0x33F59E0B))
+    val warningText get() = pick(Color(0xFFB45309), Color(0xFFFBBF24))
     val info = Color(0xFF0EA5E9)
-    val infoSoft = Color(0x1F0EA5E9)
-    val neutralSoft = Color(0x1F64748B)
-    val primarySoft = Color(0x1A1D6FEB)
+    val infoSoft get() = pick(Color(0x1F0EA5E9), Color(0x330EA5E9))
+    val neutralSoft get() = pick(Color(0x1F64748B), Color(0x3394A3B8))
+    val primarySoft get() = pick(Color(0x1A1D6FEB), Color(0x334D94F5))
     val white = Color.White
-    val whiteGlass = Color(0xBFFFFFFF) // rgba(255,255,255,0.75)
-    val amberText = Color(0xFFB45309)
-    val roseText = Color(0xFFE11D48)
-    val emeraldText = Color(0xFF059669)
-    val skyText = Color(0xFF0284C7)
-    val slateText = Color(0xFF475569)
+    val whiteGlass get() = glass(0.75f)
+    val amberText get() = pick(Color(0xFFB45309), Color(0xFFFBBF24))
+    val roseText get() = pick(Color(0xFFBE123C), Color(0xFFFB7185))
+    val emeraldText get() = pick(Color(0xFF047857), Color(0xFF34D399))
+    val skyText get() = pick(Color(0xFF0369A1), Color(0xFF38BDF8))
+    val slateText get() = pick(Color(0xFF475569), Color(0xFFCBD5E1))
 }
 
 object Grad {
@@ -73,15 +145,15 @@ val Jakarta = FontFamily(
 
 /** Text variants of `<T v="…">`. */
 object Type {
-    val h1 = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = C.ink, letterSpacing = (-0.5).sp)
-    val h2 = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = C.ink, letterSpacing = (-0.3).sp)
-    val h3 = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = C.ink)
-    val body = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Normal, fontSize = 14.sp, color = C.ink, lineHeight = 20.sp)
-    val strong = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.ink)
-    val small = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = C.soft)
-    val label = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = C.soft, letterSpacing = 0.8.sp)
+    val h1 get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = C.ink, letterSpacing = (-0.5).sp)
+    val h2 get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = C.ink, letterSpacing = (-0.3).sp)
+    val h3 get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = C.ink)
+    val body get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Normal, fontSize = 14.sp, color = C.ink, lineHeight = 20.sp)
+    val strong get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = C.ink)
+    val small get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = C.soft)
+    val label get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = C.soft, letterSpacing = 0.8.sp)
     // Gate codes read aloud at the gate.
-    val code = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.ExtraBold, fontSize = 40.sp, lineHeight = 52.sp, letterSpacing = 6.sp, color = C.ink)
+    val code get() = TextStyle(fontFamily = Jakarta, fontWeight = FontWeight.ExtraBold, fontSize = 40.sp, lineHeight = 52.sp, letterSpacing = 6.sp, color = C.ink)
 }
 
 object Radius {
@@ -93,18 +165,25 @@ object Radius {
 
 @Composable
 fun VexonTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = C.primary,
-            onPrimary = Color.White,
-            background = C.bg,
-            surface = Color.White,
-            onSurface = C.ink,
-            onBackground = C.ink,
-            error = C.danger,
-        ),
-        content = content,
-    )
+    // Follow the phone's dark-mode switch while the user's choice is "System".
+    val systemDark = isSystemInDarkTheme()
+    SideEffect { ThemeState.systemDark = systemDark }
+    val dark = ThemeState.dark
+    val scheme = if (dark) {
+        darkColorScheme(
+            primary = C.primary, onPrimary = Color.White, background = C.bg, onBackground = C.ink,
+            surface = C.surface, onSurface = C.ink, surfaceVariant = C.surface, onSurfaceVariant = C.soft, error = C.danger,
+        )
+    } else {
+        lightColorScheme(
+            primary = C.primary, onPrimary = Color.White, background = C.bg, onBackground = C.ink,
+            surface = Color.White, onSurface = C.ink, error = C.danger,
+        )
+    }
+    MaterialTheme(colorScheme = scheme) {
+        // Text without an explicit colour follows the theme too.
+        CompositionLocalProvider(LocalContentColor provides C.ink, content = content)
+    }
 }
 
 // ── Roles & academic constants (same rules as the server) ────────────────

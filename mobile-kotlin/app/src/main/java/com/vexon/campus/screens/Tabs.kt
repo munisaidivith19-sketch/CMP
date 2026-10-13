@@ -113,6 +113,7 @@ import com.vexon.campus.core.describeConversation
 import com.vexon.campus.nav.Nav
 import com.vexon.campus.push.Push
 import com.vexon.campus.ui.Avatar
+import com.vexon.campus.ui.ThemeToggle
 import com.vexon.campus.ui.Badge
 import com.vexon.campus.ui.Body
 import com.vexon.campus.ui.Button
@@ -188,7 +189,7 @@ fun TabsScreen() {
                 }
             }
         }
-        NavigationBar(containerColor = Color(0xF5FFFFFF), tonalElevation = 0.dp) {
+        NavigationBar(containerColor = C.glass(0.96f), tonalElevation = 0.dp) {
             TAB_SPECS.forEach { t ->
                 val count = when (t.name) {
                     "chat" -> badge(chat.data["total"].int)
@@ -254,6 +255,7 @@ private fun Greeting(user: JsonElement, emoji: String, actions: @Composable () -
             H2("${firstName(user["name"].str)} $emoji", maxLines = 1)
         }
         actions()
+        ThemeToggle()
     }
 }
 
@@ -557,7 +559,7 @@ private fun AlumniHome(user: JsonElement) {
             Small("Profile Strength: $completeness% • Mentoring: ${if (profile["mentorshipAvailable"].bool) "Accepting Mentees" else "Paused"}", color = Color(0xD9FFFFFF))
             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.clip(RoundedCornerShape(14.dp)).background(Color.White).clickable { Nav.push("/alumni/sessions") }.padding(horizontal = 14.dp, vertical = 9.dp)) {
-                    T("Manage Sessions", Type.strong, color = C.primary600, size = 13)
+                    T("Manage Sessions", Type.strong, color = Color(0xFF1257C4), size = 13)
                 }
                 Box(Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0x2EFFFFFF)).clickable { Nav.push("/alumni") }.padding(horizontal = 14.dp, vertical = 9.dp)) {
                     T("Open Hub →", Type.strong, color = Color.White, size = 13)
@@ -658,7 +660,7 @@ fun ChatListScreen() {
                         requests.forEach { r ->
                             val pending = r["status"].str == "pending"
                             Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Box(Modifier.size(48.dp).clip(RoundedCornerShape(17.dp)).background(Color(0xB3FFFFFF)), contentAlignment = Alignment.Center) {
+                                Box(Modifier.size(48.dp).clip(RoundedCornerShape(17.dp)).background(C.glass(0.7f)), contentAlignment = Alignment.Center) {
                                     Icon(if (pending) Icons.Rounded.HourglassTop else Icons.Rounded.Cancel, null, Modifier.size(22.dp), tint = if (pending) C.warning else C.danger)
                                 }
                                 Column(Modifier.weight(1f)) {
@@ -803,7 +805,7 @@ fun NotificationsScreen() {
     ) { n ->
         val read = n["read"].bool
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(if (read) Color(0x99FFFFFF) else Color(0xF2FFFFFF))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(if (read) C.glass(0.6f) else C.glass(0.95f))
                 .clickable {
                     if (!read) scope.launch { runCatching { Api.markNotificationRead(n.id.orEmpty()) } }
                     n["link"].text?.let { Nav.push(it) }

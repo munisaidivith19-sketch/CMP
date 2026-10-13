@@ -156,7 +156,7 @@ private fun Matches(id: String) {
     }
     RowCard(Wide, background = C.infoSoft, gap = 8.dp, verticalAlignment = Alignment.Top) {
         Icon(Icons.Rounded.Info, null, Modifier.size(16.dp), tint = C.info)
-        Small("Possible matches are automatic suggestions, not proof of ownership. Staff verify before any handover.", Modifier.weight(1f), Color(0xFF0369A1))
+        Small("Possible matches are automatic suggestions, not proof of ownership. Staff verify before any handover.", Modifier.weight(1f), C.skyText)
     }
     val matches = q.data.list
     if (matches.isEmpty()) Small("No similar reports yet.", Wide.padding(12.dp), align = TextAlign.Center)

@@ -332,10 +332,10 @@ fun CalendarScreen() {
         if (q.error != null) ErrorState(q.error) { q.refetch() }
         Label(Fmt.format(selected, "EEEE, dd MMM"))
         pickedHolidays.forEach { h ->
-            RowCard(Wide, background = C.dangerSoft, border = Color(0x4DF43F5E), gap = 10.dp, verticalAlignment = Alignment.Top) {
+            RowCard(Wide, background = C.dangerSoft, border = C.dangerBorder, gap = 10.dp, verticalAlignment = Alignment.Top) {
                 Icon(Icons.Rounded.EventBusy, null, Modifier.size(20.dp), tint = C.danger)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Label("HOLIDAY", color = Color(0xFFBE123C))
+                    Label("HOLIDAY", color = C.dangerText)
                     Strong("Reason: ${h["reason"].str ?: ""}")
                     Small("Scope: ${h["scope"].str ?: ""}")
                     Small(fmtHolidayDates(h))
@@ -501,7 +501,7 @@ private fun Bubble(msg: AssistantMsg, onRetry: (() -> Unit)?) {
             if (onRetry != null) T("Retry", Type.small.copy(fontWeight = FontWeight.Bold), Modifier.clickable(onClick = onRetry), C.roseText)
         }
         else -> Column(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp)).background(Color(0xF7FFFFFF))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp)).background(C.glass(0.97f))
                 .border(1.dp, C.border, RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp)).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -604,7 +604,7 @@ private fun StudyAssistant(modifier: Modifier) {
                     T("Ask me to:", Type.small.copy(fontSize = 11.5.sp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         SUGGESTIONS.forEach { s ->
-                            Box(Modifier.clip(CircleShape).background(Color(0xF7FFFFFF)).border(1.dp, C.border, CircleShape).clickable { input = "$s: " }.padding(horizontal = 12.dp, vertical = 7.dp)) {
+                            Box(Modifier.clip(CircleShape).background(C.glass(0.97f)).border(1.dp, C.border, CircleShape).clickable { input = "$s: " }.padding(horizontal = 12.dp, vertical = 7.dp)) {
                                 T("• $s", Type.small, color = C.ink)
                             }
                         }

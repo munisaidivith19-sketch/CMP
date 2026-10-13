@@ -145,7 +145,7 @@ private const val BLOCKED = "Camera access is disabled for JNN. Please enable ca
 @Composable
 private fun Notice(title: String, text: String, content: @Composable () -> Unit = {}) {
     Column(
-        Modifier.widthIn(max = 360.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White).padding(20.dp),
+        Modifier.widthIn(max = 360.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(C.surface).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         H3(title)

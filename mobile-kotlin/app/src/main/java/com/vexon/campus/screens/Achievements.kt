@@ -168,7 +168,7 @@ fun achievementPositionLabel(p: String?) = POSITION_LABELS[p] ?: Fmt.titleCase(p
 @Composable
 private fun WhitePill(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector? = null, tint: Color = Color(0xFFF59E0B)) {
     Row(
-        Modifier.clip(CircleShape).background(Color(0xE6FFFFFF)).padding(horizontal = 10.dp, vertical = 3.dp),
+        Modifier.clip(CircleShape).background(C.glass(0.9f)).padding(horizontal = 10.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (icon != null) Icon(icon, null, Modifier.size(12.dp), tint = tint)
@@ -179,7 +179,7 @@ private fun WhitePill(text: String, icon: androidx.compose.ui.graphics.vector.Im
 /** Badge readable on the dark photo banner: solid white with the tone's text colour. */
 @Composable
 private fun BannerBadge(text: String, tone: Tone) {
-    Box(Modifier.clip(CircleShape).background(Color(0xF2FFFFFF)).padding(horizontal = 10.dp, vertical = 3.dp)) {
+    Box(Modifier.clip(CircleShape).background(C.glass(0.95f)).padding(horizontal = 10.dp, vertical = 3.dp)) {
         T(text, Type.small.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold), color = tone.fg)
     }
 }
@@ -215,7 +215,7 @@ private fun CongratulateButton(a: JsonElement, large: Boolean = false) {
     val scope = rememberCoroutineScope()
     val (on, count) = state
     Row(
-        Modifier.clip(CircleShape).background(if (on) (if (large) C.danger else C.dangerSoft) else if (large) Color.White else Color.Transparent)
+        Modifier.clip(CircleShape).background(if (on) (if (large) C.danger else C.dangerSoft) else if (large) C.surface else Color.Transparent)
             .clickable {
                 val before = state
                 state = !on to (count + if (on) -1 else 1)
@@ -675,7 +675,7 @@ private fun AchievementForm(me: JsonElement, existing: JsonElement?) {
                     hint = if (isPrincipal) "Any active student in the college (up to $MAX_STUDENTS)" else "Students of ${me["department"].text ?: "your department"}")
                 if (studentSearch.isNotBlank()) {
                     val found = results.data["items"].list
-                    Column(Wide.clip(RoundedCornerShape(16.dp)).background(Color.White).border(1.dp, C.border, RoundedCornerShape(16.dp)).padding(4.dp)) {
+                    Column(Wide.clip(RoundedCornerShape(16.dp)).background(C.surface).border(1.dp, C.border, RoundedCornerShape(16.dp)).padding(4.dp)) {
                         when {
                             results.data == null -> Loading()
                             found.isEmpty() -> Small("No matching students found.", Wide.padding(12.dp), align = TextAlign.Center)

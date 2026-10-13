@@ -450,7 +450,7 @@ fun ThreadScreen(id: String) {
                 if (d.group) IconTile(Icons.Rounded.Groups, Grad.hero, 40.dp) else Avatar(d.other, size = 40.dp, online = isOnline)
             })
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x1A1D6FEB)))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
 
         Box(Modifier.weight(1f)) {
             if (first.isLoading) Loading()
@@ -473,7 +473,7 @@ fun ThreadScreen(id: String) {
                                 Column(
                                     Modifier.widthIn(max = bubbleMax).alpha(if (deleted) 0.6f else 1f)
                                         .clip(RoundedCornerShape(22.dp, 22.dp, if (mine) 6.dp else 22.dp, if (mine) 22.dp else 6.dp))
-                                        .background(if (mine) C.primary else Color.White)
+                                        .background(if (mine) C.primary else C.surface)
                                         .combinedClickable(onClick = {}, onLongClick = { onLongPress(m) })
                                         .padding(horizontal = 14.dp, vertical = 9.dp),
                                 ) {
@@ -504,7 +504,7 @@ fun ThreadScreen(id: String) {
             }
         }
 
-        Column(Modifier.fillMaxWidth().background(Color(0xB3FFFFFF)).navigationBarsPadding().padding(10.dp)) {
+        Column(Modifier.fillMaxWidth().background(C.glass(0.7f)).navigationBarsPadding().padding(10.dp)) {
             replyTo?.let { r ->
                 Row(
                     Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(14.dp)).background(C.primarySoft).padding(8.dp),

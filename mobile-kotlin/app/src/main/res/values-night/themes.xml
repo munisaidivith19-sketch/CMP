@@ -1,0 +1,12 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Dark phones: dark window behind the app while it starts (no white flash). -->
+    <color name="splashscreen_background">#0B1220</color>
+
+    <style name="Theme.Vexon" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/splashscreen_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+    </style>
+</resources>

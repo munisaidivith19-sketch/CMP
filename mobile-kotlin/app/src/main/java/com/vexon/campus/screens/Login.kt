@@ -54,6 +54,7 @@ import com.vexon.campus.core.rememberMutation
 import com.vexon.campus.core.str
 import com.vexon.campus.nav.Nav
 import com.vexon.campus.ui.Backdrop
+import com.vexon.campus.ui.ThemeToggle
 import com.vexon.campus.ui.Button
 import com.vexon.campus.ui.C
 import com.vexon.campus.ui.Card
@@ -114,7 +115,9 @@ fun LoginScreen() {
     }
 
     Screen {
-        Column(Modifier.fillMaxWidth().padding(top = 30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Light/dark switch in the top-right corner, as on every other screen.
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { ThemeToggle() }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Image(painterResource(R.drawable.jnn_logo), "JNN logo", Modifier.size(84.dp))
             H1("Welcome back 👋")
             Small("Sign in with your college email to continue.", align = TextAlign.Center)
@@ -122,7 +125,7 @@ fun LoginScreen() {
         Card(Modifier.fillMaxWidth(), gap = 14.dp) {
             if (Auth.state.collectAsState().value.sessionEnded && lockedInfo == null) {
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0x1AF59E0B)).border(1.dp, Color(0x40F59E0B), RoundedCornerShape(10.dp)).padding(10.dp)) {
-                    Small("You were signed out because your session ended or was revoked. Please sign in again.", color = Color(0xFFD97706))
+                    Small("You were signed out because your session ended or was revoked. Please sign in again.", color = C.warningText)
                 }
             }
             lockedInfo?.let { info ->
@@ -141,7 +144,7 @@ fun LoginScreen() {
             val left = remaining
             if (lockedInfo == null && left != null && left > 0) {
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0x1AF59E0B)).border(1.dp, Color(0x40F59E0B), RoundedCornerShape(10.dp)).padding(10.dp)) {
-                    Small("⚠️ Invalid credentials. $left attempt${if (left > 1) "s" else ""} remaining before temporary lockout.", color = Color(0xFFD97706))
+                    Small("⚠️ Invalid credentials. $left attempt${if (left > 1) "s" else ""} remaining before temporary lockout.", color = C.warningText)
                 }
             }
             Input(

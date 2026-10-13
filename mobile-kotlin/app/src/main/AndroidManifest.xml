@@ -51,6 +51,7 @@
             android:screenOrientation="portrait"
             android:theme="@style/Theme.Vexon.Splash"
             android:windowSoftInputMode="adjustResize"
+            android:configChanges="uiMode"
             tools:ignore="DiscouragedApi,LockedOrientationActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

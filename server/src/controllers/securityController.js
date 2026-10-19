@@ -13,6 +13,8 @@ import * as otpService from '../services/otp/otpService.js';
  * searched and filtered, never edited or deleted.
  */
 
+const ROUTINE_ONLY = { actorRole: { $ne: 'super_admin' }, targetRole: { $ne: 'super_admin' } };
+
 /** today | yesterday | 7d | 30d | custom (from/to YYYY-MM-DD) | all → a createdAt filter. */
 function createdAtFilter(query) {
   const range = query.range || 'all';
@@ -36,9 +38,9 @@ async function userIdsMatching(q, extra = {}) {
 export const securitySummary = asyncHandler(async (_req, res) => {
   const day = timestampFilter({ from: today(), to: today() });
   const [loginsToday, failedLoginsToday, passwordResetsToday, activeSessions] = await Promise.all([
-    SecurityLog.countDocuments({ event: 'LOGIN_SUCCESS', createdAt: day }),
-    SecurityLog.countDocuments({ event: 'LOGIN_FAILED', createdAt: day }),
-    SecurityLog.countDocuments({ event: 'PASSWORD_RESET', createdAt: day }),
+    SecurityLog.countDocuments({ ...ROUTINE_ONLY, event: 'LOGIN_SUCCESS', createdAt: day }),
+    SecurityLog.countDocuments({ ...ROUTINE_ONLY, event: 'LOGIN_FAILED', createdAt: day }),
+    SecurityLog.countDocuments({ ...ROUTINE_ONLY, event: 'PASSWORD_RESET', createdAt: day }),
     Session.countDocuments({ revokedAt: null, expiresAt: { $gt: new Date() } }),
   ]);
   res.set('Cache-Control', 'no-store');
@@ -48,7 +50,10 @@ export const securitySummary = asyncHandler(async (_req, res) => {
 export const listSecurityLogs = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req, 25, 100);
   const { q, event, role, success, client } = req.query;
-  const clauses = [];
+  // Routine view: Super Admin identities and operations are excluded (they are
+  // kept in the protected audit trail instead). Applied before paging, search
+  // and filters, so no query parameter can bring them back.
+  const clauses = [ROUTINE_ONLY];
   if (event) clauses.push({ event });
   if (role) clauses.push({ $or: [{ actorRole: role }, { targetRole: role }] });
   if (success === 'true' || success === 'false') clauses.push({ success: success === 'true' });
@@ -59,7 +64,7 @@ export const listSecurityLogs = asyncHandler(async (req, res) => {
     const ids = await userIdsMatching(q);
     clauses.push({ $or: [{ actor: { $in: ids } }, { targetUser: { $in: ids } }, { identifier: new RegExp(escapeRegex(q), 'i') }] });
   }
-  const filter = clauses.length ? { $and: clauses } : {};
+  const filter = { $and: clauses };
 
   const people = 'name email role rollNo employeeId department year section';
   const [items, total] = await Promise.all([

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
 let socket = null;
@@ -44,10 +44,12 @@ export function connectSocket(getToken, { onUnauthorized } = {}) {
     if (ok && socket && !socket.connected) socket.connect();
   };
   socket.on('connect_error', (err) => {
+    dispatch('disconnect', []);
     if (err?.message === 'unauthorized') reauth();
   });
   // The server drops sockets of revoked sessions ("io server disconnect").
   socket.on('disconnect', (reason) => {
+    dispatch('disconnect', [reason]);
     if (reason === 'io server disconnect') reauth();
   });
   return socket;
@@ -87,6 +89,22 @@ export function useSocketEvent(event, handler) {
     listeners.get(event).add(fn);
     return () => listeners.get(event)?.delete(fn);
   }, [event]);
+}
+
+/**
+ * Whether live updates are flowing right now (the socket is connected). Used
+ * for the "Live" / "Reconnecting…" indicator.
+ */
+export function useSocketConnected() {
+  const [connected, setConnected] = useState(() => Boolean(socket?.connected));
+  useSocketEvent('connect', () => setConnected(true));
+  useSocketEvent('disconnect', () => setConnected(false));
+  // The socket may have connected before this component subscribed.
+  useEffect(() => {
+    const t = setInterval(() => setConnected(Boolean(socket?.connected)), 5000);
+    return () => clearInterval(t);
+  }, []);
+  return connected;
 }
 
 /**

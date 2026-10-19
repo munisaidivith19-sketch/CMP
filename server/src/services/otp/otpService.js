@@ -84,7 +84,27 @@ function otpError(status, message, event, reason) {
  * number the student typed on that request (stored on the pass when it was
  * created). Reviewers see a warning when it differs from the registered one.
  */
-async function registeredParentMobile(pass) {
+/**
+ * A 10-digit Indian mobile number (6–9 first digit) from what a faculty typed —
+ * "+91 98765 43210", "09876543210" and "9876543210" are all accepted. Null if invalid.
+ */
+export function normalizeIndianMobile(raw) {
+  if (typeof raw !== 'string') return null;
+  let digits = raw.replace(/[\s\-()]/g, '');
+  if (!/^\+?\d+$/.test(digits)) return null;
+  digits = digits.replace(/^\+/, '');
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  return /^[6-9]\d{9}$/.test(digits) ? digits : null;
+}
+
+/** Last 10 digits, for comparing two ways of writing the same number. */
+export const sameMobile = (a, b) => {
+  const d = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+  return d(a).length === 10 && d(a) === d(b);
+};
+
+export async function registeredParentMobile(pass) {
   if (pass.dayScholarOuting) {
     const typed = String(pass.parentPhone || '').trim();
     return typed.replace(/\D/g, '').length >= 6 ? typed : null;
@@ -103,6 +123,7 @@ function publicState(record) {
     ...base,
     status: expired ? 'expired' : record.status,
     maskedMobile: record.parentMobileMasked,
+    alternateMobile: Boolean(record.alternateMobile),
     sentAt: record.lastSentAt,
     expiresAt: record.expiresAt,
     attemptsLeft: Math.max(0, record.maxAttempts - record.attempts),
@@ -122,7 +143,7 @@ export async function getOtpState(gatePassId) {
  * Issue a new OTP for a gate pass and deliver it through the configured
  * provider. Any earlier OTP for the pass stops working.
  */
-export async function requestOtp({ pass, studentName, faculty }) {
+export async function requestOtp({ pass, studentName, faculty, alternate = null }) {
   const provider = getOtpProvider();
   const now = new Date();
   const latest = await latestFor(pass._id);
@@ -132,7 +153,9 @@ export async function requestOtp({ pass, studentName, faculty }) {
     throw new ApiError(429, `Please wait ${wait} second${wait === 1 ? '' : 's'} before requesting another OTP`);
   }
 
-  const to = await registeredParentMobile(pass);
+  // `alternate` ({ mobile, reason }) is a number the class faculty typed because
+  // the registered one is not reachable — validated and audited by the caller.
+  const to = alternate?.mobile || (await registeredParentMobile(pass));
   if (!to) {
     throw otpError(422, 'This student has no registered parent mobile number. Ask an administrator to add it.', 'failed', 'no_parent_mobile');
   }
@@ -147,6 +170,7 @@ export async function requestOtp({ pass, studentName, faculty }) {
     student: pass.student?._id || pass.student,
     faculty: faculty._id,
     parentMobileMasked: maskedMobile,
+    ...(alternate ? { alternateMobile: true, alternateReason: alternate.reason } : {}),
     otpHash: hashOtp(_id, otp),
     otpSealed: sealOtp(_id, otp),
     expiresAt: new Date(now.getTime() + env.otp.expiryMinutes * 60000),

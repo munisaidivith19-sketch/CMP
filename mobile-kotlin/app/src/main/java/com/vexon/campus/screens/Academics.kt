@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Coffee
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.EventNote
+import androidx.compose.material.icons.rounded.EventNote
 import androidx.compose.material.icons.rounded.FactCheck
 import androidx.compose.material.icons.rounded.FlightTakeoff
 import androidx.compose.material.icons.rounded.Group
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import com.vexon.campus.core.Api
 import com.vexon.campus.core.Fmt
 import com.vexon.campus.core.Omit
+import com.vexon.campus.core.Query
 import com.vexon.campus.core.bool
 import com.vexon.campus.core.dbl
 import com.vexon.campus.core.errMsg
@@ -77,6 +79,7 @@ import com.vexon.campus.core.strings
 import com.vexon.campus.core.text
 import com.vexon.campus.nav.Nav
 import com.vexon.campus.nav.Route
+import com.vexon.campus.ui.ACADEMIC_OVERSIGHT
 import com.vexon.campus.ui.ATTENDANCE_READ_ONLY
 import com.vexon.campus.ui.Avatar
 import com.vexon.campus.ui.Badge
@@ -174,6 +177,7 @@ fun TimetableScreen() {
                 else -> "Your teaching schedule"
             },
             back = true,
+            right = { Button("Exams", { Nav.push("/exams") }, variant = Variant.Soft, icon = Icons.Rounded.EventNote, small = true) },
         )
         if (isFaculty) Segmented(listOf(Opt("class", "Our Class"), Opt("handling", "Handling Class")), scope, ::pickScope)
         Segmented(DAYS.map { d -> Opt(d, if (d == todayName()) "Today" else d.take(3).replaceFirstChar { it.uppercase() }) }, day, { day = it })
@@ -428,6 +432,13 @@ private fun LockNote(text: String?) {
 @Composable
 private fun MarkClass(preset: MarkPreset? = null, onPresetUsed: () -> Unit = {}) {
     val me = me()
+    // Faculty take attendance from their timetable period, exactly like the web:
+    // the period (slotId) fixes the subject, section and date on the server.
+    if (me.role == "faculty") {
+        LaunchedEffect(preset) { if (preset != null) onPresetUsed() }
+        FacultyMarkClass()
+        return
+    }
     val scope = when (me.role) {
         "faculty" -> mapOf("mine" to "true")
         "hod" -> mapOf("department" to me["department"].str)
@@ -444,33 +455,11 @@ private fun MarkClass(preset: MarkPreset? = null, onPresetUsed: () -> Unit = {})
         subjectId = p.subjectId; section = p.section; date = p.date; period = p.period
         onPresetUsed()
     }
-    val marks = remember { mutableStateMapOf<String, String>() }
-    val save = rememberMutation()
-
     val subject = subjects.data.list.firstOrNull { it.id == subjectId }
     val subjectSections = subject["sections"].strings
     val ready = subjectId.isNotEmpty() && period.isNotEmpty() && (subjectSections.isEmpty() || section.isNotEmpty())
     val roster = Api.roster(mapOf("subjectId" to subjectId, "date" to date, "period" to period, "section" to section.ifEmpty { null }), skip = !ready)
-    val r = roster.data
-
-    // Start from what is saved; unmarked students default to present.
-    LaunchedEffect(r) {
-        if (r != null) {
-            marks.clear()
-            r["students"].list.forEach { s -> marks[s.id.orEmpty()] = s["status"].text ?: "present" }
-        }
-    }
     val todays = now.data["today"].list.filter { !it["isBreak"].bool && it["subject"].id != null }
-    val present = marks.values.count { it == "present" }
-    val absent = marks.values.count { it == "absent" }
-
-    fun submit() = save.launch(onError = { Dialogs.alert("Could not save", errMsg(it)) }) {
-        val res = Api.markClassAttendance(jsonOf(
-            "subjectId" to subjectId, "date" to date, "period" to period.toInt(), "section" to (section.ifEmpty { null } ?: Omit),
-            "records" to marks.map { (student, status) -> mapOf("student" to student, "status" to status) },
-        ))
-        Dialogs.alert("Attendance saved", "${res["message"].str ?: ""}\n$present present · $absent absent")
-    }
 
     if (todays.isNotEmpty()) {
         SectionTitle("Your classes today")
@@ -515,8 +504,94 @@ private fun MarkClass(preset: MarkPreset? = null, onPresetUsed: () -> Unit = {})
         }
     }
 
+    RosterPanel(roster, ready, "Pick the subject, section and period to load your students.") {
+        listOf("subjectId" to subjectId, "date" to date, "period" to period.toInt(), "section" to (section.ifEmpty { null } ?: Omit))
+    }
+}
+
+private val PERIOD_LABEL = mapOf("ACTIVE" to "In progress", "UPCOMING" to "Upcoming", "COMPLETED" to "Ended")
+
+/**
+ * Faculty: today's timetable periods (live UPCOMING / ACTIVE / COMPLETED from
+ * the server clock); picking one opens its roster by `slotId`. Only the
+ * running period can be saved — the server enforces the same window.
+ */
+@Composable
+private fun FacultyMarkClass() {
+    val periods = Api.myPeriods(pollMs = 30_000)
+    var slotId by rememberSaveable { mutableStateOf("") }
+    val list = periods.data["periods"].list
+    // Open the period that is running now, if there is one.
+    LaunchedEffect(list) {
+        if (slotId.isEmpty()) list.firstOrNull { it["status"].str == "ACTIVE" && it["holiday"] == null && it["examBlocked"] == null }
+            ?.let { slotId = it["slotId"].str.orEmpty() }
+    }
+    SectionTitle("Today's periods")
     when {
-        !ready -> Card(Wide) { EmptyState(Icons.AutoMirrored.Rounded.Assignment, "Choose a class", "Pick the subject, section and period to load your students.") }
+        periods.data == null && periods.error != null -> ErrorState(periods.error) { periods.refetch() }
+        periods.data == null -> Loading()
+        list.isEmpty() -> Card(Wide) { EmptyState(Icons.Rounded.Group, "No classes today", "Your timetable has no periods today.") }
+        else -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            list.forEach { p ->
+                val state = when {
+                    p["holiday"] != null -> "Holiday"
+                    p["examBlocked"] != null -> "Exam"
+                    p["coveredBy"] != null -> "Covered by ${p["coveredBy"]["name"].str ?: "a substitute"}"
+                    p["cover"]["kind"].str == "not_conducted" -> "Not conducted"
+                    p["marked"].bool -> "Marked"
+                    else -> PERIOD_LABEL[p["status"].str] ?: ""
+                } + (if (p["substituteFor"] != null) " · substitute" else "")
+                Chip(
+                    "P${p["period"].str ?: ""} · ${p["subject"]["code"].str ?: ""}${p["section"].text?.let { " · $it" } ?: ""} · ${Fmt.to12h(p["startTime"])} · $state",
+                    slotId == p["slotId"].str,
+                ) { slotId = p["slotId"].str.orEmpty() }
+            }
+        }
+    }
+    Small("Attendance opens when the period starts and closes when it ends.", color = C.muted)
+    val roster = Api.roster(mapOf("slotId" to slotId), skip = slotId.isEmpty())
+    RosterPanel(roster, slotId.isNotEmpty(), "Choose one of today's periods to load your students.") { listOf("slotId" to slotId) }
+}
+
+/**
+ * A class roster with Present / Absent buttons and Save — shared by the
+ * faculty (timetable period) and HOD / admin (subject + period) flows.
+ * [classFields] says which class to save: `slotId`, or subject/date/period/section.
+ */
+@Composable
+private fun RosterPanel(roster: Query, ready: Boolean, emptyHint: String, classFields: () -> List<Pair<String, Any?>>) {
+    val marks = remember { mutableStateMapOf<String, String>() }
+    val save = rememberMutation()
+    val r = roster.data
+    // Start from what is saved; unmarked students default to present.
+    LaunchedEffect(r) {
+        if (r != null) {
+            marks.clear()
+            r["students"].list.forEach { s -> marks[s.id.orEmpty()] = s["status"].text ?: "present" }
+        }
+    }
+    val present = marks.values.count { it == "present" || it == "od" }
+    val absent = marks.values.count { it == "absent" }
+
+    fun submit() = save.launch(onError = { Dialogs.alert("Could not save", errMsg(it)) }) {
+        val res = Api.markClassAttendance(jsonOf(
+            *classFields().toTypedArray(),
+            "records" to marks.map { (student, status) -> mapOf("student" to student, "status" to status) },
+        ))
+        // First period after an exam: Present students' exam-blocked periods were marked too.
+        val auto = res["examAuto"].takeIf { it != null && it !is kotlinx.serialization.json.JsonNull }
+        val autoText = auto?.let { a ->
+            val periods = a["periods"].list.joinToString(", ") { "P${it["period"].str ?: ""}" }
+            val conflicts = a["conflicts"].list.size
+            "\n\n${a["exam"]["subjectCode"].str ?: ""} exam periods ($periods): ${a["recordsCreated"].str ?: "0"} marked Present" +
+                (if ((a["reverted"].int ?: 0) > 0) ", ${a["reverted"].str} withdrawn" else "") +
+                (if (conflicts > 0) "\n$conflicts existing record(s) were left unchanged for review." else "")
+        } ?: ""
+        Dialogs.alert("Attendance saved", "${res["message"].str ?: ""}\n$present present · $absent absent$autoText")
+    }
+
+    when {
+        !ready -> Card(Wide) { EmptyState(Icons.AutoMirrored.Rounded.Assignment, "Choose a class", emptyHint) }
         r == null && roster.error != null -> ErrorState(roster.error) { roster.refetch() }
         r == null -> Loading()
         r["students"].list.isEmpty() -> Card(Wide) { EmptyState(Icons.Rounded.Group, "No students in this class", "Students appear once an admin assigns them to this department and section.") }
@@ -528,9 +603,19 @@ private fun MarkClass(preset: MarkPreset? = null, onPresetUsed: () -> Unit = {})
                 Small(Fmt.classDay(r["date"], "EEEE, dd MMM") + if (r["alreadyMarked"].bool) " · marked by ${r["markedBy"]["name"].text ?: "staff"}" else "")
             }
             if (r["holiday"] != null) HolidayCard(r["holiday"]) else if (!editable) LockNote(r["lockedReason"].str)
+            val trigger = r["examTrigger"]
+            if (editable && trigger != null && trigger !is kotlinx.serialization.json.JsonNull) {
+                Small(
+                    "First period after the ${trigger["exam"]["subjectCode"].str ?: ""} exam: a student marked Present here is also marked Present for " +
+                        trigger["periods"].list.joinToString(", ") { "P${it["period"].str ?: ""}" } + ". Absent students get nothing automatic.",
+                    Wide, C.primary,
+                )
+            }
+            // On Duty (approved OD / event) is fixed by the server — the bulk buttons leave it alone.
+            val open = students.filter { !it["lockedStatus"].bool }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button("All present", { students.forEach { marks[it.id.orEmpty()] = "present" } }, variant = Variant.Success, small = true, enabled = editable)
-                Button("All absent", { students.forEach { marks[it.id.orEmpty()] = "absent" } }, variant = Variant.Danger, small = true, enabled = editable)
+                Button("All present", { open.forEach { marks[it.id.orEmpty()] = "present" } }, variant = Variant.Success, small = true, enabled = editable)
+                Button("All absent", { open.forEach { marks[it.id.orEmpty()] = "absent" } }, variant = Variant.Danger, small = true, enabled = editable)
             }
             Card(Wide, padded = false) {
                 students.forEachIndexed { i, s ->
@@ -540,7 +625,8 @@ private fun MarkClass(preset: MarkPreset? = null, onPresetUsed: () -> Unit = {})
                             Strong(s["name"].str, maxLines = 1)
                             Small(s["rollNo"].text ?: "—")
                         }
-                        StatusButtons(marks[s.id], STUDENT_OPTIONS, editable) { marks[s.id.orEmpty()] = it }
+                        if (s["lockedStatus"].bool) Badge(s["badge"].text ?: "On Duty", Tone.Info)
+                        else StatusButtons(marks[s.id], STUDENT_OPTIONS, editable) { marks[s.id.orEmpty()] = it }
                     }
                 }
             }
@@ -690,7 +776,7 @@ private fun StaffAttendance(route: Route?) {
         add(Opt("overview", if (role == "faculty") "Our Class" else "Class Overview"))
         add(Opt("low", "Low Attendance"))
         add(Opt("corrections", "Corrections", pendingCorrections()))
-        if (role in setOf("faculty", "hod") + COLLEGE_WIDE) add(Opt("reports", "Reports"))
+        if (role in setOf("faculty", "hod") + ACADEMIC_OVERSIGHT) add(Opt("reports", "Reports"))
         if (role in setOf("admin", "hod")) add(Opt("faculty", "Faculty"))
     }
     // Notification links open a tab directly, e.g. /attendance?tab=corrections.
@@ -1040,7 +1126,10 @@ private fun HodTimetable(me: JsonElement) {
     val q = if (tab == "master") master else avail
     val data = q.data
     Screen(refreshing = q.isFetching && !q.isLoading, onRefresh = { q.refetch() }) {
-        Header("Timetable", "Master Timetable · ${if (firstYear) department.ifEmpty { "All departments (Year 1)" } else me["department"].str ?: "Department"}", back = true)
+        Header(
+            "Timetable", "Master Timetable · ${if (firstYear) department.ifEmpty { "All departments (Year 1)" } else me["department"].str ?: "Department"}", back = true,
+            right = { Button("Exams", { Nav.push("/exams") }, variant = Variant.Soft, icon = Icons.Rounded.EventNote, small = true) },
+        )
         if (firstYear) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Chip("All departments", department.isEmpty()) { department = "" }
             com.vexon.campus.ui.DEPARTMENTS.filter { it != com.vexon.campus.ui.FIRST_YEAR_HOD_DEPT }.forEach { d -> Chip(d, department == d) { department = d } }

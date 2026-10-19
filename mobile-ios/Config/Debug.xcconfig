@@ -1,0 +1,10 @@
+#include "Base.xcconfig"
+
+// Development: a server on the Mac running the simulator. Override in Local.xcconfig
+// or on the sign-in screen ("Server") for a phone on the campus network.
+VEXON_ENVIRONMENT = development
+VEXON_API_BASE_URL = http:$(SLASH)$(SLASH)localhost:5000
+// Debug builds may use plain http for a LAN/dev server.
+VEXON_ALLOW_INSECURE_HTTP = YES
+
+#include? "Local.xcconfig"

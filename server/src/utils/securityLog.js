@@ -6,7 +6,7 @@ import { parseBrowser, parseDevice, parseOs } from './device.js';
 const SECRET_KEY = /password|passwd|hash|token|secret|cookie|jti|authorization|api[-_]?key|^otp$|^code$/i;
 
 /** Copy plain context, dropping anything that looks like a credential. */
-function scrub(value, depth = 0) {
+export function scrub(value, depth = 0) {
   if (value == null || depth > 3) return undefined;
   if (Array.isArray(value)) return value.slice(0, 20).map((v) => scrub(v, depth + 1));
   if (value instanceof Date) return value;

@@ -1,6 +1,7 @@
 import multer from 'multer';
 import { env } from '../config/env.js';
 import { ApiError } from '../utils/http.js';
+import { captureError } from '../services/soc/capture.js';
 
 export const notFound = (req, res) => {
   res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
@@ -31,7 +32,15 @@ export const errorHandler = (err, req, res, _next) => {
     message = 'Request body too large';
   }
 
-  if (status >= 500) {
+  // SOC: server faults and authorization refusals are recorded (redacted,
+  // deduplicated). Ordinary 4xx answers — validation, not found, conflicts —
+  // are the API working as intended and are not captured.
+  if ((status >= 500 && err.data?.code !== 'MAINTENANCE') || status === 403) {
+    captureError({ source: status === 403 ? 'authorization' : 'express', err, req, httpStatus: status, meta: errorMeta(err) });
+  }
+
+  // A maintenance 503 is an expected, controlled response — not a server fault.
+  if (status >= 500 && err.data?.code !== 'MAINTENANCE') {
     console.error('[error]', err);
     // An ApiError's message is written for the user (e.g. "The college SMS
     // service is not configured yet") and says what to fix; only unexpected
@@ -41,9 +50,30 @@ export const errorHandler = (err, req, res, _next) => {
 
   const extra = err.data || (errors && !Array.isArray(errors) ? errors : null);
 
+  if (req.id) res.set('X-Request-Id', req.id);
   res.status(status).json({
     message,
     ...(errors && Array.isArray(errors) ? { errors } : {}),
     ...(extra && typeof extra === 'object' ? extra : {}),
   });
 };
+
+/** Safe, non-identifying metadata about an error for the SOC record. */
+function errorMeta(err) {
+  return {
+    apiError: err instanceof ApiError,
+    // AIServiceError's category ("auth", "rate_limit", "timeout"…), never the upstream text.
+    ...(err?.category ? { category: String(err.category).slice(0, 30) } : {}),
+  };
+}
+
+/**
+ * Rate-limit responses are sent by express-rate-limit itself (they never
+ * reach errorHandler), so they are recorded when the response finishes.
+ */
+export function captureRateLimited(req, res, next) {
+  res.on('finish', () => {
+    if (res.statusCode === 429) captureError({ source: 'rate_limit', req, httpStatus: 429, message: 'Rate limit exceeded', route: req.originalUrl });
+  });
+  next();
+}

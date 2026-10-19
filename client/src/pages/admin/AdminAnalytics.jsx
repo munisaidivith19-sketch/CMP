@@ -119,7 +119,7 @@ export default function AdminAnalytics() {
             ))}
           </div>
           <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white/60 pt-4 text-xs dark:border-white/10">
-            {Object.entries(data.usersByRole).map(([role, n]) => (
+            {Object.entries(data.usersByRole).filter(([role]) => role !== 'super_admin').map(([role, n]) => (
               <div key={role} className="rounded-2xl bg-white/50 p-2.5 dark:bg-white/5">
                 <p className="muted">{ROLE_LABELS[role]}</p>
                 <p className="text-lg font-extrabold">{n}</p>

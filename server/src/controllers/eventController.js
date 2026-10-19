@@ -10,6 +10,8 @@ import { logActivity } from '../utils/activity.js';
 import { dayKey, toDay, weekdayOf } from '../utils/dates.js';
 import { clock } from '../utils/clock.js';
 import { generateEventParticipantsPdfBuffer } from '../services/eventParticipantsPdf.js';
+import { publishedExamsFor, timesOverlap } from '../services/exams.js';
+import { announceClassAttendance } from '../services/attendanceLive.js';
 
 const EDITABLE = [
   'title',
@@ -428,11 +430,17 @@ export const markAttendance = asyncHandler(async (req, res) => {
       ...(studentSection ? { section: studentSection } : {}),
       ...(student.year ? { year: student.year } : {}),
     }).lean();
+    // Periods blocked by a published exam of the student's class are closed to
+    // regular attendance — an event mark neither creates nor changes them.
+    const exams = await publishedExamsFor({ department: student.department, year: student.year, section: studentSection || undefined }, studentDay);
+    const examBlocked = (s) => exams.some((e) => timesOverlap(e, s));
+    const blockedPeriods = scheduledSlots.filter(examBlocked).map((s) => s.period);
+    scheduledSlots = scheduledSlots.filter((s) => !examBlocked(s));
     const periods = scheduledSlots.map((s) => s.period);
     existingRecords = await AttendanceRecord.find({
       student: student._id,
       date: studentDay,
-      ...(periods.length > 0 ? { period: { $in: periods } } : {}),
+      ...(periods.length > 0 ? { period: { $in: periods } } : blockedPeriods.length ? { period: { $nin: blockedPeriods } } : {}),
     });
   }
 
@@ -523,6 +531,9 @@ export const markAttendance = asyncHandler(async (req, res) => {
         }))
       );
     }
+
+    // The student's class screens (in-charge, HOD, college dashboards) refresh live.
+    announceClassAttendance({ department: student.department, year: student.year, section: student.section, day: studentDay }, req.user._id);
 
     const cic = await User.findOne({
       role: 'faculty',

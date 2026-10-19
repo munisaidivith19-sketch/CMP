@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>VEXON</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!-- VEXON build configuration (from Config/*.xcconfig). Public values only. -->
+	<key>VEXONAPIBaseURL</key>
+	<string>$(VEXON_API_BASE_URL)</string>
+	<key>VEXONEnvironment</key>
+	<string>$(VEXON_ENVIRONMENT)</string>
+	<key>VEXONAllowInsecureHTTP</key>
+	<string>$(VEXON_ALLOW_INSECURE_HTTP)</string>
+
+	<!-- Location: asked only when the user taps "My location" on the bus map,
+	     or when authorised staff start sharing a bus trip. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>VEXON shows your position on the bus map when you tap “My location”, and — for staff who start a bus trip — shares the bus position with students until the trip ends.</string>
+
+	<!-- Continued location updates while a STAFF-STARTED bus trip is active and the
+	     screen is locked (blue status-bar indicator shown). Never used for students.
+	     Requires institutional approval; see README "Privacy". -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Allows plain http only to local-network hosts (development server on
+		     the LAN). The app itself refuses http:// servers in Release builds. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>

@@ -5,6 +5,7 @@ import { useGetParentOtpQuery, useRequestParentOtpMutation, useVerifyParentOtpMu
 import { Badge, Button, Skeleton } from '../../components/ui/primitives';
 import { YEAR_LABELS } from '../../utils/constants';
 import { errMsg } from '../../utils/format';
+import { isValidIndianMobile, mobileDiffers } from '../../utils/parentMobile';
 
 function useNow(active) {
   const [now, setNow] = useState(() => Date.now());
@@ -35,8 +36,14 @@ export function ParentVerification({ pass, onVerified }) {
   const [sent, setSent] = useState(null);
   const [otp, setOtp] = useState('');
   const [problem, setProblem] = useState('');
+  // The number the OTP goes to: the registered parent mobile unless the faculty edits it.
+  const [mobile, setMobile] = useState(null);
+  const [reason, setReason] = useState('');
 
   const state = sent || data;
+  const registered = data?.parentMobile || pass.parentPhone || '';
+  const typedMobile = mobile ?? registered;
+  const edited = mobileDiffers(typedMobile, registered);
   const now = useNow(Boolean(state?.resendAvailableAt || state?.status === 'active'));
   const expiresIn = state?.status === 'active' ? secondsUntil(state.expiresAt, now) : 0;
   const live = expiresIn > 0;
@@ -45,11 +52,20 @@ export function ParentVerification({ pass, onVerified }) {
   const status = state?.status === 'active' && !live ? 'expired' : state?.status;
 
   const sendOtp = async () => {
+    if (edited && !isValidIndianMobile(typedMobile)) {
+      setProblem('Enter a valid 10-digit mobile number');
+      return;
+    }
+    if (edited && reason.trim().length < 3) {
+      setProblem('Say why the OTP is going to a different number (e.g. parent not reachable)');
+      return;
+    }
     try {
-      setSent(await send(pass._id).unwrap());
+      const res = await send(edited ? { id: pass._id, mobile: typedMobile.trim(), reason: reason.trim() } : pass._id).unwrap();
+      setSent(res);
       setOtp('');
       setProblem('');
-      toast.success('OTP sent to the registered parent mobile number');
+      toast.success(res.message || 'OTP sent to the registered parent mobile number');
     } catch (e) {
       toast.error(errMsg(e));
       refetch();
@@ -80,7 +96,7 @@ export function ParentVerification({ pass, onVerified }) {
     ['Department', student.department || pass.department],
     ['Year', YEAR_LABELS[student.year] || (student.year ? `Year ${student.year}` : '—')],
     ['Section', student.section || pass.section],
-    ['Parent mobile', state?.parentMobile || pass.parentPhone],
+    ['Registered parent mobile', registered],
   ];
 
   return (
@@ -114,7 +130,7 @@ export function ParentVerification({ pass, onVerified }) {
         ) : live ? (
           <form onSubmit={submit} noValidate>
             <p className="text-sm">
-              OTP sent to the registered parent mobile number.
+              {state.alternateMobile ? `OTP sent to the alternate number ${state.maskedMobile}.` : 'OTP sent to the registered parent mobile number.'}
             </p>
             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="min-w-0 sm:w-64">
@@ -157,6 +173,50 @@ export function ParentVerification({ pass, onVerified }) {
             </p>
           </form>
         ) : (
+          <div className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="min-w-0">
+                <label htmlFor={`${inputId}-mobile`} className="mb-1 block text-xs font-bold muted">
+                  Send OTP to
+                </label>
+                <input
+                  id={`${inputId}-mobile`}
+                  value={typedMobile}
+                  onChange={(e) => {
+                    setMobile(e.target.value.replace(/[^\d+\s-]/g, '').slice(0, 16));
+                    setProblem('');
+                  }}
+                  inputMode="tel"
+                  autoComplete="off"
+                  placeholder="10-digit mobile number"
+                  className="input w-full font-mono"
+                />
+                <p className="mt-1 text-xs muted">
+                  {edited ? (
+                    <button type="button" className="font-bold text-primary-600 underline" onClick={() => { setMobile(null); setReason(''); }}>
+                      Use the registered number
+                    </button>
+                  ) : (
+                    'Registered parent number · edit it if the parent is not reachable'
+                  )}
+                </p>
+              </div>
+              {edited && (
+                <div className="min-w-0">
+                  <label htmlFor={`${inputId}-reason`} className="mb-1 block text-xs font-bold muted">
+                    Reason for a different number
+                  </label>
+                  <input
+                    id={`${inputId}-reason`}
+                    value={reason}
+                    onChange={(e) => { setReason(e.target.value.slice(0, 200)); setProblem(''); }}
+                    placeholder="e.g. Father not reachable — mother’s number"
+                    className="input w-full"
+                  />
+                  <p className="mt-1 text-xs text-amber-600">Recorded in the audit log and shown to the HOD and principal.</p>
+                </div>
+              )}
+            </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <p className="min-w-0 flex-1 text-sm">
               {problem && (
@@ -164,11 +224,12 @@ export function ParentVerification({ pass, onVerified }) {
                   {problem}
                 </span>
               )}
-              {NOT_LIVE_TEXT[status] || 'Send an OTP to the parent’s registered mobile number, then enter the code they read out.'}
+              {NOT_LIVE_TEXT[status] || 'Send an OTP to the parent’s mobile number, then enter the code they read out.'}
             </p>
             <Button icon={Send} loading={sending} disabled={resendIn > 0} onClick={sendOtp} className="w-full sm:w-auto">
               {resendIn > 0 ? `Send new OTP in ${resendIn}s` : status && status !== 'none' ? 'Send new OTP' : 'Send OTP'}
             </Button>
+          </div>
           </div>
         )}
       </div>

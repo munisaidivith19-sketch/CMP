@@ -39,6 +39,7 @@ import com.vexon.campus.core.list
 import com.vexon.campus.core.rememberMutation
 import com.vexon.campus.core.sameId
 import com.vexon.campus.core.str
+import com.vexon.campus.core.strings
 import com.vexon.campus.core.text
 import com.vexon.campus.ui.ACADEMIC_YEARS
 import com.vexon.campus.ui.Avatar
@@ -188,10 +189,25 @@ private val TEXT_FIELDS = mapOf(
     "password" to TextSpec("Set password", hint = "At least 8 characters with a letter and a number"),
 )
 
+/**
+ * Roles this admin may create, from /admin/my-policies: a legacy admin (no
+ * delegation in the response) keeps every role; a policy-managed admin gets
+ * only the roles a Super Admin delegated. The server enforces this anyway.
+ */
+internal fun creatableRoles(myPolicies: JsonElement?, all: Collection<String>): List<String> {
+    val delegation = myPolicies["delegation"] ?: return all.toList()
+    val allowed = delegation["createRoles"].strings.toSet()
+    return all.filter { it in allowed }
+}
+
 @Composable
 fun CreateUserScreen() {
     val me = me()
     var role by rememberSaveable { mutableStateOf("student") }
+    val policies = Api.myPolicies(skip = me.role != "admin")
+    // Unknown until loaded; if the lookup fails, fall back to every role (the server still refuses).
+    val creatable = policies.data?.let { creatableRoles(it, FORMS.keys) } ?: if (policies.result.error != null) FORMS.keys.toList() else null
+    if (creatable != null && creatable.isNotEmpty() && role !in creatable) role = creatable.first()
     val v = remember { mutableStateMapOf<String, String>() }
     var teachingYears by remember { mutableStateOf(listOf<Int>()) }
     val errors = remember { mutableStateMapOf<String, String>() }
@@ -201,6 +217,18 @@ fun CreateUserScreen() {
         Screen {
             Header("Create login", back = true)
             Card(Wide) { EmptyState(title = "Admins only") }
+        }
+        return
+    }
+
+    if (creatable == null) {
+        Screen { Header("Create login", back = true); Loading() }
+        return
+    }
+    if (creatable.isEmpty()) {
+        Screen {
+            Header("Create login", back = true)
+            Card(Wide) { EmptyState(title = "No account types delegated", text = "A Super Admin must authorize you to create accounts first.") }
         }
         return
     }
@@ -271,8 +299,9 @@ fun CreateUserScreen() {
     Screen {
         Header("Create login", "The college email is the username.", back = true)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FORMS.keys.forEach { r -> Chip(ROLE_LABELS[r] ?: r, role == r) { role = r; errors.clear() } }
+            creatable.forEach { r -> Chip(ROLE_LABELS[r] ?: r, role == r) { role = r; errors.clear() } }
         }
+        if (creatable.size < FORMS.size) Small("Only the account types delegated to you are shown. Other roles need Super Admin authorization.")
         Card(Wide, gap = 12.dp) {
             fields.forEach { k ->
                 when (k) {

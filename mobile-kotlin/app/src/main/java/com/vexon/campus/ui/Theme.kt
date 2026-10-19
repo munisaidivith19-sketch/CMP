@@ -191,17 +191,19 @@ fun VexonTheme(content: @Composable () -> Unit) {
 val ROLE_LABELS = mapOf(
     "student" to "Student", "club_admin" to "Club Admin", "faculty" to "Faculty", "hod" to "HOD", "principal" to "Principal",
     "admin" to "Admin", "security" to "Security", "dean" to "Dean", "ao" to "AO", "chairman" to "Chairman", "warden" to "Warden",
-    "alumni" to "Alumni",
+    "alumni" to "Alumni", "coe" to "COE", "office" to "Office", "transport" to "Transport",
 )
 val STUDENT_ROLES = setOf("student", "club_admin")
 /** Can mark attendance / act on academic data. */
 val STAFF = setOf("admin", "faculty", "hod")
 /** College-wide academic visibility (mirrors server COLLEGE_WIDE_ROLES); all but admin read-only. */
 val COLLEGE_WIDE = setOf("admin", "principal", "chairman", "dean", "ao")
-/** Read attendance but never mark it. */
-val ATTENDANCE_READ_ONLY = setOf("principal", "chairman", "dean", "ao")
-/** Sees today's college (college-wide roles) or department (HOD) attendance summary. */
-val SUMMARY_VIEW = setOf("hod") + COLLEGE_WIDE
+/** Campus-wide academic READ (class timetable, attendance): the college-wide roles plus the COE. */
+val ACADEMIC_OVERSIGHT = COLLEGE_WIDE + "coe" + "office"
+/** Read attendance but never mark it (the COE and the Office included). */
+val ATTENDANCE_READ_ONLY = setOf("principal", "chairman", "dean", "ao", "coe", "office")
+/** Sees today's college (college-wide roles, COE) or department (HOD) attendance summary. */
+val SUMMARY_VIEW = setOf("hod") + ACADEMIC_OVERSIGHT
 /** May start a group chat; faculty groups wait for admin approval. */
 val GROUP_CREATORS = setOf("admin", "hod", "faculty")
 val DEPARTMENTS = listOf("CSE (Cyber Security)", "CSE", "AI & DS", "ECE", "VLSI", "Robotics", "Agri", "Bio Medical", "Science & Humanities")

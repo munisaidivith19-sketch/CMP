@@ -14,3 +14,8 @@ server/.env*
 !server/.env.example
 # Generated PDFs (reports, profile directories) contain personal data.
 /*.pdf
+# Firebase service-account keys (FCM push credentials) — server env only, never committed.
+*firebase-adminsdk*.json
+*service-account*.json
+# Skill Wallet private files (certificates, private project images) — never committed.
+server/private-uploads/

@@ -12,6 +12,9 @@ const outpassOtpSchema = new Schema(
     student: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     faculty: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     parentMobileMasked: { type: String, required: true },
+    // The class faculty sent this OTP to a number other than the registered one.
+    alternateMobile: { type: Boolean, default: false },
+    alternateReason: { type: String, trim: true, maxlength: 200 },
     otpHash: { type: String, required: true, select: false },
     // Server-encrypted copy for the admin-only OTP dashboard (never used to verify).
     otpSealed: { type: String, select: false },

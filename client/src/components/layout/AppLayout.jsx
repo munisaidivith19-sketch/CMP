@@ -33,6 +33,10 @@ const LIVE_TAGS = {
   'od_leave:updated': ['ODLeave', 'Attendance'],
   'gatepass:updated': ['GatePass'],
   'timetable:updated': ['Timetable'],
+  'exam:updated': ['Exam', 'Attendance'],
+  // Trip started / stopped. (Bus positions are NOT cache refreshes: the map
+  // applies each bus:location directly.)
+  'bus:trip': ['Transport'],
   'holiday:changed': ['Holiday', 'Attendance', 'Timetable'],
   'lostfound:updated': ['LostFound'],
   'chat:conversation': ['Chat'],
@@ -73,11 +77,35 @@ function useRealtime() {
       },
     });
 
+    // A burst of events (a class of 60 saved, an exam published…) becomes ONE
+    // refresh per tag: tags are collected for a moment, then invalidated together.
+    let pending = new Set();
+    let flushTimer = null;
+    const refresh = (tags) => {
+      tags.forEach((t) => pending.add(t));
+      if (flushTimer) return;
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        const batch = [...pending];
+        pending = new Set();
+        dispatch(api.util.invalidateTags(batch));
+      }, 250);
+    };
+
     const handlers = Object.entries(LIVE_TAGS).map(([event, tags]) => {
-      const fn = () => dispatch(api.util.invalidateTags(tags));
+      const fn = () => refresh(tags);
       socket.on(event, fn);
       return [event, fn];
     });
+
+    // After a dropped connection, anything that changed meanwhile was missed:
+    // re-read every live view once the socket is back.
+    let connectedBefore = socket.connected;
+    const onConnect = () => {
+      if (connectedBefore) refresh([...new Set(Object.values(LIVE_TAGS).flat()), 'Notification', 'Dashboard', 'Exam']);
+      connectedBefore = true;
+    };
+    socket.on('connect', onConnect);
 
     const onChatMessage = ({ conversationId, message }) => {
       dispatch(api.util.invalidateTags(['Chat']));
@@ -130,6 +158,8 @@ function useRealtime() {
     };
     socket.on('notification', onNotification);
     return () => {
+      clearTimeout(flushTimer);
+      socket.off('connect', onConnect);
       socket.off('notification', onNotification);
       socket.off('chat:message', onChatMessage);
       handlers.forEach(([event, fn]) => socket.off(event, fn));

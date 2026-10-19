@@ -3,7 +3,7 @@ import GatePass, { generateGatePassSecurityCode, normalizeGateCode } from '../mo
 import User from '../models/User.js';
 import Activity from '../models/Activity.js';
 import { EMERGENCY_AUTHORITIES, FIRST_YEAR_HOD_DEPT, GATE_PASS_PENDING_STATUSES, isBranchHod, isFirstYearHod } from '../constants.js';
-import { ApiError, asyncHandler, paginate, pageMeta, pick } from '../utils/http.js';
+import { ApiError, asyncHandler, escapeRegex, paginate, pageMeta, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { logSecurity } from '../utils/securityLog.js';
 import { notifyUsers } from '../utils/notify.js';
@@ -18,10 +18,11 @@ import ReturnLocationCheck from '../models/ReturnLocationCheck.js';
 import { env } from '../config/env.js';
 
 // Everyone whose queue a gate pass can sit in, for the live "updated" event.
-export const GATE_STAFF = ['admin', 'faculty', 'hod', 'principal', 'ao', 'dean', 'chairman', 'security'];
+export const GATE_STAFF = ['admin', 'faculty', 'hod', 'principal', 'ao', 'dean', 'chairman', 'security', 'super_admin'];
 const STUDENT_ROLES = ['student', 'club_admin'];
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
+//in this we insterted the data of the code in ap still error
 // A pass can be used from 1 h before the requested departure until 2 h after the return day ends.
 const EARLY_EXIT_MS = HOUR;
 const GRACE_AFTER_RETURN_MS = 2 * HOUR;
@@ -339,7 +340,7 @@ export const listGatePasses = asyncHandler(async (req, res) => {
 
   if (STUDENT_ROLES.includes(role)) {
     filter.student = req.user._id;
-  } else if (role === 'admin') {
+  } else if (role === 'admin' || role === 'super_admin') {
     if (req.query.student) filter.student = req.query.student;
   } else if (role === 'faculty') {
     // A class in-charge (section set) only sees their own class. A faculty member
@@ -419,7 +420,7 @@ export const listGatePasses = asyncHandler(async (req, res) => {
 
 async function canView(pass, user) {
   if (sameId(pass.student, user)) return true;
-  if (['admin', 'security'].includes(user.role)) return true;
+  if (['admin', 'security', 'super_admin'].includes(user.role)) return true;
   // Emergency passes bypass faculty and HOD; they see one only once the student
   // has actually left (for "outside now" and the return notice).
   if (pass.passType === 'emergency' && ['faculty', 'hod'].includes(user.role) && !pass.actualExit) return false;
@@ -727,15 +728,33 @@ const otpSecurity = (req, pass, event, extra = {}) =>
 export const getParentOtp = asyncHandler(async (req, res) => {
   const pass = await loadForParentOtp(req);
   res.set('Cache-Control', 'no-store');
-  res.json({ passStatus: pass.status, ...(await otpService.getOtpState(pass._id)), parentMobile: pass.parentPhone });
+  // The number the OTP goes to by default; the faculty may edit it before sending.
+  const registered = await otpService.registeredParentMobile(pass);
+  res.json({ passStatus: pass.status, ...(await otpService.getOtpState(pass._id)), parentMobile: registered || pass.parentPhone || '' });
 });
+
+/**
+ * The faculty's edited number, when it differs from the registered one:
+ * a valid Indian mobile plus a reason, or a 422. Null means "use the registered number".
+ */
+async function alternateMobileFor(req, pass) {
+  const typed = req.body?.mobile;
+  if (typed === undefined || typed === null || (typeof typed === 'string' && !typed.trim())) return null;
+  const mobile = otpService.normalizeIndianMobile(typed);
+  if (!mobile) throw new ApiError(422, 'Enter a valid 10-digit mobile number');
+  if (otpService.sameMobile(mobile, await otpService.registeredParentMobile(pass))) return null;
+  const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+  if (reason.length < 3) throw new ApiError(422, 'Say why the OTP is going to a different number (e.g. parent not reachable)');
+  return { mobile, reason };
+}
 
 export const requestParentOtp = asyncHandler(async (req, res) => {
   const pass = await loadForParentOtp(req);
   if (pass.status !== 'pending_faculty') throw new ApiError(422, 'This request is not waiting for parent verification');
+  const alternate = await alternateMobileFor(req, pass);
   let otpState;
   try {
-    otpState = await otpService.requestOtp({ pass, studentName: pass.student?.name || 'Your ward', faculty: req.user });
+    otpState = await otpService.requestOtp({ pass, studentName: pass.student?.name || 'Your ward', faculty: req.user, alternate });
   } catch (err) {
     if (err.otpEvent) otpSecurity(req, pass, 'OTP_FAILED', { reason: err.otpReason, details: { otpId: err.otpId } });
     throw err;
@@ -744,22 +763,29 @@ export const requestParentOtp = asyncHandler(async (req, res) => {
   otpAudit(req, pass, state.resent ? 'resent' : 'requested', `OTP sent to ${state.maskedMobile}`);
   const otpDetails = { otpId, parentMobile: state.maskedMobile, smsEnabled: smsSent };
   otpSecurity(req, pass, 'OTP_CREATED', { details: otpDetails });
+  if (alternate) {
+    otpAudit(req, pass, 'alternate_mobile', `OTP sent to a different number ${state.maskedMobile}: ${alternate.reason}`);
+    otpSecurity(req, pass, 'OTP_ALTERNATE_MOBILE', { reason: alternate.reason, details: otpDetails });
+  }
   if (state.resent) otpSecurity(req, pass, 'OTP_RESEND', { details: otpDetails });
   if (smsSent) otpSecurity(req, pass, 'OTP_SENT', { details: otpDetails });
   res.set('Cache-Control', 'no-store');
   res.json({
-    message: smsSent ? 'OTP sent to the registered parent mobile number' : 'OTP generated for the registered parent mobile number',
+    message: alternate
+      ? `OTP ${smsSent ? 'sent' : 'generated'} for the alternate number ${state.maskedMobile}`
+      : smsSent ? 'OTP sent to the registered parent mobile number' : 'OTP generated for the registered parent mobile number',
     passStatus: pass.status,
     ...state,
-    parentMobile: pass.parentPhone,
+    parentMobile: (await otpService.registeredParentMobile(pass)) || pass.parentPhone || '',
   });
 });
 
 export const verifyParentOtp = asyncHandler(async (req, res) => {
   const pass = await loadForParentOtp(req);
   if (pass.status !== 'pending_faculty') throw new ApiError(422, 'This request is not waiting for parent verification');
+  let used;
   try {
-    await otpService.verifyOtp({ gatePassId: pass._id, otp: req.body.otp });
+    used = await otpService.verifyOtp({ gatePassId: pass._id, otp: req.body.otp });
   } catch (err) {
     if (err.otpEvent) {
       otpAudit(req, pass, err.otpEvent === 'expired' ? 'expired' : 'verify_failed', err.otpEvent);
@@ -772,7 +798,15 @@ export const verifyParentOtp = asyncHandler(async (req, res) => {
 
   const updated = await GatePass.findOneAndUpdate(
     { _id: pass._id, status: 'pending_faculty' },
-    { $set: { status: 'parent_verified', parentVerifiedAt: new Date(), parentVerifiedBy: req.user._id } },
+    {
+      $set: {
+        status: 'parent_verified',
+        parentVerifiedAt: new Date(),
+        parentVerifiedBy: req.user._id,
+        // HOD / principal see that a number other than the registered one confirmed it.
+        ...(used?.alternateMobile ? { parentVerifiedAlternate: { mobileMasked: used.parentMobileMasked, reason: used.alternateReason } } : {}),
+      },
+    },
     { new: true }
   );
   if (!updated) throw new ApiError(409, 'This request changed while verifying — refresh and try again');
@@ -1117,7 +1151,7 @@ export const revokeGatePass = asyncHandler(async (req, res) => {
 // ── Staff overview dashboard (admin / faculty / hod / principal / ao / dean / chairman) ────
 
 // College-wide roles that may look back at a past day's gate movements.
-const GATE_HISTORY_ROLES = ['admin', 'principal', ...EMERGENCY_AUTHORITIES];
+const GATE_HISTORY_ROLES = ['admin', 'principal', 'super_admin', ...EMERGENCY_AUTHORITIES];
 
 /**
  * The dashboard guard: faculty keep their class-based masking, and AO / Dean /
@@ -1135,7 +1169,7 @@ async function dashboardGuard(user) {
 
 export async function getGatePassUserScopeFilter(user) {
   const { role } = user;
-  if (['admin', 'principal', 'dean', 'ao', 'chairman'].includes(role)) {
+  if (['admin', 'principal', 'dean', 'ao', 'chairman', 'super_admin'].includes(role)) {
     return {};
   }
   if (role === 'hod') {
@@ -1496,5 +1530,79 @@ export const securityDashboard = asyncHandler(async (_req, res) => {
     outside,
     leftToday,
     outsideStudents: outsideStudents.map(withFlags),
+  });
+});
+
+// ── Security dashboard card lists: who "Students in / out / Left today" counts ──
+
+// The guard needs to recognise the student, not contact them: no email / phone.
+const GUARD_STUDENT_FIELDS = 'name rollNo avatar department year section';
+const GUARD_PASS_FIELDS = 'student passType dayScholarOuting fromDate toDate leaveAt expectedReturnAt actualExit actualReturn status';
+
+const leavePeriod = (p) =>
+  p && {
+    _id: p._id,
+    passType: p.passType,
+    dayScholarOuting: !!p.dayScholarOuting,
+    fromDate: p.fromDate,
+    toDate: p.toDate,
+    leaveAt: p.leaveAt,
+    expectedReturnAt: p.expectedReturnAt,
+    actualExit: p.actualExit,
+    actualReturn: p.actualReturn,
+    status: p.status,
+    overdue: withFlags(p).overdue,
+  };
+
+const pickStudent = (s) => s && pick(s, ['_id', 'name', 'rollNo', 'avatar', 'department', 'year', 'section']);
+
+export const securityStudentList = asyncHandler(async (req, res) => {
+  await expireGatePasses();
+  const { view } = req.query;
+  const { page, limit, skip } = paginate(req, 30, 100);
+  const search = String(req.query.search || '').trim();
+  const studentMatch = { role: { $in: STUDENT_ROLES }, isActive: true };
+  if (search) {
+    const rx = new RegExp(escapeRegex(search), 'i');
+    studentMatch.$or = [{ name: rx }, { rollNo: rx }];
+  }
+
+  if (view === 'in') {
+    const outsideIds = await GatePass.distinct('student', { status: 'active' });
+    const filter = { ...studentMatch, _id: { $nin: outsideIds } };
+    const [total, users] = await Promise.all([
+      User.countDocuments(filter),
+      User.find(filter).select(GUARD_STUDENT_FIELDS).sort({ name: 1, _id: 1 }).skip(skip).limit(limit).lean(),
+    ]);
+    // Each student's most recent leave that actually took them off campus.
+    const last = await GatePass.aggregate([
+      { $match: { student: { $in: users.map((u) => u._id) }, actualExit: { $ne: null } } },
+      { $sort: { actualExit: -1 } },
+      { $group: { _id: '$student', pass: { $first: '$$ROOT' } } },
+    ]);
+    const byStudent = new Map(last.map((l) => [String(l._id), l.pass]));
+    return res.json({
+      view,
+      ...pageMeta(total, page, limit),
+      items: users.map((u) => ({ student: pickStudent(u), pass: leavePeriod(byStudent.get(String(u._id))) || null })),
+    });
+  }
+
+  const passFilter = view === 'out' ? { status: 'active' } : { actualExit: timestampFilter({ from: toDay(new Date()), to: toDay(new Date()) }) };
+  if (search) passFilter.student = { $in: await User.find(studentMatch).distinct('_id') };
+  const [total, passes] = await Promise.all([
+    GatePass.countDocuments(passFilter),
+    GatePass.find(passFilter)
+      .select(GUARD_PASS_FIELDS)
+      .populate('student', GUARD_STUDENT_FIELDS)
+      .sort({ actualExit: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+  ]);
+  res.json({
+    view,
+    ...pageMeta(total, page, limit),
+    items: passes.map((p) => ({ student: pickStudent(p.student), pass: leavePeriod(p) })),
   });
 });

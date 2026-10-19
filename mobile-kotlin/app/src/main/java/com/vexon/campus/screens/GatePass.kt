@@ -68,11 +68,13 @@ import coil3.compose.AsyncImage
 import com.vexon.campus.core.Api
 import com.vexon.campus.core.ApiException
 import com.vexon.campus.core.Fmt
+import com.vexon.campus.core.GateLeave
 import com.vexon.campus.core.GateQr
 import com.vexon.campus.core.LocationRead
 import com.vexon.campus.core.ReturnLocation
 import com.vexon.campus.core.merge
 import com.vexon.campus.core.Omit
+import com.vexon.campus.core.ParentMobile
 import com.vexon.campus.core.QueryClient
 import com.vexon.campus.core.ServerConfig
 import com.vexon.campus.core.bool
@@ -520,14 +522,63 @@ private fun StaffGatePasses() {
             buildList {
                 add(Opt("review", "Review"))
                 if (me.role in BIND_ROLES) add(Opt("bind", if (me.role == "faculty") "Bind" else "Bind groups"))
+                if (me.role in REVOKE_ROLES) add(Opt("approved", "Approved"))
                 add(Opt("outside", "Outside"))
             },
             tab, { tab = it },
         )
         if (tab == "review") ReviewQueue(me.role)
         if (tab == "bind") BindPanel()
+        if (tab == "approved") ApprovedNotLeft()
         if (tab == "outside" && dash != null) OutsideNow(dash)
     }
+}
+
+// Who may reject a pass after approval (server: PATCH /gate-pass/:id/revoke).
+private val REVOKE_ROLES = setOf("principal", "admin")
+
+/**
+ * Approved passes the student has not used yet. The principal can still reject
+ * them here until security records OUT — after that the server refuses.
+ */
+@Composable
+private fun ApprovedNotLeft() {
+    val q = Api.gatePasses(mapOf("status" to "approved", "limit" to 50))
+    val passes = q.data["passes"].list
+    when {
+        q.data == null && q.error != null -> ErrorState(q.error) { q.refetch() }
+        q.data == null -> Loading()
+        passes.isEmpty() -> Card(Wide) { EmptyState(Icons.Rounded.CheckCircle, "No approved passes waiting", "Approved passes appear here until the student leaves campus.") }
+        else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Small("These students are approved but have not left yet. You can reject a pass until they exit.", color = C.muted)
+            passes.forEach { p ->
+                Card(Wide, onClick = { Nav.push("/gate-pass/${p.id}") }, gap = 8.dp) {
+                    StudentLine(p["student"])
+                    Small("${passTitle(p)} · ${GateLeave.period(p) ?: ""}", maxLines = 2)
+                    RejectApprovedButton(p) { q.refetch() }
+                }
+            }
+        }
+    }
+}
+
+/** Principal / admin: reject an approved pass before the student exits. */
+@Composable
+private fun RejectApprovedButton(pass: JsonElement, onDone: () -> Unit) {
+    val reject = rememberMutation()
+    Button("Reject pass", {
+        Dialogs.prompt(
+            "Reject approved gate pass",
+            "${pass["student"]["name"].str ?: "The student"} will not be able to leave with this pass. Reason (shared with the student)",
+            "e.g. Campus lockdown", "Reject", required = true,
+        ) { reason ->
+            reject.launch(onError = { Dialogs.alert("Could not reject", errMsg(it)); onDone() }) {
+                Api.revokeGatePass(pass.id.orEmpty(), reason.trim())
+                Dialogs.alert("Gate pass rejected", "The student has been notified and the exit code no longer works.")
+                onDone()
+            }
+        }
+    }, Wide, variant = Variant.Danger, small = true, icon = Icons.Rounded.Cancel, loading = reject.isLoading)
 }
 
 /* ── Security console ───────────────────────────────────────────── */
@@ -994,7 +1045,11 @@ fun GatePassDetailScreen(id: String) {
                     if (isEmergency(p)) ReviewStep("${AUTHORITY_LABELS[p["emergencyAuthority"].str] ?: ""} approval", "emergencyReview")
                     else {
                         if (p["parentVerifiedAt"] != null || p["status"].str in setOf("pending_faculty", "parent_verified")) {
-                            Step("Parent verified (OTP)", p["parentVerifiedAt"], p["parentVerifiedAt"] != null)
+                            val alt = p["parentVerifiedAlternate"]
+                            Step(
+                                alt["mobileMasked"].text?.let { "Parent verified (OTP to alternate number $it)" } ?: "Parent verified (OTP)",
+                                p["parentVerifiedAt"], p["parentVerifiedAt"] != null, note = alt["reason"].text,
+                            )
                         }
                         ReviewStep("Faculty review", "facultyReview")
                         ReviewStep("HOD review", "hodReview")
@@ -1009,6 +1064,12 @@ fun GatePassDetailScreen(id: String) {
                     if (p["status"].str in setOf("cancelled", "revoked", "expired")) Step(Fmt.titleCase(p["status"].str), done = true, bad = true)
                 }
                 val mine = sameId(p["student"], me)
+                if (!mine && me.role in REVOKE_ROLES && p["status"].str == "approved" && p["actualExit"] == null) {
+                    Card(Wide, gap = 8.dp) {
+                        Small("Approved and not used yet — you can still reject this pass until the student exits.", color = C.muted)
+                        RejectApprovedButton(p) { q.refetch() }
+                    }
+                }
                 if (mine && p["status"].str == "approved") Card(Wide) { if (isEmergency(p)) EmergencyApprovedCode(p) else PassQr(p) }
                 if (mine && p["status"].str == "active") Card(Wide) { ReturnToCampus(p) }
             }
@@ -1034,18 +1095,28 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
     var sent by remember { mutableStateOf<JsonElement?>(null) }
     var otp by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf("") }
+    // The number the OTP goes to: the registered parent mobile unless the faculty edits it.
+    var mobile by remember { mutableStateOf<String?>(null) }
+    var reason by remember { mutableStateOf("") }
 
     val state = sent ?: q.data
+    val registered = q.data["parentMobile"].text ?: pass["parentPhone"].str.orEmpty()
+    val typedMobile = mobile ?: registered
+    val edited = ParentMobile.differs(typedMobile, registered)
     val expiresIn = countdown(if (state["status"].str == "active") state["expiresAt"].str else null)
     val live = expiresIn > 0
     val resendIn = countdown(state["resendAvailableAt"].str)
     val length = state["otpLength"].int ?: 0
     val status = if (state["status"].str == "active" && !live) "expired" else state["status"].str
 
-    fun sendOtp() = send.launch(onError = { Dialogs.alert("Could not send OTP", errMsg(it)); q.refetch() }) {
-        sent = Api.requestParentOtp(id)
-        otp = ""
-        problem = ""
+    fun sendOtp() {
+        if (edited && !ParentMobile.isValid(typedMobile)) { problem = "Enter a valid 10-digit mobile number"; return }
+        if (edited && reason.trim().length < 3) { problem = "Say why the OTP is going to a different number (e.g. parent not reachable)"; return }
+        send.launch(onError = { Dialogs.alert("Could not send OTP", errMsg(it)); q.refetch() }) {
+            sent = if (edited) Api.requestParentOtp(id, typedMobile.trim(), reason.trim()) else Api.requestParentOtp(id)
+            otp = ""
+            problem = ""
+        }
     }
 
     fun submit() {
@@ -1077,13 +1148,16 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
             "Department" to (student["department"].text ?: pass["department"].str),
             "Year" to (YEAR_LABELS[student["year"].int] ?: student["year"].text?.let { "Year $it" } ?: "—"),
             "Section" to (student["section"].text ?: pass["section"].str),
-            "Parent mobile" to (state["parentMobile"].text ?: pass["parentPhone"].str),
+            "Registered parent mobile" to registered.ifEmpty { "—" },
         ))
         when {
             q.data == null && q.error != null && sent == null -> Small(errMsg(q.error), color = C.danger)
             q.data == null && sent == null -> Loading()
             live -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Small("OTP sent to the registered parent mobile number.")
+                Small(
+                    if (state["alternateMobile"].bool) "OTP sent to the alternate number ${state["maskedMobile"].str.orEmpty()}."
+                    else "OTP sent to the registered parent mobile number.",
+                )
                 Input(
                     otp, { v -> otp = v.filter { it.isDigit() }.take(length); problem = "" }, label = "Enter $length-digit OTP",
                     keyboardType = KeyboardType.NumberPassword, maxLength = length, placeholder = "•".repeat(length),
@@ -1095,8 +1169,21 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
                 Small("${mmss(expiresIn)} remaining · $attempts attempt${if (attempts == 1) "" else "s"} left", color = C.muted)
             }
             else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Input(
+                    typedMobile, { v -> mobile = v.filter { it.isDigit() || it == '+' || it == ' ' || it == '-' }.take(16); problem = "" },
+                    label = "Send OTP to", placeholder = "10-digit mobile number", keyboardType = KeyboardType.Phone, maxLength = 16,
+                    hint = if (edited) null else "Registered parent number · edit it if the parent is not reachable",
+                )
+                if (edited) {
+                    Input(
+                        reason, { reason = it.take(200); problem = "" }, label = "Reason for a different number",
+                        placeholder = "e.g. Father not reachable — mother’s number", maxLength = 200,
+                        hint = "Recorded in the audit log and shown to the HOD and principal.",
+                    )
+                    Button("Use the registered number", { mobile = null; reason = ""; problem = "" }, Wide, variant = Variant.Ghost, small = true)
+                }
                 if (problem.isNotEmpty()) Small(problem, color = C.danger)
-                Small(NOT_LIVE_TEXT[status] ?: "Send an OTP to the parent’s registered mobile number, then enter the code they read out.")
+                Small(NOT_LIVE_TEXT[status] ?: "Send an OTP to the parent’s mobile number, then enter the code they read out.")
                 Button(
                     if (resendIn > 0) "Send new OTP in ${resendIn}s" else if (status != null && status != "none") "Send new OTP" else "Send OTP",
                     ::sendOtp, Wide, icon = Icons.AutoMirrored.Rounded.Send, enabled = resendIn <= 0, loading = send.isLoading,
@@ -1293,3 +1380,88 @@ private fun ReturnToCampus(pass: JsonElement) {
     }
 }
 
+
+/* ── Security home card lists ───────────────────────────────────── */
+
+private data class GateListSpec(val title: String, val subtitle: String, val empty: String)
+
+private fun gateListSpec(view: String) = when (view) {
+    "in" -> GateListSpec("Students in", "On campus now · last leave period", "No students on campus")
+    "out" -> GateListSpec("Students out", "Outside campus now · leave period", "Everyone is on campus")
+    else -> GateListSpec("Left today", "Students who went out today", "No one has left today")
+}
+
+/** Opened from a Security home card: who it counts, with each student's leave period. */
+@Composable
+fun GateStudentsScreen(view: String) {
+    if (view !in setOf("in", "out", "left")) return NotFoundScreen()
+    val spec = gateListSpec(view)
+    var search by rememberSaveable { mutableStateOf("") }
+    var page by rememberSaveable { mutableStateOf(1) }
+    val q = Api.securityStudents(
+        mapOf("view" to view, "page" to page, "limit" to 30, "search" to search.trim().ifEmpty { null }),
+        pollMs = 30_000,
+    )
+    val data = q.data
+    val pages = data["pages"].int ?: 1
+    Screen(refreshing = q.isFetching && !q.isLoading, onRefresh = { q.refetch() }) {
+        Header(spec.title, spec.subtitle, back = true)
+        Input(search, { search = it; page = 1 }, placeholder = "Search by name or roll no", maxLength = 64)
+        when {
+            data == null && q.error != null -> ErrorState(q.error) { q.refetch() }
+            data == null -> Loading()
+            else -> {
+                val items = data["items"].list
+                val total = data["total"].int ?: 0
+                Small("$total student${if (total == 1) "" else "s"}", color = C.muted)
+                if (items.isEmpty()) Card(Wide) { EmptyState(Icons.Rounded.Group, if (search.isBlank()) spec.empty else "No match for “${search.trim()}”") }
+                items.forEach { GateStudentCard(it, view) }
+                if (pages > 1) Row(Wide, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Button("Previous", { page-- }, variant = Variant.Soft, small = true, enabled = page > 1)
+                    Small("Page $page of $pages")
+                    Button("Next", { page++ }, variant = Variant.Soft, small = true, enabled = page < pages)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GateStudentCard(item: JsonElement, view: String) {
+    val s = item["student"]
+    val p = item["pass"]
+    Card(Wide, gap = 10.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Avatar(s, size = 44.dp)
+            Column(Modifier.weight(1f)) {
+                Strong(s["name"].str, maxLines = 1)
+                Small("${s["rollNo"].text ?: "—"} · Year ${s["year"].text ?: "—"} · ${s["department"].text ?: "—"}", maxLines = 1)
+            }
+            when {
+                p["overdue"].bool -> Badge("Overdue", Tone.Danger)
+                view != "in" && p["status"].str == "active" -> Badge("Outside", Tone.Warning)
+                view == "left" && p["actualReturn"] != null -> Badge("Back", Tone.Success)
+                isEmergency(p) -> EmergencyBadge()
+            }
+        }
+        val period = GateLeave.period(p)
+        Column(
+            Wide.clip(RoundedCornerShape(14.dp)).background(C.primarySoft).padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Rounded.Schedule, null, Modifier.size(14.dp), tint = C.primary600)
+                Label(if (view == "in") "Last leave" else "Leave period")
+            }
+            if (period == null) Small("No leave on record", color = C.muted)
+            else {
+                Strong(period, maxLines = 1)
+                val times = listOfNotNull(
+                    p["actualExit"]?.let { "Out ${Fmt.dateTime(it)}" },
+                    p["actualReturn"]?.let { "In ${Fmt.dateTime(it)}" },
+                )
+                if (times.isNotEmpty()) Small(times.joinToString(" · "), maxLines = 1)
+            }
+        }
+    }
+}

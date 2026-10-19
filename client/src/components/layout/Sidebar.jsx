@@ -11,6 +11,7 @@ import {
   BookOpenCheck,
   CalendarDays,
   ClipboardCheck,
+  Crown,
   DoorOpen,
   GraduationCap,
   LayoutDashboard,
@@ -30,6 +31,13 @@ import {
   UsersRound,
   X,
   BedDouble,
+  BusFront,
+  Settings2,
+  Wallet,
+  Sparkles,
+  ClipboardList,
+  Lightbulb,
+  Award,
 } from 'lucide-react';
 import { Avatar, cn } from '../ui/primitives';
 import { api, useGetChatUnreadQuery, useGetGroupRequestsQuery, useLogoutMutation } from '../../services/api';
@@ -38,7 +46,10 @@ import { loggedOut, selectUser } from '../../features/authSlice';
 import { setSidebar } from '../../features/uiSlice';
 import { disconnectSocket } from '../../services/socket';
 
-import { HOSTEL_ROLES, PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF, TIMETABLE_ROLES } from '../../utils/constants';
+import { COE, HOSTEL_ROLES, STUDENT_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLE_LABELS, ROLES, STAFF, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TIMETABLE_ROLES, TRANSPORT, TRANSPORT_VIEW } from '../../utils/constants';
+import { useGetSwReviewerRolesQuery } from '../../services/skillWallet';
+import { useGetMyPoliciesQuery } from '../../services/superAdmin';
+import { STAFF_GRANT_ROLES, grantedPages } from '../../utils/delegation';
 import { displayName } from '../../utils/format';
 import SOSModal from '../sos/SOSModal';
 
@@ -59,8 +70,14 @@ const MAIN = [
 const CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
   { to: '/timetable', label: 'Timetable', icon: CalendarDays, roles: TIMETABLE_ROLES, excludeRoles: ['warden', 'security'] },
+  { to: '/transport', label: 'Bus Tracking', icon: BusFront, dayScholarOnly: true, excludeRoles: ROLES.filter((r) => !TRANSPORT_VIEW.includes(r)) },
   { to: '/study-materials', label: 'Study Materials', icon: BookOpen, excludeRoles: ['warden', 'security', 'ao'] },
   { to: '/achievements', label: 'Achievements', icon: Trophy, excludeRoles: ['warden', 'security'] },
+  // Skill Wallet: students' own wallet; the gallery for college roles; the review
+  // workspace for staff (it shows what each one may do). The server enforces all of it.
+  { to: '/skill-wallet', label: 'Skill Wallet', icon: Wallet, end: true, excludeRoles: ROLES.filter((r) => !SW_STUDENT_ROLES.includes(r)) },
+  { to: '/skill-wallet/gallery', label: 'Innovation Gallery', icon: Sparkles, excludeRoles: ROLES.filter((r) => !SW_COLLEGE_ROLES.includes(r)) },
+  { to: '/skill-wallet/review', label: 'Skill Wallet Review', icon: ClipboardList, excludeRoles: ROLES.filter((r) => !SW_STAFF_ROLES.includes(r)) },
   { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
   { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
   // Admin, principal, dean, AO, chairman and warden only; the server enforces the same.
@@ -85,6 +102,9 @@ const ADMIN = [
   { to: '/admin/activity', label: 'Activity log', icon: Activity, roles: ['admin'] },
   { to: '/admin/security', label: 'Security & Logs', icon: ShieldCheck, roles: ['admin'] },
 ];
+
+// Innovation / IIC coordinators (designated by the Principal) and the Principal (designations).
+const INNOVATION_MANAGEMENT_ITEM = { to: '/skill-wallet/manage', label: 'Innovation Management', icon: Lightbulb };
 
 // Faculty Class In-Charge only: create student logins and reset their passwords.
 const CLASS_IN_CHARGE_ITEM = { to: '/class/students', label: 'Students', icon: Users };
@@ -116,11 +136,65 @@ const ALUMNI_MAIN = [
   { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 
+const COE_MAIN = [
+  { to: '/timetable', label: 'Timetable', icon: CalendarDays },
+  { to: '/skill-wallet/review', label: 'NPTEL verification', icon: Award },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
+];
+const OFFICE_MAIN = [
+  { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
+];
+const TRANSPORT_MAIN = [
+  { to: '/transport', label: 'Bus Tracking', icon: BusFront, end: true },
+  { to: '/transport/manage', label: 'Manage buses', icon: Settings2 },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
+];
+
 const ALUMNI_CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
 ];
 
-const HIDDEN_FOR_SECURITY = ['/announcements', '/events', '/clubs', '/discussions', '/attendance', '/analytics', '/complaints', '/alumni', '/achievements'];
+// Super Admin: its console only. The Emergency Control page is deliberately
+// absent from every menu.
+const SUPER_ADMIN_MAIN = [
+  { to: '/super-admin', label: 'Super Admin', icon: Crown, end: true },
+  { to: '/super-admin/soc', label: 'Security Ops', icon: ShieldAlert },
+  { to: '/admin/users', label: 'Users', icon: UserCog },
+  { to: '/attendance', label: 'Attendance (view)', icon: ClipboardCheck },
+  { to: '/gate-pass', label: 'Gate passes (view)', icon: DoorOpen },
+  { to: '/hostel', label: 'Hostel (view)', icon: BedDouble },
+  { to: '/notifications', label: 'Notifications', icon: Bell },
+];
+
+// Policy-managed admins: which module policy (any action) makes a page useful.
+// `null` = available to every admin; pages not listed are hidden because the
+// server refuses them without a matching policy.
+const NAV_POLICY = {
+  '/': null,
+  '/announcements': null,
+  '/notifications': null,
+  '/admin': null,
+  '/people': ['user_management', 'staff_management'],
+  '/admin/users': ['user_management', 'staff_management'],
+  '/timetable': ['timetable'],
+  '/admin/academics': ['timetable'],
+  '/attendance': ['attendance', 'staff_attendance'],
+  '/admin/attendance': ['attendance', 'staff_attendance'],
+  '/events': ['events'],
+  '/clubs': ['clubs'],
+  '/admin/clubs': ['clubs'],
+  '/admin/activity': ['activity_logs'],
+  '/admin/security': ['security_logs'],
+};
+const allowedByPolicy = (item, my) => {
+  if (!my?.policyManaged) return true;
+  if (!(item.to in NAV_POLICY)) return false;
+  const need = NAV_POLICY[item.to];
+  return need === null || need.some((m) => my.policies.some((p) => p.module === m && p.actions.length));
+};
+
+const HIDDEN_FOR_SECURITY =['/announcements', '/events', '/clubs', '/discussions', '/attendance', '/analytics', '/complaints', '/alumni', '/achievements'];
 
 export default function Sidebar() {
   const dispatch = useDispatch();
@@ -133,20 +207,35 @@ export default function Sidebar() {
   const isSecurity = user?.role === 'security';
   const isAlumni = user?.role === 'alumni';
 
-  const mainItems = isAlumni
+  // The Controller of Examinations works inside the Timetable dashboard only,
+  // the Office inside Attendance only.
+  const isSuperAdmin = user?.role === SUPER_ADMIN;
+  const isCoe = [COE, OFFICE, TRANSPORT, SUPER_ADMIN].includes(user?.role);
+  const { data: myPolicies } = useGetMyPoliciesQuery(undefined, { skip: !['admin', ...STAFF_GRANT_ROLES].includes(user?.role) });
+  // Bus tracking is for day-scholar students only (the server enforces it too).
+  const byPolicy = (i) => allowedByPolicy(i, myPolicies) && !(i.dayScholarOnly && STUDENT_ROLES.includes(user?.role) && user?.stayType !== 'day_scholar');
+  const { data: swRoles } = useGetSwReviewerRolesQuery(undefined, { skip: !SW_STAFF_ROLES.includes(user?.role) });
+  const mainItems = isCoe
+    ? { [OFFICE]: OFFICE_MAIN, [TRANSPORT]: TRANSPORT_MAIN, [SUPER_ADMIN]: SUPER_ADMIN_MAIN }[user.role] || COE_MAIN
+    : isAlumni
     ? ALUMNI_MAIN
-    : MAIN.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role));
+    : MAIN.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role) && byPolicy(i));
 
-  const campusItems = isAlumni
+  const campusItems = isCoe
+    ? []
+    : isAlumni
     ? ALUMNI_CAMPUS
     : [
-        ...CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role)),
+        ...CAMPUS.filter((i) => (!isSecurity || !HIDDEN_FOR_SECURITY.includes(i.to)) && !i.excludeRoles?.includes(user?.role) && byPolicy(i)),
         ...(isClassInCharge(user) ? [CLASS_IN_CHARGE_ITEM] : []),
+        ...(swRoles?.isCoordinator || swRoles?.canManageDesignations ? [INNOVATION_MANAGEMENT_ITEM] : []),
       ];
 
-  const adminItems = ADMIN.filter((i) => i.roles.includes(user?.role));
-  const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user });
-  const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: !['admin', 'principal'].includes(user?.role), pollingInterval: 60000 });
+  // Staff accounts also see the admin pages their additional policies open.
+  const granted = grantedPages(myPolicies);
+  const adminItems = ADMIN.filter((i) => (i.roles.includes(user?.role) && byPolicy(i)) || granted.includes(i.to));
+  const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user || isCoe || Boolean(myPolicies?.policyManaged) });
+  const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: !['admin', 'principal'].includes(user?.role) || Boolean(myPolicies?.policyManaged), pollingInterval: 60000 });
 
   const onLogout = async () => {
     try {
@@ -209,14 +298,14 @@ export default function Sidebar() {
           )}
         </nav>
 
-        <button
+        {!isSuperAdmin && <button
           type="button"
           onClick={() => setSosOpen(true)}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-400/40 bg-rose-500/10 py-2.5 text-xs font-bold text-rose-600 transition hover:bg-rose-500 hover:text-white dark:border-rose-400/30 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-600 dark:hover:text-white"
         >
           <AlertOctagon className="h-4 w-4" />
           <span>Emergency SOS</span>
-        </button>
+        </button>}
 
         <div className="mt-2 flex items-center gap-3 rounded-2xl p-2">
           <NavLink to="/profile" onClick={close} className="flex min-w-0 flex-1 items-center gap-3">

@@ -288,9 +288,8 @@ export default function Dashboard() {
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {[
-              ['Students', campus.students],
               ['Active clubs', campus.clubs],
               ['Upcoming', campus.upcomingEvents],
             ].map(([label, v]) => (

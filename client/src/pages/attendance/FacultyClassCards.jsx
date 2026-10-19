@@ -233,12 +233,16 @@ export default function FacultyClassCards({ periods = [], periodsDate, correctio
                 </div>
                 {p.holiday ? (
                   <Badge color="danger">Holiday</Badge>
+                ) : p.examBlocked ? (
+                  <Badge color="warning">
+                    Exam · {p.examBlocked.subjectCode} · {to12h(p.examBlocked.startTime)} – {to12h(p.examBlocked.endTime)}
+                  </Badge>
                 ) : p.marked ? (
                   <Badge color="success">Marked</Badge>
                 ) : (
                   <Badge color={p.status === 'ACTIVE' ? 'info' : 'neutral'}>{p.status === 'ACTIVE' ? 'In progress' : p.status === 'UPCOMING' ? 'Upcoming' : 'Not marked'}</Badge>
                 )}
-                {!p.holiday && (p.status === 'ACTIVE' || p.marked) && (
+                {!p.holiday && !p.examBlocked && (p.status === 'ACTIVE' || p.marked) && (
                   <Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => { setOpen(null); onQuickMark?.('mark', { slotId: p.slotId }); }}>
                     {p.marked ? 'Review' : 'Take'}
                   </Button>

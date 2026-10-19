@@ -1,4 +1,5 @@
 import MentorshipRequest from '../models/MentorshipRequest.js';
+import { registerJob, runJob } from '../services/soc/monitors.js';
 import AlumniProfile from '../models/AlumniProfile.js';
 import MentorshipSession from '../models/MentorshipSession.js';
 import AlumniEvent from '../models/AlumniEvent.js';
@@ -169,8 +170,10 @@ export async function expireInvites() {
 }
 
 export function startAlumniSchedulers() {
+  const INTERVALS = { sessionReminders: 5, eventReminders: 5, expireJobs: 30, completeEvents: 30, expireInvites: 30, expireMentorshipRequests: 360, reconcileMentorCounts: 360 };
+  for (const [name, min] of Object.entries(INTERVALS)) registerJob(`alumni.${name}`, { intervalMs: min * 60 * 1000, description: `Alumni ${name}` });
   const safeRun = (fn, name) => {
-    fn().catch((err) => console.error(`[alumni-scheduler] ${name} failed:`, err.message));
+    runJob(`alumni.${name}`, fn, { logTag: `[alumni-scheduler] ${name}` });
   };
 
   // Immediate kick-off on startup

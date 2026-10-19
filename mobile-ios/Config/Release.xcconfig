@@ -1,0 +1,9 @@
+#include "Base.xcconfig"
+
+// Production: HTTPS only. Replace with the college's deployed API before archiving
+// (or set it in Local.xcconfig). The placeholder below does not resolve.
+VEXON_ENVIRONMENT = production
+VEXON_API_BASE_URL = https:$(SLASH)$(SLASH)vexon.example.edu
+VEXON_ALLOW_INSECURE_HTTP = NO
+
+#include? "Local.xcconfig"

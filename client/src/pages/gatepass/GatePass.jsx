@@ -92,7 +92,12 @@ export function PassTimeline({ pass }) {
     : [
         // Passes forwarded before parent OTP verification existed have no such step.
         ...(pass.parentVerifiedAt || ['pending_faculty', 'parent_verified'].includes(pass.status)
-          ? [{ label: 'Parent verified (OTP)', at: pass.parentVerifiedAt, done: Boolean(pass.parentVerifiedAt) }]
+          ? [{
+              label: pass.parentVerifiedAlternate?.mobileMasked ? `Parent verified (OTP to alternate number ${pass.parentVerifiedAlternate.mobileMasked})` : 'Parent verified (OTP)',
+              at: pass.parentVerifiedAt,
+              done: Boolean(pass.parentVerifiedAt),
+              note: pass.parentVerifiedAlternate?.reason || null,
+            }]
           : []),
         stageStep('Faculty review', pass.facultyReview),
         stageStep('HOD review', pass.hodReview),
@@ -556,7 +561,7 @@ function StudentGatePass() {
 // College-wide roles: may open any student's profile from a gate pass.
 const PROFILE_ROLES = ['admin', 'principal', 'ao', 'dean', 'chairman'];
 // …and look back at a past day's gate movements.
-const HISTORY_ROLES = PROFILE_ROLES;
+const HISTORY_ROLES = [...PROFILE_ROLES, 'super_admin'];
 
 function StudentLine({ student, extra, linkProfile = false }) {
   return (
@@ -608,7 +613,8 @@ export function ReviewCard({ pass, onDone }) {
   const saving = fLoading || hLoading || pLoading || aLoading;
   if (!stage) return null;
   // Only the authority the student chose may decide an emergency pass (the API enforces it too).
-  const canDecide = stage.hook !== 'authority' || me.role === pass.emergencyAuthority;
+  // The Super Admin views gate passes read-only.
+  const canDecide = me.role !== 'super_admin' && (stage.hook !== 'authority' || me.role === pass.emergencyAuthority);
 
   const act = async (action, rejectReason) => {
     try {
@@ -727,7 +733,8 @@ export const canReviewPass = (role, pass) => role === 'admin' ? PENDING.includes
 /** Faculty / HOD / principal each see only their own stage; admin sees every open stage. */
 function ReviewQueue({ role }) {
   const [page, setPage] = useState(1);
-  const isAdmin = role === 'admin';
+  // Admin (acts) and Super Admin (read-only) see every open stage.
+  const isAdmin = role === 'admin' || role === 'super_admin';
   // HOD / principal / admin decide bound requests from the Bind tab, as a group.
   const bind = role === 'faculty' ? {} : { bind: 'none' };
   const { data, isLoading, error, refetch } = useGetGatePassesQuery(isAdmin ? { status: PENDING.join(','), page, ...bind } : { page, ...bind });
@@ -856,6 +863,7 @@ function HistoryPicker({ date, onChange }) {
 }
 
 function AllPasses() {
+  const me = useSelector(selectUser);
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
   const [revoke, setRevoke] = useState(null);
@@ -892,7 +900,7 @@ function AllPasses() {
                 </Link>
                 <span className="text-xs muted">{fmtClassDay(p.fromDate)}</span>
                 <StatusBadge status={p.status} />
-                {['approved', ...PENDING].includes(p.status) && (
+                {['approved', ...PENDING].includes(p.status) && me.role !== 'super_admin' && (
                   <Button size="sm" variant="ghost" onClick={() => setRevoke(p)}>
                     Revoke
                   </Button>
@@ -950,7 +958,7 @@ function StaffGatePass() {
         { value: 'review', label: 'Review' },
         ...(BIND_ROLES.includes(me.role) ? [{ value: 'bind', label: me.role === 'faculty' ? 'Bind' : 'Bind groups' }] : []),
         ...(hasRequests ? [{ value: 'requests', label: authorityOnly ? 'My requests' : 'Requests' }] : []),
-        ...(me.role === 'admin' ? [{ value: 'all', label: 'All passes' }] : []),
+        ...(['admin', 'super_admin'].includes(me.role) ? [{ value: 'all', label: 'All passes' }] : []),
       ];
   const requested = params.get('tab');
   const tab = tabs.some((t) => t.value === requested) ? requested : tabs[0].value;

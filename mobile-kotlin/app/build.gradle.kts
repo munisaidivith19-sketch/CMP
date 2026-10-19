@@ -117,6 +117,8 @@ dependencies {
     implementation(libs.mlkit.barcode)
     implementation(libs.play.location)
     implementation(libs.firebase.messaging)
+    // Live bus map (vector tiles from the style URL the server configures).
+    implementation(libs.maplibre.android)
 
     testImplementation(libs.junit)
 }

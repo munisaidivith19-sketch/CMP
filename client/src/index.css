@@ -209,3 +209,52 @@
 .dark .recharts-tooltip-cursor {
   fill: rgba(255, 255, 255, 0.03);
 }
+/* ── Bus tracking map ─────────────────────────────────────────────
+   Bus markers: number + route label ABOVE a bus-shaped icon; the
+   element's bottom is anchored (with half-icon offset) so the icon centre
+   sits on the bus's coordinate. The student's position is a separate blue
+   dot so it can never be mistaken for a bus. */
+.bus-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.bus-marker:focus-visible { outline: 3px solid #6c5dd3; outline-offset: 2px; border-radius: 10px; }
+.bus-marker__label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 132px;
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1b1d3a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  line-height: 1.15;
+  pointer-events: none;
+}
+.bus-marker__number { font-size: 12px; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; }
+.bus-marker__route { font-size: 10px; font-weight: 600; color: #3e4462; max-width: 124px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bus-marker__icon { display: block; width: 40px; height: 40px; transition: transform 600ms ease-out; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+.bus-marker--selected .bus-marker__label { background: #1b1d3a; color: #fff; }
+.bus-marker--selected .bus-marker__route { color: #e0e7ff; }
+.bus-marker--selected .bus-marker__icon { transform-origin: center; }
+.bus-marker[data-status='offline'] .bus-marker__label { opacity: 0.8; }
+/* Zoomed out: number only, so nearby buses do not bury each other. */
+.bus-map--compact .bus-marker__route { display: none; }
+.student-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.25), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bus-marker__icon { transition: none; }
+}

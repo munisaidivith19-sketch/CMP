@@ -104,12 +104,25 @@ object Api {
     // ── Notifications ─────────────────────────────────
     @Composable fun notifications(params: Params? = null) = get("/notifications", "Notification", params = params)
     suspend fun markNotificationRead(id: String) = patch("/notifications/$id/read", null, "Notification")
+    // ── College buses ──
+    @Composable fun transportConfig(skip: Boolean = false) = get("/transport/config", "Transport", skip = skip)
+    @Composable fun buses(skip: Boolean = false, pollMs: Long = 0) = get("/transport/buses", "Transport", skip = skip, pollMs = pollMs)
+    @Composable fun bus(id: String, stopId: String?, skip: Boolean = false, pollMs: Long = 0) =
+        get("/transport/buses/$id", "Transport", params = mapOf("stopId" to stopId), skip = skip, pollMs = pollMs)
+    @Composable fun transportSearch(q: String, skip: Boolean = false) = get("/transport/search", "TransportSearch", params = mapOf("q" to q), skip = skip)
+    @Composable fun transportMe(skip: Boolean = false) = get("/transport/me", "Transport", skip = skip)
+    suspend fun startBusTrip(busId: String) = post("/transport/trips", jsonOf("busId" to busId), "Transport")
+    suspend fun stopBusTrip(tripId: String) = post("/transport/trips/$tripId/stop", jsonOf("reason" to "completed"), "Transport")
+    // FCM device registration (bound by the server to this account and session) and notification preferences.
+    suspend fun registerDevice(token: String) = post("/devices", jsonOf("token" to token, "deviceName" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".take(80), "appVersion" to com.vexon.campus.BuildConfig.VERSION_NAME))
+    @Composable fun notificationPrefs(skip: Boolean = false) = get("/notifications/preferences", "NotificationPrefs", skip = skip)
+    suspend fun updateNotificationPrefs(body: JsonElement) = put("/notifications/preferences", body, "NotificationPrefs")
     suspend fun markAllNotificationsRead() = patch("/notifications/read-all", null, "Notification")
 
     // ── Chat ──────────────────────────────────────────
     @Composable fun conversations(params: Params? = null) = get("/chat/conversations", "Chat", params = params)
     @Composable fun conversation(id: String) = get("/chat/conversations/$id", "Chat")
-    @Composable fun chatUnread() = get("/chat/unread", "Chat")
+    @Composable fun chatUnread(skip: Boolean = false) = get("/chat/unread", "Chat", skip = skip)
     suspend fun createConversation(body: JsonElement) = post("/chat/conversations", body, "Chat")
     suspend fun messages(id: String, params: Params? = null) = Http.request("GET", "/chat/conversations/$id/messages", params)
     suspend fun sendMessage(id: String, body: JsonElement) = post("/chat/conversations/$id/messages", body)
@@ -129,6 +142,8 @@ object Api {
     @Composable fun facultyAvailability(params: Params? = null, skip: Boolean = false) = get("/timetable/faculty-availability", "Timetable", params = params, skip = skip)
     // Holidays that apply to this account — the server decides which (read-only on mobile).
     @Composable fun holidays(params: Params? = null, skip: Boolean = false) = get("/holidays", "Holiday", params = params, skip = skip)
+    // Exam timetable — the server decides which exams this account sees (read-only on mobile).
+    @Composable fun exams(params: Params? = null, skip: Boolean = false) = get("/exams", "Exam", "Attendance", params = params, skip = skip)
     @Composable fun ourClassAttendance(params: Params? = null, skip: Boolean = false) = get("/attendance/our-class", "Attendance", params = params, skip = skip)
     @Composable fun reportOptions(skip: Boolean = false) = get("/attendance/reports/options", "Attendance", "Timetable", skip = skip)
     @Composable fun reportPeriods(params: Params?, skip: Boolean = false) = get("/attendance/reports/periods", "Attendance", "Timetable", params = params, skip = skip)
@@ -140,6 +155,8 @@ object Api {
     suspend fun requestCorrection(body: JsonElement) = post("/attendance/corrections", body, "Correction")
     @Composable fun subjects(params: Params? = null, skip: Boolean = false) = get("/subjects", params = params, skip = skip)
     @Composable fun roster(params: Params?, skip: Boolean = false) = get("/attendance/roster", "Attendance", params = params, skip = skip, keep = false)
+    // Faculty: today's timetable periods with live UPCOMING / ACTIVE / COMPLETED, holiday and exam state.
+    @Composable fun myPeriods(pollMs: Long = 0, skip: Boolean = false) = get("/attendance/my-periods", "Attendance", "Timetable", "Exam", skip = skip, pollMs = pollMs)
     suspend fun markClassAttendance(body: JsonElement) = post("/attendance/mark", body, "Attendance", "StaffAttendance")
     @Composable fun attendanceSummary(params: Params? = null, skip: Boolean = false, pollMs: Long = 0) = get("/attendance/summary", "Attendance", "StaffAttendance", params = params, skip = skip, pollMs = pollMs)
     @Composable fun summaryStudents(params: Params?, skip: Boolean = false) = get("/attendance/summary/students", "Attendance", params = params, skip = skip)
@@ -147,6 +164,8 @@ object Api {
     @Composable fun facultyRoster(params: Params?, skip: Boolean = false) = get("/attendance/faculty/roster", "StaffAttendance", params = params, skip = skip, keep = false)
     suspend fun markFacultyAttendance(body: JsonElement) = post("/attendance/faculty/mark", body, "StaffAttendance")
     suspend fun createAdminUser(body: JsonElement) = post("/admin/users", body, "Admin", "User")
+    // Own effective permissions: which roles this admin may create (server-enforced; shapes the UI only).
+    @Composable fun myPolicies(skip: Boolean = false) = get("/admin/my-policies", "MyPolicies", skip = skip, keep = false)
 
     // Staff attendance tools (same endpoints as the web Attendance Center).
     suspend fun reviewCorrection(id: String, action: String, note: String?) =
@@ -190,10 +209,14 @@ object Api {
     @Composable fun gatePassQr(id: String, skip: Boolean = false) = get("/gate-pass/$id/qr", "GatePass", skip = skip, keep = false)
     @Composable fun gateDashboard(skip: Boolean = false) = get("/gate-pass/dashboard", "GatePass", skip = skip)
     @Composable fun securityDashboard(pollMs: Long = 0, skip: Boolean = false) = get("/gate-pass/dashboard/security", "GatePass", skip = skip, pollMs = pollMs)
+    // Who a Security home card counts — view = in | out | left — with each student's leave period.
+    @Composable fun securityStudents(params: Params, pollMs: Long = 0) = get("/gate-pass/dashboard/security/students", "GatePass", params = params, pollMs = pollMs)
     suspend fun createGatePass(body: JsonElement) = post("/gate-pass", body, "GatePass")
     suspend fun facultyReviewGatePass(id: String, body: JsonElement) = patch("/gate-pass/$id/faculty-review", body, "GatePass")
     @Composable fun parentOtp(id: String, skip: Boolean = false) = get("/gate-pass/$id/parent-otp", skip = skip, keep = false)
-    suspend fun requestParentOtp(id: String) = post("/gate-pass/$id/parent-otp")
+    // mobile + reason only when the faculty edited the number (registered one not reachable).
+    suspend fun requestParentOtp(id: String, mobile: String? = null, reason: String? = null) =
+        post("/gate-pass/$id/parent-otp", if (mobile == null) null else jsonOf("mobile" to mobile, "reason" to (reason ?: "")))
     suspend fun verifyParentOtp(id: String, otp: String) = post("/gate-pass/$id/parent-otp/verify", jsonOf("otp" to otp), "GatePass")
     suspend fun hodReviewGatePass(id: String, body: JsonElement) = patch("/gate-pass/$id/hod-review", body, "GatePass")
     suspend fun principalReviewGatePass(id: String, body: JsonElement) = patch("/gate-pass/$id/principal-review", body, "GatePass")
@@ -264,6 +287,15 @@ object Api {
     suspend fun markComplaintNotResolved(id: String) = patch("/complaints/$id/not-resolved", null, "Complaint")
     suspend fun markComplaintResolved(id: String) = patch("/complaints/$id/resolved", null, "Complaint")
     suspend fun cancelComplaint(id: String) = patch("/complaints/$id/cancel", null, "Complaint")
+
+    // ── Skill Wallet (students; the server checks ownership / membership) ──
+    @Composable fun swConfig() = get("/skill-wallet/config", "SWConfig")
+    @Composable fun swProjects(params: Params? = null) = get("/skill-wallet/projects", "SWProject", params = params, keep = false)
+    @Composable fun swProject(id: String) = get("/skill-wallet/projects/$id", "SWProject", keep = false)
+    @Composable fun swInvitations(params: Params? = null) = get("/skill-wallet/invitations", "SWInvite", params = params, keep = false)
+    suspend fun createSwProject(body: JsonElement) = post("/skill-wallet/projects", body, "SWProject")
+    suspend fun acceptSwInvitation(id: String) = post("/skill-wallet/invitations/$id/accept", null, "SWInvite", "SWProject", "Notification")
+    suspend fun declineSwInvitation(id: String) = post("/skill-wallet/invitations/$id/decline", null, "SWInvite", "Notification")
 
     // ── Alumni Network ────────────────────────────────
     @Composable fun alumni(params: Params? = null, skip: Boolean = false) = get("/alumni", "AlumniProfile", params = params, skip = skip)

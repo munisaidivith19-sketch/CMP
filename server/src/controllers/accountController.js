@@ -6,6 +6,7 @@ import { notifyUsers } from '../utils/notify.js';
 import { STUDENT_ROLES } from '../utils/academicScope.js';
 import { normalizePhoneDigits, yearOfSemester } from '../constants.js';
 import { revokeSessions } from './authController.js';
+import { adminAllows, isStaffGrantee, moduleForRole } from '../policies.js';
 
 /**
  * Student accounts managed by a faculty Class In-Charge, and authorized
@@ -223,7 +224,8 @@ export const updateClassStudent = asyncHandler(async (req, res) => {
 
 /** Route guard: only Admin and Faculty reach the reset handler; anyone else gets a recorded 403. */
 export function passwordResetRoles(req, _res, next) {
-  if (['admin', 'faculty'].includes(req.user?.role)) return next();
+  // req.policyGrant: a staff account holding an additional User/Staff Management → edit policy.
+  if (['admin', 'faculty', 'super_admin'].includes(req.user?.role) || req.policyGrant === true) return next();
   logSecurity(req, 'PASSWORD_RESET_FAILED', { success: false, reason: 'role_not_permitted', entityType: 'user', details: { targetId: req.params.id } });
   next(new ApiError(403, 'You do not have permission to reset passwords'));
 }
@@ -246,7 +248,7 @@ export const resetUserPassword = asyncHandler(async (req, res) => {
     return new ApiError(status, message);
   };
 
-  if (!['admin', 'faculty'].includes(actor.role)) throw fail(403, 'You do not have permission to reset passwords', 'role_not_permitted');
+  if (!['admin', 'faculty', 'super_admin'].includes(actor.role) && !isStaffGrantee(actor)) throw fail(403, 'You do not have permission to reset passwords', 'role_not_permitted');
 
   const target = await User.findById(req.params.id).select('+password +tokenVersion +failedLogins +lockUntil +lastFailedLoginAt +lockoutCount');
   if (!target) throw fail(404, 'User not found', 'target_not_found');
@@ -255,8 +257,15 @@ export const resetUserPassword = asyncHandler(async (req, res) => {
   }
 
   let scope = null;
-  if (actor.role === 'admin') {
-    if (target.role === 'admin') throw fail(403, 'Another administrator’s password cannot be reset here', 'target_is_admin', target);
+  if (actor.role === 'admin' || actor.role === 'super_admin') {
+    // Admin accounts are reset through the Super Admin console (forced change at next sign-in).
+    if (target.role === 'admin' || target.role === 'super_admin') throw fail(403, 'Another administrator’s password cannot be reset here', 'target_is_admin', target);
+    const module = moduleForRole(target.role);
+    if (!adminAllows(actor, module, 'edit', target.department)) {
+      throw fail(403, 'Your administrator policies do not include this action', 'policy_not_granted', target);
+    }
+  } else if (isStaffGrantee(actor) && target.role !== 'admin' && target.role !== 'super_admin' && adminAllows(actor, moduleForRole(target.role), 'edit', target.department)) {
+    // Additional policy (User / Staff Management → edit) granted to this staff account.
   } else {
     scope = exactClassInCharge(actor);
     if (!scope) throw fail(403, 'Only a Class In-Charge can reset student passwords', 'no_class_in_charge_scope', target);
@@ -278,13 +287,13 @@ export const resetUserPassword = asyncHandler(async (req, res) => {
   logSecurity(req, 'PASSWORD_RESET', {
     ...sec,
     reason,
-    details: { via: actor.role === 'admin' ? 'admin' : 'class_in_charge', ...(scope ? { classInCharge: scope } : {}), sessionsRevoked: signedOut },
+    details: { via: actor.role === 'admin' || actor.role === 'super_admin' ? actor.role : 'class_in_charge', ...(scope ? { classInCharge: scope } : {}), sessionsRevoked: signedOut },
   });
   if (signedOut) logSecurity(req, 'FORCED_LOGOUT', { ...sec, reason: 'password_reset', details: { sessions: signedOut } });
   notifyUsers([target._id], {
     type: 'system',
     title: 'Your password was reset',
-    message: `Your password was reset by your ${actor.role === 'admin' ? 'administrator' : 'Class In-Charge'}. Sign in with the new password.`,
+    message: `Your password was reset by your ${actor.role === 'faculty' ? 'Class In-Charge' : 'administrator'}. Sign in with the new password.`,
     link: '/settings/security',
   }, { push: false });
 

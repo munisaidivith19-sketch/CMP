@@ -163,11 +163,14 @@ export async function notifyReturned({ pass, student, returnedAt }) {
     console.error('[gate-pass] could not resolve class faculty:', err.message);
     return [];
   });
+  // Security-verified return only (this runs from the gate's IN record), to
+  // the student's own class faculty only; a faculty member may switch these
+  // off, and the Android app hides the text on the lock screen.
   await notifyUsers(facultyIds, {
     type: 'gate_pass',
     title: '🔔 Student Returned to Campus',
     message: `${student.name} — Roll No: ${student.rollNo || '—'} has returned to the campus.\nDate: ${date}\nTime: ${time24}`,
     link: `/gate-pass/${pass._id}`,
-  });
+  }, { category: 'student_entry', eventKey: `returned:${pass._id}` });
   return { facultyNotified: facultyIds.length };
 }

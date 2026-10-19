@@ -1,7 +1,9 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import { loggedOut, setCredentials } from '../features/authSlice';
+import { setMaintenance } from '../features/uiSlice';
 import { broadcastSession, markIdleLogout } from './sessionSync';
 import { isCsrfRejection, readCsrfToken } from './csrfCookie';
+import { apiErrorKind, reportClientError } from './errorReporter';
 
 /** The double-submit CSRF token; every cookie-carrying write must echo it in X-CSRF-Token. */
 export function getCsrfCookie() {
@@ -78,6 +80,22 @@ const baseQueryWithReauth = async (args, api, extra) => {
       result = await rawBaseQuery(args, api, extra);
     }
   }
+  // Emergency maintenance: show the maintenance page instead of a broken screen.
+  if (result.error?.status === 503 && result.error.data?.code === 'MAINTENANCE') {
+    api.dispatch(setMaintenance(result.error.data.message));
+  }
+  // SOC: network failures and 5xx answers are reported (deduplicated, capped).
+  // The report endpoint itself is never reported, so a failing report cannot loop.
+  const kind = apiErrorKind(result.error);
+  if (kind && !url.startsWith('/client-errors')) {
+    reportClientError({
+      kind,
+      message: kind === 'network' ? `Request failed: ${result.error.error || result.error.status}` : `Server answered ${result.error.status}`,
+      status: typeof result.error.status === 'number' ? result.error.status : undefined,
+      endpoint: url,
+      correlationId: result.meta?.response?.headers?.get?.('x-request-id') || undefined,
+    });
+  }
   return result;
 };
 
@@ -87,7 +105,7 @@ const TAGS = [
   'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation', 'Holiday',
   'Security', 'ClassStudents', 'ODLeave',
   'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics', 'Achievement',
-  'SOSAlert',
+  'SOSAlert', 'Exam', 'Cover', 'Transport',
 ];
 
 export const api = createApi({
@@ -98,6 +116,8 @@ export const api = createApi({
   endpoints: (b) => ({
     // ── Auth ──────────────────────────────────────────
     login: b.mutation({ query: (body) => ({ url: '/auth/login', method: 'POST', body }) }),
+    // SOC client error reports (errorReporter.js) — any signed-in role.
+    reportClientError: b.mutation({ query: (body) => ({ url: '/client-errors', method: 'POST', body }) }),
     register: b.mutation({ query: (body) => ({ url: '/auth/register', method: 'POST', body }) }),
     // `{ reason: 'idle' }` when the inactivity timer signs the user out (audit only).
     logout: b.mutation({ query: (body) => ({ url: '/auth/logout', method: 'POST', ...(body ? { body } : {}) }) }),
@@ -345,7 +365,7 @@ export const api = createApi({
     // Admin → Security & Logs (admin only on the server).
     getSecuritySummary: b.query({ query: () => '/admin/security/summary', providesTags: ['Security'], keepUnusedDataFor: 0 }),
     getSecurityLogs: b.query({ query: (params) => ({ url: '/admin/security/logs', params }), providesTags: ['Security'], keepUnusedDataFor: 0 }),
-    getSecurityOtps: b.query({ query: (params) => ({ url: '/admin/security/otps', params }), keepUnusedDataFor: 0 }),
+    getSecurityOtps: b.query({ query: (params) => ({ url: '/super-admin/security/otps', params }), keepUnusedDataFor: 0 }), // Super Admin only
 
     // ── Admin → Role Assignments & Class In-Charge Handover / Swap ──
     getRoleAssignmentsOverview: b.query({
@@ -494,6 +514,46 @@ export const api = createApi({
     // "My Schedule": always the authenticated user's own teaching periods.
     getMySchedule: b.query({ query: (params) => ({ url: '/timetable/my-schedule', params }), providesTags: ['Timetable'] }),
 
+    // ── Exam timetable (manage: HOD own scope / COE campus-wide, enforced server-side) ──
+    // A published exam blocks overlapping attendance periods, so every change
+    // also refreshes the attendance views.
+    getExams: b.query({ query: (params) => ({ url: '/exams', params }), providesTags: ['Exam'] }),
+    getExamOptions: b.query({ query: (params) => ({ url: '/exams/options', params }), providesTags: ['Exam'] }),
+    createExams: b.mutation({ query: (body) => ({ url: '/exams', method: 'POST', body }), invalidatesTags: ['Exam', 'Attendance'] }),
+    updateExam: b.mutation({ query: ({ id, ...body }) => ({ url: `/exams/${id}`, method: 'PUT', body }), invalidatesTags: ['Exam', 'Attendance'] }),
+    publishExam: b.mutation({ query: (id) => ({ url: `/exams/${id}/publish`, method: 'PATCH' }), invalidatesTags: ['Exam', 'Attendance'] }),
+    cancelExam: b.mutation({ query: ({ id, reason }) => ({ url: `/exams/${id}/cancel`, method: 'PATCH', body: { reason } }), invalidatesTags: ['Exam', 'Attendance'] }),
+
+    // ── College buses (scoped per viewer server-side) ──
+    getTransportConfig: b.query({ query: () => '/transport/config', providesTags: ['Transport'] }),
+    getBuses: b.query({ query: () => '/transport/buses', providesTags: ['Transport'] }),
+    getBus: b.query({ query: ({ id, stopId }) => ({ url: `/transport/buses/${id}`, params: stopId ? { stopId } : undefined }), providesTags: ['Transport'] }),
+    searchTransport: b.query({ query: (q) => ({ url: '/transport/search', params: { q } }) }),
+    getTransportMe: b.query({ query: () => '/transport/me', providesTags: ['Transport'] }),
+    getTransportRoutes: b.query({ query: (params) => ({ url: '/transport/routes', params }), providesTags: ['Transport'] }),
+    createBusRoute: b.mutation({ query: (body) => ({ url: '/transport/routes', method: 'POST', body }), invalidatesTags: ['Transport'] }),
+    updateBusRoute: b.mutation({ query: ({ id, ...body }) => ({ url: `/transport/routes/${id}`, method: 'PUT', body }), invalidatesTags: ['Transport'] }),
+    createBus: b.mutation({ query: (body) => ({ url: '/transport/buses', method: 'POST', body }), invalidatesTags: ['Transport'] }),
+    updateBus: b.mutation({ query: ({ id, ...body }) => ({ url: `/transport/buses/${id}`, method: 'PUT', body }), invalidatesTags: ['Transport'] }),
+    getTransportAssignments: b.query({ query: (params) => ({ url: '/transport/assignments', params }), providesTags: ['Transport'] }),
+    setTransportAssignment: b.mutation({ query: (body) => ({ url: '/transport/assignments', method: 'PUT', body }), invalidatesTags: ['Transport'] }),
+    deleteTransportAssignment: b.mutation({ query: (id) => ({ url: `/transport/assignments/${id}`, method: 'DELETE' }), invalidatesTags: ['Transport'] }),
+    pickTransportPeople: b.query({ query: (params) => ({ url: '/transport/people', params }) }),
+    stopBusTrip: b.mutation({ query: (id) => ({ url: `/transport/trips/${id}/stop`, method: 'POST', body: { reason: 'stopped' } }), invalidatesTags: ['Transport'] }),
+
+    // ── Staff attendance, cover and monitoring (scoped server-side) ──
+    getStaffReport: b.query({ query: (params) => ({ url: '/attendance/staff-report', params }), providesTags: ['Attendance', 'StaffAttendance', 'Cover'] }),
+    getLowMonitor: b.query({ query: (params) => ({ url: '/attendance/low-monitor', params }), providesTags: ['Attendance'] }),
+    getCover: b.query({ query: (params) => ({ url: '/staff/cover', params }), providesTags: ['Cover', 'StaffAttendance'] }),
+    getAvailableSubstitutes: b.query({ query: (params) => ({ url: '/staff/cover/available', params }), providesTags: ['Cover'] }),
+    assignCover: b.mutation({ query: (body) => ({ url: '/staff/cover', method: 'POST', body }), invalidatesTags: ['Cover', 'Attendance'] }),
+    cancelCover: b.mutation({ query: ({ id, reason }) => ({ url: `/staff/cover/${id}`, method: 'DELETE', body: { reason } }), invalidatesTags: ['Cover', 'Attendance'] }),
+    getEarlyExits: b.query({ query: (params) => ({ url: '/staff/early-exits', params }), providesTags: ['Cover'] }),
+    requestEarlyExit: b.mutation({ query: (body) => ({ url: '/staff/early-exits', method: 'POST', body }), invalidatesTags: ['Cover', 'Attendance'] }),
+    decideEarlyExit: b.mutation({ query: ({ id, ...body }) => ({ url: `/staff/early-exits/${id}/decision`, method: 'PATCH', body }), invalidatesTags: ['Cover', 'Attendance'] }),
+    recordDeparture: b.mutation({ query: (id) => ({ url: `/staff/early-exits/${id}/departure`, method: 'PATCH' }), invalidatesTags: ['Cover'] }),
+    cancelEarlyExit: b.mutation({ query: (id) => ({ url: `/staff/early-exits/${id}/cancel`, method: 'PATCH' }), invalidatesTags: ['Cover'] }),
+
     // ── Study materials ────────────────────────────────
     getStudyMaterials: b.query({ query: (params) => ({ url: '/study-materials', params }), providesTags: ['StudyMaterial'] }),
     getStudyMaterial: b.query({ query: (id) => `/study-materials/${id}`, providesTags: ['StudyMaterial'] }),
@@ -532,7 +592,13 @@ export const api = createApi({
     createGatePass: b.mutation({ query: (body) => ({ url: '/gate-pass', method: 'POST', body }), invalidatesTags: ['GatePass'] }),
     facultyReviewGatePass: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/${id}/faculty-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
     getParentOtp: b.query({ query: (id) => `/gate-pass/${id}/parent-otp`, keepUnusedDataFor: 0 }),
-    requestParentOtp: b.mutation({ query: (id) => ({ url: `/gate-pass/${id}/parent-otp`, method: 'POST' }) }),
+    // `mobile` + `reason` are optional: the faculty's edited number when the registered one is not reachable.
+    requestParentOtp: b.mutation({
+      query: (arg) => {
+        const { id, mobile, reason } = typeof arg === 'string' ? { id: arg } : arg;
+        return { url: `/gate-pass/${id}/parent-otp`, method: 'POST', body: mobile ? { mobile, reason } : {} };
+      },
+    }),
     verifyParentOtp: b.mutation({ query: ({ id, otp }) => ({ url: `/gate-pass/${id}/parent-otp/verify`, method: 'POST', body: { otp } }), invalidatesTags: ['GatePass'] }),
     getDevOtps: b.query({ query: () => '/dev/otp', keepUnusedDataFor: 0 }),
     hodReviewGatePass: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/${id}/hod-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
@@ -1142,6 +1208,38 @@ export const {
   useGetClubAnalyticsQuery,
   useGetPeopleFiltersQuery,
   useGetMyScheduleQuery,
+  useGetExamsQuery,
+  useGetExamOptionsQuery,
+  useCreateExamsMutation,
+  useUpdateExamMutation,
+  usePublishExamMutation,
+  useCancelExamMutation,
+  useGetTransportConfigQuery,
+  useGetBusesQuery,
+  useGetBusQuery,
+  useSearchTransportQuery,
+  useGetTransportMeQuery,
+  useGetTransportRoutesQuery,
+  useCreateBusRouteMutation,
+  useUpdateBusRouteMutation,
+  useCreateBusMutation,
+  useUpdateBusMutation,
+  useGetTransportAssignmentsQuery,
+  useSetTransportAssignmentMutation,
+  useDeleteTransportAssignmentMutation,
+  usePickTransportPeopleQuery,
+  useStopBusTripMutation,
+  useGetStaffReportQuery,
+  useGetLowMonitorQuery,
+  useGetCoverQuery,
+  useGetAvailableSubstitutesQuery,
+  useAssignCoverMutation,
+  useCancelCoverMutation,
+  useGetEarlyExitsQuery,
+  useRequestEarlyExitMutation,
+  useDecideEarlyExitMutation,
+  useRecordDepartureMutation,
+  useCancelEarlyExitMutation,
   useGetMyClassOptionsQuery,
   useGetMyClassAttendanceQuery,
   useGetReportOptionsQuery,

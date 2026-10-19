@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { CheckCircle2, KeyRound, LogIn, MonitorSmartphone, RefreshCw, Search, ShieldAlert, ShieldCheck, XCircle } from 'lucide-react';
 import { useGetSecurityLogsQuery, useGetSecurityOtpsQuery, useGetSecuritySummaryQuery } from '../../services/api';
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, StatCard, Tabs, cn } from '../../components/ui/primitives';
+import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, StatCard, cn } from '../../components/ui/primitives';
 import { RangeFilter } from '../../components/insights';
 import { DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, YEAR_LABELS, ACADEMIC_YEARS } from '../../utils/constants';
 import { fmtDateTime, displayName } from '../../utils/format';
@@ -12,8 +11,9 @@ const EVENTS = [
   'LOGIN_SUCCESS', 'LOGIN_FAILED', 'LOGOUT', 'SESSION_CREATED', 'SESSION_EXPIRED', 'SESSION_REVOKED', 'FORCED_LOGOUT', 'REFRESH_FAILED',
   'PASSWORD_CHANGED', 'PASSWORD_RESET', 'PASSWORD_RESET_FAILED',
   'USER_CREATED', 'USER_UPDATED', 'USER_ENABLED', 'USER_DISABLED', 'USER_DELETED', 'ROLE_CHANGED',
+  'POLICIES_CHANGED', 'POLICY_DENIED', 'MAINTENANCE_BLOCKED',
   'ACADEMIC_SCOPE_CHANGED', 'CLASS_IN_CHARGE_CHANGED',
-  'OTP_CREATED', 'OTP_SENT', 'OTP_VERIFIED', 'OTP_FAILED', 'OTP_EXPIRED', 'OTP_RESEND', 'OTP_LOCKED', 'OTP_VIEWED',
+  'OTP_CREATED', 'OTP_SENT', 'OTP_VERIFIED', 'OTP_FAILED', 'OTP_EXPIRED', 'OTP_RESEND', 'OTP_LOCKED', 'OTP_VIEWED', 'OTP_ALTERNATE_MOBILE',
   'GATE_PASS_APPROVED', 'GATE_PASS_REJECTED', 'GATE_PASS_CANCELLED', 'GATE_PASS_REVOKED', 'GATE_PASS_QR_VERIFIED',
   'GATE_PASS_VERIFICATION_FAILED', 'GATE_PASS_EXIT_CONFIRMED', 'GATE_PASS_RETURN_CONFIRMED',
 ];
@@ -367,23 +367,18 @@ function OtpTab() {
   );
 }
 
-/** Admin → Security & Logs, with the OTP dashboard as a separate tab. Admin-only on the server too. */
+/**
+ * The parent-OTP dashboard. Shown only in the Super Admin console (the API
+ * is Super Admin only); Admin → Security & Logs no longer has it.
+ */
+export { OtpTab };
+
+/** Admin → Security & Logs. Admin-only on the server too. */
 export default function SecurityLogs() {
-  const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'otp' ? 'otp' : 'logs';
   return (
     <div>
-      <PageHeader icon={ShieldCheck} title="Security & Logs" subtitle="Authentication, account and gate-pass security events, and generated parent OTPs. Read-only." />
-      <Tabs
-        className="mb-5"
-        value={tab}
-        onChange={(t) => setParams(t === 'otp' ? { tab: 'otp' } : {}, { replace: true })}
-        tabs={[
-          { value: 'logs', label: 'Security Logs' },
-          { value: 'otp', label: 'OTP' },
-        ]}
-      />
-      {tab === 'otp' ? <OtpTab /> : <SecurityLogsTab />}
+      <PageHeader icon={ShieldCheck} title="Security & Logs" subtitle="Authentication, account and gate-pass security events. Read-only." />
+      <SecurityLogsTab />
     </div>
   );
 }

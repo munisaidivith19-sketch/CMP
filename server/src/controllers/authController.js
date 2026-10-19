@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Session from '../models/Session.js';
+import DeviceToken from '../models/DeviceToken.js';
 import LoginHistory from '../models/LoginHistory.js';
 import { env } from '../config/env.js';
 import { disconnectSessions } from '../config/socket.js';
@@ -11,6 +12,8 @@ import { notifyUsers } from '../utils/notify.js';
 import { sendMail } from '../utils/mailer.js';
 import { parseDevice } from '../utils/device.js';
 import { logSecurity } from '../utils/securityLog.js';
+import { getPlatformState, maintenanceBody, platformAllows } from '../services/platformState.js';
+import { SUPER_ADMIN_ROLE } from '../constants.js';
 import {
   readRefreshCookie,
   clearRefreshCookie,
@@ -131,6 +134,8 @@ export async function revokeSessions(filter, reason) {
   const ids = sessions.map((s) => s._id);
   await Session.updateMany({ _id: { $in: ids } }, { $set: { revokedAt: new Date(), revokedReason: reason } });
   disconnectSessions(ids);
+  // A signed-out / revoked device must stop receiving this user's pushes.
+  await DeviceToken.deleteMany({ session: { $in: ids } });
   return ids.length;
 }
 
@@ -328,6 +333,18 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'This account has been suspended. Contact the administrator.');
   }
 
+  // Super Admin signs in on the web console only: the Android app has no
+  // Super Admin screens, and keeping the role off mobile narrows its exposure.
+  if (user.role === SUPER_ADMIN_ROLE && isMobileClient(req)) {
+    logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'super_admin_web_only' });
+    throw new ApiError(403, 'Sign in to the Super Admin console from the web dashboard.');
+  }
+  // Maintenance / lockdown / recovery: correct credentials, but only a Super Admin gets a session.
+  if (!(await platformAllows(user))) {
+    logSecurity(req, 'MAINTENANCE_BLOCKED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'login' });
+    throw new ApiError(503, maintenanceBody(await getPlatformState()).message, undefined, { code: 'MAINTENANCE', maintenance: true });
+  }
+
   // 6. Successful Authentication: Reset counters & clear IP penalty
   user.failedLogins = 0;
   user.lockUntil = undefined;
@@ -414,6 +431,11 @@ export const refresh = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  // Outside normal mode only a Super Admin session is renewed (the session itself is kept).
+  if (!(await platformAllows(user))) {
+    throw new ApiError(503, maintenanceBody(await getPlatformState()).message, undefined, { code: 'MAINTENANCE', maintenance: true });
+  }
+
   res.json(await issueSession(req, res, user, session));
 });
 
@@ -472,6 +494,7 @@ export const changePassword = asyncHandler(async (req, res) => {
   }
   if (await user.comparePassword(newPassword)) throw new ApiError(422, 'New password must be different from the current one');
   user.password = newPassword;
+  user.mustChangePassword = false; // a temporary password has now been replaced
   user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidates refresh tokens everywhere
   await user.save();
 

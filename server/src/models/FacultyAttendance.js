@@ -28,6 +28,8 @@ const facultyAttendanceSchema = new Schema(
       department: { type: String, maxlength: 80 },
       section: { type: String, maxlength: 10 },
       at: Date,
+      // Set when the class was taken as a substitute for this faculty member.
+      substituteFor: { type: Schema.Types.ObjectId, ref: 'User' },
     },
   },
   { timestamps: true, toJSON: { versionKey: false } }

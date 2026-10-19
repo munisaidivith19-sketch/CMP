@@ -4,10 +4,11 @@ import FacultyAttendance from '../models/FacultyAttendance.js';
 import User from '../models/User.js';
 import { ApiError, asyncHandler } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
-import { emitToUsers } from '../config/socket.js';
+import { emitToRoles, emitToUsers } from '../config/socket.js';
+import { studentTotals } from '../services/attendanceTotals.js';
 import { dayFilter, dayKey, resolveRange, toDay, today } from '../utils/dates.js';
 import { LOW_ATTENDANCE_THRESHOLD, STUDENT_ROLES, percentage } from './attendanceController.js';
-import { COLLEGE_WIDE_ROLES, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod } from '../constants.js';
+import { ACADEMIC_OVERSIGHT_ROLES, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod } from '../constants.js';
 
 // Staff whose daily attendance is tracked.
 const TRACKED_STAFF = ['faculty', 'hod'];
@@ -177,20 +178,17 @@ export const departmentBreakdown = asyncHandler(async (req, res) => {
   // Principal & the other college-wide roles, no department picked: the whole
   // college, one row per department with its years inside (counts only — the
   // student lists come from the per-department call, made on drill-down).
-  const collegeOverview = COLLEGE_WIDE_ROLES.includes(req.user.role) && !department;
+  const collegeOverview = ACADEMIC_OVERSIGHT_ROLES.includes(req.user.role) && !department;
   const byDepartment = isFirstYearHod(req.user) || collegeOverview;
 
   const students = await User.find(studentFilter(department, {}, req.user)).select(BREAKDOWN_FIELDS).lean();
   const ids = students.map((s) => s._id);
-  const window = dayFilter(resolveRange({ range: 'semester' }));
-  const [status, periodRows] = await Promise.all([
+  // Semester totals: earlier days come from a cache that every attendance
+  // write invalidates, today is always read fresh (services/attendanceTotals).
+  const [status, periods] = await Promise.all([
     studentDayStatus(day, department, ids.length ? ids : [null]),
-    AttendanceRecord.aggregate([
-      { $match: { student: { $in: ids }, ...(window ? { date: window } : {}) } },
-      { $group: { _id: '$student', total: { $sum: 1 }, present: attendedExpr } },
-    ]),
+    studentTotals(resolveRange({ range: 'semester' }).from),
   ]);
-  const periods = new Map(periodRows.map((r) => [String(r._id), r]));
   const threshold = LOW_ATTENDANCE_THRESHOLD;
 
   const emptyTally = () => ({ total: 0, present: 0, absent: 0, unmarked: 0 });
@@ -349,6 +347,8 @@ export const markFaculty = asyncHandler(async (req, res) => {
   );
 
   logActivity(req, 'attendance.faculty_mark', { summary: `${dayKey(day)}: ${ids.length} staff` });
-  emitToUsers(ids, 'attendance:updated', { kind: 'faculty', date: dayKey(day) });
+  emitToUsers([...ids, req.user._id], 'attendance:updated', { kind: 'faculty', date: dayKey(day) });
+  // The college dashboards (principal, COE …) show faculty attendance too.
+  emitToRoles(ACADEMIC_OVERSIGHT_ROLES, 'attendance:updated', { kind: 'faculty', date: dayKey(day) });
   res.json({ message: `Saved attendance for ${ids.length} staff member${ids.length === 1 ? '' : 's'}` });
 });

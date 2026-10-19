@@ -18,6 +18,9 @@ export default defineConfig(({ mode }) => ({
   // Production bundles carry no console / debugger statements (no stray data
   // in the browser console) and no license comment blocks.
   esbuild: mode === 'production' ? { drop: ['console', 'debugger'], legalComments: 'none' } : undefined,
+  // The bus map's MapLibre worker is bundled into one same-origin file
+  // (?worker&url), so the CSP never needs blob: or remote scripts for it.
+  worker: { format: 'es' },
   build: {
     // Never publish source maps: they would hand out the original source.
     sourcemap: false,

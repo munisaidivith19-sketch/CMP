@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react';
+import { useSelector } from 'react-redux';
 import { useCreateAdminUserMutation } from '../services/api';
+import { useGetMyPoliciesQuery } from '../services/superAdmin';
+import { selectUser } from '../features/authSlice';
+import { STAFF_GRANT_ROLES, allowedRoles, creationPolicyAccess, grantedPages, policySummary } from '../utils/delegation';
 import { Button, cn } from './ui/primitives';
-import { Modal } from './ui/Modal';
+import { ConfirmDialog, Modal } from './ui/Modal';
+import PolicyEditor from './superadmin/PolicyEditor';
+import { reportError, useReauth } from './superadmin/Reauth';
 import { ChipMultiSelect, Input, Select } from './ui/form';
 import RestrictionPopupModal from './RestrictionPopupModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../utils/constants';
@@ -21,6 +27,12 @@ const FORMS = {
   ao: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
   chairman: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
   warden: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  // Controller of Examinations: exam timetables campus-wide, no department.
+  coe: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  // Administrative Office: read-only college-wide attendance, no department.
+  office: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
+  // Transport officer: buses, routes, rider assignments, trips.
+  transport: ['title', 'gender', 'name', 'employeeId', 'email', 'phone', 'password'],
 };
 const REQUIRED = new Set([
   'title', 'gender', 'name', 'email', 'password', 'rollNo', 'year', 'department', 'stayType', 'parentPhone', 'employeeId', 'teachingYears', 'section',
@@ -49,12 +61,29 @@ function suggestPassword() {
 }
 
 export default function CreateUserModal({ open, onClose }) {
+  const me = useSelector(selectUser);
+  // Policy-managed admins see only the roles a Super Admin delegated to them
+  // (the server refuses any other role regardless of what this shows).
+  const { data: myPolicies } = useGetMyPoliciesQuery(undefined, { skip: !open || !['admin', 'super_admin', ...STAFF_GRANT_ROLES].includes(me?.role) });
+  const creatable = Object.keys(FORMS).filter((r) => allowedRoles(myPolicies, 'create').includes(r));
+  const hiddenRoles = Object.keys(FORMS).length - creatable.length;
   const [role, setRole] = useState('student');
+  useEffect(() => {
+    if (creatable.length && !creatable.includes(role)) setRole(creatable[0]);
+  }, [creatable.join(','), role]); // eslint-disable-line react-hooks/exhaustive-deps
   const [v, setV] = useState(EMPTY);
   const [show, setShow] = useState(false);
   const [errors, setErrors] = useState({});
   const [restrictionPopup, setRestrictionPopup] = useState(null);
   const [create, { isLoading }] = useCreateAdminUserMutation();
+  const { guard, modal: reauthModal } = useReauth();
+  // Policy Assignment: 'none' (the role's access only) or 'custom' (additional policies).
+  const [policyMode, setPolicyMode] = useState('none');
+  const [policies, setPolicies] = useState([]);
+  // A pending change that would discard the selected policies: { label, apply }.
+  const [discard, setDiscard] = useState(null);
+  const access = creationPolicyAccess(me?.role, myPolicies, role, v.department);
+  const custom = policyMode === 'custom';
 
   useEffect(() => {
     if (!open) {
@@ -62,8 +91,39 @@ export default function CreateUserModal({ open, onClose }) {
       setErrors({});
       setShow(false);
       setRestrictionPopup(null);
+      setPolicyMode('none');
+      setPolicies([]);
+      setDiscard(null);
     }
   }, [open]);
+
+  // Ask before throwing away policy selections; never discard them silently.
+  const confirmDiscard = (label, apply) => {
+    if (custom && policies.length) setDiscard({ label, apply });
+    else apply();
+  };
+  const chooseMode = (mode) => {
+    if (mode === policyMode) return;
+    if (mode === 'none') {
+      confirmDiscard('Switching to No Additional Policies', () => {
+        setPolicyMode('none');
+        setPolicies([]);
+      });
+    } else setPolicyMode('custom');
+  };
+  const chooseRole = (r) => {
+    const apply = () => {
+      setRole(r);
+      setErrors({});
+      if (!STAFF_GRANT_ROLES.includes(r)) {
+        setPolicyMode('none');
+        setPolicies([]);
+      }
+    };
+    // Every staff role takes the same additional-policy catalogue: selections carry over.
+    if (STAFF_GRANT_ROLES.includes(r)) apply();
+    else confirmDiscard(`Switching to ${ROLE_LABELS[r]}`, apply);
+  };
 
   const fields = FORMS[role];
   const set = (k) => (e) =>
@@ -78,6 +138,8 @@ export default function CreateUserModal({ open, onClose }) {
     });
   const setList = (k) => (list) => setV((s) => ({ ...s, [k]: list }));
   const missing = fields.filter((k) => isRequired(k, role) && (Array.isArray(v[k]) ? !v[k].length : !String(v[k]).trim()));
+  // "Add Policies" needs at least one permission the signed-in account may delegate here.
+  const policyBlocked = custom && (!access.allowed || policies.length === 0);
 
 const normalizeDigits = (val) => {
   if (!val) return '';
@@ -117,14 +179,24 @@ const normalizeDigits = (val) => {
     });
     // Faculty's class in charge is also their (sole) section handled.
     if (role === 'faculty' && body.section) body.teachingSections = [body.section];
+    body.policyMode = custom ? 'custom' : 'none';
+    if (custom) body.policies = policies;
     try {
-      const user = await create(body).unwrap();
-      toast.success(`${ROLE_LABELS[role]} login created for ${displayName(user)} — username: ${user.email}`, { duration: 6000 });
+      // A Super Admin adding policies confirms its password first (server: REAUTH_REQUIRED).
+      const user = await guard(() => create(body).unwrap());
+      const summary = custom ? policySummary(user.policies, access.catalogue) : [];
+      toast.success(
+        `${ROLE_LABELS[role]} login created for ${displayName(user)} — username: ${user.email}. ${summary.length ? `Additional policies: ${summary.join(' · ')}` : 'Role permissions only, no additional policies.'}`,
+        { duration: 8000 }
+      );
       // Keep the class details so the next student of the same class is quick to add.
       setV((s) => ({ ...EMPTY, ...(role === 'student' ? { department: s.department, year: s.year, section: s.section } : {}) }));
       setErrors({});
       setRestrictionPopup(null);
+      setPolicyMode('none');
+      setPolicies([]);
     } catch (err) {
+      if (err?.cancelled) return; // the password prompt was cancelled: nothing was created
       const list = err?.data?.errors;
       setErrors(Array.isArray(list) ? Object.fromEntries(list.map((x) => [x.field, x.message])) : {});
       const message = errMsg(err);
@@ -278,24 +350,26 @@ const normalizeDigits = (val) => {
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button type="submit" form="create-user-form" loading={isLoading} disabled={missing.length > 0}>
+          <Button type="submit" form="create-user-form" loading={isLoading} disabled={missing.length > 0 || !creatable.includes(role) || policyBlocked}>
             Create {ROLE_LABELS[role]} login
           </Button>
         </>
       }
     >
+      {creatable.length === 0 ? (
+        <p className="mb-4 rounded-xl bg-amber-500/10 p-3 text-sm">You are not authorized to create any account type. A Super Admin must delegate roles to you first.</p>
+      ) : hiddenRoles > 0 ? (
+        <p className="mb-3 text-xs muted">Only the account types delegated to you are shown. Other roles require Super Admin authorization.</p>
+      ) : null}
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Account type">
-        {Object.keys(FORMS).map((r) => (
+        {creatable.map((r) => (
           <button
             key={r}
             type="button"
             role="tab"
             aria-selected={role === r}
             className={cn('chip', role === r && 'chip-active')}
-            onClick={() => {
-              setRole(r);
-              setErrors({});
-            }}
+            onClick={() => chooseRole(r)}
           >
             {ROLE_LABELS[r]}
           </button>
@@ -303,13 +377,121 @@ const normalizeDigits = (val) => {
       </div>
       <form id="create-user-form" onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
         {fields.map(field)}
+        <PolicyAssignment
+          role={role}
+          mode={policyMode}
+          onMode={chooseMode}
+          access={access}
+          policies={policies}
+          onPolicies={setPolicies}
+          error={errors.policies || errors.policyMode}
+        />
       </form>
     </Modal>
+    <ConfirmDialog
+      open={Boolean(discard)}
+      onClose={() => setDiscard(null)}
+      onConfirm={() => {
+        discard?.apply();
+        setDiscard(null);
+      }}
+      title="Discard selected policies?"
+      text={`${discard?.label || 'This change'} discards the additional permissions you selected. The account will get its role's access only.`}
+      confirmText="Discard policies"
+    />
+    {reauthModal}
     <RestrictionPopupModal
       open={Boolean(restrictionPopup)}
       onClose={() => setRestrictionPopup(null)}
       {...restrictionPopup}
     />
     </>
+  );
+}
+
+const POLICY_OPTIONS = [
+  { value: 'none', label: 'No Additional Policies', text: 'Use the existing dashboard access and permissions provided by the assigned role.' },
+  { value: 'custom', label: 'Add Policies', text: 'Configure additional permissions for this user.' },
+];
+
+/**
+ * Policy Assignment for the new account. "No Additional Policies" stores
+ * nothing extra; "Add Policies" shows only what the signed-in account may
+ * delegate to this account type. The server validates every grant again.
+ */
+function PolicyAssignment({ role, mode, onMode, access, policies, onPolicies, error }) {
+  const custom = mode === 'custom';
+  const roleLabel = ROLE_LABELS[role] || role;
+  const summary = policySummary(policies, access.catalogue);
+  const pages = grantedPages({ staffGrants: true, policies });
+  return (
+    <section className="space-y-3 sm:col-span-2" aria-labelledby="policy-assignment-title">
+      <div>
+        <h3 id="policy-assignment-title" className="text-sm font-extrabold">Policy Assignment</h3>
+        {error && <p className="mt-1 text-xs text-red-600" role="alert">{error}</p>}
+      </div>
+      <div role="radiogroup" aria-labelledby="policy-assignment-title" className="grid gap-2 sm:grid-cols-2">
+        {POLICY_OPTIONS.map((o) => {
+          const disabled = o.value === 'custom' && !access.allowed;
+          const selected = mode === o.value;
+          return (
+            <label
+              key={o.value}
+              className={cn(
+                'flex items-start gap-2.5 rounded-2xl border p-3 text-sm transition',
+                selected ? 'border-primary-500 bg-primary-500/10' : 'border-white/60 dark:border-white/10',
+                disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              )}
+            >
+              <input
+                type="radio"
+                name="policyMode"
+                value={o.value}
+                className="mt-0.5 h-4 w-4 accent-primary-600"
+                checked={selected}
+                disabled={disabled}
+                onChange={() => onMode(o.value)}
+              />
+              <span>
+                <span className="font-bold">{o.label}</span>
+                <span className="block text-xs muted">{o.text}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {!access.allowed && <p className="text-xs muted">{access.reason}</p>}
+
+      <div className="rounded-2xl bg-white/40 p-3 text-xs dark:bg-white/5">
+        <p className="font-bold">Inherited from the {roleLabel} role</p>
+        <p className="muted">
+          The account gets the standard {roleLabel} dashboard and permissions. Role permissions are not copied onto the account, so
+          later changes to the role still apply, and nothing chosen here removes them.
+        </p>
+      </div>
+
+      {custom && access.allowed && (
+        <>
+          <div>
+            <p className="mb-2 text-xs font-bold">Additional permissions for this user</p>
+            <PolicyEditor catalogue={access.catalogue} value={policies} onChange={onPolicies} />
+            <p className="mt-2 text-xs muted">
+              Only permissions you may delegate are shown. Changing roles, managing staff accounts and assigning policies always stay with Admins
+              and the Super Admin.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-primary-500/30 p-3 text-xs" aria-live="polite">
+            <p className="mb-1 flex items-center gap-1.5 font-bold">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> Effective permissions preview
+            </p>
+            <ul className="list-disc space-y-0.5 pl-5">
+              <li>Everything the {roleLabel} role allows (inherited)</li>
+              {summary.length ? summary.map((line) => <li key={line}>Additional: {line}</li>) : <li className="muted">No additional permissions selected yet</li>}
+              {pages.length > 0 && <li>Opens admin pages: {pages.join(', ')}</li>}
+            </ul>
+          </div>
+        </>
+      )}
+    </section>
   );
 }

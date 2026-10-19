@@ -20,6 +20,10 @@ data class Fix(
     val accuracy: Float,
     val elapsedMs: Long,
     val mocked: Boolean,
+    /** The Android provider that produced it ("gps", "network", "fused"), when known — for diagnostics. */
+    val provider: String? = null,
+    /** Satellite fixes carry an altitude; network estimates usually do not. */
+    val hasAltitude: Boolean = false,
 )
 
 /** Outcome of trying to read one fresh position. */

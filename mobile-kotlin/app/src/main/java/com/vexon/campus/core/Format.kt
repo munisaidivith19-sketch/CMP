@@ -118,6 +118,44 @@ fun describeConversation(conv: JsonElement?, me: JsonElement?): ConvInfo {
     return ConvInfo(conv["name"].str, null, true)
 }
 
+/**
+ * Parent-OTP number checks, mirroring the server (otpService.normalizeIndianMobile).
+ * UX only — the server validates again and decides.
+ */
+object ParentMobile {
+    private fun last10(v: String?) = (v ?: "").filter { it.isDigit() }.takeLast(10)
+
+    /** True when [typed] is a different number from [registered] (formatting ignored). */
+    fun differs(typed: String?, registered: String?) = last10(typed) != last10(registered)
+
+    /** A 10-digit Indian mobile, optionally written with +91 / 0 / spaces / dashes. */
+    fun isValid(typed: String?): Boolean {
+        var d = (typed ?: "").filterNot { it == ' ' || it == '-' || it == '(' || it == ')' }
+        if (!Regex("""^\+?\d+$""").matches(d)) return false
+        d = d.removePrefix("+")
+        if (d.length == 12 && d.startsWith("91")) d = d.drop(2) else if (d.length == 11 && d.startsWith("0")) d = d.drop(1)
+        return Regex("""^[6-9]\d{9}$""").matches(d)
+    }
+}
+
+/** Leave-window text for the Security home lists (Students in / out / Left today). */
+object GateLeave {
+    /**
+     * "Mon, 12 Oct → Wed, 14 Oct" for a normal pass, one day for an outing or a
+     * same-day pass, and exact times for an emergency pass. Null when there is no pass.
+     */
+    fun period(p: JsonElement?): String? {
+        if (p == null) return null
+        if (p["passType"].str == "emergency" && p["leaveAt"] != null) {
+            val back = p["expectedReturnAt"]?.let { Fmt.dateTime(it) }.orEmpty()
+            return "${Fmt.dateTime(p["leaveAt"])} → ${back.ifEmpty { "—" }}"
+        }
+        val from = Fmt.classDay(p["fromDate"]).ifEmpty { "—" }
+        val to = Fmt.classDay(p["toDate"]).ifEmpty { "—" }
+        return if (p["dayScholarOuting"].bool || from == to) from else "$from → $to"
+    }
+}
+
 /** Pure gate-pass QR helpers (port of utils/gateQr.js). */
 object GateQr {
     const val EXIT_PREFIX = "CCGP:"

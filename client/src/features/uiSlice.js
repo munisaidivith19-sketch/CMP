@@ -12,8 +12,13 @@ function readTheme() {
 
 const uiSlice = createSlice({
   name: 'ui',
-  initialState: { theme: readTheme(), sidebarOpen: false },
+  // maintenance: the server's maintenance message while the platform is not in
+  // normal mode (set from any 503 MAINTENANCE answer), else null.
+  initialState: { theme: readTheme(), sidebarOpen: false, maintenance: null },
   reducers: {
+    setMaintenance(state, { payload }) {
+      state.maintenance = payload || null;
+    },
     toggleTheme(state) {
       state.theme = state.theme === 'dark' ? 'light' : 'dark';
       try {
@@ -28,5 +33,5 @@ const uiSlice = createSlice({
   },
 });
 
-export const { toggleTheme, setSidebar } = uiSlice.actions;
+export const { toggleTheme, setSidebar, setMaintenance } = uiSlice.actions;
 export default uiSlice.reducer;

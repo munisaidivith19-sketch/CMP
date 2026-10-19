@@ -101,7 +101,7 @@ export function csrfAndOriginGuard(req, res, next) {
     }
 
     if (!isAllowed) {
-      return next(new ApiError(403, 'Cross-origin request blocked by security policy'));
+      return next(new ApiError(403, 'Cross-origin request blocked by security policy', undefined, { code: 'ORIGIN_BLOCKED' }));
     }
   }
 
@@ -117,7 +117,7 @@ export function csrfAndOriginGuard(req, res, next) {
     const csrfCookie = readCsrfCookie(req);
     const isBrowser = Boolean(csrfCookie || readRefreshCookie(req) || req.get('sec-fetch-site'));
     if (isBrowser && !csrfTokensMatch(csrfCookie, req.get('x-csrf-token'))) {
-      return next(new ApiError(403, 'Invalid or expired CSRF token'));
+      return next(new ApiError(403, 'Invalid or expired CSRF token', undefined, { code: 'CSRF_REJECTED' }));
     }
   }
 

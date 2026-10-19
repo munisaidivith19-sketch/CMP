@@ -34,6 +34,11 @@ export const SECURITY_EVENTS = [
   'USER_DISABLED',
   'USER_DELETED',
   'ROLE_CHANGED',
+  // Module policies (policy-managed admins)
+  'POLICIES_CHANGED',
+  'POLICY_DENIED',
+  // Emergency mode refused a sign-in / request
+  'MAINTENANCE_BLOCKED',
   // Academic scope
   'ACADEMIC_SCOPE_CHANGED',
   'CLASS_IN_CHARGE_CHANGED',
@@ -46,6 +51,7 @@ export const SECURITY_EVENTS = [
   'OTP_RESEND',
   'OTP_LOCKED',
   'OTP_VIEWED',
+  'OTP_ALTERNATE_MOBILE',
   // Gate pass
   'GATE_PASS_APPROVED',
   'GATE_PASS_MASS_APPROVED',

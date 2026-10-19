@@ -10,7 +10,7 @@ import { logActivity } from '../utils/activity.js';
 import { notifyRoles, notifyUsers } from '../utils/notify.js';
 import { open, seal } from '../utils/cipher.js';
 import { markConversationRead } from '../services/chatService.js';
-import { sendPushToUsers } from '../services/pushService.js';
+import { pushNow, sendPushToUsers } from '../services/pushService.js';
 
 const CHAT_USER_FIELDS = `${PUBLIC_USER_FIELDS} lastSeenAt`;
 const isParticipant = (conv, userId) => conv.participants.some((p) => sameId(p._id || p, userId));
@@ -401,11 +401,15 @@ export const sendMessage = asyncHandler(async (req, res) => {
   // Android devices that are not connected get a push notification.
   const offline = recipients.filter((id) => !isUserOnline(id));
   if (offline.length) {
+    const title = conv.type === 'private' ? req.user.name : `${req.user.name} · ${conv.name}`;
     sendPushToUsers(offline, {
-      title: conv.type === 'private' ? req.user.name : `${req.user.name} · ${conv.name}`,
+      title,
       body: text,
       data: { type: 'chat', conversationId: String(conv._id), link: `/chat/${conv._id}` },
     });
+    // Native Android app (FCM): only members of this conversation, honouring
+    // their chat preference; the text is hidden on the lock screen by the app.
+    pushNow(offline, { title, body: text.slice(0, 200), link: `/chat/${conv._id}`, category: 'chat' });
   }
 
   res.status(201).json(populated);

@@ -1,0 +1,102 @@
+# XcodeGen spec for the VEXON iOS app. Generate the Xcode project on a Mac with:
+#   brew install xcodegen && cd mobile-ios && xcodegen generate
+# (or run Scripts/generate-project.sh). The generated VEXON.xcodeproj is not
+# committed — this file is the source of truth.
+name: VEXON
+options:
+  bundleIdPrefix: com.vexon
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+  xcodeVersion: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+
+packages:
+  VEXONKit:
+    path: Packages/VEXONKit
+  MapLibre:
+    # MapLibre Native for iOS (BSD-2-Clause), binary distribution via SPM.
+    url: https://github.com/maplibre/maplibre-gl-native-distribution
+    from: "6.8.0"
+  SocketIO:
+    # Official Socket.IO Swift client; protocol v3/v4, matching the server's socket.io ^4.8.
+    url: https://github.com/socketio/socket.io-client-swift
+    from: "16.1.1"
+
+configs:
+  Debug: debug
+  Release: release
+
+targets:
+  VEXON:
+    type: application
+    platform: iOS
+    sources:
+      - path: VEXON
+        excludes:
+          - "Resources/Info.plist"
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    dependencies:
+      - package: VEXONKit
+      - package: MapLibre
+      - package: SocketIO
+    settings:
+      base:
+        INFOPLIST_FILE: VEXON/Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: $(VEXON_BUNDLE_ID)
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: $(VEXON_DEVELOPMENT_TEAM)
+
+  VEXONTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [VEXONTests]
+    dependencies:
+      - target: VEXON
+      - package: VEXONKit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.vexon.campus.tests
+
+  VEXONUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [VEXONUITests]
+    dependencies:
+      - target: VEXON
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.vexon.campus.uitests
+        TEST_TARGET_NAME: VEXON
+
+schemes:
+  VEXON:
+    build:
+      targets:
+        VEXON: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - VEXONTests
+        - VEXONUITests
+    archive:
+      config: Release

@@ -81,3 +81,14 @@ services:
       # rest of the app works; only the assistant is disabled.
       - key: GROQ_API_KEY
         sync: false
+      # Optional: Android push (FCM). The Firebase service-account JSON (or its
+      # base64). Paste it in the Render dashboard — never commit it. Unset =
+      # push off; in-app notifications and live updates keep working.
+      - key: FCM_SERVICE_ACCOUNT
+        sync: false
+      # College bus tracking: who may see which buses (all | assigned), and the
+      # vehicle-tracker webhook secret (unset = webhook disabled).
+      - key: TRANSPORT_STUDENT_VISIBILITY
+        value: all
+      - key: TRACKER_WEBHOOK_SECRET
+        sync: false

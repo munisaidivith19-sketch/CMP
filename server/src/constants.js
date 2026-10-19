@@ -1,4 +1,11 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni'];
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni', 'coe', 'office', 'transport', 'super_admin'];
+// Platform-level Super Admin (policies.js, controllers/superAdminController.js).
+// Never assignable from the admin panel or any request body: provisioned only
+// with server/scripts/create-super-admin.mjs, and confined to /super-admin/*.
+export const SUPER_ADMIN_ROLE = 'super_admin';
+// Roles an ordinary Admin may hand out. Admin accounts are created and managed
+// by a Super Admin only; Super Admin is never assignable over the API.
+export const ADMIN_ASSIGNABLE_ROLES = ROLES.filter((r) => r !== 'admin' && r !== SUPER_ADMIN_ROLE);
 // Can mark attendance, moderate content and see beyond their own record.
 export const MODERATOR_ROLES = ['admin', 'faculty', 'hod', 'principal'];
 // Department-scoped management: sees/acts on their own department only.
@@ -15,17 +22,51 @@ export const COLLEGE_WIDE_ROLES = ['admin', 'principal', 'chairman', 'dean', 'ao
 // College-wide authority is read-only: marking attendance and timetable writes
 // stay with admin / HOD / faculty.
 export const ACADEMIC_READ_ONLY_ROLES = COLLEGE_WIDE_ROLES.filter((r) => r !== 'admin');
-// Who may READ attendance: the people who mark it, plus the college-wide roles.
-export const ATTENDANCE_VIEW_ROLES = ['faculty', 'hod', ...COLLEGE_WIDE_ROLES];
+
+// ── Controller of Examinations (COE) ────────────────────────────────
+// The COE manages exam timetables campus-wide and READS class timetables and
+// attendance campus-wide. It is deliberately NOT a college-wide role: People,
+// Chat, Gate Pass and every other module stay closed to it (enforced by the
+// coeRouteGuard middleware, deny-by-default).
+export const COE_ROLE = 'coe';
+// The administrative Office: READ-ONLY college-wide student and faculty
+// attendance, history, summaries, reports and the low-attendance monitor —
+// nothing else (no timetables, users, gate passes, chat …; enforced by the
+// confined-role guard, deny-by-default).
+export const OFFICE_ROLE = 'office';
+// Campus-wide academic READ: attendance and attendance reports (and, for all
+// but the Office, the class timetable).
+// The Super Admin reads attendance campus-wide too, read-only (its confined-role
+// guard allows GET only; the timetable stays closed to it).
+export const ACADEMIC_OVERSIGHT_ROLES = [...COLLEGE_WIDE_ROLES, COE_ROLE, OFFICE_ROLE, SUPER_ADMIN_ROLE];
+// Roles whose attendance access is read-only (they never mark or edit).
+export const ATTENDANCE_READ_ONLY_ROLES = [...ACADEMIC_READ_ONLY_ROLES, COE_ROLE, OFFICE_ROLE, SUPER_ADMIN_ROLE];
+// Faculty (staff) attendance reports: HOD (own department) and the college
+// roles; the COE's attendance view is student attendance only.
+export const STAFF_REPORT_ROLES = ['hod', 'principal', 'office', 'admin', 'dean', 'chairman', 'ao', SUPER_ADMIN_ROLE];
+
+// Who may READ attendance: the people who mark it, plus the campus-wide readers.
+export const ATTENDANCE_VIEW_ROLES = ['faculty', 'hod', ...ACADEMIC_OVERSIGHT_ROLES];
 // Who sees the daily college/department headcount summary.
-export const ATTENDANCE_SUMMARY_ROLES = ['hod', ...COLLEGE_WIDE_ROLES];
+export const ATTENDANCE_SUMMARY_ROLES = ['hod', ...ACADEMIC_OVERSIGHT_ROLES];
 // Who can browse the People directory at all. Students (and club admins) see
 // only their own class: classmates plus that class's faculty.
 export const PEOPLE_DIRECTORY_ROLES = ['student', 'club_admin', 'faculty', 'hod', ...COLLEGE_WIDE_ROLES];
 // Every role an admin can hand out credentials for from the admin panel.
-export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden'];
+export const STAFF_ROLES = ['faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'coe', 'office', 'transport'];
 // Roles with no department of their own (skip the "department required" rule).
-export const NO_DEPARTMENT_ROLES = ['principal', 'security', 'dean', 'ao', 'chairman', 'warden'];
+export const NO_DEPARTMENT_ROLES = ['principal', 'security', 'dean', 'ao', 'chairman', 'warden', 'coe', 'office', 'transport'];
+
+// ── College buses ────────────────────────────────────────────────────
+// Transport officer: manages buses, routes, stops and student assignments, and
+// may run trips. Confined to the Bus Tracking module (coeGuard.js).
+export const TRANSPORT_ROLE = 'transport';
+export const TRANSPORT_MANAGE_ROLES = ['admin', TRANSPORT_ROLE];
+// May see the live bus map. Alumni, COE and Office have no transport module.
+export const TRANSPORT_VIEW_ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', TRANSPORT_ROLE];
+// May share their phone's location for a bus they are assigned to (dean, faculty, HOD, AO, transport officer).
+export const TRIP_SHARER_ROLES = ['faculty', 'hod', 'dean', 'ao', TRANSPORT_ROLE];
+export const BUS_GPS_SOURCES = ['tracker', 'phone'];
 export const STAY_TYPES = ['hosteler', 'day_scholar'];
 export const normalizePhoneDigits = (val) => {
   if (!val) return '';
@@ -58,17 +99,27 @@ export const yearOfSemester = (semester) => Math.ceil(Number(semester) / 2);
 // Warden and Security have zero timetable access (view, write, sockets,
 // notifications) — every other role keeps its existing visibility.
 // Alumni are graduates outside the campus academic system: no timetable either.
-export const TIMETABLE_BLOCKED_ROLES = ['warden', 'security', 'alumni'];
+export const TIMETABLE_BLOCKED_ROLES = ['warden', 'security', 'alumni', 'office', TRANSPORT_ROLE, SUPER_ADMIN_ROLE];
 export const TIMETABLE_VIEW_ROLES = ROLES.filter((r) => !TIMETABLE_BLOCKED_ROLES.includes(r));
 // Admin manages the whole college; HOD is restricted to their own department
 // (enforced in the controller, never trusting a client-supplied department).
 export const TIMETABLE_WRITE_ROLES = ['admin', 'hod'];
 
+// ── Exam timetable ──────────────────────────────────────────────────
+// Create / edit / publish / cancel: HOD (own department scope) and COE
+// (campus-wide) only — re-checked in the controller against the exam's scope.
+export const EXAM_MANAGE_ROLES = ['hod', COE_ROLE];
+// Read: every role with timetable access. Non-managers only ever see
+// published (and cancelled) exams of the classes that concern them.
+export const EXAM_VIEW_ROLES = TIMETABLE_VIEW_ROLES;
+export const EXAM_STATUSES = ['draft', 'published', 'cancelled'];
+
 // ── Study Materials ─────────────────────────────────────────────────
 // Same "no access at all" roles as the timetable.
 // Alumni must not read current students' course material or run the Study Assistant on it.
 // The AO (administrative officer) has no academic role here either.
-export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni', 'ao'];
+// The COE is limited to timetables and attendance (see COE_ROLE).
+export const STUDY_MATERIAL_BLOCKED_ROLES = ['warden', 'security', 'alumni', 'ao', COE_ROLE, OFFICE_ROLE, TRANSPORT_ROLE, SUPER_ADMIN_ROLE];
 // Upload status of each class: HOD (own scope); Principal, Dean and Chairman (any department).
 export const STUDY_MATERIAL_STATUS_ROLES = ['hod', 'principal', 'dean', 'chairman'];
 export const STUDY_MATERIAL_VIEW_ROLES = ROLES.filter((r) => !STUDY_MATERIAL_BLOCKED_ROLES.includes(r));
@@ -126,9 +177,21 @@ export const REPORT_REASONS = ['spam', 'harassment', 'inappropriate', 'misinform
 export const REPORT_TARGETS = ['discussion', 'reply', 'event', 'announcement', 'club', 'user'];
 export const REPORT_ACTIONS = ['dismiss', 'hide', 'delete', 'warn', 'suspend'];
 
+// What a notification is about, for preferences and Android channels. Users
+// may switch OFF only the optional ones; gate-pass decisions, SOS, their own
+// attendance and staff duties (substitutes, early exits, exams) always arrive.
+export const NOTIFICATION_CATEGORIES = [
+  'announcement', 'event', 'chat', 'attendance', 'gate_pass', 'student_entry', 'timetable', 'reminder',
+  'substitute', 'staff', 'exam', 'sos', 'system', 'transport',
+];
+export const OPTIONAL_NOTIFICATION_CATEGORIES = ['chat', 'reminder', 'student_entry', 'event', 'announcement', 'timetable', 'transport'];
+// Heads-up (high priority) only where acting promptly matters.
+export const HIGH_PRIORITY_CATEGORIES = ['sos', 'gate_pass', 'reminder', 'substitute'];
+export const REMINDER_MINUTES = [5, 10, 15, 20, 30];
 export const NOTIFICATION_TYPES = [
   'announcement', 'event', 'club', 'discussion', 'report', 'system',
-  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint', 'alumni', 'achievement', 'sos',
+  'chat', 'attendance', 'gate_pass', 'lost_found', 'timetable', 'complaint', 'alumni', 'achievement', 'sos', 'transport',
+  'skill_wallet',
 ];
 
 // ── Gate Pass ───────────────────────────────────────────────────────
@@ -263,7 +326,7 @@ export const VIEW_ALUMNI_ANALYTICS = ['admin', 'hod', 'principal', 'chairman', '
 export const ACHIEVEMENT_POST_ROLES = ['principal', 'hod'];
 export const ACHIEVEMENT_MODERATE_ROLES = ['admin'];
 export const ACHIEVEMENT_STATS_ROLES = ['principal', 'hod', 'admin'];
-export const ACHIEVEMENT_BLOCKED_ROLES = ['warden', 'security'];
+export const ACHIEVEMENT_BLOCKED_ROLES = ['warden', 'security', COE_ROLE, OFFICE_ROLE, TRANSPORT_ROLE, SUPER_ADMIN_ROLE];
 export const ACHIEVEMENT_VIEW_ROLES = ROLES.filter((r) => !ACHIEVEMENT_BLOCKED_ROLES.includes(r));
 export const ACHIEVEMENT_CATEGORIES = [
   'academic', 'sports', 'technical', 'cultural', 'research', 'placement', 'competition', 'certification', 'other',
@@ -273,12 +336,38 @@ export const ACHIEVEMENT_POSITIONS = [
   'winner', 'first', 'second', 'third', 'runner_up', 'finalist', 'participant', 'selected', 'published', 'other',
 ];
 
+// ── Skill Wallet ────────────────────────────────────────────────────
+// Students own projects, NPTEL certificates and profile links.
+export const SKILL_WALLET_STUDENT_ROLES = ['student', 'club_admin'];
+// "College-only" content is visible to these signed-in roles. Confined roles
+// (COE, Office, Transport, Super Admin), Security, Warden and Alumni are outside.
+export const SKILL_WALLET_COLLEGE_ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'dean', 'ao', 'chairman', 'admin'];
+// Staff who may receive a Skill Wallet designation (reviewer, verifier, coordinator).
+export const SKILL_WALLET_STAFF_ROLES = ['faculty', 'hod', 'principal', 'dean'];
+// Only the Principal grants / revokes Skill Wallet designations. Holding the
+// Principal role does NOT by itself grant review, verification or publication rights.
+export const SKILL_WALLET_DESIGNATION_GRANTORS = ['principal'];
+export const SKILL_WALLET_CAPABILITIES = ['innovation_coordinator', 'project_reviewer', 'certificate_verifier'];
+export const SW_PROJECT_STAGES = ['developing', 'implemented'];
+export const SW_PROJECT_MODES = ['solo', 'team'];
+export const SW_VISIBILITY = ['private', 'college', 'public'];
+export const SW_REVIEW_STATUSES = ['draft', 'submitted', 'changes_requested', 'approved', 'rejected'];
+export const SW_REVIEW_DECISIONS = ['approve', 'request_changes', 'reject'];
+export const SW_INVITATION_STATUSES = ['pending', 'accepted', 'declined', 'cancelled', 'expired'];
+export const SW_CERT_STATUSES = ['pending', 'verified', 'correction_requested', 'rejected'];
+export const SW_CERT_DECISIONS = ['verified', 'correction_requested', 'rejected'];
+export const SW_LINK_PLATFORMS = ['github', 'linkedin', 'hackerrank', 'leetcode', 'tryhackme', 'hackthebox', 'portfolio', 'kaggle', 'codeforces', 'other'];
+export const SW_RECOMMENDATION_KINDS = ['funding', 'incubation'];
+export const SW_RECOMMENDATION_STATUSES = ['open', 'acknowledged', 'closed'];
+export const SW_MILESTONE_KINDS = ['patent_filed', 'patent_granted', 'startup_registered', 'funding_received', 'other'];
+export const SW_MILESTONE_STATUSES = ['claimed', 'verified', 'rejected'];
+
 // ── Campus SOS ──────────────────────────────────────────────────────
 export const SOS_TYPES = ['medical', 'security', 'fire', 'ragging', 'other'];
 export const SOS_STATUSES = ['active', 'acknowledged', 'resolved', 'false_alarm'];
 export const SOS_RESPONDER_ROLES = ['security', 'admin', 'hod', 'principal', 'chairman'];
-export const SOS_BROADCAST_ROLES = ROLES;
+export const SOS_BROADCAST_ROLES = ROLES.filter((r) => r !== SUPER_ADMIN_ROLE);
 
 // ── Hostel dashboard ────────────────────────────────────────────────
 // Who sees the hostel overview (head-counts, who is inside / outside campus).
-export const HOSTEL_VIEW_ROLES = ['admin', 'principal', 'dean', 'ao', 'chairman', 'warden'];
+export const HOSTEL_VIEW_ROLES = ['admin', 'principal', 'dean', 'ao', 'chairman', 'warden', SUPER_ADMIN_ROLE];

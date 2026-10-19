@@ -62,7 +62,7 @@ export async function permissionState(nav) {
  * listening before it settles. Resolves the position; rejects with
  * { kind } — 'denied' | 'unavailable' | 'timeout' | 'stale' | 'aborted'.
  */
-export function readFreshFix(geo, { signal, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout, sampleMs = SAMPLE_MS } = {}) {
+export function readFreshFix(geo, { signal, now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout, sampleMs = SAMPLE_MS, goodEnoughM = GOOD_ENOUGH_M } = {}) {
   return new Promise((resolve, reject) => {
     let best = null;
     let sawOld = false;
@@ -94,7 +94,7 @@ export function readFreshFix(geo, { signal, now = () => Date.now(), setTimer = s
           return;
         }
         if (!best || pos.coords.accuracy <= best.coords.accuracy || !recent(best)) best = pos;
-        if (pos.coords.accuracy <= GOOD_ENOUGH_M) finish();
+        if (pos.coords.accuracy <= goodEnoughM) finish();
       },
       (err) => {
         // A permission problem is final. Unavailable/timeout are final only if no fix was received at all.

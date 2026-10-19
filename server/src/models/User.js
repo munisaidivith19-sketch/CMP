@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { GENDERS, ROLES, STAY_TYPES, TITLES, yearOfSemester } from '../constants.js';
+import { GENDERS, OPTIONAL_NOTIFICATION_CATEGORIES, REMINDER_MINUTES, ROLES, STAY_TYPES, TITLES, yearOfSemester } from '../constants.js';
 
 const { Schema } = mongoose;
 
@@ -76,6 +76,53 @@ const userSchema = new Schema(
 
     clubs: [{ type: Schema.Types.ObjectId, ref: 'Club' }],
 
+    // Module policies (policies.js). Only meaningful for role 'admin'. An admin
+    // with policyManaged = true is deny-by-default and may use only the modules
+    // and actions granted here (middleware/adminPolicy.js); an admin without it
+    // is a legacy, unrestricted admin. Written only by the policy service —
+    // never copied from a request body by any other path.
+    policyManaged: { type: Boolean, default: false },
+    policies: {
+      type: [
+        {
+          _id: false,
+          module: { type: String, required: true, maxlength: 40 },
+          actions: { type: [{ type: String, maxlength: 20 }], default: [] },
+          scope: { type: String, enum: ['campus', 'department'], default: 'campus' },
+          department: { type: String, trim: true, maxlength: 80 },
+        },
+      ],
+      default: [],
+    },
+    // Delegation limits (policies.js → normalizeDelegation / rolesFor / policyCap).
+    // Only meaningful for a policy-managed admin; written only by a Super Admin
+    // (PUT /super-admin/admins/:id/delegation). Each list narrows what the module
+    // policies allow; null / missing means "no extra limit" so existing admins
+    // keep exactly their current access.
+    delegation: {
+      createRoles: { type: [{ type: String, maxlength: 20 }], default: undefined },
+      assignRoles: { type: [{ type: String, maxlength: 20 }], default: undefined },
+      grantablePolicies: {
+        type: [
+          {
+            _id: false,
+            module: { type: String, required: true, maxlength: 40 },
+            actions: { type: [{ type: String, maxlength: 20 }], default: [] },
+            scope: { type: String, enum: ['campus', 'department'], default: 'campus' },
+            department: { type: String, trim: true, maxlength: 80 },
+          },
+        ],
+        default: undefined,
+      },
+      updatedAt: Date,
+      updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    },
+    // Set when a Super Admin issues a temporary password: every request except
+    // the account routes is refused until the user picks their own password.
+    mustChangePassword: { type: Boolean, default: false },
+    // Who provisioned this account (Super Admin for admin accounts).
+    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+
     // Security
     isActive: { type: Boolean, default: true },
     tokenVersion: { type: Number, default: 0, select: false },
@@ -99,6 +146,12 @@ const userSchema = new Schema(
       type: [{ token: { type: String, maxlength: 200 }, addedAt: { type: Date, default: Date.now } }],
       default: [],
       select: false,
+    },
+    // Optional notification categories this user switched off, and how many
+    // minutes before a class the next-period reminder comes.
+    notificationPrefs: {
+      disabled: { type: [{ type: String, enum: OPTIONAL_NOTIFICATION_CATEGORIES }], default: [] },
+      reminderMinutes: { type: Number, enum: REMINDER_MINUTES, default: 10 },
     },
   },
   { timestamps: true }

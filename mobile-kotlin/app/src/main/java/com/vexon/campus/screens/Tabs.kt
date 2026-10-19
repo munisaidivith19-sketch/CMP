@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.DoorFront
+import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EmojiEvents
 import androidx.compose.material.icons.rounded.EventAvailable
@@ -43,6 +47,7 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Person
@@ -170,9 +175,14 @@ private val TAB_SPECS = listOf(
     TabSpec("profile", "Profile", Icons.Rounded.Person),
 )
 
+// The Controller of Examinations has no Chat or Campus modules (the server refuses them).
+private val COE_TABS = setOf("index", "notifications", "profile")
+
 @Composable
 fun TabsScreen() {
-    val chat = Api.chatUnread()
+    // The COE and the Office have no Chat or Campus modules (the server refuses them).
+    val coe = isCoe(me().role) || me().role in setOf("office", "transport")
+    val chat = Api.chatUnread(skip = coe)
     val notes = Api.notifications(mapOf("limit" to 1))
     val holder = rememberSaveableStateHolder()
     fun badge(n: Int?): String? = n?.takeIf { it > 0 }?.let { if (it > 99) "99+" else "$it" }
@@ -190,7 +200,7 @@ fun TabsScreen() {
             }
         }
         NavigationBar(containerColor = C.glass(0.96f), tonalElevation = 0.dp) {
-            TAB_SPECS.forEach { t ->
+            TAB_SPECS.filter { !coe || it.name in COE_TABS }.forEach { t ->
                 val count = when (t.name) {
                     "chat" -> badge(chat.data["total"].int)
                     "notifications" -> badge(notes.data["unread"].int)
@@ -273,6 +283,9 @@ fun HomeScreen() {
     when (user.role) {
         "security" -> SecurityHome(user)
         "alumni" -> AlumniHome(user)
+        "coe" -> CoeHome(user)
+        "office" -> OfficeHome(user)
+        "transport" -> TransportHome(user)
         else -> GeneralHome(user)
     }
 }
@@ -290,20 +303,21 @@ private fun SecurityHome(user: JsonElement) {
             else -> {
                 Tiles(listOf(
                     TileSpec(Icons.Rounded.Group, Grad.violet, "Total students", num(data["total"])),
-                    TileSpec(Icons.AutoMirrored.Rounded.Login, Grad.emerald, "Students in", num(data["inside"])),
-                    TileSpec(Icons.AutoMirrored.Rounded.Logout, Grad.amber, "Students out", num(data["outside"])),
-                    TileSpec(Icons.Rounded.DoorFront, Grad.sky, "Left today", num(data["leftToday"])),
+                    TileSpec(Icons.AutoMirrored.Rounded.Login, Grad.emerald, "Students in", num(data["inside"]), "Tap to view") { Nav.push("/gate-pass/students/in") },
+                    TileSpec(Icons.AutoMirrored.Rounded.Logout, Grad.amber, "Students out", num(data["outside"]), "Tap to view") { Nav.push("/gate-pass/students/out") },
+                    TileSpec(Icons.Rounded.DoorFront, Grad.sky, "Left today", num(data["leftToday"]), "Tap to view") { Nav.push("/gate-pass/students/left") },
                 ))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    GateAction(Modifier.weight(1f), Grad.emerald, Icons.AutoMirrored.Rounded.Login, "IN", "Return verification · scan Return QR or code") { Nav.push("/gate-pass/in") }
-                    GateAction(Modifier.weight(1f), Grad.rose, Icons.AutoMirrored.Rounded.Logout, "OUT", "Verify a student leaving") { Nav.push("/gate-pass/out") }
+                // Same height for both actions, whatever the length of their caption.
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    GateAction(Modifier.weight(1f).fillMaxHeight(), Grad.emerald, Icons.AutoMirrored.Rounded.Login, "IN", "Return verification · scan Return QR or code") { Nav.push("/gate-pass/in") }
+                    GateAction(Modifier.weight(1f).fillMaxHeight(), Grad.rose, Icons.AutoMirrored.Rounded.Logout, "OUT", "Verify a student leaving") { Nav.push("/gate-pass/out") }
                 }
                 val outside = data["outsideStudents"].list
-                SectionTitle("Students outside (${outside.size})")
+                SectionTitle("Students outside (${outside.size})", if (outside.isNotEmpty()) "View all" else null) { Nav.push("/gate-pass/students/out") }
                 if (outside.isEmpty()) Card(Wide) { EmptyState(Icons.Rounded.Group, "Everyone is on campus") }
                 outside.forEach { p ->
                     val s = p["student"]
-                    RowCard(Wide) {
+                    RowCard(Wide, onClick = { Nav.push("/gate-pass/students/out") }) {
                         Avatar(s, size = 40.dp)
                         Column(Modifier.weight(1f)) {
                             Strong(s["name"].str, maxLines = 1)
@@ -321,7 +335,7 @@ private fun SecurityHome(user: JsonElement) {
 private fun GateAction(modifier: Modifier, gradient: List<Color>, icon: ImageVector, title: String, text: String, onClick: () -> Unit) {
     Column(
         modifier.clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(gradient)).clickable(onClick = onClick).padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
     ) {
         Icon(icon, null, Modifier.size(30.dp), tint = Color.White)
         H2(title, color = Color.White)
@@ -716,6 +730,7 @@ private data class CampusItem(val href: String, val label: String, val hint: Str
 private val CAMPUS_ITEMS = listOf(
     CampusItem("/sos", "Emergency SOS", "Instant alert", Icons.Rounded.Warning, Grad.rose),
     CampusItem("/timetable", "Timetable", "Today & this week", Icons.Rounded.EventNote, Grad.violet),
+    CampusItem("/transport", "Bus Tracking", "Live buses & ETA", Icons.Rounded.DirectionsBus, Grad.amber),
     CampusItem("/attendance", "Attendance", "Subject-wise %", Icons.Rounded.FactCheck, Grad.emerald),
     CampusItem("/od-leave", "OD & Leave", "Apply & track", Icons.Rounded.EventAvailable, Grad.sky),
     CampusItem("/holidays", "Holidays", "College holidays", Icons.Rounded.EventBusy, Grad.rose),
@@ -726,6 +741,7 @@ private val CAMPUS_ITEMS = listOf(
     CampusItem("/lost-found", "Lost & found", "Report or search", Icons.Rounded.Inventory2, Grad.amber),
     CampusItem("/complaints", "Complaints", "Register & track", Icons.Rounded.ReportProblem, Grad.rose),
     CampusItem("/achievements", "Achievements", "Student honors & awards", Icons.Rounded.EmojiEvents, Grad.amber),
+    CampusItem("/skill-wallet", "Skill Wallet", "Projects & team invites", Icons.Rounded.Lightbulb, Grad.emerald),
     CampusItem("/people", "People", "Students & faculty", Icons.Rounded.Groups, Grad.violet),
     CampusItem("/events", "Events", "Register", Icons.Rounded.CalendarMonth, Grad.sky),
     CampusItem("/clubs", "Clubs", "Join & follow", Icons.Rounded.Category, Grad.rose),
@@ -765,6 +781,9 @@ fun CampusScreen() {
             (role != "alumni" || it.href !in HIDDEN_FOR_ALUMNI) &&
             (it.href != "/od-leave" || role in OD_LEAVE_ROLES) &&
             (it.href != "/hostel" || role in HOSTEL_ROLES) &&
+            // Skill Wallet projects and invitations are for students (the web has the staff workspaces).
+            (it.href != "/skill-wallet" || role in STUDENT_ROLES) &&
+            (it.href != "/transport" || role in TRANSPORT_VIEW) &&
             (role !in ACHIEVEMENT_BLOCKED_ROLES || it.href != "/achievements") &&
             // The People directory is for faculty, HODs and college-wide roles (server rule).
             (it.href != "/people" || role in setOf("faculty", "hod") + COLLEGE_WIDE)
@@ -904,6 +923,7 @@ fun ProfileScreen() {
         }
         if (user.role in STUDENT_ROLES) user.id?.let { StudentHonors(it) }
         Button("Account security", { Nav.push("/settings/security") }, Wide, variant = Variant.Outline, icon = Icons.Rounded.Shield)
+        Button("Notifications", { Nav.push("/settings/notifications") }, Wide, variant = Variant.Outline, icon = Icons.Rounded.Notifications)
         Button("Sign out", {
             Dialogs.alert("Sign out?", "You'll need your email and password to sign in again on this phone.", listOf(
                 DialogButton("Cancel", cancel = true),

@@ -1,8 +1,22 @@
-export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni'];
+export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni', 'coe', 'office', 'transport'];
 export const ROLE_LABELS = {
   student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security',
-  dean: 'Dean', ao: 'AO', chairman: 'Chairman', warden: 'Warden', alumni: 'Alumni',
+  dean: 'Dean', ao: 'AO', chairman: 'Chairman', warden: 'Warden', alumni: 'Alumni', coe: 'COE', office: 'Office', transport: 'Transport',
+  super_admin: 'Super Admin',
 };
+/**
+ * Platform Super Admin. Deliberately NOT in ROLES: it is never offered in any
+ * role picker and never assignable from the UI (the server refuses it too).
+ */
+export const SUPER_ADMIN = 'super_admin';
+/** Unlinked emergency page — no navigation item points here. */
+export const EMERGENCY_CONTROL_PATH = '/ops/emergency-control';
+/** Transport officer: buses, routes, assignments and trips only. Mirrors the server. */
+export const TRANSPORT = 'transport';
+/** Who sees the live bus map (alumni, COE and Office do not). */
+export const TRANSPORT_VIEW = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', TRANSPORT];
+/** Manage buses, routes, stops and rider assignments. */
+export const TRANSPORT_MANAGERS = ['admin', TRANSPORT];
 
 export const STUDENT_ROLES = ['student', 'club_admin'];
 /** Can act on academic data (mark attendance, moderate…). */
@@ -10,23 +24,45 @@ export const STAFF = ['admin', 'faculty', 'hod'];
 /** Staff plus the read-only principal. Used across clubs/events/discussions. */
 export const STAFF_VIEW = [...STAFF, 'principal'];
 
+// ── Skill Wallet (mirrors server/src/constants.js; the server decides) ──
+/** Students own projects, NPTEL certificates and profile links. */
+export const SW_STUDENT_ROLES = ['student', 'club_admin'];
+/** Signed-in roles that see college-only gallery content. */
+export const SW_COLLEGE_ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'dean', 'ao', 'chairman', 'admin'];
+/** Staff who may hold review / verification / coordination roles (the workspace shows what each one may do). */
+export const SW_STAFF_ROLES = ['faculty', 'hod', 'principal', 'dean'];
+
 // ── Academic visibility ─────────────────────────────────────────────
 // Mirrors server/src/constants.js — the server is the authority; these only
 // decide what the UI offers.
 /** The only roles with college-wide academic visibility (read-only bar admin). */
 export const COLLEGE_WIDE = ['admin', 'principal', 'chairman', 'dean', 'ao'];
 // Who sees the Hostel dashboard (mirrors the server's HOSTEL_VIEW_ROLES).
-export const HOSTEL_ROLES = ['admin', 'principal', 'dean', 'ao', 'chairman', 'warden'];
+export const HOSTEL_ROLES = ['admin', 'principal', 'dean', 'ao', 'chairman', 'warden', SUPER_ADMIN];
+/**
+ * The Controller of Examinations: manages exam timetables campus-wide and reads
+ * class timetables and attendance campus-wide — nothing else (the server
+ * refuses every other module to this role).
+ */
+export const COE = 'coe';
+/** The administrative Office: read-only college-wide attendance and reports — nothing else. */
+export const OFFICE = 'office';
+/** Campus-wide academic READ: attendance and reports (and class timetable for all but the Office). */
+export const ACADEMIC_OVERSIGHT = [...COLLEGE_WIDE, COE, OFFICE, SUPER_ADMIN];
+/** Faculty (staff) attendance reports: HOD (own department) and the college roles. */
+export const STAFF_REPORT_ROLES = ['hod', 'principal', 'office', 'admin', 'dean', 'chairman', 'ao', SUPER_ADMIN];
+/** Arrange substitutes / not-conducted periods and decide early exits. */
+export const COVER_MANAGERS = ['hod', 'principal', 'admin'];
 /** Sees the staff Attendance console. */
-export const ATTENDANCE_VIEW = ['faculty', 'hod', ...COLLEGE_WIDE];
+export const ATTENDANCE_VIEW = ['faculty', 'hod', ...ACADEMIC_OVERSIGHT];
 /** In Attendance, these roles read but never mark or review. */
-export const ATTENDANCE_READ_ONLY = COLLEGE_WIDE.filter((r) => r !== 'admin');
+export const ATTENDANCE_READ_ONLY = ACADEMIC_OVERSIGHT.filter((r) => r !== 'admin');
 /** Can browse the People directory (students: their own class — classmates and class faculty). */
 export const PEOPLE_DIRECTORY = ['student', 'club_admin', 'faculty', 'hod', ...COLLEGE_WIDE];
 /** Sees the daily college / department attendance summary. */
-export const SUMMARY_VIEW = ['hod', ...COLLEGE_WIDE];
+export const SUMMARY_VIEW = ['hod', ...ACADEMIC_OVERSIGHT];
 /** Get the Principal's college attendance dashboard (department cards + department-wise summary). */
-export const COLLEGE_ATTENDANCE_DASHBOARD = ['principal', 'admin', 'dean', 'ao', 'chairman'];
+export const COLLEGE_ATTENDANCE_DASHBOARD = ['principal', 'admin', 'dean', 'ao', 'chairman', COE, OFFICE, SUPER_ADMIN];
 /** The gate pass approval chain, in order. */
 export const GATE_APPROVAL_ROLES = ['faculty', 'hod', 'principal'];
 export const STAY_TYPES = { hosteler: 'Hosteler', day_scholar: 'Day Scholar' };
@@ -69,7 +105,11 @@ export const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday',
 /** Roles that can add, edit and delete timetable periods (HOD: own department only). */
 export const TIMETABLE_EDITORS = ['admin', 'hod'];
 /** Roles that can access the timetable (warden and security excluded). */
-export const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
+export const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security', 'office', 'transport'].includes(r));
+/** Create / edit / publish / cancel exams: HOD (own scope) and COE (campus-wide). */
+export const EXAM_MANAGERS = ['hod', COE];
+/** "All" option value for the exam scope dropdowns (the server stores it as a scope). */
+export const ALL = 'ALL';
 
 export const GATE_PASS_REGARDING = { outing: 'Outing', home: 'Home' };
 

@@ -21,147 +21,179 @@ import com.vexon.campus.BuildConfig
 import com.vexon.campus.MainActivity
 import com.vexon.campus.R
 import com.vexon.campus.core.Api
-import com.vexon.campus.core.Http
-import com.vexon.campus.core.Http.await
-import com.vexon.campus.core.get
-import com.vexon.campus.core.jsonOf
-import com.vexon.campus.core.parseJson
-import com.vexon.campus.core.str
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
+import com.vexon.campus.core.Auth
+import com.vexon.campus.core.QueryClient
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import java.util.UUID
 
 /**
- * Push notifications (port of services/push.js). The backend sends through
- * Expo's push service and only accepts Expo push tokens, so — exactly like
- * expo-notifications does internally — the device's FCM token is exchanged for
- * an Expo token at exp.host. Needs app/google-services.json and an EAS project id;
- * without them pushes are simply disabled.
+ * Android push over Firebase Cloud Messaging.
+ *
+ * The device's FCM token is registered with the backend (POST /devices) for
+ * the signed-in account and session; the backend sends data-only messages
+ * through FCM HTTP v1 with its own service-account credentials (never shipped
+ * in this app). Needs app/google-services.json at build time; without it push
+ * is simply off and the app works normally (in-app notifications and live
+ * updates are unaffected).
+ *
+ * Presentation:
+ *  - one channel per kind of notification, so the user can tune each in
+ *    Android settings and only urgent ones are heads-up;
+ *  - the text is hidden on the lock screen (VISIBILITY_PRIVATE with a neutral
+ *    public version) — student names, chat text etc. never show there;
+ *  - while the app is open, only urgent categories raise a system
+ *    notification: the rest already appear in-app through the live socket.
  */
 object Push {
     private const val TAG = "VexonPush"
-    const val CHANNEL_ID = "default"
     const val EXTRA_LINK = "vexon.link"
+    const val EXTRA_NOTIFICATION_ID = "vexon.notificationId"
 
     /** Set by MainActivity: asks for POST_NOTIFICATIONS (Android 13+) and resolves with the result. */
     var permissionRequester: (suspend () -> Boolean)? = null
 
-    fun ensureChannel(context: Context) {
+    /** True while an app screen is visible (kept by VexonApp's process lifecycle observer). */
+    @Volatile var foreground: Boolean = false
+
+    private data class Channel(val id: String, val name: String, val importance: Int, val description: String)
+
+    private val CHANNELS = listOf(
+        Channel("alerts", "Urgent alerts", NotificationManager.IMPORTANCE_HIGH, "Emergencies and gate-pass decisions"),
+        Channel("classes", "Classes & reminders", NotificationManager.IMPORTANCE_HIGH, "Next-period reminders and substitute classes"),
+        Channel("messages", "Messages", NotificationManager.IMPORTANCE_DEFAULT, "New chat messages"),
+        Channel("updates", "Updates", NotificationManager.IMPORTANCE_DEFAULT, "Attendance, timetable, exams, events and announcements"),
+    )
+
+    /** Server category → channel. */
+    fun channelFor(category: String?): String = when (category) {
+        "sos", "gate_pass" -> "alerts"
+        "reminder", "substitute" -> "classes"
+        "chat" -> "messages"
+        else -> "updates"
+    }
+
+    private val URGENT = setOf("sos", "gate_pass", "reminder", "substitute")
+
+    fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "JNN", NotificationManager.IMPORTANCE_HIGH).apply {
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 200, 150, 200)
-                enableLights(true)
-                lightColor = Color.parseColor("#1D6FEB")
-            }
-        )
+        for (c in CHANNELS) {
+            if (manager.getNotificationChannel(c.id) != null) continue
+            manager.createNotificationChannel(
+                NotificationChannel(c.id, c.name, c.importance).apply {
+                    description = c.description
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+                    if (c.importance >= NotificationManager.IMPORTANCE_HIGH) {
+                        enableVibration(true)
+                        vibrationPattern = longArrayOf(0, 200, 150, 200)
+                    }
+                }
+            )
+        }
     }
 
     private fun firebaseReady(context: Context): Boolean =
         BuildConfig.PUSH_ENABLED && runCatching { FirebaseApp.getApps(context).isNotEmpty() || FirebaseApp.initializeApp(context) != null }.getOrDefault(false)
 
-    private fun deviceId(context: Context): String {
-        val prefs = context.getSharedPreferences("vexon_push", Context.MODE_PRIVATE)
-        return prefs.getString("deviceId", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("deviceId", it).apply() }
-    }
+    fun permissionGranted(context: Context): Boolean =
+        Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+
+    /** Whether push can work at all in this build (Firebase configured). */
+    fun available(context: Context): Boolean = firebaseReady(context)
 
     /**
-     * Ask for permission and return this device's Expo push token, or null when
-     * pushes are unavailable (no Firebase config, emulator without Play services,
-     * permission denied, no EAS project id).
+     * This device's FCM token, or null when push is unavailable (no Firebase
+     * config, no Play services) or the user declined the permission. Declining
+     * never breaks the app — it simply works without push.
      */
     suspend fun getPushToken(context: Context, askPermission: Boolean = true): String? {
-        ensureChannel(context)
+        ensureChannels(context)
         if (!firebaseReady(context)) return null
-        val granted = Build.VERSION.SDK_INT < 33 ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ||
-            (askPermission && permissionRequester?.invoke() == true)
+        val granted = permissionGranted(context) || (askPermission && permissionRequester?.invoke() == true)
         if (!granted) return null
-        val projectId = BuildConfig.EAS_PROJECT_ID
-        if (projectId.isBlank()) {
-            Log.w(TAG, "No EAS projectId configured — push notifications disabled")
-            return null
-        }
         return try {
-            val fcm = FirebaseMessaging.getInstance().token.await()
-            val body = jsonOf(
-                "type" to "fcm",
-                "deviceId" to deviceId(context).lowercase(),
-                "development" to false,
-                "appId" to context.packageName,
-                "deviceToken" to fcm,
-                "projectId" to projectId,
-            )
-            val request = Request.Builder()
-                .url("https://exp.host/--/api/v2/push/getExpoPushToken")
-                .post(body.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            Http.client.newCall(request).await().use { res ->
-                val text = withContext(Dispatchers.IO) { res.body?.string().orEmpty() }
-                if (!res.isSuccessful) null else parseJson(text)["data"]["expoPushToken"].str
-            }
+            FirebaseMessaging.getInstance().token.await()
         } catch (e: Exception) {
-            Log.w(TAG, "Could not get a push token: ${e.message}")
+            Log.w(TAG, "Could not get an FCM token")
             null
         }
     }
 
-    /** Register this device with the backend's single notification service. */
+    /** Register this device with the backend for the signed-in account. */
     suspend fun register(context: Context) {
         val token = getPushToken(context) ?: return
-        runCatching { Api.registerPushToken(token) }
+        runCatching { Api.registerDevice(token) }
     }
 
-    /** Web-style links from notifications map 1:1 onto app routes. */
-    fun linkFrom(data: String?): String? = parseJson(data ?: "")["link"].str?.takeIf { it.startsWith("/") }
+    /** FCM rotated the token: re-register it if someone is signed in. */
+    fun onTokenRefreshed(token: String) {
+        if (Auth.user == null) return
+        QueryClient.scope.launch { runCatching { Api.registerDevice(token) } }
+    }
 
-    fun show(context: Context, title: String?, text: String?, link: String?) {
-        ensureChannel(context)
+    // Screens a notification may open; anything else opens the notification list.
+    private val ALLOWED = listOf(
+        "/attendance", "/gate-pass", "/chat", "/announcements", "/events", "/timetable", "/exams", "/notifications",
+        "/sos", "/holidays", "/complaints", "/lost-found", "/discussions", "/clubs", "/achievements", "/alumni", "/od-leave",
+        "/transport", "/skill-wallet",
+    )
+
+    /** A safe in-app route for a notification link (protected screens re-check access when they load). */
+    fun safeLink(link: String?): String {
+        val l = link?.trim().orEmpty()
+        if (!l.startsWith("/") || l.startsWith("//") || l.contains("..")) return "/notifications"
+        return if (ALLOWED.any { l == it || l.startsWith("$it/") || l.startsWith("$it?") }) l else "/notifications"
+    }
+
+    fun show(context: Context, title: String?, text: String?, link: String?, category: String? = null, notificationId: String? = null) {
+        ensureChannels(context)
+        if (!permissionGranted(context)) return
+        val urgent = category in URGENT
+        // In the open app the live socket already shows it; only urgent ones also pop up.
+        if (foreground && !urgent) return
+        val target = safeLink(link)
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            if (link != null) putExtra(EXTRA_LINK, link)
+            putExtra(EXTRA_LINK, target)
+            if (notificationId != null) putExtra(EXTRA_NOTIFICATION_ID, notificationId)
         }
-        val pending = PendingIntent.getActivity(context, (link ?: title ?: "").hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val pending = PendingIntent.getActivity(context, (notificationId ?: target + title).hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val channel = channelFor(category)
+        // What the lock screen shows instead of the real text.
+        val public = NotificationCompat.Builder(context, channel)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("VEXON")
+            .setContentText("New notification")
+            .build()
+        val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(Color.parseColor("#CB0101"))
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(if (urgent) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(if (category == "chat") NotificationCompat.CATEGORY_MESSAGE else if (category == "reminder") NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_STATUS)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(public)
             .setAutoCancel(true)
             .setContentIntent(pending)
             .build()
-        if (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-            NotificationManagerCompat.from(context).notify(System.currentTimeMillis().toInt(), notification)
-        }
+        runCatching { NotificationManagerCompat.from(context).notify((notificationId ?: "$title|$text").hashCode(), notification) }
     }
-
-    internal val tokenRefreshed = CompletableDeferred<Unit>()
 }
 
 /**
- * Receives Expo's FCM messages. Expo sends data messages whose `title` and
- * `message` are the visible text and whose `body` is the JSON `data` (with the
- * web-style `link` the notification opens). Shown as banners while the app is
- * open too, like the Expo handler (`shouldShowBanner: true`).
+ * Receives the backend's FCM data messages (title, body, link, category,
+ * notificationId), in the foreground and in the background alike.
  */
 class VexonMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
-        val title = message.notification?.title ?: data["title"]
-        val text = message.notification?.body ?: data["message"]
-        Push.show(this, title, text, Push.linkFrom(data["body"]))
+        val title = data["title"] ?: message.notification?.title
+        val text = data["body"] ?: data["message"] ?: message.notification?.body
+        Push.show(this, title, text, data["link"], data["category"], data["notificationId"])
     }
 
     override fun onNewToken(token: String) {
-        // The Expo token is derived from the FCM token; it is re-registered on next launch.
+        Push.onTokenRefreshed(token)
     }
 }

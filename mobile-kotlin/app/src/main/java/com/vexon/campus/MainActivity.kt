@@ -16,6 +16,7 @@ import androidx.compose.runtime.DisposableEffect
 import com.vexon.campus.ui.ThemeState
 import com.vexon.campus.ui.VexonTheme
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var permissionResult: CompletableDeferred<Boolean>? = null
@@ -65,7 +66,12 @@ class MainActivity : ComponentActivity() {
                 "/" + listOfNotNull(uri.host, uri.path?.trim('/')).filter { it.isNotEmpty() }.joinToString("/") +
                     (uri.query?.let { "?$it" } ?: "")
             }
-        if (link != null && link.startsWith("/")) AppState.pendingLink.value = link
+        // Only known app screens; each one re-checks access with the server when it loads.
+        if (link != null) AppState.pendingLink.value = Push.safeLink(link)
+        // Opening a notification from the shade marks it read.
+        intent?.getStringExtra(Push.EXTRA_NOTIFICATION_ID)?.takeIf { Auth.user != null }?.let { id ->
+            com.vexon.campus.core.QueryClient.scope.launch { runCatching { com.vexon.campus.core.Api.markNotificationRead(id) } }
+        }
     }
 
     override fun onDestroy() {

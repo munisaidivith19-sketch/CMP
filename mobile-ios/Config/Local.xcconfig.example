@@ -1,0 +1,11 @@
+// Copy to Config/Local.xcconfig (git-ignored) to override per machine.
+// Never put secrets here — everything in an xcconfig ends up inside the app.
+
+// Your Apple developer team id (Xcode → Settings → Accounts).
+// VEXON_DEVELOPMENT_TEAM = ABCDE12345
+
+// A unique bundle id if com.vexon.campus is taken in your team.
+// VEXON_BUNDLE_ID = edu.example.vexon
+
+// Point a Debug build at a server on the campus network.
+// VEXON_API_BASE_URL = http:$(SLASH)$(SLASH)192.168.1.20:5000

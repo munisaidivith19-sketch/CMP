@@ -281,6 +281,7 @@ private fun Location.elapsedMs(): Long =
 private fun Location.toFix() = Fix(
     latitude, longitude, if (hasAccuracy()) accuracy else Float.NaN, elapsedMs(),
     if (Build.VERSION.SDK_INT >= 31) isMock else @Suppress("DEPRECATION") isFromMockProvider,
+    provider, hasAltitude(),
 )
 
 fun hasPreciseLocation(context: Context) =
@@ -336,10 +337,15 @@ suspend fun locationSettingsResolution(context: Context): IntentSenderRequest? {
  * it. Every failure is reported as its own [LocationRead]; listening always
  * stops before this returns or when the caller is cancelled.
  */
-suspend fun readFreshLocation(context: Context, sampleMs: Long = ReturnLocation.SAMPLE_MS): LocationRead {
+suspend fun readFreshLocation(
+    context: Context,
+    sampleMs: Long = ReturnLocation.SAMPLE_MS,
+    /** Optional: sees every raw reading (monotonic now) first; returning false drops it. Null = all readings considered. */
+    onReading: ((Fix, Long) -> Boolean)? = null,
+): LocationRead {
     if (!hasAnyLocation(context)) return LocationRead.PermissionDenied
     if (!isLocationOn(context)) return LocationRead.ServicesOff
-    return if (hasPlayServices(context)) fusedRead(context, sampleMs) else platformRead(context, sampleMs)
+    return if (hasPlayServices(context)) fusedRead(context, sampleMs, onReading) else platformRead(context, sampleMs, onReading)
 }
 
 /**
@@ -349,6 +355,7 @@ suspend fun readFreshLocation(context: Context, sampleMs: Long = ReturnLocation.
  */
 private suspend fun listen(
     sampleMs: Long,
+    onReading: ((Fix, Long) -> Boolean)?,
     start: (offer: (Location) -> Unit, fail: (LocationRead) -> Unit) -> (() -> Unit),
 ): LocationRead = withContext(Dispatchers.Main) {
     suspendCancellableCoroutine { cont ->
@@ -364,7 +371,11 @@ private suspend fun listen(
             if (cont.isActive) cont.resume(failure ?: sampler.result(SystemClock.elapsedRealtime()))
         }
         val offer: (Location) -> Unit = { loc ->
-            if (!finished && sampler.offer(loc.toFix(), SystemClock.elapsedRealtime())) finish()
+            if (!finished) {
+                val fix = loc.toFix()
+                val now = SystemClock.elapsedRealtime()
+                if (onReading?.invoke(fix, now) != false && sampler.offer(fix, now)) finish()
+            }
         }
         handler.postDelayed({ finish() }, sampleMs)
         try {
@@ -381,9 +392,9 @@ private suspend fun listen(
 }
 
 @SuppressLint("MissingPermission")
-private suspend fun fusedRead(context: Context, sampleMs: Long): LocationRead {
+private suspend fun fusedRead(context: Context, sampleMs: Long, onReading: ((Fix, Long) -> Boolean)?): LocationRead {
     val client = LocationServices.getFusedLocationProviderClient(context)
-    return listen(sampleMs) { offer, fail ->
+    return listen(sampleMs, onReading) { offer, fail ->
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) = result.locations.forEach(offer)
         }
@@ -396,7 +407,7 @@ private suspend fun fusedRead(context: Context, sampleMs: Long): LocationRead {
 }
 
 @SuppressLint("MissingPermission")
-private suspend fun platformRead(context: Context, sampleMs: Long): LocationRead {
+private suspend fun platformRead(context: Context, sampleMs: Long, onReading: ((Fix, Long) -> Boolean)?): LocationRead {
     val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return LocationRead.Unavailable
     // GPS needs precise permission; the network provider works with approximate.
     val providers = buildList {
@@ -404,7 +415,7 @@ private suspend fun platformRead(context: Context, sampleMs: Long): LocationRead
         if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) add(LocationManager.NETWORK_PROVIDER)
     }
     if (providers.isEmpty()) return LocationRead.Unavailable
-    return listen(sampleMs) { offer, _ ->
+    return listen(sampleMs, onReading) { offer, _ ->
         // Every method implemented: before Android 11 the platform calls them all and has no defaults.
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) = offer(location)

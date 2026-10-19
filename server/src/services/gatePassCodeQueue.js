@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { registerJob, runJob } from './soc/monitors.js';
 import GatePass, { generateGatePassSecurityCode } from '../models/GatePass.js';
 import { env } from '../config/env.js';
 import { emitToRoles, emitToUsers } from '../config/socket.js';
@@ -139,10 +140,7 @@ export async function tickCodeQueue() {
   if (running) return null;
   running = true;
   try {
-    return await processCodeQueue();
-  } catch (err) {
-    console.error('[gate-code-queue] tick failed:', err?.message || err);
-    return null;
+    return (await runJob('gate_pass.code_queue', processCodeQueue, { logTag: '[gate-code-queue] tick' })) ?? null;
   } finally {
     running = false;
   }
@@ -151,6 +149,7 @@ export async function tickCodeQueue() {
 /** Start the background worker (server.js). Tests drive processCodeQueue directly instead. */
 export function startGatePassCodeQueue() {
   if (timer) return;
+  registerJob('gate_pass.code_queue', { intervalMs: batchInterval(), description: 'Issue gate codes and QR for bulk approvals' });
   timer = setInterval(tickCodeQueue, batchInterval());
   timer.unref();
   tickCodeQueue();

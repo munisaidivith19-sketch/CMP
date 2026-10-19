@@ -306,3 +306,57 @@ npm test --prefix server                     # integration + security tests (637
 npm test --prefix client                     # client unit tests (idle-session tracker)
 node server/scripts/realtime-smoke.mjs       # against a RUNNING server: web ↔ Android chat round-trip
 ```
+
+### Skill Wallet
+
+Students keep a project portfolio in the **Skill Wallet**, with team invitations by roll number, NPTEL certificates and profile links. NPTEL certificates are verified manually by staff, and every certificate image is re-encoded to WebP on the server. Faculty review projects against a versioned rubric, and IIC coordinators run **Innovation Management**. The **Innovation Gallery** (`/gallery`) shows only projects the owner has explicitly published, as college-only or public; projects are private by default and approval never publishes. Files are stored privately and served through short-lived signed URLs. Android supports viewing and creating projects and answering invitations. Full design, permissions, API, environment variables and limitations: [docs/SKILL_WALLET.md](docs/SKILL_WALLET.md).
+
+## 9. College bus tracking
+
+Live bus map on the web (**Bus Tracking**) and in the Android app (**Campus → Bus Tracking**).
+Every bus is drawn as a **bus-shaped icon** with its number and route above it, at its
+**latest valid GPS position** and that position's age (live / old / offline) — a bus with
+no accepted position is not drawn at all. Selecting a bus shows its route, stops, progress
+and the ETA to the selected stop; "My location" reads your position **once**, on request.
+
+**Roles.** Students and staff with transport access view buses (`TRANSPORT_STUDENT_VISIBILITY=all`
+lets every student see every bus; `assigned` limits students to their assigned route / bus).
+**Admin** and the new **`transport`** role manage buses, routes, stops and rider assignments
+(web: *Bus Tracking → Manage buses*). Staff listed on a bus can share its location from the
+Android app during a trip they start.
+
+**Map provider.** `MAP_STYLE_URL` (default OpenFreeMap — free, no key, see
+<https://openfreemap.org> for terms). To use a keyed provider, put its *public* client key in
+the style URL and add any other tile / glyph host to `MAP_CSP_ORIGINS`. Both apps read the
+style URL from `GET /api/transport/config`, so the provider is changed in one place.
+
+**GPS sources.** Every position goes through one validated ingestion path
+(`server/src/services/transport/ingest.js`): coordinates, fix age, future time, accuracy,
+speed, implied jump, ordering and rate are checked; rejected fixes change nothing.
+
+1. *Staff phone (fallback, built in):* *Bus Tracking → Start &lt;bus&gt;* starts a trip and a
+   foreground location service with a persistent notification; it stops when the trip ends,
+   is stopped by a manager, or times out (`TRIP_IDLE_MINUTES`, `TRIP_MAX_HOURS`). No background
+   location permission is requested.
+2. *Vehicle GPS tracker (connect later):* no tracker API was available, so none is assumed.
+   Point the tracker vendor's push / forwarding feature (or a small gateway) at
+   `POST /api/transport/tracker/locations`, enabled by setting `TRACKER_WEBHOOK_SECRET`:
+   ```
+   X-Tracker-Timestamp: <unix ms, within 5 minutes>
+   X-Tracker-Signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw JSON body>")>
+   { "deviceId": "<the bus's Tracker device ID>",
+     "fixes": [ { "lat": 13.0, "lng": 80.0, "timestamp": 1760000000000,
+                  "accuracy": 8, "speed": 9.2, "heading": 270 } ] }
+   ```
+   Set the bus's GPS source to *Vehicle GPS tracker* and its *Tracker device ID* to the id the
+   tracker sends.
+
+**Testing with synthetic GPS (development only).** `node server/scripts/simulate-bus.mjs --device SIM-TEST-1 --route "<route>"`
+drives a tracker-type test bus along its route through the real webhook. Every position it
+sends is made up and labelled `[SYNTHETIC]`; it refuses to run with `NODE_ENV=production`.
+
+```bash
+npm test --prefix server     # includes tests/transport.test.js (synthetic coordinates only)
+npm test --prefix client     # includes tests/busGeo.test.mjs
+cd mobile-kotlin && ./gradlew testDebugUnitTest   # includes BusMathTest
+```

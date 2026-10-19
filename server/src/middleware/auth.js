@@ -72,6 +72,8 @@ export const protect = asyncHandler(async (req, _res, next) => {
 export const authorize =
   (...roles) =>
   (req, _res, next) =>
-    roles.includes(req.user?.role)
+    // req.policyGrant: a staff account's additional policy covers this admin
+    // route (middleware/adminPolicy.js → staffGrantGuard); only admin routes.
+    roles.includes(req.user?.role) || (req.policyGrant === true && roles.includes('admin'))
       ? next()
       : next(new ApiError(403, 'You do not have permission to perform this action'));

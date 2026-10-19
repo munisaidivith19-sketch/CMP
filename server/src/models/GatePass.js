@@ -97,6 +97,11 @@ const gatePassSchema = new Schema(
     // Set only by the OTP service once the parent's OTP checks out.
     parentVerifiedAt: Date,
     parentVerifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    // Set when the OTP went to a number the faculty typed instead of the registered one.
+    parentVerifiedAlternate: {
+      mobileMasked: { type: String, trim: true, maxlength: 20 },
+      reason: { type: String, trim: true, maxlength: 200 },
+    },
     facultyReview: reviewStage,
     hodReview: reviewStage,
     principalReview: reviewStage,

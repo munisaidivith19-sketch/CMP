@@ -16,6 +16,7 @@ playLocation = "21.3.0"
 splash = "1.0.1"
 firebaseMessaging = "25.0.1"
 googleServices = "4.4.4"
+maplibre = "13.6.1"
 junit = "4.13.2"
 
 [libraries]
@@ -45,6 +46,7 @@ camerax-view = { module = "androidx.camera:camera-view", version.ref = "camerax"
 mlkit-barcode = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkitBarcode" }
 play-location = { module = "com.google.android.gms:play-services-location", version.ref = "playLocation" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebaseMessaging" }
+maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]

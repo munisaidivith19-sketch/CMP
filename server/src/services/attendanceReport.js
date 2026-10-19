@@ -27,7 +27,7 @@ import {
   STUDENT_ROLES,
 } from '../utils/academicScope.js';
 import { env } from '../config/env.js';
-import { COLLEGE_WIDE_ROLES, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
+import { ACADEMIC_OVERSIGHT_ROLES, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
 import { fullHolidayOn, reportHolidays } from './holidays.js';
 
 // `current` = today's completed periods only; `custom` = an explicit from/to range.
@@ -151,8 +151,8 @@ export async function resolveReportScope(user, query = {}) {
     };
   }
 
-  // Admin, Principal, Chairman, Dean and AO: college-wide, any department.
-  if (COLLEGE_WIDE_ROLES.includes(user.role)) {
+  // Admin, Principal, Chairman, Dean, AO and COE: college-wide, any department.
+  if (ACADEMIC_OVERSIGHT_ROLES.includes(user.role)) {
     let subject = null;
     if (query.subjectId) {
       subject = await Subject.findById(query.subjectId).select('name code department semester year').lean();

@@ -20,9 +20,12 @@ const TRACKED_STAFF = ['faculty', 'hod'];
  *
  * Returns true when this call created the day's record.
  */
-export async function markPresentFromClass(user, { slot, session, subject, day, section, period }) {
+export async function markPresentFromClass(user, { slot, session, cover, subject, day, section, period }) {
   if (!user || !TRACKED_STAFF.includes(user.role)) return false;
-  if (!slot || !sameId(slot.faculty, user)) return false;
+  // The scheduled faculty member, or the substitute assigned to this period —
+  // whoever actually did the work is the one recorded present.
+  const isSubstitute = cover?.kind === 'substitute' && sameId(cover.substitute, user);
+  if (!slot || !(sameId(slot.faculty, user) || isSubstitute)) return false;
   if (day.getTime() !== toDay(clock.now()).getTime()) return false;
 
   const now = clock.now();
@@ -44,6 +47,7 @@ export async function markPresentFromClass(user, { slot, session, subject, day, 
             department: session?.department || slot.department,
             section: section || slot.section,
             at: now,
+            ...(isSubstitute ? { substituteFor: slot.faculty } : {}),
           },
         },
       },

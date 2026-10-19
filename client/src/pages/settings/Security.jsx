@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { CheckCircle2, KeyRound, LaptopMinimal, LogOut, ShieldCheck, Smartphone, XCircle } from 'lucide-react';
@@ -202,9 +202,15 @@ function LoginHistoryCard() {
 }
 
 export default function Security() {
+  const mustChange = useSelector((s) => s.auth.user?.mustChangePassword);
   return (
     <div>
       <PageHeader icon={ShieldCheck} title="Account security" subtitle="Password, signed-in devices and sign-in history." />
+      {mustChange && (
+        <Card className="mb-5 border border-amber-400/50">
+          <p className="text-sm font-semibold">You are signed in with a temporary password. Choose your own password below to continue using VEXON.</p>
+        </Card>
+      )}
       <div className="grid gap-5 xl:grid-cols-2">
         <div className="space-y-5">
           <ChangePasswordCard />

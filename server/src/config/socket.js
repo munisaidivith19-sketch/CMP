@@ -7,6 +7,10 @@ import { privateChatAllowed } from '../utils/chatScope.js';
 import Discussion from '../models/Discussion.js';
 import User from '../models/User.js';
 import { markConversationRead } from '../services/chatService.js';
+import Bus from '../models/Bus.js';
+import { busFilter, canViewBus, viewerScope } from '../services/transport/access.js';
+import { platformAllows } from '../services/platformState.js';
+import { attachSocketMonitor } from '../services/soc/monitors.js';
 
 let io = null;
 
@@ -40,14 +44,20 @@ export function initSocket(httpServer) {
     // admitted by the same token check below.
     cors: { origin: env.clientUrls, credentials: true },
   });
+  attachSocketMonitor(io);
 
   // Every socket must present a valid access token bound to a live session.
   io.use(async (socket, next) => {
     try {
       const { user, sessionId } = await authenticateAccessToken(socket.handshake.auth?.token, socket.handshake.address);
+      // Maintenance / lockdown / recovery: only the Super Admin recovery path stays connected.
+      if (!(await platformAllows(user))) return next(new Error('maintenance'));
       socket.data.userId = String(user._id);
       socket.data.role = user.role;
       socket.data.sessionId = sessionId;
+      // A policy-managed admin holds only some modules, so it never joins the
+      // all-admin room whose broadcasts span every module (policies.js).
+      socket.data.roleRoom = user.role === 'admin' && user.policyManaged ? 'role:admin_policy' : `role:${user.role}`;
       next();
     } catch {
       next(new Error('unauthorized'));
@@ -55,8 +65,9 @@ export function initSocket(httpServer) {
   });
 
   io.on('connection', (socket) => {
-    const { userId, role, sessionId } = socket.data;
-    socket.join([`user:${userId}`, `session:${sessionId}`, `role:${role}`]);
+    const { userId, sessionId, roleRoom } = socket.data;
+    const { role } = socket.data;
+    socket.join([`user:${userId}`, `session:${sessionId}`, roleRoom]);
 
     const count = (online.get(userId) || 0) + 1;
     online.set(userId, count);
@@ -83,6 +94,40 @@ export function initSocket(httpServer) {
     });
     socket.on('discussion:leave', (id) => {
       if (mongoose.isValidObjectId(id)) socket.leave(`discussion:${id}`);
+    });
+
+    // ── College buses: rooms are joined only after the viewer's access is
+    // checked against the database (a deactivated account is refused).
+    // Without a bus id: every bus this viewer may see. Clients re-subscribe
+    // after a reconnect (rooms do not survive a new connection). ──
+    socket.on('transport:subscribe', async (busId, cb) => {
+      try {
+        const scope = await viewerScope(userId);
+        if (!scope) return ack(cb, { ok: false, error: 'forbidden' });
+        if (busId && busId !== 'all') {
+          if (!mongoose.isValidObjectId(busId)) return ack(cb, { ok: false, error: 'invalid' });
+          const viewer = await User.findById(userId).select('role isActive').lean();
+          if (!(await canViewBus(viewer, busId))) return ack(cb, { ok: false, error: 'forbidden' });
+          socket.join(`bus:${busId}`);
+          return ack(cb, { ok: true, rooms: [busId] });
+        }
+        if (scope.all) {
+          socket.join('transport:all');
+          return ack(cb, { ok: true, all: true });
+        }
+        const viewer = await User.findById(userId).select('role isActive').lean();
+        const ids = (await Bus.find(busFilter(scope, viewer)).distinct('_id')).map(String);
+        socket.join(ids.map((id) => `bus:${id}`));
+        return ack(cb, { ok: true, rooms: ids });
+      } catch {
+        return ack(cb, { ok: false, error: 'failed' });
+      }
+    });
+    socket.on('transport:unsubscribe', (busId) => {
+      if (!busId || busId === 'all') {
+        socket.leave('transport:all');
+        [...socket.rooms].filter((r) => r.startsWith('bus:')).forEach((r) => socket.leave(r));
+      } else if (mongoose.isValidObjectId(busId)) socket.leave(`bus:${busId}`);
     });
 
     // ── Chat: a room is joined only after membership is checked in MongoDB ──
@@ -149,6 +194,11 @@ export function emitTo(room, event, payload) {
   if (io) io.to(room).emit(event, payload);
 }
 
+/** One emit to several rooms; a socket in more than one of them receives it once. */
+export function emitToRooms(rooms, event, payload) {
+  if (io && rooms.length) io.to(rooms).emit(event, payload);
+}
+
 export function emitToUsers(userIds, event, payload) {
   if (!io) return;
   const rooms = [...new Set((userIds || []).map((id) => `user:${String(id?._id || id)}`))];
@@ -162,6 +212,19 @@ export function emitToRoles(roles, event, payload) {
 /** Broadcast to every signed-in client (all sockets are authenticated). Never send private data here. */
 export function broadcast(event, payload) {
   if (io) io.emit(event, payload);
+}
+
+/** Force-disconnect every socket whose role is not in `keepRoles` (maintenance / lockdown). */
+export async function disconnectAllExcept(keepRoles = []) {
+  if (!io) return 0;
+  const sockets = await io.fetchSockets();
+  let n = 0;
+  for (const s of sockets) {
+    if (keepRoles.includes(s.data?.role)) continue;
+    s.disconnect(true);
+    n += 1;
+  }
+  return n;
 }
 
 /** Force-disconnect every socket belonging to the given sessions (logout / revoke). */

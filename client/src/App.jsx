@@ -3,17 +3,21 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { Toaster } from 'react-hot-toast';
 import AppLayout, { Backdrop } from './components/layout/AppLayout';
+import ErrorBoundary from './components/ErrorBoundary';
 import { PageLoader, Spinner } from './components/ui/primitives';
 import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
-import { HOSTEL_ROLES, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW } from './utils/constants';
+import { setMaintenance } from './features/uiSlice';
+import { STAFF_GRANT_ROLES, grantedPages } from './utils/delegation';
+import { useGetMyPoliciesQuery } from './services/superAdmin';
+import { COE, EMERGENCY_CONTROL_PATH, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TRANSPORT, TRANSPORT_MANAGERS, TRANSPORT_VIEW } from './utils/constants';
 
 // The People directory: students see only their own class (classmates and
 // that class's faculty); staff see their academic scope. Security and Warden
 // have no academic directory. The server enforces the same scope.
 const PEOPLE_DIRECTORY_ROLES = PEOPLE_DIRECTORY;
 // Warden/Security have zero timetable access anywhere in the app.
-const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security'].includes(r));
+const TIMETABLE_ROLES = ROLES.filter((r) => !['warden', 'security', 'office', 'transport'].includes(r));
 // Warden/Security (and the AO) have zero Study Materials access either.
 const STUDY_MATERIAL_ROLES = ROLES.filter((r) => !['warden', 'security', 'ao'].includes(r));
 
@@ -62,13 +66,96 @@ const Alumni = lazy(() => import('./pages/alumni/Alumni'));
 const AlumniClaim = lazy(() => import('./pages/alumni/AlumniClaim'));
 const SOSAlerts = lazy(() => import('./pages/sos/SOSAlerts'));
 const Hostel = lazy(() => import('./pages/hostel/Hostel'));
+const Transport = lazy(() => import('./pages/transport/Transport'));
+const TransportAdmin = lazy(() => import('./pages/transport/TransportAdmin'));
+const SuperAdmin = lazy(() => import('./pages/superadmin/SuperAdmin'));
+const EmergencyControl = lazy(() => import('./pages/superadmin/EmergencyControl'));
+const SocDashboard = lazy(() => import('./pages/superadmin/Soc'));
+const SocErrorDetail = lazy(() => import('./pages/superadmin/SocErrorDetail'));
+const SkillWallet = lazy(() => import('./pages/skillwallet/SkillWallet'));
+const SwProjectDetail = lazy(() => import('./pages/skillwallet/ProjectDetail'));
+const SwGallery = lazy(() => import('./pages/skillwallet/Gallery'));
+const SwPublicGallery = lazy(() => import('./pages/skillwallet/Gallery').then((m) => ({ default: m.PublicGallery })));
+const SwGalleryDetail = lazy(() => import('./pages/skillwallet/GalleryDetail'));
+const SwPublicGalleryDetail = lazy(() => import('./pages/skillwallet/GalleryDetail').then((m) => ({ default: m.PublicGalleryDetail })));
+const SwPortfolio = lazy(() => import('./pages/skillwallet/Portfolio'));
+const SwReviewWorkspace = lazy(() => import('./pages/skillwallet/ReviewWorkspace'));
+const SwReviewProject = lazy(() => import('./pages/skillwallet/ReviewWorkspace').then((m) => ({ default: m.ReviewProject })));
+const SwManagement = lazy(() => import('./pages/skillwallet/Management'));
 
-function RequireAuth({ children, roles }) {
+/**
+ * Admin pages that staff accounts can open through additional policies
+ * (Users, Security & Logs, Activity). The server authorizes every request;
+ * this only decides whether to render the page or go home.
+ */
+function RequireAdminPage({ children, roles, page }) {
+  const user = useSelector((s) => s.auth.user);
+  const grantee = STAFF_GRANT_ROLES.includes(user?.role);
+  const { data, isLoading } = useGetMyPoliciesQuery(undefined, { skip: !grantee });
+  if (user && grantee && !roles.includes(user.role)) {
+    if (isLoading) return null;
+    if (grantedPages(data).includes(page)) return children;
+  }
+  return <RequireAuth roles={roles}>{children}</RequireAuth>;
+}
+
+function RequireAuth({ children, roles, dayScholarOnly }) {
   const user = useSelector((s) => s.auth.user);
   const location = useLocation();
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/" replace />;
+  // Hostelers (and students with no stay type) never see bus tracking.
+  if (dayScholarOnly && STUDENT_ROLES.includes(user.role) && user.stayType !== 'day_scholar') return <Navigate to="/" replace />;
   return children;
+}
+
+// The Controller of Examinations works inside the Timetable dashboard only
+// (Exam Timetable, Class Timetable, Attendance); any other page — including
+// the Dashboard at "/" — sends them there. The server refuses the other
+// modules to this role whatever the UI does.
+// The Office works in Attendance only (read-only), the same way.
+const CONFINED = {
+  // The COE also verifies NPTEL certificates (the Skill Wallet review workspace only).
+  [COE]: { home: '/timetable', pages: ['/timetable', '/attendance', '/skill-wallet/review', '/notifications', '/settings/security'] },
+  [OFFICE]: { home: '/attendance', pages: ['/attendance', '/notifications', '/settings/security'] },
+  [TRANSPORT]: { home: '/transport', pages: ['/transport', '/notifications', '/settings/security'] },
+  [SUPER_ADMIN]: { home: '/super-admin', pages: ['/super-admin', EMERGENCY_CONTROL_PATH, '/admin/users', '/attendance', '/gate-pass', '/hostel', '/notifications', '/settings/security'] },
+};
+
+function CoeConfine({ children }) {
+  const user = useSelector((s) => s.auth.user);
+  const role = user?.role;
+  const { pathname } = useLocation();
+  // Office / COE accounts may also open admin pages granted to them as additional policies.
+  const { data: myPolicies } = useGetMyPoliciesQuery(undefined, { skip: ![COE, OFFICE].includes(role) });
+  const extra = grantedPages(myPolicies);
+  // A temporary password (set by a Super Admin) must be replaced first; the
+  // server refuses everything else until then.
+  if (user?.mustChangePassword && pathname !== '/settings/security') return <Navigate to="/settings/security?required=1" replace />;
+  const rule = CONFINED[role];
+  if (rule && ![...rule.pages, ...extra].some((p) => pathname === p || pathname.startsWith(`${p}/`))) return <Navigate to={rule.home} replace />;
+  return children;
+}
+
+/** The maintenance message when the platform is not in normal mode, else null. */
+function checkPlatform() {
+  return fetch('/api/platform/status', { credentials: 'omit' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((s) => (s?.mode === 'maintenance' ? s.message || 'VEXON is under maintenance.' : null))
+    .catch(() => null);
+}
+
+function MaintenanceScreen({ message, onRetry }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <Backdrop />
+      <div className="card max-w-md text-center">
+        <p className="text-gradient text-3xl font-extrabold">Under maintenance</p>
+        <p className="mt-3 text-sm muted">{message}</p>
+        <button type="button" className="btn btn-primary mt-5" onClick={onRetry}>Check again</button>
+      </div>
+    </div>
+  );
 }
 
 function GuestOnly({ children }) {
@@ -88,12 +175,20 @@ function NotFound() {
 
 export default function App() {
   const dispatch = useDispatch();
+  const location = useLocation();
   const ready = useSelector((s) => s.auth.ready);
   const theme = useSelector((s) => s.ui.theme);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  const maintenance = useSelector((s) => s.ui.maintenance);
+  const user = useSelector((s) => s.auth.user);
+  // Is the platform in an emergency mode? (public, non-sensitive endpoint)
+  useEffect(() => {
+    checkPlatform().then((msg) => dispatch(setMaintenance(msg)));
+  }, [dispatch]);
 
   // Restore the session from the httpOnly refresh cookie on first load.
   useEffect(() => {
@@ -114,6 +209,12 @@ export default function App() {
 
   const staff = STAFF_VIEW;
 
+  // Signed-in ordinary users get the maintenance screen; the Super Admin keeps
+  // working (the server lets only that role through).
+  if (maintenance && user && user.role !== SUPER_ADMIN) {
+    return <MaintenanceScreen message={maintenance} onRetry={() => checkPlatform().then((msg) => (msg ? dispatch(setMaintenance(msg)) : window.location.reload()))} />;
+  }
+
   return (
     <>
       <Toaster
@@ -122,6 +223,12 @@ export default function App() {
           className: '!rounded-2xl !bg-white/80 !backdrop-blur-xl !text-sm !font-semibold !text-ink !shadow-glass dark:!bg-[#fefcf8]/90 dark:!text-[#2c2416]',
         }}
       />
+      {maintenance && !user && (
+        <div role="status" className="fixed inset-x-0 top-0 z-50 bg-amber-500 px-4 py-2 text-center text-sm font-bold text-white">
+          {maintenance}
+        </div>
+      )}
+      <ErrorBoundary resetKey={location.pathname}>
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
@@ -130,7 +237,10 @@ export default function App() {
           <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
           <Route path="/reset-password" element={<Navigate to="/login" replace />} />
           <Route path="/alumni/claim" element={<AlumniClaim />} />
-          <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
+          {/* Public Innovation Gallery: published PUBLIC projects only (the server enforces it). */}
+          <Route path="/gallery" element={<SwPublicGallery />} />
+          <Route path="/gallery/:id" element={<SwPublicGalleryDetail />} />
+          <Route element={<RequireAuth><CoeConfine><AppLayout /></CoeConfine></RequireAuth>}>
             <Route index element={<Dashboard />} />
             <Route path="events" element={<Events />} />
             <Route path="events/:id" element={<EventDetail />} />
@@ -148,10 +258,10 @@ export default function App() {
             <Route path="search" element={<Search />} />
             <Route path="admin" element={<RequireAuth roles={staff}><AdminAnalytics /></RequireAuth>} />
             <Route path="admin/reports" element={<RequireAuth roles={staff}><AdminReports /></RequireAuth>} />
-            <Route path="admin/users" element={<RequireAuth roles={['admin']}><AdminUsers /></RequireAuth>} />
+            <Route path="admin/users" element={<RequireAdminPage page="/admin/users" roles={['admin', SUPER_ADMIN]}><AdminUsers /></RequireAdminPage>} />
             <Route path="admin/clubs" element={<RequireAuth roles={['admin']}><AdminClubs /></RequireAuth>} />
-            <Route path="admin/activity" element={<RequireAuth roles={['admin']}><AdminActivity /></RequireAuth>} />
-            <Route path="admin/security" element={<RequireAuth roles={['admin']}><SecurityLogs /></RequireAuth>} />
+            <Route path="admin/activity" element={<RequireAdminPage page="/admin/activity" roles={['admin']}><AdminActivity /></RequireAdminPage>} />
+            <Route path="admin/security" element={<RequireAdminPage page="/admin/security" roles={['admin']}><SecurityLogs /></RequireAdminPage>} />
             <Route path="class/students" element={<RequireAuth roles={['faculty']}><ClassStudents /></RequireAuth>} />
             <Route path="admin/academics" element={<RequireAuth roles={['admin', 'hod']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
@@ -178,10 +288,26 @@ export default function App() {
             <Route path="alumni" element={<Alumni />} />
             <Route path="sos" element={<SOSAlerts />} />
             <Route path="hostel" element={<RequireAuth roles={HOSTEL_ROLES}><Hostel /></RequireAuth>} />
+            <Route path="transport" element={<RequireAuth roles={TRANSPORT_VIEW} dayScholarOnly><Transport /></RequireAuth>} />
+            <Route path="transport/manage" element={<RequireAuth roles={TRANSPORT_MANAGERS}><TransportAdmin /></RequireAuth>} />
+            <Route path="skill-wallet" element={<RequireAuth roles={SW_STUDENT_ROLES}><SkillWallet /></RequireAuth>} />
+            <Route path="skill-wallet/projects/:id" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwProjectDetail /></RequireAuth>} />
+            <Route path="skill-wallet/gallery" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwGallery /></RequireAuth>} />
+            <Route path="skill-wallet/gallery/:id" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwGalleryDetail /></RequireAuth>} />
+            <Route path="skill-wallet/portfolio/:userId" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwPortfolio /></RequireAuth>} />
+            <Route path="skill-wallet/review" element={<RequireAuth roles={[...SW_STAFF_ROLES, COE]}><SwReviewWorkspace /></RequireAuth>} />
+            <Route path="skill-wallet/review/projects/:id" element={<RequireAuth roles={SW_STAFF_ROLES}><SwReviewProject /></RequireAuth>} />
+            <Route path="skill-wallet/manage" element={<RequireAuth roles={SW_STAFF_ROLES}><SwManagement /></RequireAuth>} />
+            <Route path="super-admin" element={<RequireAuth roles={[SUPER_ADMIN]}><SuperAdmin /></RequireAuth>} />
+            <Route path="super-admin/soc" element={<RequireAuth roles={[SUPER_ADMIN]}><SocDashboard /></RequireAuth>} />
+            <Route path="super-admin/soc/errors/:id" element={<RequireAuth roles={[SUPER_ADMIN]}><SocErrorDetail /></RequireAuth>} />
+            {/* Unlinked: no navigation points here. The server authorizes every API behind it. */}
+            <Route path={EMERGENCY_CONTROL_PATH.slice(1)} element={<RequireAuth roles={[SUPER_ADMIN]}><EmergencyControl /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </Suspense>
+      </ErrorBoundary>
     </>
   );
 }

@@ -10,8 +10,19 @@ import { syncSubjects } from './utils/syncSubjects.js';
 import { normaliseBreakPeriods } from './services/timetablePeriods.js';
 import { startAlumniSchedulers } from './utils/alumniSchedulers.js';
 import { startIdleSessionSweeper } from './utils/sessionIdle.js';
+import { warmAttendanceTotals } from './services/attendanceTotals.js';
+import { startReminders } from './services/reminders.js';
+import { startTripSweeper } from './services/transport/trips.js';
+import { attachDbMonitor, attachProcessMonitor, registerJob, runJob } from './services/soc/monitors.js';
+import { flushMetrics, startMetricsFlusher } from './services/soc/metrics.js';
+import { sweepOrphanAssets } from './services/skillWallet/assets.js';
+import { sweepPartialWrites } from './utils/privateStorage.js';
 
 async function start() {
+  // SOC: observe crashes (does not change Node's crash behaviour).
+  attachProcessMonitor();
+  // SOC: record MongoDB disconnects / connection errors (listeners attach once).
+  attachDbMonitor();
   await connectDB();
   // Make sure every subject in data/timetableData.js exists for the timetable.
   await syncSubjects()
@@ -27,7 +38,8 @@ async function start() {
   initSocket(server);
 
   // Close gate passes whose validity window has passed (also runs lazily on verify).
-  const sweep = setInterval(() => expireGatePasses().catch((err) => console.error('[gate-pass] sweep failed:', err.message)), 5 * 60 * 1000);
+  registerJob('gate_pass.expiry_sweep', { intervalMs: 5 * 60 * 1000, description: 'Close expired gate passes' });
+  const sweep = setInterval(() => runJob('gate_pass.expiry_sweep', expireGatePasses, { logTag: '[gate-pass] sweep' }), 5 * 60 * 1000);
   sweep.unref();
 
   // Bulk (bind-group) approvals: issue gate codes + QR a few at a time, retrying failures.
@@ -43,12 +55,35 @@ async function start() {
   // Start Alumni Network schedulers (reminders, housekeeping, capacity reconcile)
   startAlumniSchedulers();
 
+  // Pre-compute the semester attendance totals the dashboards use, so the first
+  // principal / HOD / COE dashboard after a (re)start is as fast as the rest.
+  warmAttendanceTotals();
+
+  // Next-period reminders and the daily attendance digest (one tick a minute).
+  startReminders();
+
+  // Bus trips: end idle / over-long trips and report lost tracking (one tick a minute).
+  startTripSweeper();
+
+  // SOC request / error counters: in memory, added to the database once a minute.
+  startMetricsFlusher();
+
+  // Skill Wallet: remove project images uploaded but never attached, and
+  // leftover partial writes in private storage (hourly).
+  registerJob('skill_wallet.orphan_sweep', { intervalMs: 60 * 60 * 1000, description: 'Remove orphaned Skill Wallet uploads' });
+  const swSweep = setInterval(
+    () => runJob('skill_wallet.orphan_sweep', () => Promise.all([sweepOrphanAssets(), sweepPartialWrites()]), { logTag: '[skill-wallet] sweep' }),
+    60 * 60 * 1000
+  );
+  swSweep.unref();
+
   server.listen(env.port, () => {
     console.log(`[api] CampusConnect API listening on http://localhost:${env.port}`);
   });
 
   const shutdown = (signal) => {
     console.log(`\n[api] ${signal} received — shutting down`);
+    flushMetrics().catch(() => {});
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 5000).unref();
   };

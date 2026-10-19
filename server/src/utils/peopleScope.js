@@ -2,7 +2,8 @@ import User from '../models/User.js';
 import TimetableSlot from '../models/TimetableSlot.js';
 import { ApiError } from './http.js';
 import { STUDENT_ROLES, facultyClasses, inClasses, ownDepartment, studentsInClassesFilter } from './academicScope.js';
-import { COLLEGE_WIDE_ROLES } from '../constants.js';
+import { COLLEGE_WIDE_ROLES, SUPER_ADMIN_ROLE } from '../constants.js';
+import { isPolicyManaged, userListScope } from '../policies.js';
 import { canContact } from './chatScope.js';
 
 /**
@@ -76,9 +77,13 @@ export async function peopleScopeFilter(user) {
   if (user.role === 'hod') {
     return { department: ownDepartment(user) };
   }
-  // Admin, Principal, Chairman, Dean and AO: college-wide, read-only.
+  // Policy-managed admins: only the account types / departments their
+  // User or Staff Management policies cover (policies.js). Never Super Admins.
+  if (isPolicyManaged(user)) return userListScope(user, 'view');
+  // Admin, Principal, Chairman, Dean and AO: college-wide, read-only — but
+  // Super Admin accounts are platform staff and never listed.
   if (COLLEGE_WIDE_ROLES.includes(user.role)) {
-    return {};
+    return { role: { $ne: SUPER_ADMIN_ROLE } };
   }
   throw new ApiError(403, 'Your role is not authorized to browse the People directory');
 }
@@ -86,6 +91,9 @@ export async function peopleScopeFilter(user) {
 /** Field-level check for a single profile fetch (GET /users/:id). */
 export async function canViewProfile(viewer, targetId) {
   if (String(viewer._id) === String(targetId)) return true;
+  // Super Admin profiles are not part of the campus directory.
+  if (await User.exists({ _id: targetId, role: SUPER_ADMIN_ROLE })) return false;
+  if (isPolicyManaged(viewer)) return Boolean(await User.exists({ $and: [{ _id: targetId }, userListScope(viewer, 'view')] }));
   if (COLLEGE_WIDE_ROLES.includes(viewer.role)) return true; // college-wide authorities: unrestricted
   // Students: only the people they may chat with — their own classmates and
   // the academic staff. Another class's student profile is not visible.

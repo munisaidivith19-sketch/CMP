@@ -47,6 +47,7 @@ object Realtime {
         "od_leave:updated" to listOf("ODLeave", "Attendance"),
         "gatepass:updated" to listOf("GatePass", "Hostel"),
         "timetable:updated" to listOf("Timetable"),
+        "exam:updated" to listOf("Exam", "Attendance"),
         "holiday:changed" to listOf("Holiday", "Attendance", "Timetable"),
         "lostfound:updated" to listOf("LostFound"),
         "complaint:updated" to listOf("Complaint"),

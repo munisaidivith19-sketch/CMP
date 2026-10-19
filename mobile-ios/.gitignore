@@ -1,0 +1,23 @@
+# Generated from project.yml by XcodeGen
+VEXON.xcodeproj/
+
+# Xcode / SwiftPM
+xcuserdata/
+DerivedData/
+*.xcuserstate
+.build/
+.swiftpm/
+Packages/VEXONKit/.build/
+Packages/VEXONKit/Package.resolved
+
+# Per-machine settings (team id, local server)
+Config/Local.xcconfig
+
+# Signing material and push credentials never belong in the repo
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+GoogleService-Info.plist
+
+.DS_Store

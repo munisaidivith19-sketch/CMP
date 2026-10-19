@@ -9,7 +9,10 @@ import Session from '../models/Session.js';
 import { disconnectSessions } from '../config/socket.js';
 import { env } from '../config/env.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate } from '../utils/http.js';
-import { ROLES, normalizePhoneDigits, yearOfSemester } from '../constants.js';
+import { ADMIN_ASSIGNABLE_ROLES, ROLES, SUPER_ADMIN_ROLE, normalizePhoneDigits, yearOfSemester } from '../constants.js';
+import { adminAllows, isPolicyManaged, moduleForRole, userListScope, withinRoleLimit } from '../policies.js';
+import { logAudit } from '../utils/auditLog.js';
+import { auditCreationPolicies, validateCreationPolicies } from '../services/adminPolicies.js';
 import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
 import { pick } from '../utils/http.js';
@@ -198,6 +201,9 @@ export const listUsers = asyncHandler(async (req, res) => {
   if (role) filter.role = role;
   if (status === 'active') filter.isActive = true;
   if (status === 'suspended') filter.isActive = false;
+  // Super Admin accounts never appear here; policy-managed admins see only the
+  // account types and departments their policies cover (applied before paging).
+  filter.$and = [userListScope(req.user, 'view')];
 
   const [items, total] = await Promise.all([
     User.find(filter)
@@ -226,6 +232,12 @@ const CREATE_FIELDS = {
   ao: ['employeeId', 'phone'],
   chairman: ['employeeId', 'phone'],
   warden: ['employeeId', 'phone'],
+  // Controller of Examinations: campus-wide, no department of its own.
+  coe: ['employeeId', 'phone'],
+  // Administrative Office: read-only college-wide attendance.
+  office: ['employeeId', 'phone'],
+  // Transport officer: buses, routes, assignments, trips.
+  transport: ['employeeId', 'phone'],
 };
 
 /**
@@ -233,8 +245,30 @@ const CREATE_FIELDS = {
  * are normally seeded/admin-created too so their college email is the username
  * from day one. Never accessible to anyone but an admin (see route guard).
  */
+/** Refuse (and record) an admin action outside the actor's policies. */
+function requirePolicy(req, module, action, department, target) {
+  if (module && adminAllows(req.user, module, action, department)) return;
+  logSecurity(req, 'POLICY_DENIED', { success: false, target, reason: module ? `${module}.${action}` : 'admin_account_target', entityType: 'user', entityId: target?._id });
+  throw new ApiError(403, module ? 'Your administrator policies do not include this action' : 'Admin accounts are managed by a Super Admin');
+}
+
+/**
+ * Refuse (and record in the protected audit trail) a role outside the
+ * delegation limit a Super Admin set for this admin (policies.js → withinRoleLimit).
+ */
+function requireRoleLimit(req, kind, role, target) {
+  if (withinRoleLimit(req.user, kind, role)) return;
+  const reason = `role_${kind}_outside_delegation`;
+  logAudit(req, 'PRIVILEGE_ESCALATION_BLOCKED', { outcome: 'denied', target, reason, details: { role } });
+  logSecurity(req, 'POLICY_DENIED', { success: false, target, reason, entityType: 'user', entityId: target?._id });
+  throw new ApiError(403, `You are not authorized to ${kind} ${role} accounts. Ask a Super Admin to add this role to your delegation.`, undefined, { code: 'DELEGATION_EXCEEDED' });
+}
+
 export const createUser = asyncHandler(async (req, res) => {
   const { role } = req.body;
+  if (!ADMIN_ASSIGNABLE_ROLES.includes(role)) requirePolicy(req, null);
+  requirePolicy(req, moduleForRole(role), 'create', req.body.department);
+  requireRoleLimit(req, 'create', role);
   const email = String(req.body.email).toLowerCase().trim();
   if (await User.exists({ email })) throw new ApiError(409, 'An account with this email already exists');
   if (req.body.employeeId) {
@@ -255,9 +289,16 @@ export const createUser = asyncHandler(async (req, res) => {
   }
 
   const data = pick(req.body, CREATE_FIELDS[role] || []);
-  const user = await User.create({ name: req.body.name, title: req.body.title, gender: req.body.gender, email, password: req.body.password, role, ...data });
+  // Policy Assignment: validated in full before the account exists. The
+  // account and its additional policies are one document, written once.
+  const policies = validateCreationPolicies(req, { role, department: data.department, policyMode: req.body.policyMode, policies: req.body.policies });
+  const user = await User.create({
+    name: req.body.name, title: req.body.title, gender: req.body.gender, email, password: req.body.password, role, ...data,
+    ...(policies.length ? { policies } : {}),
+  });
 
   logActivity(req, 'admin.user_create', { entityType: 'user', entityId: user._id, summary: `${role}: ${user.email}` });
+  if (policies.length) await auditCreationPolicies(req, user, policies);
   logSecurity(req, 'USER_CREATED', {
     target: user,
     entityType: 'user',
@@ -281,6 +322,31 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, 'User not found');
 
   const { role, isActive, unlock, unlockAccount } = req.body;
+
+  // Admin and Super Admin accounts are managed only by a Super Admin, and no
+  // one can be promoted to either here (also enforced by the route validator).
+  const targetModule = moduleForRole(user.role);
+  if (!targetModule) requirePolicy(req, null, null, null, user);
+  if (role !== undefined && !ADMIN_ASSIGNABLE_ROLES.includes(role)) requirePolicy(req, null, null, null, user);
+  // Policy-managed admins: each kind of change needs its own action, in scope
+  // for the account's current department (and the new one when it moves).
+  const POLICY_KEYS = ['role', 'isActive', 'unlock', 'unlockAccount'];
+  const editsProfile = Object.keys(req.body).some((k) => !POLICY_KEYS.includes(k));
+  if (isActive !== undefined && Boolean(isActive) !== user.isActive) requirePolicy(req, targetModule, 'suspend', user.department, user);
+  if (role !== undefined && role !== user.role) {
+    requirePolicy(req, 'user_management', 'roles', user.department, user);
+    // Authority over both sides of the move: the account as it is now, and the role it becomes.
+    requirePolicy(req, targetModule, 'edit', user.department, user);
+    requirePolicy(req, moduleForRole(role), 'edit', req.body.department ?? user.department, user);
+    requireRoleLimit(req, 'assign', user.role, user);
+    requireRoleLimit(req, 'assign', role, user);
+  }
+  if (editsProfile || unlock || unlockAccount) {
+    requirePolicy(req, targetModule, 'edit', user.department, user);
+    if (req.body.department !== undefined && req.body.department !== user.department) {
+      requirePolicy(req, targetModule, 'edit', req.body.department, user);
+    }
+  }
   const changes = [];
   const before = { role: user.role, isActive: user.isActive, scope: snapshot(user, SCOPE_KEYS), inCharge: snapshot(user, IN_CHARGE_KEYS) };
 
@@ -424,6 +490,10 @@ export const deleteUser = asyncHandler(async (req, res) => {
   }
   const user = await User.findById(req.params.id);
   if (!user) throw new ApiError(404, 'User not found');
+  // Admin / Super Admin accounts: Super Admin only (deactivate, never delete).
+  if (!moduleForRole(user.role)) requirePolicy(req, null, null, null, user);
+  // No module policy grants deletion: only legacy (unrestricted) admins delete.
+  if (isPolicyManaged(req.user)) requirePolicy(req, null, null, null, user);
 
   const live = await Session.find({ user: user._id, revokedAt: null }).distinct('_id');
   if (live.length) {
@@ -444,7 +514,9 @@ export const listActivity = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req, 25, 100);
   const filter = {};
   if (req.query.action) filter.action = new RegExp(`^${escapeRegex(req.query.action)}`);
-  if (req.query.user) filter.user = req.query.user;
+  // Super Admin activity stays out of the routine view (it is in the protected audit trail).
+  const supers = await User.find({ role: SUPER_ADMIN_ROLE }).distinct('_id');
+  filter.user = req.query.user ? { $eq: req.query.user, $nin: supers } : { $nin: supers };
   const [items, total] = await Promise.all([
     Activity.find(filter).populate('user', 'name avatar role').sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     Activity.countDocuments(filter),

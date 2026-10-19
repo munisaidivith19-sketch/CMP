@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import AttendanceRecord from '../models/AttendanceRecord.js';
 import AttendanceSession from '../models/AttendanceSession.js';
 import AttendanceCorrectionRequest from '../models/AttendanceCorrectionRequest.js';
+import PeriodCover from '../models/PeriodCover.js';
 import ODLeaveRequest from '../models/ODLeaveRequest.js';
 import Notification from '../models/Notification.js';
 import Subject from '../models/Subject.js';
@@ -31,7 +32,14 @@ import { renderReportPdf } from '../services/attendanceReportPdf.js';
 import { safeFilename } from '../utils/pdf.js';
 import { markPresentFromClass } from '../services/facultyPresence.js';
 import { appliesTo, assertNotHoliday, findHoliday, holidayMessage, holidaysBetween, toApi as toHolidayApi } from '../services/holidays.js';
-import { ACADEMIC_READ_ONLY_ROLES, COLLEGE_WIDE_ROLES, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
+import { ACADEMIC_OVERSIGHT_ROLES, ATTENDANCE_READ_ONLY_ROLES, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
+import { ensureSession } from '../services/attendanceSessions.js';
+import { classOfSlot, examBlockMessage, examBrief, examPlan, timesOverlap } from '../services/exams.js';
+import { applyExamAuto, prepareExamAuto } from '../services/examAutoAttendance.js';
+import { withTransaction } from '../utils/transaction.js';
+import { announceClassAttendance } from '../services/attendanceLive.js';
+import { grantCovers, staffAttendanceGrant } from '../policies.js';
+import { studentTotals } from '../services/attendanceTotals.js';
 
 export const LOW_ATTENDANCE_THRESHOLD = 75;
 // Club admins are students with extra club permissions.
@@ -58,8 +66,8 @@ const isAssigned = (subject, user) => subject.faculty?.some((f) => sameId(f, use
  * The attendance records a staff account may read, derived from the
  * authenticated account alone.
  *
- * - Admin, Principal, Chairman, Dean, AO (COLLEGE_WIDE_ROLES): every
- *   department. All but admin are read-only.
+ * - Admin, Principal, Chairman, Dean, AO and COE (ACADEMIC_OVERSIGHT_ROLES):
+ *   every department. All but admin are read-only.
  * - Faculty: ONLY their actual teaching assignments — subject + department +
  *   section. Their own department is deliberately NOT a grant: a faculty
  *   member assigned 3rd-year Section A must never see Section B, another year
@@ -75,9 +83,21 @@ const isAssigned = (subject, user) => subject.faculty?.some((f) => sameId(f, use
  * year and semester). This is reading only: marking and editing are decided
  * by assertCanMark / assertCanWrite, which look at the subject-handling
  * assignment and are untouched by Class In-Charge.
+ *
+ * An additional Attendance → view policy (policies.js → staffAttendanceGrant)
+ * adds its own scope to the role's: campus-wide, or one more department. It
+ * only ever widens by exactly that grant; without one nothing changes.
  */
 async function staffScope(user) {
-  if (COLLEGE_WIDE_ROLES.includes(user.role)) return {};
+  const base = await roleScope(user);
+  const grant = staffAttendanceGrant(user, 'view');
+  if (!grant || !Object.keys(base).length) return base; // no grant, or already campus-wide
+  if (!grant.department) return {};
+  return base._id === null ? grant : { $or: [base, grant] };
+}
+
+async function roleScope(user) {
+  if (ACADEMIC_OVERSIGHT_ROLES.includes(user.role)) return {};
   if (user.role === 'hod') {
     const fySubjects = await Subject.find({ semester: { $in: [1, 2] }, isActive: true }).distinct('_id');
     if (isFirstYearHod(user)) {
@@ -164,7 +184,9 @@ function normaliseSection(subject, section) {
 
 /** Who may view a class roster at all (reading, not writing). */
 function assertCanMark(user, subject) {
-  if (ACADEMIC_READ_ONLY_ROLES.includes(user.role)) throw new ApiError(403, 'Your access to attendance is read-only');
+  // An additional Attendance → view policy covering the subject's department opens its roster.
+  if (grantCovers(staffAttendanceGrant(user, 'view'), subject.department)) return;
+  if (ATTENDANCE_READ_ONLY_ROLES.includes(user.role)) throw new ApiError(403, 'Your access to attendance is read-only');
   if (user.role === 'faculty' && !isAssigned(subject, user)) {
     throw new ApiError(403, 'You are not assigned to this subject');
   }
@@ -197,12 +219,20 @@ export function periodStatus({ startTime, endTime }, time) {
  *   edit mid-period does not move an in-progress session's window.
  * - HOD: their department, today only (any time of day).
  * - Admin: any past or current date.
+ * - A staff account with an additional Attendance → create policy: like
+ *   Admin, but only for subjects of the department(s) the grant covers.
+ * Future dates, Class Not Conducted, holidays and exams close a sheet for everyone.
  */
-function assertCanWrite(user, { subject, day, slot, session, viaSlot }) {
+function assertCanWrite(user, { subject, day, slot, session, cover, viaSlot }) {
   const now = campusNow();
   if (day > now.day) throw new ApiError(422, 'Attendance cannot be marked for a future date');
-  if (ACADEMIC_READ_ONLY_ROLES.includes(user.role)) throw new ApiError(403, 'Your access to attendance is read-only');
-  if (user.role === 'admin') return;
+  const granted = grantCovers(staffAttendanceGrant(user, 'create'), subject.department);
+  if (!granted && ATTENDANCE_READ_ONLY_ROLES.includes(user.role)) throw new ApiError(403, 'Your access to attendance is read-only');
+  // A period the HOD recorded as not conducted has no attendance at all.
+  if (cover?.kind === 'not_conducted') {
+    throw new ApiError(409, 'This period is recorded as Class Not Conducted — the HOD must cancel that before attendance can be taken');
+  }
+  if (user.role === 'admin' || granted) return;
   if (user.role === 'hod') {
     if (subject.department !== user.department) throw new ApiError(403, 'You can only edit attendance for your own department');
     if (day.getTime() !== now.day.getTime()) throw new ApiError(403, 'HOD can only edit attendance for today’s date');
@@ -211,7 +241,11 @@ function assertCanWrite(user, { subject, day, slot, session, viaSlot }) {
   if (user.role === 'faculty') {
     // Faculty pick the timetable period; they never type subject/date/period themselves.
     if (!slot || !viaSlot) throw new ApiError(403, 'Take attendance from your timetable period');
-    if (!sameId(slot.faculty, user)) throw new ApiError(403, 'This period is assigned to another faculty member');
+    // The scheduled faculty member, or the substitute the HOD assigned for this
+    // exact period and date — never anyone else.
+    const isSubstitute = cover?.kind === 'substitute' && sameId(cover.substitute, user);
+    if (!sameId(slot.faculty, user) && !isSubstitute) throw new ApiError(403, 'This period is assigned to another faculty member');
+    if (!isSubstitute && cover?.kind === 'substitute') throw new ApiError(403, 'A substitute has been assigned to take this period today');
     if (day.getTime() !== now.day.getTime() || slot.dayOfWeek !== now.weekday) {
       throw new ApiError(403, 'Attendance can only be taken on the day of the class');
     }
@@ -234,13 +268,19 @@ async function resolveClass(user, src) {
   if (src.slotId) {
     const slot = await TimetableSlot.findOne({ _id: oid(src.slotId, 'timetable period'), isActive: true, isBreak: { $ne: true } });
     if (!slot) throw new ApiError(404, 'Timetable period not found');
-    const day = user.role === 'faculty' || !src.date ? campusNow().day : toDay(src.date);
-    const session = await AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean();
+    // Faculty are pinned to today, unless an additional Attendance policy lets
+    // them work on other classes and dates (assertCanWrite still decides what they may change).
+    const pinned = user.role === 'faculty' && !staffAttendanceGrant(user, 'view');
+    const day = pinned || !src.date ? campusNow().day : toDay(src.date);
+    const [session, cover] = await Promise.all([
+      AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean(),
+      PeriodCover.findOne({ timetableSlot: slot._id, date: day, status: 'active' }).lean(),
+    ]);
     if (!session && weekdayOf(day) !== slot.dayOfWeek) throw new ApiError(422, `This period is not held on ${weekdayOf(day)}`);
     // An existing session's snapshot wins over the (possibly edited) slot.
     const subject = await Subject.findById(session?.subject || slot.subject);
     if (!subject) throw new ApiError(404, 'Subject not found');
-    return { slot, session, subject, day, section: session?.section || slot.section, period: session?.period || slot.period, viaSlot: true };
+    return { slot, session, cover, subject, day, section: session?.section || slot.section, period: session?.period || slot.period, viaSlot: true };
   }
   const subject = await Subject.findById(oid(src.subjectId, 'subject'));
   if (!subject || !subject.isActive) throw new ApiError(404, 'Subject not found');
@@ -249,8 +289,13 @@ async function resolveClass(user, src) {
   const period = Number(src.period);
   if (!Number.isInteger(period) || period < 1 || period > 12) throw new ApiError(422, 'Invalid period');
   const slot = await TimetableSlot.findOne({ subject: subject._id, dayOfWeek: weekdayOf(day), period, isActive: true, ...(section ? { section } : {}) });
-  const session = slot ? await AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean() : null;
-  return { slot, session, subject, day, section, period };
+  const [session, cover] = slot
+    ? await Promise.all([
+        AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean(),
+        PeriodCover.findOne({ timetableSlot: slot._id, date: day, status: 'active' }).lean(),
+      ])
+    : [null, null];
+  return { slot, session, cover, subject, day, section, period };
 }
 
 /**
@@ -266,36 +311,28 @@ function classOf({ session, slot, subject, section }) {
   };
 }
 
-/** Freeze the timetable entry as it is now, for this class meeting. */
-async function ensureSession({ slot, session, subject, day }, user) {
-  if (session || !slot) return session;
-  const faculty = slot.faculty ? await User.findById(slot.faculty).select('name').lean() : null;
-  try {
-    return (
-      await AttendanceSession.create({
-        timetableSlot: slot._id,
-        date: day,
-        period: slot.period,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        subject: subject._id,
-        subjectName: subject.name,
-        subjectCode: subject.code,
-        faculty: slot.faculty,
-        facultyName: faculty?.name,
-        department: slot.department,
-        section: slot.section,
-        semester: slot.semester,
-        year: slot.year ?? yearOfSemester(slot.semester),
-        room: slot.room,
-        createdBy: user._id,
-      })
-    ).toObject();
-  } catch (err) {
-    if (err.code === 11000) return AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean();
-    throw err;
-  }
+/**
+ * The exam state of a class meeting: the published exam that blocks it (time
+ * overlap with the session snapshot when one exists, else the timetable
+ * entry) and, when this period is the first post-exam period of an exam, that
+ * exam's plan entry. A meeting with no timetable entry has no scheduled time
+ * for an exam to overlap.
+ */
+async function examStateOf({ slot, session, day }) {
+  const window = session || slot;
+  if (!window) return { examBlocked: null, examTrigger: null };
+  const plan = await examPlan(classOfSlot(window), day);
+  return {
+    examBlocked: plan.map((p) => p.exam).find((e) => timesOverlap(e, window)) || null,
+    examTrigger: (slot && plan.find((p) => p.post && sameId(p.post._id, slot._id))) || null,
+  };
 }
+
+/** What the attendance screens show about a post-exam (trigger) period. */
+const triggerApi = (p) => ({
+  exam: examBrief(p.exam),
+  periods: p.blocked.map((s) => ({ period: s.period, startTime: s.startTime, endTime: s.endTime, subjectCode: s.subject?.code })),
+});
 
 /** Warn students whose subject attendance just dropped below the threshold (at most every 3 days). */
 async function warnLowAttendance(studentIds, subject) {
@@ -326,8 +363,11 @@ async function warnLowAttendance(studentIds, subject) {
 
 export const getRoster = asyncHandler(async (req, res) => {
   const cls = await resolveClass(req.user, req.query);
-  const { subject, section, day, period: p, slot, session } = cls;
-  if (!(req.user.role === 'faculty' && slot && sameId(slot.faculty, req.user))) assertCanMark(req.user, subject);
+  const { subject, section, day, period: p, slot, session, cover } = cls;
+  // The scheduled faculty member and an assigned substitute see the period's
+  // roster through the period itself; everyone else needs subject access.
+  const ownPeriod = req.user.role === 'faculty' && slot && (sameId(slot.faculty, req.user) || (cover?.kind === 'substitute' && sameId(cover.substitute, req.user)));
+  if (!ownPeriod) assertCanMark(req.user, subject);
 
   const [students, existing, slotInfo] = await Promise.all([
     User.find(rosterFilter(subject, section)).select('name rollNo avatar section department year').sort({ rollNo: 1, name: 1 }).lean(),
@@ -379,6 +419,14 @@ export const getRoster = asyncHandler(async (req, res) => {
     editable = false;
     lockedReason = holidayMessage(holiday);
   }
+  // A published exam overlapping this period blocks regular attendance (the
+  // same check markAttendance enforces); the first period after an exam may
+  // auto-mark the student's blocked periods.
+  const { examBlocked, examTrigger } = await examStateOf(cls);
+  if (examBlocked && !holiday) {
+    editable = false;
+    lockedReason = examBlockMessage(examBlocked);
+  }
   // What the class looked like when attendance was taken (or looks like now, if not yet taken).
   const slotView = session
     ? { ...slotInfo, period: session.period, startTime: session.startTime, endTime: session.endTime, room: session.room, faculty: { _id: session.faculty, name: session.facultyName }, snapshot: true }
@@ -399,6 +447,9 @@ export const getRoster = asyncHandler(async (req, res) => {
     editable,
     lockedReason,
     holiday: toHolidayApi(holiday),
+    examBlocked: examBrief(examBlocked) || null,
+    examTrigger: examTrigger ? triggerApi(examTrigger) : null,
+    cover: cover ? { _id: cover._id, kind: cover.kind, substitute: cover.substitute, reason: cover.reason || null } : null,
     students: students.map((s) => {
       const rec = byStudent[String(s._id)];
       const req = odLeaveByStudent[String(s._id)];
@@ -476,6 +527,11 @@ export const markAttendance = asyncHandler(async (req, res) => {
   // Before anything is written: on a holiday no session and no record (and so
   // no absentee) is ever created, whatever the client sends.
   await assertNotHoliday(classOf(cls), day);
+  // A period overlapping a published exam of this class is closed to regular
+  // attendance for every role — refused before any session or record exists,
+  // so nothing already recorded is ever overwritten.
+  const { examBlocked } = await examStateOf(cls);
+  if (examBlocked) throw new ApiError(409, examBlockMessage(examBlocked), undefined, { examBlocked: examBrief(examBlocked) });
   const session = await ensureSession(cls, user);
   const sessionCreated = Boolean(session && !cls.session);
 
@@ -537,6 +593,9 @@ export const markAttendance = asyncHandler(async (req, res) => {
 
   const now = new Date();
   const ops = [];
+  // The status each student actually ends up with in this period (after the
+  // OD / event rules) — what the exam auto-marking keys on.
+  const storedStatus = new Map();
   let created = 0;
   let changed = 0;
   ids.forEach((id) => {
@@ -548,7 +607,11 @@ export const markAttendance = asyncHandler(async (req, res) => {
       status = 'od';
     } else if (eventAbsentSet.has(String(id))) {
       status = 'absent';
+    } else if (status === 'od') {
+      // On Duty only ever comes from an approved OD request or a registered event.
+      throw new ApiError(422, 'On Duty can only come from an approved OD request or a registered event');
     }
+    storedStatus.set(id, status);
     if (!(id in prev)) {
       created += 1;
       ops.push({
@@ -574,7 +637,33 @@ export const markAttendance = asyncHandler(async (req, res) => {
       });
     }
   });
-  if (ops.length) await AttendanceRecord.bulkWrite(ops, { ordered: false });
+
+  // First post-exam period: snapshot the exam-blocked periods now (idempotent),
+  // then write this period's marks and the automatic Present marks in ONE
+  // transaction — either all of them are saved or none, and a failure is an
+  // error response, never a false success.
+  const examPlanned = await prepareExamAuto({ ...cls, session }, user);
+  const examAuto = await withTransaction(async (txn) => {
+    if (ops.length) await AttendanceRecord.bulkWrite(ops, { ordered: false, session: txn || undefined });
+    // The period-wise teaching record: who actually took this class, and when.
+    if (session) {
+      await AttendanceSession.updateOne(
+        { _id: session._id },
+        { $set: { takenBy: user._id, takenAt: now, ...(cls.cover ? { cover: cls.cover._id } : {}) } },
+        { session: txn || undefined }
+      );
+    }
+    if (!examPlanned) return null;
+    return applyExamAuto(examPlanned, {
+      statuses: storedStatus,
+      user,
+      day,
+      triggerSession: session?._id,
+      triggerPeriod: session?.period ?? period,
+      txn,
+    });
+  });
+  if (examAuto) reportExamAuto(req, examAuto, { subject, section, day, session });
 
   // Taking attendance in their own class today marks the faculty member
   // present for the whole day (never overriding an HOD/admin mark). A failure
@@ -613,6 +702,10 @@ export const markAttendance = asyncHandler(async (req, res) => {
 
   const touched = ids.filter((id) => !(id in prev) || prev[id] !== statusById.get(id));
   emitToUsers(touched, 'attendance:updated', { subjectId: String(subject._id), date: dayKey(day), period });
+  // Every staff screen showing this class refreshes live — on every save, so a
+  // second device of the same faculty member also catches up.
+  const klass = classOf(cls);
+  announceClassAttendance({ ...klass, semester: session?.semester ?? subject.semester, day }, user._id);
   const absentees = touched.filter((id) => statusById.get(id) === 'absent').map((id) => new mongoose.Types.ObjectId(id));
   warnLowAttendance(absentees, subject).catch((err) => console.error('[attendance] low-attendance warning failed:', err.message));
 
@@ -623,8 +716,45 @@ export const markAttendance = asyncHandler(async (req, res) => {
     unchanged: ids.length - created - changed,
     sessionId: session?._id || null,
     facultyMarkedPresent,
+    // Present in this post-exam period → the student's exam-blocked periods.
+    examAuto,
   });
 });
+
+/**
+ * Audit an automatic exam-period marking and hand any conflicts (existing
+ * records that were deliberately left alone) to the class's Class In-Charge
+ * for review. Best effort: the attendance itself is already committed.
+ */
+function reportExamAuto(req, auto, { subject, section, day, session }) {
+  const cls = `${session?.department || subject.department}${section ? `-${section}` : ''}`;
+  logActivity(req, 'attendance.exam_auto_present', {
+    entityType: 'exam',
+    entityId: auto.exam._id,
+    summary: `${auto.exam.subjectCode} exam ${dayKey(day)} ${cls}: trigger P${auto.triggerPeriod} → P${auto.periods.map((p) => p.period).join(',')}; ${auto.recordsCreated} set present, ${auto.reverted} withdrawn, ${auto.conflicts.length} conflict(s)`,
+  });
+  if (auto.updatedStudentIds.length) emitToUsers(auto.updatedStudentIds, 'attendance:updated', { date: dayKey(day) });
+  if (!auto.conflicts.length || !session) return;
+  User.find({
+    role: 'faculty',
+    isActive: true,
+    department: session.department,
+    section: session.section,
+    inChargeYear: session.year,
+    inChargeSemester: session.semester,
+  })
+    .distinct('_id')
+    .then((ids) =>
+      ids.length &&
+      notifyUsers(ids, {
+        type: 'attendance',
+        title: 'Exam-period attendance needs review',
+        message: `${auto.conflicts.length} exam-blocked period mark(s) on ${dayKey(day)} (${auto.exam.subjectCode} exam) already had attendance recorded and were left unchanged. Please review them.`,
+        link: '/attendance?tab=sessions',
+      })
+    )
+    .catch((err) => console.error('[attendance] exam conflict notice failed:', err.message));
+}
 
 // ── Faculty: today's periods with their live status ────────────────
 
@@ -635,27 +765,59 @@ export const markAttendance = asyncHandler(async (req, res) => {
  */
 export const getMyPeriods = asyncHandler(async (req, res) => {
   const now = campusNow();
-  const slots = await TimetableSlot.find({ faculty: req.user._id, dayOfWeek: now.weekday, isActive: true, isBreak: { $ne: true } })
+  // Their own scheduled periods plus any they cover today as a substitute.
+  const asSubstitute = await PeriodCover.find({ substitute: req.user._id, date: now.day, status: 'active', kind: 'substitute' }).lean();
+  const slots = await TimetableSlot.find({
+    $or: [
+      { faculty: req.user._id, dayOfWeek: now.weekday },
+      { _id: { $in: asSubstitute.map((c) => c.timetableSlot) } },
+    ],
+    isActive: true,
+    isBreak: { $ne: true },
+  })
     .populate('subject', 'name code')
+    .populate('faculty', 'name')
     .sort({ startTime: 1 })
     .lean();
+  const covers = await PeriodCover.find({ timetableSlot: { $in: slots.map((s) => s._id) }, date: now.day, status: 'active' })
+    .populate('substitute', 'name')
+    .lean();
+  const coverOf = Object.fromEntries(covers.map((c) => [String(c.timetableSlot), c]));
   const sessions = await AttendanceSession.find({ timetableSlot: { $in: slots.map((s) => s._id) }, date: now.day }).lean();
   const bySlot = Object.fromEntries(sessions.map((s) => [String(s.timetableSlot), s]));
   const marked = new Set(
     (await AttendanceRecord.find({ session: { $in: sessions.map((s) => s._id) } }).distinct('session')).map(String)
   );
   const holidays = slots.length ? await holidaysBetween(now.day, now.day) : [];
+  // One exam plan per distinct class taught today (not one query per period).
+  const plans = new Map();
+  for (const slot of slots) {
+    const cls = classOfSlot(slot);
+    const k = `${cls.department}|${cls.year}|${cls.section}|${cls.semester}`;
+    if (!plans.has(k)) plans.set(k, examPlan(cls, now.day));
+  }
+  const planOf = async (slot) => plans.get(`${slot.department}|${slot.year}|${slot.section}|${slot.semester}`);
+  const examOf = await Promise.all(
+    slots.map(async (slot) => {
+      const plan = await planOf(slot);
+      const window = bySlot[String(slot._id)] || slot;
+      const blocking = plan.map((p) => p.exam).find((e) => timesOverlap(e, window));
+      const trigger = plan.find((p) => p.post && sameId(p.post._id, slot._id));
+      return { examBlocked: examBrief(blocking) || null, examTrigger: trigger ? triggerApi(trigger) : null };
+    })
+  );
 
   res.json({
     date: dayKey(now.day),
     weekday: now.weekday,
     time: now.time,
-    periods: slots.map((slot) => {
+    periods: slots.map((slot, i) => {
       const session = bySlot[String(slot._id)];
       const window = session || slot;
       const holiday = holidays.find((h) => appliesTo(h, slot, now.day));
       return {
         holiday: toHolidayApi(holiday),
+        ...examOf[i],
         slotId: slot._id,
         period: window.period,
         startTime: window.startTime,
@@ -668,10 +830,26 @@ export const getMyPeriods = asyncHandler(async (req, res) => {
         room: window.room,
         status: periodStatus(window, now.time),
         marked: Boolean(session && marked.has(String(session._id))),
+        ...coverFields(coverOf[String(slot._id)], slot, req.user),
       };
     }),
   });
 });
+
+/**
+ * How a period is covered today, from the viewer's side: they are the
+ * substitute (`substituteFor`), someone else covers their period
+ * (`coveredBy`), or it is recorded as not conducted / pending verification.
+ */
+function coverFields(cover, slot, user) {
+  if (!cover) return { cover: null };
+  const mine = sameId(slot.faculty?._id || slot.faculty, user);
+  return {
+    cover: { kind: cover.kind, reason: cover.reason || null },
+    ...(cover.kind === 'substitute' && !mine ? { substituteFor: { _id: slot.faculty?._id || slot.faculty, name: slot.faculty?.name || null } } : {}),
+    ...(cover.kind === 'substitute' && mine ? { coveredBy: { _id: cover.substitute?._id || cover.substitute, name: cover.substitute?.name || null } } : {}),
+  };
+}
 
 // ── Summaries ──────────────────────────────────────────────────────
 
@@ -741,6 +919,11 @@ export const getStudentAttendance = asyncHandler(async (req, res) => {
   const student = await User.findById(req.params.id).select('name rollNo avatar department section semester year role').lean();
   if (!student || !STUDENT_ROLES.includes(student.role)) throw new ApiError(404, 'Student not found');
   const query = { ...req.query };
+
+  // An additional Attendance → view policy covering the student's department: the full record.
+  if (grantCovers(staffAttendanceGrant(req.user, 'view'), student.department)) {
+    return res.json({ student, ...(await studentSummary(student._id, query)) });
+  }
 
   if (req.user.role === 'hod' && student.department !== ownDepartment(req.user)) {
     throw new ApiError(403, 'This student is outside your department');
@@ -1168,8 +1351,11 @@ export const listSessions = asyncHandler(async (req, res) => {
   // The same rule the server enforces on save: admin any date, HOD today in
   // their department, faculty only through their live timetable period.
   const todayDay = campusNow().day.getTime();
+  const writeGrant = staffAttendanceGrant(req.user, 'create');
   const editable = (s) =>
-    req.user.role === 'admin' || (req.user.role === 'hod' && s.department === req.user.department && new Date(s.date).getTime() === todayDay);
+    req.user.role === 'admin' ||
+    grantCovers(writeGrant, s.department) ||
+    (req.user.role === 'hod' && s.department === req.user.department && new Date(s.date).getTime() === todayDay);
   res.json(sessions.map((s) => ({ ...s, editable: editable(s) })));
 });
 
@@ -1180,10 +1366,12 @@ export const getSubjectAttendance = asyncHandler(async (req, res) => {
   if (!subject) throw new ApiError(404, 'Subject not found');
   // Department is never a grant for faculty: they must actually be assigned
   // this subject, and staffScope then limits them to their own sections of it.
-  if (req.user.role === 'faculty' && !isAssigned(subject, req.user)) {
+  // An additional Attendance → view policy for the subject's department is such a grant.
+  const viaGrant = grantCovers(staffAttendanceGrant(req.user, 'view'), subject.department);
+  if (!viaGrant && req.user.role === 'faculty' && !isAssigned(subject, req.user)) {
     throw new ApiError(403, 'Not authorized for this subject');
   }
-  if (req.user.role === 'hod' && subject.department !== ownDepartment(req.user)) {
+  if (!viaGrant && req.user.role === 'hod' && subject.department !== ownDepartment(req.user)) {
     throw new ApiError(403, 'This subject is outside your department');
   }
 
@@ -1275,10 +1463,31 @@ export const getLowAttendance = asyncHandler(async (req, res) => {
   // Either way the filters only ever intersect the authorized scope.
   const narrow = narrowFromQuery(req.query);
   if (req.user.role === 'faculty') narrow.department = undefined;
-  const df = dayFilter(resolveRange(req.query, 'all'));
+  const window = resolveRange(req.query, 'all');
+  const df = dayFilter(window);
   if (df) narrow.date = df;
-  const match = scopedMatch(await staffScope(req.user), narrow);
+  const scope = await staffScope(req.user);
+  const match = scopedMatch(scope, narrow);
   const threshold = Math.min(100, Math.max(1, Number(req.query.threshold) || LOW_ATTENDANCE_THRESHOLD));
+
+  // College-wide, un-narrowed, up to today (the dashboard case): the per-student
+  // totals are exactly what services/attendanceTotals keeps warm, so use them
+  // instead of re-reading the whole semester on every live refresh.
+  const upToToday = !window.to || window.to.getTime() === campusNow().day.getTime();
+  if (!Object.keys(scope).length && !narrow.section && !narrow.department && !narrow.subject && upToToday) {
+    const totals = await studentTotals(window.from);
+    const low = [...totals]
+      .map(([id, t]) => ({ _id: id, total: t.total, present: t.present, percentage: percentage(t.present, t.total) }))
+      .filter((r) => r.percentage < threshold)
+      .sort((a, b) => a.percentage - b.percentage)
+      .slice(0, 200);
+    const people = await User.find({ _id: { $in: low.map((r) => r._id) } }).select('name rollNo avatar section department year').lean();
+    const byId = new Map(people.map((p) => [String(p._id), p]));
+    return res.json({
+      threshold,
+      students: low.filter((r) => byId.has(r._id)).map((r) => ({ ...r, _id: byId.get(r._id)._id, student: byId.get(r._id) })),
+    });
+  }
 
   const rows = await AttendanceRecord.aggregate([
     { $match: match },
@@ -1489,7 +1698,7 @@ export const listCorrections = asyncHandler(async (req, res) => {
       } else {
         filter.subject = { $in: await Subject.find({ department: ownDepartment(req.user), semester: { $nin: [1, 2] }, isActive: true }).distinct('_id') };
       }
-    } else if (!COLLEGE_WIDE_ROLES.includes(req.user.role)) {
+    } else if (!ACADEMIC_OVERSIGHT_ROLES.includes(req.user.role)) {
       throw new ApiError(403, 'You cannot view attendance corrections');
     }
   }
@@ -1558,6 +1767,8 @@ export const reviewCorrection = asyncHandler(async (req, res) => {
       }
     );
     emitToUsers([request.student], 'attendance:updated', { subjectId: String(request.subject), date: dayKey(request.date), period: request.period });
+    const student = await User.findById(request.student).select('department year section semester').lean();
+    if (student) announceClassAttendance({ ...student, day: request.date }, req.user._id);
   }
 
   logActivity(req, `attendance.correction_${action}`, { entityType: 'attendance', entityId: request._id });

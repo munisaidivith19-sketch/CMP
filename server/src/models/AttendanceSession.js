@@ -30,6 +30,13 @@ const attendanceSessionSchema = new Schema(
     room: { type: String, trim: true, maxlength: 60 },
 
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+
+    // The period-wise teaching record: who actually submitted this class's
+    // attendance (a substitute when one covered it) and when. `faculty`
+    // above stays the SCHEDULED faculty member.
+    takenBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    takenAt: Date,
+    cover: { type: Schema.Types.ObjectId, ref: 'PeriodCover' },
   },
   { timestamps: true, toJSON: { versionKey: false } }
 );
@@ -37,6 +44,7 @@ const attendanceSessionSchema = new Schema(
 // One session per timetable entry per day.
 attendanceSessionSchema.index({ timetableSlot: 1, date: 1 }, { unique: true, name: 'unique_session' });
 attendanceSessionSchema.index({ faculty: 1, date: -1 });
+attendanceSessionSchema.index({ takenBy: 1, date: -1 });
 attendanceSessionSchema.index({ department: 1, year: 1, section: 1, semester: 1, date: -1 }, { name: 'class_sessions' });
 
 export default mongoose.model('AttendanceSession', attendanceSessionSchema);

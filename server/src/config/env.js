@@ -183,6 +183,32 @@ env.cloudinary.enabled = Boolean(
   env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret
 );
 
+/**
+ * Skill Wallet (projects, NPTEL certificates, links, innovation gallery).
+ * Certificates and private project images are kept in PRIVATE storage —
+ * never under the publicly served /uploads folder — and downloaded through
+ * short-lived signed URLs that are re-authorized on every download.
+ */
+env.skillWallet = {
+  // NPTEL certificate uploads (input limits; the stored copy is always WebP).
+  certMaxUploadMb: num('SKILL_WALLET_CERT_MAX_MB', 5, { min: 1, max: 20 }),
+  projectImageMaxUploadMb: num('SKILL_WALLET_IMAGE_MAX_MB', 5, { min: 1, max: 20 }),
+  maxImagePixels: num('SKILL_WALLET_MAX_IMAGE_PIXELS', 40_000_000, { min: 1_000_000, max: 100_000_000 }),
+  maxImageDimension: num('SKILL_WALLET_MAX_IMAGE_DIMENSION', 8000, { min: 500, max: 16384 }),
+  minImageDimension: num('SKILL_WALLET_MIN_IMAGE_DIMENSION', 64, { min: 1, max: 2000 }),
+  webpQuality: num('SKILL_WALLET_WEBP_QUALITY', 85, { min: 40, max: 100 }),
+  // "disk" (default outside production) or "db" (default in production, whose disk is ephemeral).
+  privateStorage: ['disk', 'db'].includes(process.env.SKILL_WALLET_PRIVATE_STORAGE) ? process.env.SKILL_WALLET_PRIVATE_STORAGE : isProd ? 'db' : 'disk',
+  privateDir: process.env.SKILL_WALLET_PRIVATE_DIR || 'private-uploads',
+  // Signed asset URLs: lifetime and key (derived from the access secret when unset).
+  assetUrlMinutes: num('SKILL_WALLET_ASSET_URL_MINUTES', 10, { min: 1, max: 120 }),
+  assetUrlSecret: (process.env.SKILL_WALLET_ASSET_URL_SECRET || '').trim(),
+  inviteExpiryDays: num('SKILL_WALLET_INVITE_EXPIRY_DAYS', 14, { min: 1, max: 90 }),
+  maxTeamSize: num('SKILL_WALLET_MAX_TEAM_SIZE', 8, { min: 2, max: 20 }),
+  // Pending (never attached) project images older than this are removed.
+  orphanAssetHours: num('SKILL_WALLET_ORPHAN_ASSET_HOURS', 24, { min: 1, max: 720 }),
+};
+
 env.alumni = {
   jobsRequireApproval: process.env.ALUMNI_JOBS_REQUIRE_APPROVAL === 'true',
   eventsRequireApproval: process.env.ALUMNI_EVENTS_REQUIRE_APPROVAL !== 'false',

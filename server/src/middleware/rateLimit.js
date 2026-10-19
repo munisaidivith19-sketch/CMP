@@ -8,7 +8,30 @@ export const apiLimiter = rateLimit({
   limit: 1000,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  // The signed vehicle-tracker webhook reports for every bus from one address
+  // and has its own limiter (trackerLimiter) below.
+  skip: (req) => req.path.startsWith('/transport/tracker/'),
   message: json('Too many requests, please slow down'),
+});
+
+// Bus location from a trip phone: per signed-in user (not per IP — many phones
+// share a campus NAT). One fix every 2 s for an hour fits comfortably.
+export const locationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.LOCATION_RATE_LIMIT) || 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user?._id ? `user:${req.user._id}` : req.ip),
+  message: json('Location updates are arriving too fast'),
+});
+
+// Vehicle-tracker webhook: one gateway reporting for the whole fleet.
+export const trackerLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.TRACKER_RATE_LIMIT) || 1200,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: json('Too many tracker requests'),
 });
 
 export const authLimiter = rateLimit({
@@ -52,6 +75,47 @@ export const uploadLimiter = rateLimit({
 });
 
 // Password-reset requests: generous enough for typos, tight enough to stop mail bombing.
+// Super Admin password re-entry: per account, so a stolen session cannot be
+// used to brute-force the password through /super-admin/reauth.
+export const reauthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user?._id ? `reauth:${req.user._id}` : req.ip),
+  message: json('Too many password confirmations. Try again in a few minutes.'),
+});
+
+// Sensitive Super Admin writes (admin accounts, policies, resets, emergency).
+export const superAdminWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user?._id ? `sa:${req.user._id}` : req.ip),
+  message: json('Too many administrative changes. Please wait a few minutes.'),
+});
+
+// SOC: diagnostic runs, verification and forced health checks, per Super Admin.
+export const socRunLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.SOC_RUN_RATE_LIMIT) || 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `soc:${req.user?._id || req.ip}`,
+  message: json('Too many diagnostic runs. Wait a few minutes and try again.'),
+});
+
+// Client error reports, per signed-in user (the web app also deduplicates and caps them).
+export const clientErrorLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `client-err:${req.user?._id || req.ip}`,
+  message: json('Too many error reports.'),
+});
+
 export const passwordResetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
@@ -97,6 +161,31 @@ export const passwordResetSubmitLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: json('Too many attempts. Request a new reset link and try again later.'),
+});
+
+// ── Skill Wallet ─────────────────────────────────────────────────────
+// Per signed-in user (a hostel shares one IP), configurable from .env.
+const perUser = (prefix, windowMs, limit, message) =>
+  rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => `${prefix}:${req.user?._id || req.ip}`,
+    message: json(message),
+  });
+export const skillWalletWriteLimiter = perUser('sw-write', 60 * 1000, Number(process.env.SKILL_WALLET_WRITE_LIMIT) || 60, 'You are making changes too fast. Please wait a moment.');
+export const skillWalletUploadLimiter = perUser('sw-upload', 10 * 60 * 1000, Number(process.env.SKILL_WALLET_UPLOAD_LIMIT) || 20, 'Upload limit reached. Try again in a few minutes.');
+export const skillWalletInviteLimiter = perUser('sw-invite', 10 * 60 * 1000, Number(process.env.SKILL_WALLET_INVITE_LIMIT) || 20, 'Too many invitations. Try again in a few minutes.');
+export const skillWalletCommentLimiter = perUser('sw-comment', 5 * 60 * 1000, Number(process.env.SKILL_WALLET_COMMENT_LIMIT) || 20, 'You are commenting too fast. Please wait a moment.');
+export const skillWalletContactLimiter = perUser('sw-contact', 60 * 60 * 1000, Number(process.env.SKILL_WALLET_CONTACT_LIMIT) || 10, 'Too many contact requests. Try again later.');
+// Public gallery and signed file downloads (no session: per IP).
+export const skillWalletPublicLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.SKILL_WALLET_PUBLIC_LIMIT) || 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: json('Too many requests, please slow down'),
 });
 
 // ── JNN Study Assistant ──────────────────────────────────────────────

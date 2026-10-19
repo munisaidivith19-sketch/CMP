@@ -6,11 +6,13 @@ import { useDeleteSlotMutation, useGetMyScheduleQuery, useGetTimetableQuery } fr
 import { selectUser } from '../../features/authSlice';
 import { Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
-import { ACADEMIC_YEARS, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, SECTIONS, TIMETABLE_EDITORS, YEAR_LABELS, currentSemesterOfYear, isBranchHod, isFirstYearHod, semestersOfYear } from '../../utils/constants';
+import { ACADEMIC_YEARS, COE, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, SECTIONS, TIMETABLE_EDITORS, YEAR_LABELS, currentSemesterOfYear, isBranchHod, isFirstYearHod, semestersOfYear } from '../../utils/constants';
 import MySchedule from './MySchedule';
 import MasterTimetable from './MasterTimetable';
 import FacultyAvailability from './FacultyAvailability';
 import EditTimetable from './EditTimetable';
+import ExamTimetable from './ExamTimetable';
+import StaffAttendance from '../attendance/StaffAttendance';
 import { errMsg } from '../../utils/format';
 import SlotModal from './SlotModal';
 import { DAYS, DAY_SHORT, SlotCard, WeekGrid, slotState, to12h, todayName, useSlotsByDay } from './TimetableGrid';
@@ -44,7 +46,10 @@ export default function Timetable() {
   const isBrH = isBranchHod(me);
   const isFaculty = me.role === 'faculty';
   const isEditor = TIMETABLE_EDITORS.includes(me.role);
-  const [view, setView] = useState(isHod ? 'master' : 'today');
+  // The Controller of Examinations works only here: Exam Timetable, Class
+  // Timetable (read-only, campus-wide) and Attendance (read-only, campus-wide).
+  const isCoe = me.role === COE;
+  const [view, setView] = useState(isCoe ? 'exams' : isHod ? 'master' : 'today');
   const [day, setDay] = useState(DAYS.includes(todayName()) ? todayName() : 'monday');
   // Faculty and HOD accounts get a "My Schedule" view of their own teaching
   // periods. A faculty member has no department / year / section selector at
@@ -83,7 +88,9 @@ export default function Timetable() {
           semester: applied.semester || undefined,
         }
       : undefined;
-  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params, { skip: view === 'mine' || view === 'master' || view === 'edit' });
+  const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params, {
+    skip: ['mine', 'master', 'edit', 'exams', 'attendance'].includes(view),
+  });
   // The semesters a faculty member actually teaches, so the one dropdown they
   // have never offers a semester they are not assigned to. Taken from the
   // unfiltered schedule, so choosing one does not shrink the list.
@@ -140,7 +147,15 @@ export default function Timetable() {
       icon={CalendarClock}
       title="Timetable"
       subtitle={
-        isStudent
+        view === 'exams'
+          ? isCoe
+            ? 'Exam Timetable · campus-wide'
+            : isHod
+              ? `Exam Timetable · ${isFYH ? 'First Year (All Departments)' : me.department || 'Department'}`
+              : 'Exam Timetable'
+          : view === 'attendance' && isCoe
+            ? 'Attendance · campus-wide, read-only'
+            : isStudent
           ? me.section
             ? `${me.department} · ${YEAR_LABELS[me.year] || ''} · Section ${me.section}${me.semester ? ` · Semester ${me.semester}` : ''}`
             : 'Your class schedule'
@@ -175,13 +190,22 @@ export default function Timetable() {
             </Button>
           )}
           <Tabs
-            tabs={[
-              ...(isHod ? [{ value: 'master', label: 'Master Timetable' }] : []),
-              ...(isHod ? [{ value: 'faculty-availability', label: 'Faculty Availability' }] : []),
-              { value: 'today', label: 'Today' },
-              { value: 'week', label: 'Week' },
-              ...(hasMySchedule ? [{ value: 'mine', label: 'My Schedule' }] : []),
-            ]}
+            tabs={
+              isCoe
+                ? [
+                    { value: 'exams', label: 'Exam Timetable' },
+                    { value: 'week', label: 'Class Timetable' },
+                    { value: 'attendance', label: 'Attendance' },
+                  ]
+                : [
+                    ...(isHod ? [{ value: 'master', label: 'Master Timetable' }] : []),
+                    ...(isHod ? [{ value: 'faculty-availability', label: 'Faculty Availability' }] : []),
+                    { value: 'today', label: 'Today' },
+                    { value: 'week', label: 'Week' },
+                    ...(hasMySchedule ? [{ value: 'mine', label: 'My Schedule' }] : []),
+                    { value: 'exams', label: 'Exam Timetable' },
+                  ]
+            }
             value={view}
             onChange={setView}
           />
@@ -218,6 +242,22 @@ export default function Timetable() {
       <div className="space-y-5">
         {header}
         <EditTimetable />
+      </div>
+    );
+  }
+  if (view === 'exams') {
+    return (
+      <div className="space-y-5">
+        {header}
+        <ExamTimetable me={me} />
+      </div>
+    );
+  }
+  if (view === 'attendance' && isCoe) {
+    return (
+      <div className="space-y-5">
+        {header}
+        <StaffAttendance />
       </div>
     );
   }

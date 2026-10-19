@@ -3,6 +3,7 @@ import Event from '../models/Event.js';
 import Discussion from '../models/Discussion.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../utils/http.js';
 import { persistFile } from '../utils/storage.js';
+import { convertAvatarToWebp } from '../services/skillWallet/imagePipeline.js';
 import { logActivity } from '../utils/activity.js';
 import { canViewProfile, peopleScopeFilter, studentClass } from '../utils/peopleScope.js';
 import { chatContactFilter } from '../utils/chatScope.js';
@@ -166,7 +167,10 @@ export const updateMe = asyncHandler(async (req, res) => {
 });
 
 export const uploadAvatar = asyncHandler(async (req, res) => {
-  const file = await persistFile(req.file, 'image');
+  if (!req.file) throw new ApiError(400, 'No file uploaded');
+  // Strict: only PNG / JPEG / WebP are accepted and what is stored is always a re-encoded WebP.
+  const webp = await convertAvatarToWebp(req.file.buffer);
+  const file = await persistFile({ buffer: webp.buffer, size: webp.size, originalname: 'avatar.webp', mimetype: webp.mimeType }, 'image');
   req.user.avatar = file.url;
   await req.user.save({ validateModifiedOnly: true });
   const user = await User.findById(req.user._id).populate('clubs', 'name slug logo');

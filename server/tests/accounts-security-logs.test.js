@@ -10,7 +10,7 @@ import { testOtpProvider } from '../src/services/otp/providers/testOtpProvider.j
 import { collegeSmsProvider } from '../src/services/otp/providers/collegeSmsProvider.js';
 
 let ctx;
-let admin, admin2, cic, cicOther, plainFaculty, hod, principal, studentA, studentB, otherYear;
+let admin, admin2, cic, cicOther, plainFaculty, hod, principal, studentA, studentB, otherYear, superAdmin;
 const NON_ADMIN_ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'dean', 'ao', 'chairman', 'warden', 'security', 'alumni'];
 const nonAdmins = {};
 let n = 0;
@@ -46,6 +46,9 @@ before(async () => {
   studentA = { u: sa, ...(await ctx.loginWeb(sa)) };
   studentB = { u: sb, ...(await ctx.loginWeb(sb)) };
   otherYear = { u: oy };
+  // Parent-OTP cards live in the Super Admin console.
+  const su = await make({ role: 'super_admin', name: 'Platform Owner' });
+  superAdmin = { u: su, ...(await ctx.loginWeb(su)) };
   for (const role of NON_ADMIN_ROLES) {
     const extra = role === 'faculty' || role === 'hod' ? { department: 'CSE' } : {};
     const u = await make({ role, ...extra });
@@ -305,7 +308,18 @@ test('security records are append-only at the model level', async () => {
 
 // ── Security & Logs: Admin only ─────────────────────────────────────
 
-const SECURITY_PATHS = ['/admin/security/summary', '/admin/security/logs', '/admin/security/otps'];
+const SECURITY_PATHS = ['/admin/security/summary', '/admin/security/logs'];
+
+test('parent-OTP cards are Super Admin only; the Admin panel no longer has them', async () => {
+  assert.equal((await req('GET', '/super-admin/security/otps')).status, 401);
+  for (const who of [admin, cic, principal, studentA, ...Object.values(nonAdmins)]) {
+    const res = await req('GET', '/super-admin/security/otps', who);
+    assert.equal(res.status, 403, who.u.role);
+    assert.equal(res.body.items, undefined);
+  }
+  assert.equal((await req('GET', '/admin/security/otps', admin)).status, 404);
+  assert.equal((await req('GET', '/super-admin/security/otps', superAdmin)).status, 200);
+});
 
 test('every Security & Logs API is Admin-only: all other roles get 403, anonymous 401', async () => {
   for (const path of SECURITY_PATHS) {
@@ -379,7 +393,7 @@ async function newPass(student) {
 const sendOtp = (id, who = cic, body) => ctx.request('POST', `/gate-pass/${id}/parent-otp`, { token: who.token, body });
 const verifyOtp = (id, otp, who = cic) => ctx.request('POST', `/gate-pass/${id}/parent-otp/verify`, { token: who.token, body: { otp } });
 const latestOtp = (id) => ctx.models.OutpassOtp.findOne({ gatePass: id }).sort({ createdAt: -1 });
-const otpCards = async (qs = '') => (await req('GET', `/admin/security/otps${qs}`, admin)).body;
+const otpCards = async (qs = '') => (await req('GET', `/super-admin/security/otps${qs}`, superAdmin)).body;
 
 test('OTP: generated with SMS disabled, shown as its own card with every field, newest first; verification still works', async () => {
   assert.equal(env.otp.smsEnabled, false);
@@ -426,7 +440,7 @@ test('OTP: generated with SMS disabled, shown as its own card with every field, 
   assert.ok(names.includes('OTP_CREATED') && names.includes('OTP_VERIFIED'));
   assert.ok(!names.includes('OTP_SENT'), 'OTP_SENT only when SMS is enabled');
   assert.ok(!JSON.stringify(life).includes(`"${plain}"`), 'OTP value never in a security record');
-  assert.equal((await logs({ event: 'OTP_VIEWED', actor: admin.u._id })).length > 0, true);
+  assert.equal((await logs({ event: 'OTP_VIEWED', actor: superAdmin.u._id })).length > 0, true);
 });
 
 test('OTP: expired, locked, failed and replaced statuses come from the backend lifecycle', async () => {
@@ -464,7 +478,7 @@ test('OTP: expired, locked, failed and replaced statuses come from the backend l
   assert.ok((await otpCards('?q=23CSE602')).items.every((c) => c.student.rollNo === '23CSE602'));
   assert.equal((await otpCards('?department=ECE')).total, 0);
   assert.ok((await otpCards('?department=CSE&year=3&section=a')).total >= 3);
-  assert.equal((await req('GET', '/admin/security/otps?status=hacked', admin)).status, 422);
+  assert.equal((await req('GET', '/super-admin/security/otps?status=hacked', superAdmin)).status, 422);
 
   await settle();
   const events = (await logs({ event: /^OTP_/ })).map((l) => l.event);

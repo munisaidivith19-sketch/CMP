@@ -21,6 +21,18 @@ const attendanceRecordSchema = new Schema(
     markedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     markedAt: { type: Date, default: Date.now },
 
+    // How the record was written. Absent = marked by a person (the regular
+    // workflow). AUTO_EXAM_PERIOD_PRESENT = a regular period blocked by a
+    // published exam, set Present because the student was marked Present in
+    // the first regular period after that exam (`triggerSession` /
+    // `triggerPeriod`); `markedBy` is the person who marked that trigger
+    // period. This is still REGULAR period attendance — no exam-attendance
+    // record is ever created.
+    source: { type: String, enum: ['AUTO_EXAM_PERIOD_PRESENT'] },
+    exam: { type: Schema.Types.ObjectId, ref: 'Exam' },
+    triggerSession: { type: Schema.Types.ObjectId, ref: 'AttendanceSession' },
+    triggerPeriod: { type: Number, min: 1, max: 12 },
+
     // Correction tracking.
     correctedFrom: { type: String, enum: ['present', 'absent', 'od'] },
     correctedBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -54,5 +66,11 @@ attendanceRecordSchema.index(
 attendanceRecordSchema.index({ subject: 1, date: 1, section: 1 });
 attendanceRecordSchema.index({ department: 1, date: 1 });
 attendanceRecordSchema.index({ markedBy: 1, date: -1 });
+// Per-student totals over a date range (dashboards, low attendance): covers
+// student + date + status, so those aggregations read the index only and never
+// fetch the documents themselves.
+attendanceRecordSchema.index({ student: 1, date: 1, status: 1 }, { name: 'student_date_status' });
+// Automatic exam-period records of one exam (idempotency checks, reverts).
+attendanceRecordSchema.index({ exam: 1, student: 1 }, { sparse: true });
 
 export default mongoose.model('AttendanceRecord', attendanceRecordSchema);

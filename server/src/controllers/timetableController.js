@@ -5,11 +5,14 @@ import { ApiError, asyncHandler, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { emitToRoles } from '../config/socket.js';
 import { campusParts, toDay } from '../utils/dates.js';
-import { COLLEGE_WIDE_ROLES, FIRST_YEAR_HOD_DEPT, TIMETABLE_VIEW_ROLES, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
+import { ACADEMIC_OVERSIGHT_ROLES, FIRST_YEAR_HOD_DEPT, TIMETABLE_VIEW_ROLES, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
 import { STUDENT_ROLES, classInChargeFilter, facultyClassInChargeScope, ownDepartment } from '../utils/academicScope.js';
 import { annotateWeek, findHoliday, toApi as toHolidayApi } from '../services/holidays.js';
 import { clock } from '../utils/clock.js';
 import { assertPeriodOrder, spareBreakPeriod, suggestClassPeriod } from '../services/timetablePeriods.js';
+import { notifyUsers } from '../utils/notify.js';
+
+const titleDay = (d) => String(d || '').charAt(0).toUpperCase() + String(d || '').slice(1);
 
 // Warden/Security must never receive a timetable event, even a bare
 // department/section identifier — emit only to the roles that can see timetables.
@@ -49,8 +52,8 @@ function assertOwnDepartment(user, department, year, semester) {
  *   filtered by faculty. No in-charge class → nothing.
  * - HOD: their own department, optionally narrowed to a year/section/faculty.
  *   `view=mine` narrows it further to the HOD's own teaching periods.
- * - Admin, Principal, Chairman, Dean, AO (COLLEGE_WIDE_ROLES): any class in
- *   any department; `view=mine` narrows to their own periods.
+ * - Admin, Principal, Chairman, Dean, AO and COE (ACADEMIC_OVERSIGHT_ROLES):
+ *   any class in any department; `view=mine` narrows to their own periods.
  * - Anything else (Security, Warden): no timetable scope at all.
  */
 async function timetableReadScope(user, query = {}) {
@@ -114,9 +117,9 @@ async function timetableReadScope(user, query = {}) {
     return filter;
   }
 
-  if (!COLLEGE_WIDE_ROLES.includes(user.role)) return { _id: null };
+  if (!ACADEMIC_OVERSIGHT_ROLES.includes(user.role)) return { _id: null };
 
-  // College-wide authorities: a free lookup across every department.
+  // College-wide authorities and the COE: a free lookup across every department.
   if (query.view === 'mine') filter.faculty = user._id;
   else if (query.faculty) filter.faculty = query.faculty;
   if (query.section) filter.section = String(query.section).toUpperCase();
@@ -171,7 +174,7 @@ export const listSubjects = asyncHandler(async (req, res) => {
       filter.department = ownDepartment(req.user);
       filter.semester = sem ?? { $nin: [1, 2] };
     }
-  } else if (!COLLEGE_WIDE_ROLES.includes(req.user.role)) {
+  } else if (!ACADEMIC_OVERSIGHT_ROLES.includes(req.user.role)) {
     return res.json([]);
   }
 
@@ -886,6 +889,15 @@ export const updateSlot = asyncHandler(async (req, res) => {
   });
   broadcastTimetable(before);
   if (before.section !== slot.section) broadcastTimetable({ section: slot.section, department: slot.department });
+  // The faculty whose schedule changed (before and after) are told directly.
+  if (diff.length) {
+    notifyUsers([prior.faculty, slot.faculty].filter(Boolean), {
+      type: 'timetable',
+      title: 'Timetable changed',
+      message: `${titleDay(slot.dayOfWeek)} P${slot.period} · ${slot.department} Year ${slot.year}${slot.section ? ` Sec ${slot.section}` : ''} is now ${slot.startTime}–${slot.endTime}${slot.room ? ` in ${slot.room}` : ''}.`,
+      link: '/timetable',
+    }, { category: 'timetable', eventKey: `timetable:${slot._id}:${slot.updatedAt?.getTime?.() || Date.now()}`, exclude: req.user._id });
+  }
   const [, populated] = await Promise.all([linked, populateSlot(TimetableSlot.findById(slot._id))]);
   res.json(populated);
 });
@@ -897,5 +909,13 @@ export const deleteSlot = asyncHandler(async (req, res) => {
   const slot = await TimetableSlot.findOneAndUpdate({ _id: req.params.id, isActive: true }, { isActive: false });
   logActivity(req, 'timetable.delete', { entityType: 'timetable', entityId: slot._id, summary: `${slot.section} ${slot.dayOfWeek} P${slot.period}` });
   broadcastTimetable({ section: slot.section, department: slot.department });
+  if (slot.faculty) {
+    notifyUsers([slot.faculty], {
+      type: 'timetable',
+      title: 'Period removed from your timetable',
+      message: `${titleDay(slot.dayOfWeek)} P${slot.period} (${slot.startTime}) · ${slot.department} Year ${slot.year}${slot.section ? ` Sec ${slot.section}` : ''}.`,
+      link: '/timetable',
+    }, { category: 'timetable', eventKey: `timetable:${slot._id}:removed`, exclude: req.user._id });
+  }
   res.json({ message: 'Slot removed' });
 });

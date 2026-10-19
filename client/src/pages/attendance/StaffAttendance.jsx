@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { CoverManager, EarlyExitButton, LowAttendanceMonitor, StaffReport } from './StaffMonitoring';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import {
@@ -57,11 +58,22 @@ import {
   useGetPendingODLeaveReviewsQuery,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
+import { useGetMyPoliciesQuery } from '../../services/superAdmin';
+import { STAFF_GRANT_ROLES, attendanceGrantOf } from '../../utils/delegation';
+
+/** This account's additional Attendance policy, if any (server-enforced; only shapes the UI). */
+function useAttendanceGrant(me) {
+  const { data } = useGetMyPoliciesQuery(undefined, { skip: !STAFF_GRANT_ROLES.includes(me?.role) });
+  return attendanceGrantOf(data);
+}
 import {
   ACADEMIC_YEARS,
   ATTENDANCE_READ_ONLY,
+  ACADEMIC_OVERSIGHT,
   COLLEGE_ATTENDANCE_DASHBOARD,
-  COLLEGE_WIDE,
+  COVER_MANAGERS,
+  OFFICE,
+  STAFF_REPORT_ROLES,
   DEPARTMENTS,
   FIRST_YEAR_HOD_DEPT,
   SECTIONS,
@@ -122,6 +134,66 @@ const PERIOD_STATUS = {
   COMPLETED: { color: 'neutral', label: 'Completed', badgeClass: 'bg-white/5 text-ink-muted border border-white/10' },
 };
 
+/* ── Live attendance feed ───────────────────────────────────────── */
+
+const ago = (t) => {
+  const s = Math.max(0, Math.round((Date.now() - new Date(t).getTime()) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  return `${Math.floor(s / 3600)} h ago`;
+};
+
+/**
+ * Today's attendance as it is taken: every class saved in this account's scope
+ * (faculty: their own; HOD: their department; principal / COE: the college),
+ * newest first. The list is re-read from the server whenever a live
+ * `attendance:updated` event arrives (and after a reconnect), so it is always
+ * the server's data — never a client-side guess.
+ */
+function LiveAttendanceFeed() {
+  const { data = [], isLoading } = useGetAttendanceSessionsQuery({ range: 'day' });
+  const [, tick] = useState(0);
+  // Keep the "x min ago" labels fresh.
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const rows = useMemo(() => [...data].sort((a, b) => new Date(b.markedAt) - new Date(a.markedAt)).slice(0, 8), [data]);
+  const newest = rows[0]?.markedAt;
+  if (isLoading || !rows.length) return null;
+
+  return (
+    <Card className="p-4 border border-white/10 shadow-lg">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" aria-hidden />
+          <h4 className="text-sm font-bold tracking-tight">Live attendance today</h4>
+        </div>
+        <span className="text-xs text-ink-muted">{data.length} class{data.length === 1 ? '' : 'es'} marked</span>
+      </div>
+      <ul className="divide-y divide-white/10" aria-live="polite">
+        {rows.map((s) => (
+          <li
+            key={`${s.subject?._id}-${s.section}-${s.period}`}
+            className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs', s.markedAt === newest && Date.now() - new Date(newest).getTime() < 60000 && 'animate-fade-up')}
+          >
+            <span className="w-16 shrink-0 font-bold text-primary-500">P{s.period}{s.snapshot?.startTime ? ` · ${to12h(s.snapshot.startTime)}` : ''}</span>
+            <span className="min-w-0 flex-1 truncate font-semibold">
+              {s.subject?.code} · {s.department}
+              {s.section ? ` · Sec ${s.section}` : ''}
+              {s.snapshot?.facultyName ? <span className="font-normal text-ink-muted"> · {s.snapshot.facultyName}</span> : null}
+            </span>
+            <span className={cn('font-bold', s.percentage >= 75 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+              {s.present}/{s.total} present
+            </span>
+            <span className="w-20 text-right text-ink-muted">{ago(s.markedAt)}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 /* ── Hero Dashboard Component ───────────────────────────────────── */
 function AttendanceHeroDashboard({ onQuickMark }) {
   const me = useSelector(selectUser);
@@ -148,7 +220,10 @@ function AttendanceHeroDashboard({ onQuickMark }) {
   const { data: summaryData } = useGetAttendanceSummaryQuery(summaryParams, { skip: deptCards || isFaculty });
 
   // 4. Today's periods (for faculty or HOD quick view)
-  const { data: periodsData } = useGetMyPeriodsQuery(undefined, { pollingInterval: 30000 });
+  // Only roles that teach periods have them (the API refuses everyone else), so
+  // nobody else polls it. The poll keeps UPCOMING / ACTIVE / COMPLETED current.
+  const teaches = isFaculty || isHod || isAdmin;
+  const { data: periodsData } = useGetMyPeriodsQuery(undefined, { pollingInterval: 30000, skip: !teaches });
   const todayPeriods = periodsData?.periods || [];
 
   // 5. Faculty compliance (unmarked faculty today in HOD's department)
@@ -230,6 +305,15 @@ function AttendanceHeroDashboard({ onQuickMark }) {
         )}
       </div>
 
+      <LiveAttendanceFeed />
+
+      {/* Teaching staff: emergency early exit (HOD-approved; today's attendance is kept). */}
+      {(isFaculty || isHod) && (
+        <div className="flex justify-end">
+          <EarlyExitButton />
+        </div>
+      )}
+
       {/* Faculty Compliance Alert (For HOD/Admin) */}
       {(isHod || isAdmin) && unmarkedFaculty.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-4 text-sm text-amber-800 dark:text-amber-300">
@@ -274,8 +358,10 @@ function AttendanceHeroDashboard({ onQuickMark }) {
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
             {todayPeriods.map((p) => {
               const st = PERIOD_STATUS[p.status] || PERIOD_STATUS.UPCOMING;
-              // A holiday cancels the period: never offer to take attendance.
-              const isActive = p.status === 'ACTIVE' && !p.holiday;
+              // A holiday or an exam cancels the period: never offer to take attendance.
+              const exam = !p.holiday && p.examBlocked;
+              // A period someone else covers, or that was not conducted, is not theirs to take.
+              const isActive = p.status === 'ACTIVE' && !p.holiday && !exam && !p.coveredBy && p.cover?.kind !== 'not_conducted';
 
               return (
                 <div
@@ -284,6 +370,8 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                     'flex-shrink-0 w-64 rounded-2xl p-3.5 transition-all border flex flex-col justify-between',
                     p.holiday
                       ? 'bg-rose-500/10 border-rose-500/30'
+                      : exam
+                      ? 'bg-amber-500/10 border-amber-500/30'
                       : isActive && !p.marked
                       ? 'bg-primary-500/10 border-primary-500/40 shadow-glow'
                       : p.marked
@@ -299,6 +387,10 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                       {p.holiday ? (
                         <span className="rounded-full border border-rose-500/30 bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-rose-700 dark:text-rose-300">
                           Holiday
+                        </span>
+                      ) : exam ? (
+                        <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300">
+                          Exam
                         </span>
                       ) : (
                         <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold', st.badgeClass)}>
@@ -316,12 +408,22 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                       <Clock className="h-3 w-3" />
                       {to12h(p.startTime)} – {to12h(p.endTime)}
                     </p>
+                    {p.substituteFor && <p className="mt-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300">Substitute for {p.substituteFor.name}</p>}
+                    {p.coveredBy && <p className="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">Covered by {p.coveredBy.name}</p>}
+                    {p.cover?.kind === 'not_conducted' && <p className="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300">Recorded as not conducted</p>}
                   </div>
 
                   <div className="mt-3 pt-2 border-t border-white/10">
                     {p.holiday ? (
                       <span className="block py-1 text-center text-[11px] font-medium text-rose-700 dark:text-rose-300" title={p.holiday.reason}>
                         {p.holiday.reason} · attendance unavailable
+                      </span>
+                    ) : exam ? (
+                      <span
+                        className="block py-1 text-center text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                        title={`${exam.subjectCode} – ${exam.subjectName}`}
+                      >
+                        {exam.subjectCode} exam {to12h(exam.startTime)} – {to12h(exam.endTime)} · regular attendance blocked
                       </span>
                     ) : isActive ? (
                       <Button
@@ -366,13 +468,20 @@ function ClassSelectionWizard({
   subjects,
   loadingSubjects,
   me,
+  grant,
 }) {
   const isHod = me.role === 'hod';
-  // HOD and college-wide roles pick a timetable period instead of a subject.
-  const byPeriod = isHod || COLLEGE_WIDE.includes(me.role);
+  // HOD, college-wide roles and staff with an additional Attendance policy pick
+  // a timetable period instead of a subject.
+  const byPeriod = isHod || ACADEMIC_OVERSIGHT.includes(me.role) || Boolean(grant?.view);
   const isFYH = isFirstYearHod(me);
   const isBrH = isBranchHod(me);
-  const availableYears = isFYH ? [1] : isBrH ? [2, 3, 4] : ACADEMIC_YEARS;
+  // An Attendance policy opens its own department (or every one) on top of the role's.
+  const grantDepts = grant?.view ? (grant.department ? [...new Set([grant.department, ...(isHod && me.department ? [me.department] : [])])] : DEPARTMENTS) : null;
+  const deptLocked = isBrH && !grantDepts;
+  const availableYears = grantDepts ? ACADEMIC_YEARS : isFYH ? [1] : isBrH ? [2, 3, 4] : ACADEMIC_YEARS;
+  // An HOD is limited to today unless an Attendance → create policy says otherwise.
+  const todayOnly = isHod && !grant?.create;
   const availableSemesters = cls.year ? semestersOfYear(cls.year) : [];
 
   // Filter subjects based on selected department, year, semester
@@ -456,7 +565,7 @@ function ClassSelectionWizard({
             <span>Class Selection Wizard</span>
           </h3>
           <p className="text-xs text-ink-muted">
-            {byPeriod ? `Choose the class, then one of its timetable periods for ${isHod ? 'today' : 'the selected day'}` : 'Configure department, class, subject and period step-by-step'}
+            {byPeriod ? `Choose the class, then one of its timetable periods for ${todayOnly ? 'today' : 'the selected day'}` : 'Configure department, class, subject and period step-by-step'}
           </p>
         </div>
 
@@ -519,7 +628,7 @@ function ClassSelectionWizard({
             id="w-dept"
             className="input w-full text-xs py-2 rounded-xl"
             value={cls.department}
-            disabled={isBrH}
+            disabled={deptLocked}
             onChange={(e) => {
               const dept = e.target.value;
               if (dept === FIRST_YEAR_HOD_DEPT) {
@@ -530,12 +639,12 @@ function ClassSelectionWizard({
               onFormChange({ subjectId: '', section: '' });
             }}
           >
-            {isBrH ? (
+            {deptLocked ? (
               <option value={me.department}>{me.department}</option>
             ) : (
               <>
                 <option value="">Choose department</option>
-                {DEPARTMENTS.map((d) => (
+                {(grantDepts || DEPARTMENTS).map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>
@@ -657,9 +766,9 @@ function ClassSelectionWizard({
               type="date"
               className="input w-full text-xs py-2 rounded-xl"
               max={todayKey()}
-              min={isHod ? todayKey() : undefined}
+              min={todayOnly ? todayKey() : undefined}
               value={form.date}
-              disabled={isHod}
+              disabled={todayOnly}
               onChange={(e) => onFormChange({ date: e.target.value })}
             />
           </div>
@@ -679,7 +788,7 @@ function ClassSelectionWizard({
                 }}
               >
                 <option value="">
-                  {!form.section ? 'Period' : loadingPeriods ? 'Loading...' : dayPeriods.length ? 'Period' : isHod ? 'No classes today' : 'No classes that day'}
+                  {!form.section ? 'Period' : loadingPeriods ? 'Loading...' : dayPeriods.length ? 'Period' : todayOnly ? 'No classes today' : 'No classes that day'}
                 </option>
                 {dayPeriods.map((sl) => (
                   <option key={sl._id} value={sl._id}>
@@ -713,7 +822,9 @@ function ClassSelectionWizard({
 /* ── Mark Attendance Main Tab ─────────────────────────────────────── */
 function MarkAttendance({ preset, onPresetUsed }) {
   const me = useSelector(selectUser);
-  const isFaculty = me.role === 'faculty';
+  const grant = useAttendanceGrant(me);
+  // Faculty work from their own periods (today only); an Attendance policy adds the class picker and a date.
+  const isFaculty = me.role === 'faculty' && !grant?.view;
   const isHod = me.role === 'hod';
   const isFYH = isFirstYearHod(me);
   const isBrH = isBranchHod(me);
@@ -786,6 +897,21 @@ function MarkAttendance({ preset, onPresetUsed }) {
       toast.success(`${res.message} · ${res.created} new, ${res.modified} updated`);
       // The first class you mark today records you present for the whole day.
       if (res.facultyMarkedPresent) toast.success('You are marked present for today');
+      // First period after an exam: Present students' exam-blocked periods were marked too.
+      if (res.examAuto) {
+        const a = res.examAuto;
+        const periods = a.periods.map((p) => `P${p.period}`).join(', ');
+        toast.success(
+          `${a.exam.subjectCode} exam periods (${periods}): ${a.recordsCreated} marked Present for ${a.studentsUpdated} student${a.studentsUpdated === 1 ? '' : 's'}` +
+            (a.reverted ? `, ${a.reverted} withdrawn` : ''),
+          { duration: 6000 }
+        );
+        if (a.conflicts.length) {
+          const names = Object.fromEntries((roster?.students || []).map((s) => [s._id, s.name]));
+          const list = a.conflicts.slice(0, 4).map((c) => `${names[c.student] || 'Student'} P${c.period} (${c.status})`).join('; ');
+          toast(`${a.conflicts.length} exam-period record(s) already existed and were left unchanged for review: ${list}${a.conflicts.length > 4 ? '…' : ''}`, { icon: '⚠️', duration: 9000 });
+        }
+      }
     } catch (e) {
       toast.error(errMsg(e));
     }
@@ -810,7 +936,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* HOD date lock banner */}
-      {isHod && (
+      {isHod && !grant?.create && (
         <div className="flex items-center gap-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 p-3.5 text-xs text-sky-700 dark:text-sky-300">
           <Lock className="h-4 w-4 shrink-0 text-sky-400" />
           <span>
@@ -829,6 +955,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
           subjects={subjects}
           loadingSubjects={loadingSubjects}
           me={me}
+          grant={grant}
         />
       )}
 
@@ -954,6 +1081,17 @@ function MarkAttendance({ preset, onPresetUsed }) {
             <div className="m-4 flex items-center gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-3.5 text-xs text-amber-700 dark:text-amber-300">
               <Lock className="h-4 w-4 shrink-0 text-amber-500" />
               <span>{roster.lockedReason || 'This attendance sheet is locked.'}</span>
+            </div>
+          )}
+          {/* First period after an exam: Present here also covers the exam-blocked periods. */}
+          {roster.editable && roster.examTrigger && (
+            <div className="m-4 flex items-start gap-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 p-3.5 text-xs text-sky-700 dark:text-sky-300" role="note">
+              <Sparkles className="h-4 w-4 shrink-0 text-sky-500" />
+              <span>
+                First period after the {roster.examTrigger.exam.subjectCode} exam ({to12h(roster.examTrigger.exam.startTime)} – {to12h(roster.examTrigger.exam.endTime)}).
+                A student you mark <strong>Present</strong> here is also marked Present for their exam-blocked periods (
+                {roster.examTrigger.periods.map((p) => `P${p.period}`).join(', ')}). Absent students get nothing automatic, and existing records are never overwritten.
+              </span>
             </div>
           )}
 
@@ -1203,7 +1341,10 @@ function MarkAttendance({ preset, onPresetUsed }) {
 function Sessions({ onOpen }) {
   const [range, setRange] = useState({ range: 'month' });
   const [search, setSearch] = useState('');
-  const { data, isLoading, error, refetch } = useGetAttendanceSessionsQuery(rangeParams(range));
+  const me = useSelector(selectUser);
+  // A faculty member's history defaults to what they marked; an Attendance policy shows every class it covers.
+  const grant = useAttendanceGrant(me);
+  const { data, isLoading, error, refetch } = useGetAttendanceSessionsQuery({ ...rangeParams(range), ...(grant?.view ? { mine: 'false' } : {}) });
 
   const filteredSessions = useMemo(() => {
     if (!data) return [];
@@ -1975,7 +2116,7 @@ export default function StaffAttendance() {
   const canMark = !ATTENDANCE_READ_ONLY.includes(me.role);
   const seesSummary = SUMMARY_VIEW.includes(me.role);
   const isHodOrAdmin = ['admin', 'hod'].includes(me.role);
-  const canViewReports = ['faculty', 'hod', ...COLLEGE_WIDE].includes(me.role);
+  const canViewReports = ['faculty', 'hod', ...ACADEMIC_OVERSIGHT].includes(me.role);
   const canReviewODLeave = ['faculty', 'hod', 'principal', 'admin'].includes(me.role);
 
   const { data: pendingODLeave } = useGetPendingODLeaveReviewsQuery({ limit: 1 }, { skip: !canReviewODLeave });
@@ -1986,9 +2127,12 @@ export default function StaffAttendance() {
   const collegeDashboard = COLLEGE_ATTENDANCE_DASHBOARD.includes(me.role);
 
   // Grouped Navigation: Primary tabs vs Secondary (More) tabs
+  const isOffice = me.role === OFFICE;
   const primaryTabs = [
     ...(canMark && !collegeDashboard ? [{ value: 'mark', label: 'Mark Attendance' }] : []),
     ...(seesSummary ? [{ value: 'today', label: 'Daily Summary' }] : []),
+    // The Office's main job: students below 75 %.
+    ...(isOffice ? [{ value: 'low-monitor', label: 'Below 75%' }, { value: 'staff-report', label: 'Staff Report' }] : []),
     ...(me.role === 'faculty' ? [{ value: 'my-classes', label: 'My Classes' }] : []),
     ...(canReviewODLeave ? [{ value: 'od-leave', label: 'OD / Leave Approvals', badge: pendingODLeaveCount }] : []),
   ];
@@ -2004,6 +2148,9 @@ export default function StaffAttendance() {
     ...(collegeReader ? [] : [{ value: 'corrections', label: 'Corrections' }]),
     ...(canViewReports ? [{ value: 'reports', label: 'Reports' }] : []),
     ...(isHodOrAdmin ? [{ value: 'faculty', label: 'Faculty Attendance' }] : []),
+    ...(STAFF_REPORT_ROLES.includes(me.role) && !isOffice ? [{ value: 'staff-report', label: 'Staff Report' }] : []),
+    ...(seesSummary && !isOffice ? [{ value: 'low-monitor', label: 'Below 75% Monitor' }] : []),
+    ...(COVER_MANAGERS.includes(me.role) ? [{ value: 'cover', label: 'Cover & Early Exits' }] : []),
   ];
 
   const allTabs = [...primaryTabs, ...secondaryTabs];
@@ -2167,6 +2314,9 @@ export default function StaffAttendance() {
         {/* For a faculty member, Class overview is "Our Class": their Class
             In-Charge class, complete and with no subject to choose. */}
         {currentTab === 'overview' && (me.role === 'faculty' ? <OurClass /> : <ClassOverview />)}
+        {currentTab === 'staff-report' && <StaffReport />}
+        {currentTab === 'low-monitor' && <LowAttendanceMonitor />}
+        {currentTab === 'cover' && <CoverManager />}
         {currentTab === 'low' && <LowAttendance />}
         {currentTab === 'my-classes' && <MyClasses />}
         {currentTab === 'reports' && <AttendanceReports />}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, Download, KeyRound, Pencil, Search, Trash2, UserCog, UserPlus } from 'lucide-react';
+import { Ban, CheckCircle2, Download, KeyRound, Pencil, Search, ShieldCheck, Trash2, UserCog, UserPlus } from 'lucide-react';
 import { useDeleteAdminUserMutation, useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination, Tabs } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
@@ -12,6 +12,10 @@ import CreateUserModal from '../../components/CreateUserModal';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
 import RestrictionPopupModal from '../../components/RestrictionPopupModal';
 import FacultyRoleAssignmentsTab from './FacultyRoleAssignmentsTab';
+import { RolePoliciesTab } from './AdminPoliciesTab';
+import { useGetMyPoliciesQuery } from '../../services/superAdmin';
+import { STAFF_GRANT_ROLES, allowedRoles, holdsGrant } from '../../utils/delegation';
+import UserPoliciesModal from '../../components/UserPoliciesModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
 import { downloadProfilesPdf } from '../../services/reports';
@@ -273,6 +277,18 @@ export default function AdminUsers() {
   const [resetting, setResetting] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const { data, isLoading } = useGetAdminUsersQuery({ q: q || undefined, role: role || undefined, status: status || undefined, page });
+  // What this admin may assign / delegate (server-enforced; this only shapes the UI).
+  const { data: myPolicies, isLoading: policiesLoading } = useGetMyPoliciesQuery(undefined, { skip: !['admin', 'super_admin', ...STAFF_GRANT_ROLES].includes(me?.role) });
+  const assignable = allowedRoles(myPolicies, 'assign');
+  // A staff account using User Management through additional policies:
+  // show only what those policies cover (the server enforces it regardless).
+  const viaGrant = Boolean(myPolicies?.staffGrants);
+  const can = (action) => !viaGrant || ['user_management', 'staff_management'].some((m) => holdsGrant(myPolicies, m, action));
+  const canCreate = !viaGrant || allowedRoles(myPolicies, 'create').length > 0;
+  const canExport = !viaGrant || holdsGrant(myPolicies, 'user_management', 'export');
+  // Who may open the per-user Policies dialog for staff accounts.
+  const canGrantStaff = me?.role === 'super_admin' || Boolean(myPolicies?.policyManaged && myPolicies?.delegation?.canAssignPolicies);
+  const [policyUser, setPolicyUser] = useState(null);
   const [update, { isLoading: saving }] = useUpdateAdminUserMutation();
   const [removeUser, { isLoading: deletingSaving }] = useDeleteAdminUserMutation();
 
@@ -306,12 +322,16 @@ export default function AdminUsers() {
         actions={
           adminTab === 'accounts' ? (
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" icon={Download} loading={downloading} onClick={handleExportPdf}>
-                Export Directory (PDF)
-              </Button>
-              <Button icon={UserPlus} onClick={() => setCreating(true)}>
-                Create login
-              </Button>
+              {canExport && (
+                <Button variant="secondary" icon={Download} loading={downloading} onClick={handleExportPdf}>
+                  Export Directory (PDF)
+                </Button>
+              )}
+              {canCreate && (
+                <Button icon={UserPlus} onClick={() => setCreating(true)}>
+                  Create login
+                </Button>
+              )}
             </div>
           ) : null
         }
@@ -320,14 +340,17 @@ export default function AdminUsers() {
         <Tabs
           tabs={[
             { value: 'accounts', label: 'User Accounts' },
-            { value: 'assignments', label: 'Faculty & HOD Role Assignments' },
+            ...(viaGrant ? [] : [{ value: 'assignments', label: 'Faculty & HOD Role Assignments' }]),
+            ...(me?.role === 'admin' ? [{ value: 'policies', label: 'Role policies' }] : []),
           ]}
           value={adminTab}
           onChange={setAdminTab}
         />
       </div>
 
-      {adminTab === 'assignments' ? (
+      {adminTab === 'policies' && me?.role === 'admin' ? (
+        <RolePoliciesTab myPolicies={myPolicies} isLoading={policiesLoading} />
+      ) : adminTab === 'assignments' ? (
         <FacultyRoleAssignmentsTab />
       ) : (
         <>
@@ -347,7 +370,7 @@ export default function AdminUsers() {
         </div>
         <select value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }} className="input">
           <option value="">All roles</option>
-          {ROLES.map((r) => (
+          {ROLES.filter((r) => r !== 'super_admin').map((r) => (
             <option key={r} value={r}>
               {ROLE_LABELS[r]}
             </option>
@@ -423,11 +446,15 @@ export default function AdminUsers() {
                       <td className="px-3 py-3">
                         <select
                           value={u.role}
-                          disabled={self || saving}
+                          disabled={self || saving || !assignable.includes(u.role)}
+                          title={assignable.includes(u.role) ? 'Change role' : 'Changing this role requires Super Admin authorization'}
+                          aria-label={`Role of ${displayName(u)}`}
                           onChange={(e) => apply(u._id, { role: e.target.value }, `Role changed to ${ROLE_LABELS[e.target.value]}`)}
                           className="input w-auto rounded-xl py-1.5 text-xs"
                         >
-                          {ROLES.map((r) => (
+                          {/* Admin accounts are created and promoted only from the Super Admin console;
+                              other roles appear only when delegated to this admin. */}
+                          {ROLES.filter((r) => r === u.role || assignable.includes(r)).map((r) => (
                             <option key={r} value={r}>
                               {ROLE_LABELS[r]}
                             </option>
@@ -441,15 +468,22 @@ export default function AdminUsers() {
                       <td className="px-5 py-3 text-right">
                         {!self && (
                           <div className="inline-flex items-center gap-2">
-                            <Button size="sm" variant="outline" icon={Pencil} onClick={() => setClassEdit(u)}>
-                              Edit
-                            </Button>
-                            {u.role !== 'admin' && (
+                            {can('edit') && (
+                              <Button size="sm" variant="outline" icon={Pencil} onClick={() => setClassEdit(u)}>
+                                Edit
+                              </Button>
+                            )}
+                            {canGrantStaff && STAFF_GRANT_ROLES.includes(u.role) && (
+                              <Button size="sm" variant="outline" icon={ShieldCheck} onClick={() => setPolicyUser(u)} title="Add access on top of this account's role">
+                                Policies
+                              </Button>
+                            )}
+                            {u.role !== 'admin' && can('edit') && (
                               <Button size="sm" variant="outline" icon={KeyRound} onClick={() => setResetting(u)}>
                                 Reset password
                               </Button>
                             )}
-                            {u.isActive ? (
+                            {!can('suspend') ? null : u.isActive ? (
                               <Button size="sm" variant="danger" icon={Ban} onClick={() => setPending(u)}>
                                 Suspend
                               </Button>
@@ -458,9 +492,11 @@ export default function AdminUsers() {
                                 Reactivate
                               </Button>
                             )}
-                            <Button size="sm" variant="danger" icon={Trash2} onClick={() => setDeleting(u)}>
-                              Delete
-                            </Button>
+                            {!viaGrant && (
+                              <Button size="sm" variant="danger" icon={Trash2} onClick={() => setDeleting(u)}>
+                                Delete
+                              </Button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -478,6 +514,7 @@ export default function AdminUsers() {
 
       <ClassModal user={classEdit} onClose={() => setClassEdit(null)} />
       <ResetPasswordModal user={resetting} onClose={() => setResetting(null)} />
+      <UserPoliciesModal user={policyUser} onClose={() => setPolicyUser(null)} />
       <ConfirmDialog
         open={Boolean(pending)}
         onClose={() => setPending(null)}

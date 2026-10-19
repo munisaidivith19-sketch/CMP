@@ -25,11 +25,16 @@ class VexonApp : Application(), SingletonImageLoader.Factory {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             private var started = false
             override fun onStart(owner: LifecycleOwner) {
+                com.vexon.campus.push.Push.foreground = true
                 if (started && Auth.user != null) {
                     Realtime.onForeground()
                     QueryClient.refetchActive()
                 }
                 started = true
+            }
+
+            override fun onStop(owner: LifecycleOwner) {
+                com.vexon.campus.push.Push.foreground = false
             }
         })
     }

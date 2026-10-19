@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import { ApiError, asyncHandler, paginate, pageMeta } from '../utils/http.js';
 import { notifyUsers } from '../utils/notify.js';
 import { emitToUsers, emitToRoles } from '../config/socket.js';
+import { announceClassAttendance } from '../services/attendanceLive.js';
 import { addDays, campusParts, dayKey, toDay, today } from '../utils/dates.js';
 import { clock } from '../utils/clock.js';
 import {
@@ -377,6 +378,7 @@ export async function applyApprovedODLeaveAttendance(request, user) {
   request.attendanceApplied = true;
   await request.save();
   emitToUsers([student], 'attendance:updated', { date: dayKey(startDay) });
+  announceClassAttendance({ ...studentDoc, day: startDay }, user._id);
 }
 
 /**
@@ -413,6 +415,8 @@ export async function revertApprovedODLeaveAttendance(request, user) {
   await request.save();
 
   emitToUsers([student], 'attendance:updated', { date: dayKey(startDay) });
+  const studentDoc = await User.findById(student).select('department year section semester').lean();
+  if (studentDoc) announceClassAttendance({ ...studentDoc, day: startDay }, user._id);
 }
 
 /**

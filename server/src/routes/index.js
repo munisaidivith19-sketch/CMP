@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import { protect, authorize } from '../middleware/auth.js';
+import { confinedRoleGuard } from '../middleware/coeGuard.js';
+import { adminPolicyGuard, staffGrantGuard } from '../middleware/adminPolicy.js';
+import { passwordChangeGate, platformGate, publicPlatformGate, requireRecentReauth } from '../middleware/platform.js';
+import { publicStatus } from '../services/platformState.js';
+import superAdminRouter from './superAdminRoutes.js';
+import { POLICY_MODES, applyPolicies, listPolicyTargets, policyView } from '../services/adminPolicies.js';
+import { effectiveDelegation, grantFor, isPolicyManaged, isStaffGrantee, POLICY_CATALOGUE, STAFF_GRANT_ROLES, staffCatalogue, staffHolds } from '../policies.js';
 import { idParam, validate } from '../middleware/validate.js';
-import { aiHourLimiter, aiMinuteLimiter, authLimiter, refreshLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { clientErrorLimiter, aiHourLimiter, aiMinuteLimiter, authLimiter, refreshLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { ApiError } from '../utils/http.js';
 import { realtimeChanges } from '../middleware/realtime.js';
 import { upload } from '../utils/storage.js';
@@ -30,6 +37,8 @@ import {
   TITLES,
   GENDERS,
   STAFF_ROLES,
+  ADMIN_ASSIGNABLE_ROLES,
+  SUPER_ADMIN_ROLE,
   NO_DEPARTMENT_ROLES,
   COMPLAINT_CATEGORIES,
   COMPLAINT_SUBCATEGORIES,
@@ -54,9 +63,18 @@ import {
   SOS_STATUSES,
   SOS_RESPONDER_ROLES,
   HOSTEL_VIEW_ROLES,
+  EXAM_MANAGE_ROLES,
+  EXAM_STATUSES,
+  EXAM_VIEW_ROLES,
+  REMINDER_MINUTES,
+  STAFF_REPORT_ROLES,
+  TRANSPORT_MANAGE_ROLES,
+  TRANSPORT_VIEW_ROLES,
+  TRIP_SHARER_ROLES,
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
+import * as soc from '../controllers/socController.js';
 import * as sos from '../controllers/sosController.js';
 import * as hostel from '../controllers/hostelController.js';
 
@@ -80,6 +98,11 @@ import { REPORT_SCOPES, REPORT_TYPES } from '../services/attendanceReport.js';
 import * as staffAttendance from '../controllers/staffAttendanceController.js';
 import * as timetable from '../controllers/timetableController.js';
 import * as holidays from '../controllers/holidayController.js';
+import * as exams from '../controllers/examController.js';
+import * as staff from '../controllers/staffController.js';
+import * as monitor from '../controllers/attendanceMonitorController.js';
+import * as transport from '../controllers/transportController.js';
+import { locationLimiter, trackerLimiter } from '../middleware/rateLimit.js';
 import * as gatePass from '../controllers/gatePassController.js';
 import * as gateBind from '../controllers/gatePassBindController.js';
 import * as lostFound from '../controllers/lostFoundController.js';
@@ -107,6 +130,7 @@ import alumniRouter, {
   mentorshipRequestsRouter,
   mentorshipRouter,
 } from './alumniRoutes.js';
+import skillWalletRouter, { skillWalletPublicRouter } from './skillWalletRoutes.js';
 
 const router = Router();
 
@@ -231,6 +255,21 @@ const safeUrl = (field) =>
     .custom((v) => (v.startsWith('/uploads/') && insideUploads(v)) || /^https:\/\//.test(v))
     .withMessage(`${field} must be an uploaded file or https URL`);
 
+// ── Platform (emergency) mode ──────────────────────────────────────
+// Public, non-sensitive: lets every client show the maintenance page.
+router.get('/platform/status', async (_req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json(await publicStatus());
+  } catch (err) {
+    next(err);
+  }
+});
+// Outside normal mode the public endpoints close (login / refresh decide per
+// account: only a Super Admin gets in). Authenticated requests are decided by
+// platformGate after protect.
+router.use(publicPlatformGate);
+
 // ── Auth ───────────────────────────────────────────────────────────
 router.post(
   '/auth/register',
@@ -262,8 +301,46 @@ router.post('/auth/reset-password', passwordResetSubmitLimiter, auth.resetPasswo
 // Alumni public claim
 router.use('/auth/alumni-claim', alumniPublicRouter);
 
+// Vehicle GPS tracker webhook: machine-to-machine, authenticated by an HMAC
+// signature (no user session); disabled until TRACKER_WEBHOOK_SECRET is set.
+router.post('/transport/tracker/locations', trackerLimiter, transport.trackerWebhook);
+
+// Skill Wallet: the PUBLISHED public gallery and signed, viewer-bound file
+// downloads (an <img> cannot send a Bearer token). GET only; each re-authorizes.
+router.use('/skill-wallet', skillWalletPublicRouter);
+
 // Everything below requires a signed-in user.
 router.use(protect);
+// Maintenance / lockdown / recovery: only a Super Admin continues.
+router.use(platformGate);
+// A temporary password must be replaced before anything else.
+router.use(passwordChangeGate);
+// Staff accounts with additional policies: mark admin routes they were granted.
+router.use(staffGrantGuard);
+// COE (Timetable / Exam Timetable / Attendance) and Office (attendance, read)
+// are confined to their own dashboards — deny-by-default. So is the Super Admin.
+router.use(confinedRoleGuard);
+// Policy-managed admins: only the modules and actions granted (policies.js).
+router.use(adminPolicyGuard);
+// Super Admin platform administration and emergency control.
+router.use('/super-admin', superAdminRouter);
+// Web / mobile client error reports for the Super Admin SOC (redacted, deduplicated, rate-limited).
+router.post(
+  '/client-errors',
+  clientErrorLimiter,
+  body('kind').isIn(soc.CLIENT_KINDS).withMessage('Unknown error kind'),
+  body('message').isString().isLength({ min: 1, max: 1000 }),
+  body('name').optional().isString().isLength({ max: 80 }),
+  body('route').optional().isString().isLength({ max: 200 }),
+  body('stack').optional().isString().isLength({ max: 4000 }),
+  body('componentStack').optional().isString().isLength({ max: 2000 }),
+  body('endpoint').optional().isString().isLength({ max: 200 }),
+  body('status').optional().isInt({ min: 0, max: 599 }).toInt(),
+  body('correlationId').optional().isString().matches(/^[A-Za-z0-9._-]{8,64}$/),
+  body('appVersion').optional().isString().isLength({ max: 40 }),
+  validate,
+  soc.reportClientError
+);
 // Live "something changed" signals for announcements / events / clubs / discussions.
 router.use(realtimeChanges);
 
@@ -588,6 +665,27 @@ router.patch(
 );
 
 // ── Notifications ──────────────────────────────────────────────────
+router.get('/notifications/preferences', notes.getPreferences);
+router.put(
+  '/notifications/preferences',
+  writeLimiter,
+  body('disabled').optional().isArray({ max: 20 }),
+  body('disabled.*').optional().isString().isLength({ max: 40 }),
+  body('reminderMinutes').optional().isIn(REMINDER_MINUTES.map(String).concat(REMINDER_MINUTES)).withMessage('Choose 5, 10, 15, 20 or 30 minutes'),
+  validate,
+  notes.updatePreferences
+);
+// Native Android app: FCM device tokens, bound to the caller's own account and session.
+router.post(
+  '/devices',
+  writeLimiter,
+  body('token').isString().trim().isLength({ min: 20, max: 4096 }).matches(/^[\w:\-.]+$/).withMessage('Invalid device token'),
+  body('deviceName').optional().isString().trim().isLength({ max: 80 }),
+  body('appVersion').optional().isString().trim().isLength({ max: 40 }),
+  validate,
+  notes.registerDevice
+);
+router.delete('/devices', body('token').isString().isLength({ max: 4096 }), validate, notes.unregisterDevice);
 router.get('/notifications', notes.listNotifications);
 router.patch('/notifications/read-all', notes.markAllRead);
 router.patch('/notifications/:id/read', idParam('id'), notes.markRead);
@@ -595,17 +693,18 @@ router.delete('/notifications/:id', idParam('id'), notes.deleteNotification);
 
 // ── Admin ──────────────────────────────────────────────────────────
 router.get('/admin/analytics', authorize('admin', 'faculty', 'hod', 'principal'), admin.analytics);
-router.get('/admin/users', authorize('admin'), admin.listUsers);
+router.get('/admin/users', authorize('admin', SUPER_ADMIN_ROLE), admin.listUsers);
 router.post(
   '/admin/users',
   writeLimiter,
-  authorize('admin'),
+  authorize('admin', SUPER_ADMIN_ROLE),
   body('name').trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2–80 characters'),
   body('title').optional({ values: 'falsy' }).isIn(TITLES).withMessage('Choose Ms, Mr or Dr'),
   body('gender').optional({ values: 'falsy' }).isIn(GENDERS).withMessage('Choose a gender'),
   body('email').trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
   password('password'),
-  body('role').isIn(ROLES).withMessage('Choose a role'),
+  // Admin and Super Admin accounts are created by a Super Admin only.
+  body('role').isIn(ADMIN_ASSIGNABLE_ROLES).withMessage('Choose a role'),
   // Student / club admin.
   body('rollNo')
     .if(isStudentRole)
@@ -666,18 +765,24 @@ router.post(
   // Staff "class in charge" section, optional.
   body('section').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' }).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
   phoneRule(body('phone').optional({ values: 'falsy' })),
+  // Policy Assignment: "none" (role access only, the default) or "custom"
+  // (additional policies, checked against the caller's authority in the controller).
+  body('policyMode').optional().isIn(POLICY_MODES).withMessage('Choose a policy option'),
+  body('policies').optional().isArray({ max: 20 }).withMessage('Policies must be a list'),
   validate,
+  // A Super Admin adding policies re-enters its password, as in the Policies dialog.
+  (req, res, next) => (req.user.role === SUPER_ADMIN_ROLE && req.body.policyMode === 'custom' ? requireRecentReauth(req, res, next) : next()),
   admin.createUser
 );
 router.patch(
   '/admin/users/:id',
   idParam('id'),
-  authorize('admin'),
+  authorize('admin', SUPER_ADMIN_ROLE),
   body('name').optional().isString().trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2–80 characters'),
   body('email').optional().isString().trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
   body('title').optional().isIn(TITLES).withMessage('Choose Ms, Mr or Dr'),
   body('gender').optional().isIn(GENDERS).withMessage('Choose a gender'),
-  body('role').optional().isIn(ROLES),
+  body('role').optional().isIn(ADMIN_ASSIGNABLE_ROLES).withMessage('That role cannot be assigned here'),
   body('isActive').optional().isBoolean(),
   body('department').optional({ values: 'null' }).trim().isLength({ max: 80 }),
   body('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4').toInt(),
@@ -693,14 +798,83 @@ router.patch(
   validate,
   admin.updateUser
 );
-router.delete('/admin/users/:id', idParam('id'), authorize('admin'), admin.deleteUser);
-router.get('/admin/activity', authorize('admin'), admin.listActivity);
+router.delete('/admin/users/:id', idParam('id'), authorize('admin', SUPER_ADMIN_ROLE), admin.deleteUser);
+router.get('/admin/activity', authorize('admin', SUPER_ADMIN_ROLE), admin.listActivity);
+
+// ── Admin → module policies ────────────────────────────────────────
+// Own effective permissions (drives which admin pages the UI shows).
+router.get('/admin/my-policies', authorize('admin', SUPER_ADMIN_ROLE, ...STAFF_GRANT_ROLES), (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  // Staff accounts: their additional policies only (what was added to their role).
+  if (isStaffGrantee(req.user)) {
+    return res.json({
+      policyManaged: false,
+      staffGrants: true,
+      policies: (req.user.policies || []).filter((p) => p.actions.some((a) => staffHolds(req.user, p.module, a))),
+      delegation: effectiveDelegation(req.user),
+      catalogue: staffCatalogue(),
+    });
+  }
+  const managed = isPolicyManaged(req.user);
+  res.json({
+    policyManaged: managed,
+    policies: managed ? Object.keys(POLICY_CATALOGUE).map((m) => grantFor(req.user, m)).filter(Boolean) : null,
+    // Roles it may create / assign and what it may delegate (null for legacy admins).
+    delegation: managed || req.user.role === SUPER_ADMIN_ROLE ? effectiveDelegation(req.user) : null,
+    catalogue: POLICY_CATALOGUE,
+    // What staff accounts may receive as additional policies (User Creation → Add Policies).
+    staffCatalogue: staffCatalogue(),
+  });
+});
+// One account's policies, as far as the caller may see and change them:
+// Admin targets (module policies) and staff targets (additional policies).
+router.get('/admin/users/:id/policies', idParam('id'), authorize('admin', SUPER_ADMIN_ROLE), validate, async (req, res, next) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    res.json(await policyView(req.user, req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+// A Super Admin changing a staff account's policies re-enters its password
+// (as for Admin policies); Admins are limited by their own authority instead.
+const reauthIfSuperAdmin = (req, res, next) => (req.user?.role === SUPER_ADMIN_ROLE ? requireRecentReauth(req, res, next) : next());
+// Admins this admin may assign policies to, showing only what it may delegate.
+router.get('/admin/policy-targets', authorize('admin'), async (req, res, next) => {
+  try {
+    if (!isPolicyManaged(req.user)) throw new ApiError(403, 'Admin policies are managed by a Super Admin');
+    res.set('Cache-Control', 'no-store');
+    res.json({ items: await listPolicyTargets(req.user) });
+  } catch (err) {
+    next(err);
+  }
+});
+// Delegated policy assignment: a policy-managed admin holding
+// user_management.policies, only within its own authority (services/adminPolicies.js).
+router.put(
+  '/admin/users/:id/policies',
+  idParam('id'),
+  authorize('admin', SUPER_ADMIN_ROLE),
+  reauthIfSuperAdmin,
+  writeLimiter,
+  body('policies').isArray({ max: 20 }).withMessage('Policies must be a list'),
+  body('merge').optional().isBoolean().withMessage('merge must be true or false').toBoolean(),
+  validate,
+  async (req, res, next) => {
+    try {
+      const updated = await applyPolicies(req, req.params.id, req.body.policies, { merge: req.body.merge === true });
+      res.json({ _id: updated._id, policyManaged: updated.policyManaged, policies: updated.policies });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // ── Admin → Role Assignments & Class In-Charge (Admin only) ───────
-router.get('/admin/role-assignments/overview', authorize('admin'), roleAssignment.getRoleAssignmentsOverview);
+router.get('/admin/role-assignments/overview', authorize('admin', SUPER_ADMIN_ROLE), roleAssignment.getRoleAssignmentsOverview);
 router.post(
   '/admin/role-assignments/assign-class-in-charge',
-  authorize('admin'),
+  authorize('admin', SUPER_ADMIN_ROLE),
   body('facultyId').isMongoId().withMessage('Valid faculty ID required'),
   body('department').isIn(DEPARTMENTS).withMessage('Valid department required'),
   body('year').isIn(ACADEMIC_YEARS).withMessage('Valid year (1–4) required').toInt(),
@@ -711,7 +885,7 @@ router.post(
 );
 router.post(
   '/admin/role-assignments/swap-class-in-charge',
-  authorize('admin'),
+  authorize('admin', SUPER_ADMIN_ROLE),
   body('faculty1Id').isMongoId().withMessage('Valid faculty 1 ID required'),
   body('faculty2Id').isMongoId().withMessage('Valid faculty 2 ID required'),
   validate,
@@ -719,14 +893,14 @@ router.post(
 );
 router.post(
   '/admin/role-assignments/unassign-class-in-charge',
-  authorize('admin'),
+  authorize('admin', SUPER_ADMIN_ROLE),
   body('facultyId').isMongoId().withMessage('Valid faculty ID required'),
   validate,
   roleAssignment.unassignClassInCharge
 );
 router.post(
   '/admin/role-assignments/set-hod',
-  authorize('admin'),
+  authorize('admin', SUPER_ADMIN_ROLE),
   body('department').isIn(DEPARTMENTS).withMessage('Valid department required'),
   body('facultyId').isMongoId().withMessage('Valid faculty ID required'),
   validate,
@@ -734,7 +908,7 @@ router.post(
 );
 router.post(
   '/admin/role-assignments/demote-hod',
-  authorize('admin'),
+  authorize('admin', SUPER_ADMIN_ROLE),
   body('hodId').isMongoId().withMessage('Valid HOD ID required'),
   validate,
   roleAssignment.demoteDepartmentHod
@@ -760,18 +934,8 @@ router.get(
   validate,
   security.listSecurityLogs
 );
-router.get(
-  '/admin/security/otps',
-  authorize('admin'),
-  securitySearch,
-  query('department').optional().isIn(DEPARTMENTS).withMessage('Unknown department'),
-  query('year').optional().isIn(ACADEMIC_YEARS.map(String)).withMessage('Year must be 1–4'),
-  query('section').optional().trim().toUpperCase().isIn(SECTIONS).withMessage('Unknown section'),
-  query('status').optional().isIn(OTP_STATUSES).withMessage('Unknown status'),
-  ...securityRangeRules,
-  validate,
-  security.listOtps
-);
+// Parent-OTP cards moved to the Super Admin console: GET /super-admin/security/otps
+// (routes/superAdminRoutes.js). Admins no longer see OTP status.
 
 // ── Class In-Charge: students of their own class ───────────────────
 // Faculty only; the class always comes from the faculty's own account and
@@ -990,7 +1154,9 @@ router.post(
   body('section').optional().trim().isLength({ max: 10 }),
   body('records').isArray({ min: 1, max: 300 }).withMessage('Records are required'),
   body('records.*.student').isMongoId(),
-  body('records.*.status').isIn(ATTENDANCE_STATUSES),
+  // "od" is what the roster shows for a student on approved OD / at an event,
+  // so the apps send it back; the controller accepts it only for such students.
+  body('records.*.status').isIn([...ATTENDANCE_STATUSES, 'od']),
   validate,
   attendance.markAttendance
 );
@@ -1072,6 +1238,78 @@ router.get(
   validate,
   attendance.getAttendanceReport
 );
+
+// Staff (faculty) attendance report: daily presence and period-wise teaching,
+// kept apart. HOD: own department; Principal / Office / college roles: college.
+const reportFormat = query('format').optional({ values: 'falsy' }).isIn(['json', 'csv']);
+router.get(
+  '/attendance/staff-report',
+  authorize(...STAFF_REPORT_ROLES),
+  ...rangeQuery,
+  query('department').optional({ values: 'falsy' }).isString().trim().isLength({ max: 80 }),
+  query('faculty').optional({ values: 'falsy' }).isMongoId(),
+  query('status').optional({ values: 'falsy' }).isIn(['present', 'absent', 'leave', 'unmarked']),
+  reportFormat,
+  validate,
+  monitor.staffReport
+);
+// Low-attendance students, subject-wise and overall. HOD: own scope; Office / Principal / college roles: college.
+router.get(
+  '/attendance/low-monitor',
+  authorize(...ATTENDANCE_SUMMARY_ROLES),
+  ...rangeQuery,
+  query('department').optional({ values: 'falsy' }).isString().trim().isLength({ max: 80 }),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS.map(String)),
+  query('section').optional({ values: 'falsy' }).isString().trim().isLength({ max: 10 }),
+  query('semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 12 }),
+  query('subjectId').optional({ values: 'falsy' }).isMongoId(),
+  query('threshold').optional({ values: 'falsy' }).isInt({ min: 1, max: 100 }),
+  query('all').optional({ values: 'falsy' }).isIn(['true', 'false']),
+  reportFormat,
+  validate,
+  monitor.lowAttendanceMonitor
+);
+
+// ── Early exits and period cover (substitutes) ──────────────────────
+const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+router.post(
+  '/staff/early-exits',
+  writeLimiter,
+  authorize('faculty', 'hod', 'principal', 'admin'),
+  body('reason').isString().trim().isLength({ min: 5, max: 300 }).withMessage('Give the reason (5–300 characters)'),
+  body('departureTime').optional({ values: 'falsy' }).matches(HH_MM).withMessage('Departure time must be HH:mm'),
+  body('faculty').optional({ values: 'falsy' }).isMongoId(),
+  validate,
+  staff.requestEarlyExit
+);
+router.get('/staff/early-exits', authorize('faculty', ...STAFF_REPORT_ROLES), dateField('date', query).optional({ values: 'falsy' }), dateField('from', query).optional({ values: 'falsy' }), dateField('to', query).optional({ values: 'falsy' }), validate, staff.listEarlyExits);
+router.patch(
+  '/staff/early-exits/:id/decision',
+  writeLimiter,
+  idParam('id'),
+  authorize('hod', 'principal', 'admin'),
+  body('action').isIn(['approve', 'reject']),
+  body('note').optional({ values: 'falsy' }).isString().trim().isLength({ max: 300 }),
+  validate,
+  staff.decideEarlyExit
+);
+router.patch('/staff/early-exits/:id/departure', writeLimiter, idParam('id'), authorize('faculty', 'hod', 'principal', 'admin'), staff.recordDeparture);
+router.patch('/staff/early-exits/:id/cancel', writeLimiter, idParam('id'), authorize('faculty', 'hod', 'principal', 'admin'), staff.cancelEarlyExit);
+router.get('/staff/cover', authorize('hod', 'principal', 'admin'), dateField('date', query).optional({ values: 'falsy' }), query('faculty').optional({ values: 'falsy' }).isMongoId(), validate, staff.listCover);
+router.get('/staff/cover/available', authorize('hod', 'principal', 'admin'), query('slotId').isMongoId(), dateField('date', query), validate, staff.availableSubstitutes);
+router.post(
+  '/staff/cover',
+  writeLimiter,
+  authorize('hod', 'principal', 'admin'),
+  body('slotId').isMongoId(),
+  dateField('date'),
+  body('kind').isIn(['substitute', 'not_conducted', 'pending_verification']),
+  body('substitute').if(body('kind').equals('substitute')).isMongoId().withMessage('Choose the substitute'),
+  body('reason').optional({ values: 'falsy' }).isString().trim().isLength({ max: 300 }),
+  validate,
+  staff.assignCover
+);
+router.delete('/staff/cover/:id', writeLimiter, idParam('id'), authorize('hod', 'principal', 'admin'), staff.cancelCover);
 
 // Daily headcount for the college-wide roles / HOD (own department) dashboard.
 const SUMMARY_VIEW = ATTENDANCE_SUMMARY_ROLES;
@@ -1300,6 +1538,145 @@ router.post('/timetable', writeLimiter, authorize(...TIMETABLE_WRITE_ROLES), ...
 router.put('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), ...slotRules(true), timetable.updateSlot);
 router.delete('/timetable/:id', idParam('id'), authorize(...TIMETABLE_WRITE_ROLES), timetable.deleteSlot);
 
+// ── Exam timetable ─────────────────────────────────────────────────
+// Read: every timetable role (the controller scopes what each one sees).
+// Write: HOD (own department scope) and COE (campus-wide) — and the
+// controller re-checks every write against the exam's own scope.
+const yearOrAll = (chain) => chain.custom((v) => String(v).toUpperCase() === 'ALL' || ACADEMIC_YEARS.includes(Number(v))).withMessage('Year must be 1st–4th or All Years');
+const sectionOrAll = (chain) => chain.trim().custom((v) => v.toUpperCase() === 'ALL' || SECTIONS.includes(v.toUpperCase())).withMessage('Choose a valid section or All Sections');
+const examScopeRules = [
+  body('department').optional({ values: 'null' }).isString().trim().isLength({ min: 1, max: 80 }).withMessage('Choose a department or All Departments'),
+  yearOrAll(body('year').optional({ values: 'null' })),
+  sectionOrAll(body('section').optional({ values: 'null' }).isString()),
+];
+const examFieldRules = (prefix, optional = false) => {
+  const o = (chain) => (optional ? chain.optional() : chain);
+  return [
+    o(body(`${prefix}subjectCode`)).isString().trim().isLength({ min: 2, max: 20 }).withMessage('Subject code must be 2–20 characters')
+      .matches(/^[A-Za-z0-9][A-Za-z0-9 ./-]*$/).withMessage('Subject code may contain letters, digits, spaces, . / -'),
+    o(body(`${prefix}subjectName`)).isString().trim().isLength({ min: 2, max: 120 }).withMessage('Subject name must be 2–120 characters'),
+    o(body(`${prefix}date`)).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Exam date must be YYYY-MM-DD'),
+    o(body(`${prefix}startTime`)).matches(HHMM).withMessage('Start time must be HH:mm'),
+    o(body(`${prefix}endTime`)).matches(HHMM).withMessage('End time must be HH:mm'),
+    body(`${prefix}notes`).optional({ values: 'null' }).isString().trim().isLength({ max: 300 }),
+  ];
+};
+const examFilterQuery = [
+  dateField('from', query).optional({ values: 'falsy' }),
+  dateField('to', query).optional({ values: 'falsy' }),
+  query('department').optional({ values: 'falsy' }).isString().trim().isLength({ max: 80 }),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS.map(String)),
+  query('section').optional({ values: 'falsy' }).isString().trim().isLength({ max: 10 }),
+  query('subject').optional({ values: 'falsy' }).isString().trim().isLength({ max: 60 }),
+  query('status').optional({ values: 'falsy' }).isIn(EXAM_STATUSES),
+];
+router.get('/exams/options', authorize(...EXAM_VIEW_ROLES), query('department').optional().isString().isLength({ max: 80 }), query('year').optional().isString().isLength({ max: 3 }), validate, exams.examOptions);
+router.get('/exams', authorize(...EXAM_VIEW_ROLES), ...examFilterQuery, validate, exams.listExams);
+router.post(
+  '/exams',
+  writeLimiter,
+  authorize(...EXAM_MANAGE_ROLES),
+  ...examScopeRules,
+  body('status').optional().isIn(['draft', 'published']).withMessage('Status must be draft or published'),
+  body('entries').isArray({ min: 1, max: 30 }).withMessage('Add between 1 and 30 exams'),
+  ...examFieldRules('entries.*.'),
+  validate,
+  exams.createExams
+);
+router.put('/exams/:id', writeLimiter, idParam('id'), authorize(...EXAM_MANAGE_ROLES), ...examScopeRules, ...examFieldRules('', true), validate, exams.updateExam);
+router.patch('/exams/:id/publish', writeLimiter, idParam('id'), authorize(...EXAM_MANAGE_ROLES), exams.publishExam);
+router.patch(
+  '/exams/:id/cancel',
+  writeLimiter,
+  idParam('id'),
+  authorize(...EXAM_MANAGE_ROLES),
+  body('reason').optional({ values: 'null' }).isString().trim().isLength({ max: 300 }).withMessage('Reason must be at most 300 characters'),
+  validate,
+  exams.cancelExam
+);
+
+// ── College buses ──────────────────────────────────────────────────
+// Viewing is scoped per viewer in the controller (services/transport/access.js);
+// management is for transport managers only; locations only from the phone
+// sharing an active trip (or the signed tracker webhook above).
+const latLng = (prefix) => [
+  body(`${prefix}lat`).isFloat({ min: -90, max: 90 }).withMessage('Latitude must be -90…90'),
+  body(`${prefix}lng`).isFloat({ min: -180, max: 180 }).withMessage('Longitude must be -180…180'),
+];
+const busRules = (optional = false) => {
+  const o = (chain) => (optional ? chain.optional() : chain);
+  return [
+    o(body('number')).isString().trim().isLength({ min: 1, max: 20 }),
+    body('registrationNumber').optional({ values: 'null' }).isString().trim().isLength({ max: 20 }),
+    body('route').optional({ values: 'null' }).isMongoId(),
+    body('gpsSource').optional().isIn(['tracker', 'phone']),
+    body('trackerDeviceId').optional({ values: 'null' }).isString().trim().isLength({ max: 80 }),
+    body('trackingStaff').optional().isArray({ max: 20 }),
+    body('trackingStaff.*').optional().isMongoId(),
+    body('isActive').optional().isBoolean(),
+    validate,
+  ];
+};
+const routeRules = (optional = false) => {
+  const o = (chain) => (optional ? chain.optional() : chain);
+  return [
+    o(body('name')).isString().trim().isLength({ min: 2, max: 80 }).withMessage('Route name: 2–80 characters'),
+    body('code').optional({ values: 'null' }).isString().trim().isLength({ max: 20 }),
+    o(body('stops')).isArray({ min: 2, max: 200 }).withMessage('A route needs 2–200 stops'),
+    body('stops.*.name').optional().isString().trim().isLength({ min: 2, max: 80 }),
+    ...latLng('stops.*.').map((r) => r.optional()),
+    body('stops.*.sequence').optional().isInt({ min: 1, max: 200 }),
+    body('stops.*.scheduledTime').optional({ values: 'falsy' }).matches(HHMM).withMessage('Scheduled time must be HH:mm'),
+    body('stops.*.isCollege').optional().isBoolean(),
+    body('geometry').optional({ values: 'null' }).isArray({ min: 2, max: 20000 }),
+    body('isActive').optional().isBoolean(),
+    validate,
+  ];
+};
+router.get('/transport/config', authorize(...TRANSPORT_VIEW_ROLES), transport.getConfig);
+router.get('/transport/buses', authorize(...TRANSPORT_VIEW_ROLES), transport.listBuses);
+router.get('/transport/buses/:id', authorize(...TRANSPORT_VIEW_ROLES), idParam('id'), query('stopId').optional({ values: 'falsy' }).isMongoId(), validate, transport.getBus);
+router.get('/transport/buses/:id/eta', authorize(...TRANSPORT_VIEW_ROLES), idParam('id'), query('stopId').optional({ values: 'falsy' }).isMongoId(), validate, transport.getEta);
+router.get('/transport/routes', authorize(...TRANSPORT_VIEW_ROLES), transport.listRoutes);
+router.get('/transport/routes/:id', authorize(...TRANSPORT_VIEW_ROLES), idParam('id'), transport.getRoute);
+router.get('/transport/search', authorize(...TRANSPORT_VIEW_ROLES), query('q').optional().isString().isLength({ max: 60 }), validate, transport.search);
+router.get('/transport/me', authorize(...TRANSPORT_VIEW_ROLES), transport.getMine);
+router.post('/transport/trips', writeLimiter, authorize(...TRIP_SHARER_ROLES), body('busId').isMongoId(), validate, transport.startTripCtrl);
+router.post('/transport/trips/:id/stop', writeLimiter, idParam('id'), authorize(...TRIP_SHARER_ROLES), body('reason').optional().isIn(['completed', 'stopped']), validate, transport.stopTripCtrl);
+router.get('/transport/trips/:id', idParam('id'), authorize(...TRANSPORT_VIEW_ROLES), transport.getTrip);
+router.post(
+  '/transport/trips/:id/locations',
+  locationLimiter,
+  idParam('id'),
+  authorize(...TRIP_SHARER_ROLES),
+  body('fixes').isArray({ min: 1, max: 20 }).withMessage('Send 1–20 location fixes'),
+  ...latLng('fixes.*.'),
+  body('fixes.*.timestamp').exists().withMessage('Each fix needs a timestamp'),
+  body('fixes.*.accuracy').optional({ values: 'null' }).isFloat({ min: 0, max: 100000 }),
+  body('fixes.*.speed').optional({ values: 'null' }).isFloat({ min: 0, max: 1000 }),
+  body('fixes.*.heading').optional({ values: 'null' }).isFloat({ min: 0, max: 360 }),
+  validate,
+  transport.postTripLocations
+);
+router.post('/transport/routes', writeLimiter, authorize(...TRANSPORT_MANAGE_ROLES), ...routeRules(), transport.createRoute);
+router.put('/transport/routes/:id', writeLimiter, idParam('id'), authorize(...TRANSPORT_MANAGE_ROLES), ...routeRules(true), transport.updateRoute);
+router.post('/transport/buses', writeLimiter, authorize(...TRANSPORT_MANAGE_ROLES), ...busRules(), transport.createBus);
+router.put('/transport/buses/:id', writeLimiter, idParam('id'), authorize(...TRANSPORT_MANAGE_ROLES), ...busRules(true), transport.updateBus);
+router.get('/transport/assignments', authorize(...TRANSPORT_MANAGE_ROLES), transport.listAssignments);
+router.get('/transport/people', authorize(...TRANSPORT_MANAGE_ROLES), query('q').optional().isString().isLength({ max: 60 }), query('kind').optional().isIn(['riders', 'sharers']), validate, transport.pickPeople);
+router.put(
+  '/transport/assignments',
+  writeLimiter,
+  authorize(...TRANSPORT_MANAGE_ROLES),
+  body('user').isMongoId(),
+  body('route').isMongoId(),
+  body('bus').optional({ values: 'null' }).isMongoId(),
+  body('stop').optional({ values: 'null' }).isMongoId(),
+  validate,
+  transport.upsertAssignment
+);
+router.delete('/transport/assignments/:id', writeLimiter, idParam('id'), authorize(...TRANSPORT_MANAGE_ROLES), transport.deleteAssignment);
+
 // ── Holidays ───────────────────────────────────────────────────────
 // Reading: anyone with timetable access, filtered to what applies to them.
 // Create / edit / delete: the Principal ONLY — enforced here and re-checked in
@@ -1457,12 +1834,23 @@ router.get('/gate-pass', ...rangeQuery, validate, gatePass.listGatePasses);
 // `date` (college-wide roles) looks back at one past day.
 router.get(
   '/gate-pass/dashboard',
-  authorize(...GATE_VIEW, ...EMERGENCY_AUTHORITIES.filter((r) => !GATE_VIEW.includes(r))),
+  authorize(...GATE_VIEW, ...EMERGENCY_AUTHORITIES.filter((r) => !GATE_VIEW.includes(r)), SUPER_ADMIN_ROLE),
   query('date').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Date must be YYYY-MM-DD'),
   validate,
   gatePass.gateDashboard
 );
 router.get('/gate-pass/dashboard/security', authorize(...GATE_SECURITY), gatePass.securityDashboard);
+// Who each Security home card counts (Students in / out / Left today), with the leave period.
+router.get(
+  '/gate-pass/dashboard/security/students',
+  authorize(...GATE_SECURITY),
+  query('view').isIn(['in', 'out', 'left']).withMessage('View must be in, out or left'),
+  query('search').optional().isString().isLength({ max: 64 }),
+  query('page').optional().isInt({ min: 1, max: 10000 }),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  validate,
+  gatePass.securityStudentList
+);
 router.post(
   '/gate-pass/verify',
   verifyLimiter,
@@ -1539,7 +1927,18 @@ router.delete('/gate-pass/:id/bind', writeLimiter, idParam('id'), authorize(...G
 router.get('/gate-pass/:id', idParam('id'), gatePass.getGatePass);
 router.get('/gate-pass/:id/qr', idParam('id'), gatePass.getGatePassQr);
 router.get('/gate-pass/:id/parent-otp', idParam('id'), authorize(...GATE_FACULTY), gatePass.getParentOtp);
-router.post('/gate-pass/:id/parent-otp', otpLimiter, idParam('id'), authorize(...GATE_FACULTY), gatePass.requestParentOtp);
+// Optional `mobile` + `reason`: the class faculty sends the OTP to another number
+// when the registered parent mobile is not reachable (validated + audited in the controller).
+router.post(
+  '/gate-pass/:id/parent-otp',
+  otpLimiter,
+  idParam('id'),
+  authorize(...GATE_FACULTY),
+  body('mobile').optional({ values: 'null' }).isString().withMessage('Enter a valid 10-digit mobile number').isLength({ max: 20 }),
+  body('reason').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('Reason is too long (200 characters max)'),
+  validate,
+  gatePass.requestParentOtp
+);
 router.post(
   '/gate-pass/:id/parent-otp/verify',
   otpLimiter,
@@ -1728,6 +2127,7 @@ router.get('/analytics/gate', authorize(...STAFF_VIEW), ...rangeQuery, validate,
 router.get('/analytics/club/:id', param('id').isString().isLength({ min: 1, max: 80 }), ...rangeQuery, validate, analytics.clubAnalytics);
 
 // ── Alumni Network ──────────────────────────────────────────────────
+router.use('/skill-wallet', skillWalletRouter);
 router.use('/alumni', alumniRouter);
 router.use('/mentorship-requests', mentorshipRequestsRouter);
 router.use('/mentorship', mentorshipRouter);

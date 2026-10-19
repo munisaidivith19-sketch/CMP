@@ -20,6 +20,7 @@
  * (7 days idle, lastUsedAt written at most every 5 minutes) unchanged.
  */
 import Session from '../models/Session.js';
+import { registerJob, runJob } from '../services/soc/monitors.js';
 import { disconnectSessions } from '../config/socket.js';
 import { logActivity } from './activity.js';
 import { logSecurity } from './securityLog.js';
@@ -100,8 +101,9 @@ export async function sweepIdleWebSessions() {
 }
 
 export function startIdleSessionSweeper() {
+  registerJob('auth.idle_session_sweep', { intervalMs: IDLE_SWEEP_INTERVAL_MS, description: 'Revoke idle web sessions' });
   const timer = setInterval(
-    () => sweepIdleWebSessions().catch((err) => console.error('[auth] idle-session sweep failed:', err.message)),
+    () => runJob('auth.idle_session_sweep', sweepIdleWebSessions, { logTag: '[auth] idle-session sweep' }),
     IDLE_SWEEP_INTERVAL_MS
   );
   timer.unref();

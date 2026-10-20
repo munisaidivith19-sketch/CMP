@@ -2,19 +2,31 @@ import { getPlatformState, maintenanceBody, platformAllows } from '../services/p
 import Session from '../models/Session.js';
 import { ApiError, asyncHandler } from '../utils/http.js';
 import { SUPER_ADMIN_ROLE } from '../constants.js';
+import { authenticateAccessToken } from './auth.js';
 
 // Public endpoints that keep working in maintenance so the Super Admin can
 // still sign in (login / refresh refuse everyone else themselves) and every
 // client can ask what is going on.
 const PUBLIC_OPEN = new Set(['/auth/login', '/auth/refresh', '/auth/logout', '/platform/status']);
 
-/** Before authentication: public endpoints are closed outside normal mode. */
+/**
+ * Before authentication: public endpoints are closed outside normal mode.
+ * Merely sending an Authorization header never opens the gate: the bearer
+ * token is verified exactly as protect does (signature, live session, active
+ * account) and the account must be allowed in the current mode. An invalid,
+ * expired or revoked token never passes: it gets the same 401 protect would
+ * give (so a Super Admin's client still refreshes its token during an
+ * emergency), and nothing behind the gate runs.
+ */
 export const publicPlatformGate = asyncHandler(async (req, res, next) => {
   if (PUBLIC_OPEN.has(req.path.replace(/\/+$/, ''))) return next();
-  // Requests with a bearer token are judged per account by platformGate after protect.
-  if (String(req.headers.authorization || '').startsWith('Bearer ')) return next();
   const state = await getPlatformState();
   if (state.mode === 'normal') return next();
+  const header = String(req.headers.authorization || '');
+  if (header.startsWith('Bearer ')) {
+    const { user } = await authenticateAccessToken(header.slice(7), req.ip);
+    if (await platformAllows(user)) return next();
+  }
   res.set('Retry-After', '300');
   return res.status(503).json(maintenanceBody(state));
 });

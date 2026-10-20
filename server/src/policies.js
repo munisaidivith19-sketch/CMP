@@ -146,12 +146,15 @@ export function normalizePolicies(input, catalogue = POLICY_CATALOGUE) {
 }
 
 /**
- * Admin and Super Admin are never restricted by module policies: Admin keeps
- * the full admin dashboard. Policies apply only to other (staff) roles, through
- * their additional grants (isStaffGrantee). Kept as a function so every caller
- * that asks "is this admin policy-managed?" gets a plain `false`.
+ * Is this an Admin account whose access a Super Admin restricted with module
+ * policies? Such an admin is deny-by-default (middleware/adminPolicy.js): it
+ * may use only the modules, actions and department scopes in `policies` (an
+ * empty list grants nothing). Admins without the flag are legacy,
+ * unrestricted admins; Super Admin and staff roles are never policy-managed
+ * (staff use additional grants, isStaffGrantee). The flag is written only by
+ * the policy service (services/adminPolicies.js).
  */
-export const isPolicyManaged = () => false;
+export const isPolicyManaged = (user) => user?.role === 'admin' && user?.policyManaged === true;
 
 /** The grant for one module, or null. */
 export function grantFor(user, module) {

@@ -22,7 +22,10 @@ struct BusMapView: UIViewRepresentable {
     let buses: [Bus]
     let selectedBusId: String?
     let route: BusRoute?
-    let progress: RouteProgress?
+    /// How far along `route` the bus is (nil when unknown or the trip runs it in reverse).
+    let fraction: Double?
+    /// Route stop sequences already behind the bus.
+    let passed: Set<Int>
     let selectedStopId: String?
     let student: CLLocationCoordinate2D?
     let command: MapCommand?
@@ -42,6 +45,8 @@ struct BusMapView: UIViewRepresentable {
         map.minimumZoomLevel = 3
         map.maximumZoomLevel = 19
         map.accessibilityLabel = "Bus map"
+        // Opening view (once): Chennai at city level, until buses / the route are framed.
+        map.setCenter(CLLocationCoordinate2D(latitude: BusMath.defaultCenter.lat, longitude: BusMath.defaultCenter.lng), zoomLevel: BusMath.defaultZoom, animated: false)
         context.coordinator.map = map
         return map
     }
@@ -98,7 +103,12 @@ struct BusMapView: UIViewRepresentable {
             refreshViews(on: map)
             if !didInitialFit, !busAnnotations.isEmpty {
                 didInitialFit = true
-                fitAllBuses(on: map, animated: false)
+                // The selected bus first when it has a real position; otherwise every bus in frame.
+                if let id = parent.selectedBusId, let a = busAnnotations[id] {
+                    map.setCenter(a.coordinate, zoomLevel: 15, animated: false)
+                } else {
+                    fitAllBuses(on: map, animated: false)
+                }
             }
             if let command = parent.command, command.id != lastCommandId {
                 lastCommandId = command.id
@@ -136,7 +146,7 @@ struct BusMapView: UIViewRepresentable {
         }
 
         private func syncRoute(on map: MLNMapView) {
-            let key = parent.route.map { "\($0.id)|\(parent.progress?.fraction ?? -1)" }
+            let key = parent.route.map { "\($0.id)|\(parent.fraction ?? -1)" }
             guard key != routeKey else { return }
             let routeChanged = parent.route?.id != routeKey?.split(separator: "|").first.map(String.init)
             routeKey = key
@@ -148,7 +158,7 @@ struct BusMapView: UIViewRepresentable {
             }
             guard let route = parent.route else { return }
             let path = route.path
-            let parts = BusMath.split(path: path, fraction: parent.progress?.fraction)
+            let parts = BusMath.split(path: path, fraction: parent.fraction)
             for (points, travelled) in [(parts.travelled, true), (parts.remaining, false)] where points.count >= 2 {
                 var coords = points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng) }
                 let line = RoutePolyline(coordinates: &coords, count: UInt(coords.count))
@@ -187,7 +197,7 @@ struct BusMapView: UIViewRepresentable {
                 (map.view(for: annotation) as? BusMarkerView)?
                     .configure(annotation, selected: id == parent.selectedBusId, compact: compact, mapDirection: map.direction)
             }
-            let passed = Set(parent.progress?.passedSequences ?? [])
+            let passed = parent.passed
             for (id, annotation) in stopAnnotations {
                 (map.view(for: annotation) as? StopMarkerView)?
                     .configure(annotation, selected: id == parent.selectedStopId, passed: passed.contains(annotation.sequence))
@@ -294,7 +304,7 @@ struct BusMapView: UIViewRepresentable {
                     let view = (mapView.dequeueReusableAnnotationView(withIdentifier: StopMarkerView.reuseId) as? StopMarkerView)
                         ?? StopMarkerView(annotation: stop, reuseIdentifier: StopMarkerView.reuseId)
                     view.configure(stop, selected: stop.stopId == parent.selectedStopId,
-                                   passed: (parent.progress?.passedSequences ?? []).contains(stop.sequence))
+                                   passed: parent.passed.contains(stop.sequence))
                     return view
                 }
                 if annotation is StudentLocationAnnotation {

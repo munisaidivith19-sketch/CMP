@@ -101,6 +101,6 @@ export function updateBusMarkerElement(el, bus, status, location, selected = fal
   el.setAttribute('aria-pressed', String(selected));
   el.setAttribute(
     'aria-label',
-    `Bus ${bus.number}, route ${bus.route?.name || 'none'}, ${status === 'live' ? 'tracking live' : status === 'stale' ? 'last position is old' : 'tracking offline'}`
+    `Bus ${bus.number}, route ${bus.route?.name || 'none'}, ${status === 'live' ? 'tracking live' : status === 'stale' ? 'last position is old' : status === 'not_sharing' ? 'not sharing, last known position' : 'tracking offline'}`
   );
 }

@@ -17,7 +17,12 @@ const MAX_PER_MINUTE = 10;
 
 const shape = (s = '') => String(s).replace(/\b[a-f0-9]{24}\b/gi, '<id>').replace(/\d+/g, '<n>').slice(0, 160);
 const clip = (s, n) => (s === undefined || s === null ? undefined : String(s).slice(0, n));
-const pathOnly = (p = '/') => String(p || '/').split('?')[0].split('#')[0].slice(0, 200) || '/';
+// Opaque path segments (claim / invite tokens, 24+ URL-safe characters mixing
+// letters and digits) never leave the browser: they are sent as ":token".
+const TOKEN_SEGMENT = /(?<=\/)(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{24,}(?![A-Za-z0-9_-])/g;
+const OBJECT_ID_SEGMENT = /(?<=\/)[a-f0-9]{24}(?![A-Za-z0-9_-])/gi;
+export const pathOnly = (p = '/') =>
+  String(p || '/').split('?')[0].split('#')[0].replace(OBJECT_ID_SEGMENT, ':id').replace(TOKEN_SEGMENT, ':token').slice(0, 200) || '/';
 
 export function createErrorReporter({ send, now = () => Date.now(), isSignedIn = () => true, getRoute = () => '/', appVersion } = {}) {
   const seen = new Map(); // key -> last sent

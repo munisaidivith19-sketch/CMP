@@ -8,7 +8,7 @@ import { api } from './api';
  */
 const fresh = { keepUnusedDataFor: 0 };
 
-export const superAdminApi = api.enhanceEndpoints({ addTagTypes: ['SuperAdmin', 'Emergency', 'MyPolicies', 'PolicyTargets', 'UserPolicies', 'SocError', 'SocIncident', 'SocRun'] }).injectEndpoints({
+export const superAdminApi = api.enhanceEndpoints({ addTagTypes: ['SuperAdmin', 'Emergency', 'MyPolicies', 'AccountModules', 'PolicyTargets', 'UserPolicies', 'SocError', 'SocIncident', 'SocRun'] }).injectEndpoints({
   endpoints: (b) => ({
     superReauth: b.mutation({ query: (password) => ({ url: '/super-admin/reauth', method: 'POST', body: { password } }) }),
     getSuperOverview: b.query({ query: () => '/super-admin/overview', providesTags: ['SuperAdmin'], ...fresh }),
@@ -20,6 +20,8 @@ export const superAdminApi = api.enhanceEndpoints({ addTagTypes: ['SuperAdmin', 
     resetAdminPassword: b.mutation({ query: ({ id, ...body }) => ({ url: `/super-admin/admins/${id}/reset-password`, method: 'POST', body }), invalidatesTags: ['SuperAdmin'] }),
     revokeAdminSessions: b.mutation({ query: (id) => ({ url: `/super-admin/admins/${id}/revoke-sessions`, method: 'POST' }), invalidatesTags: ['SuperAdmin'] }),
     setAdminPolicies: b.mutation({ query: ({ id, policies }) => ({ url: `/super-admin/admins/${id}/policies`, method: 'PUT', body: { policies } }), invalidatesTags: ['SuperAdmin'] }),
+    // Dashboard modules as checkboxes: exactly the ticked module keys.
+    setAdminModules: b.mutation({ query: ({ id, modules }) => ({ url: `/super-admin/admins/${id}/modules`, method: 'PUT', body: { modules } }), invalidatesTags: ['SuperAdmin'] }),
     setAdminDelegation: b.mutation({ query: ({ id, delegation }) => ({ url: `/super-admin/admins/${id}/delegation`, method: 'PUT', body: { delegation } }), invalidatesTags: ['SuperAdmin'] }),
     getAdminEvents: b.query({ query: ({ id, ...params }) => ({ url: `/super-admin/admins/${id}/events`, params }), ...fresh }),
     getSuperSecurityEvents: b.query({ query: (params) => ({ url: '/super-admin/security/events', params }), ...fresh }),
@@ -59,6 +61,8 @@ export const superAdminApi = api.enhanceEndpoints({ addTagTypes: ['SuperAdmin', 
     getSocCoverage: b.query({ query: () => '/super-admin/soc/coverage', ...fresh }),
     // Ordinary admins: own effective permissions (drives which admin pages show).
     getMyPolicies: b.query({ query: () => '/admin/my-policies', providesTags: ['MyPolicies'], ...fresh }),
+    // The signed-in account's dashboard modules, live from its policies (never cached server-side).
+    getAccountModules: b.query({ query: () => '/account/modules', providesTags: ['AccountModules'], ...fresh }),
     // Delegated policy assignment (an Admin holding user_management.policies).
     getPolicyTargets: b.query({ query: () => '/admin/policy-targets', providesTags: ['PolicyTargets'], ...fresh }),
     // One account's policies (Admins: module policies; staff: additional policies).
@@ -85,6 +89,7 @@ export const {
   useResetAdminPasswordMutation,
   useRevokeAdminSessionsMutation,
   useSetAdminPoliciesMutation,
+  useSetAdminModulesMutation,
   useSetAdminDelegationMutation,
   useGetAdminEventsQuery,
   useGetSuperSecurityEventsQuery,
@@ -98,6 +103,7 @@ export const {
   useEmergencyTransitionMutation,
   useEmergencyHealthCheckMutation,
   useGetMyPoliciesQuery,
+  useGetAccountModulesQuery,
   useGetPolicyTargetsQuery,
   useSetDelegatedPoliciesMutation,
   useGetUserPoliciesQuery,

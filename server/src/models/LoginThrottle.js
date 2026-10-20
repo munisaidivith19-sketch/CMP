@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 
 /**
  * Failed sign-in counters that are not tied to an existing account: one per
- * client IP ("ip") and one per IP + typed email that has no account ("anon").
+ * client IP ("ip") and one per typed email that has no account ("anon").
  * They live in MongoDB, not process memory, so a restart or a deploy does not
  * wipe an attacker's count and every instance behind the load balancer sees
  * the same numbers. Only a SHA-256 hash of the key is stored (never the raw

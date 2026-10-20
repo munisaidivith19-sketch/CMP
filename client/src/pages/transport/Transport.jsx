@@ -1,13 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Bus, Crosshair, LocateFixed, Maximize2, RefreshCw, Search, Settings2, WifiOff } from 'lucide-react';
+import { Bus, Crosshair, History, LocateFixed, Maximize2, Navigation, RefreshCw, Search, Settings2, WifiOff } from 'lucide-react';
 import { useGetBusesQuery, useGetBusQuery, useGetTransportConfigQuery, useGetTransportMeQuery, useSearchTransportQuery } from '../../services/api';
 import { useSocketConnected, useSocketEvent, useSocketRoom } from '../../services/socket';
 import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton, cn } from '../../components/ui/primitives';
-import { accuracyText, agoText, etaText, freshnessOf } from './busGeo';
+import { accuracyText, agoText, busStatus, etaText, initialFit } from './busGeo';
 import { createLocator } from './myLocation';
+import JourneyPanel from './JourneyPanel';
+import { DIRECTION_LABEL, passedFromJourney } from './journeyFormat';
 
 // Console logging of the raw device readings: on in development, or with
 // ?locdebug=1 (or localStorage "vexon:locdebug" = "1"). Never sent anywhere.
@@ -28,6 +30,7 @@ const STATUS = {
   live: { label: 'Live', color: 'success' },
   stale: { label: 'Position is old', color: 'warning' },
   offline: { label: 'Tracking offline', color: 'neutral' },
+  not_sharing: { label: 'Not sharing', color: 'neutral' },
 };
 
 /**
@@ -51,7 +54,7 @@ export default function Transport() {
   const student = myLoc.fix;
   const [mapError, setMapError] = useState('');
   const [mapKey, setMapKey] = useState(0);
-  const [fit, setFit] = useState({ kind: 'all', nonce: 0 });
+  const [fit, setFit] = useState(() => initialFit(selectedId));
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
   const [, tick] = useState(0);
@@ -75,6 +78,10 @@ export default function Transport() {
   useSocketEvent('bus:trip', () => {
     refetch();
     if (selectedId) refetchDetail();
+  });
+  // A stop arrival / departure was recorded: show the server's times at once.
+  useSocketEvent('bus:journey', (p) => {
+    if (p.busId === selectedId) refetchDetail();
   });
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 10000);
@@ -100,7 +107,7 @@ export default function Transport() {
   };
   const selected = buses.find((b) => String(b._id) === selectedId);
   const selectedLoc = selected ? locOf(selected) : null;
-  const status = freshnessOf(selectedLoc?.at, thresholds);
+  const status = busStatus(selected, selectedLoc, thresholds);
 
   // Your position, read only when asked: one fresh, validated reading (never a
   // cached one, never a default), one request at a time, stopped on leaving the
@@ -143,7 +150,11 @@ export default function Transport() {
   }
 
   const eta = detail?.eta;
-  const passed = new Set(detail?.progress?.passedSequences || []);
+  const journey = detail?.journey || null;
+  // The line the bus is actually following (a separate return route, when it has one).
+  const mapRoute = detail?.journeyRoute || detail?.route || null;
+  const passedSeq = passedFromJourney(journey, mapRoute?.stops) ?? detail?.progress?.passedSequences ?? [];
+  const passed = new Set(passedSeq);
 
   return (
     <div className="space-y-4">
@@ -152,10 +163,24 @@ export default function Transport() {
         title="Bus Tracking"
         subtitle="College buses at their latest GPS position"
         actions={
-          config?.canManage && (
-            <Button variant="soft" icon={Settings2} to="/transport/manage">
-              Manage buses
-            </Button>
+          (config?.canShare || config?.canManage || config?.canViewHistory) && (
+            <div className="flex flex-wrap gap-2">
+              {config?.canViewHistory && (
+                <Button variant="soft" icon={History} to="/transport/history">
+                  Journey history
+                </Button>
+              )}
+              {config?.canShare && (
+                <Button variant="soft" icon={Navigation} to="/transport/share">
+                  Share bus location
+                </Button>
+              )}
+              {config?.canManage && (
+                <Button variant="soft" icon={Settings2} to="/transport/manage">
+                  Manage buses
+                </Button>
+              )}
+            </div>
           )
         }
       />
@@ -184,7 +209,7 @@ export default function Transport() {
                 locations={locations}
                 selectedId={selectedId}
                 onSelect={(id) => select(id, null)}
-                route={detail?.route ? { ...detail.route, passedSequences: detail.progress?.passedSequences } : null}
+                route={mapRoute ? { ...mapRoute, passedSequences: passedSeq } : null}
                 travelled={detail?.travelled}
                 selectedStopId={eta?.stop?._id || stopId}
                 onSelectStop={(id) => select(selectedId, id)}
@@ -194,17 +219,18 @@ export default function Transport() {
               />
             </Suspense>
           )}
-          <div className="absolute bottom-3 left-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="soft" icon={LocateFixed} loading={locating} onClick={() => locate('student')} aria-label="Show my location">
+          {/* Bottom-left, clear of the zoom controls (top-right) and the attribution (bottom-right). */}
+          <div className="absolute bottom-3 left-3 right-24 flex flex-wrap gap-2">
+            <Button size="sm" variant="map" icon={LocateFixed} loading={locating} onClick={() => locate('student')} aria-label="Show my location">
               {locating ? 'Finding you…' : 'My location'}
             </Button>
             {student && (
-              <span className={cn('self-center rounded-full px-2.5 py-1 text-[11px] font-bold', myLoc.state === 'approximate' ? 'bg-amber-500/90 text-white' : 'bg-white/90 text-ink')}>
+              <span className={cn('self-center rounded-full border px-2.5 py-1 text-[11px] font-bold shadow-md', myLoc.state === 'approximate' ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300 bg-white text-ink dark:border-white/25 dark:bg-[#1b1d3a] dark:text-white')}>
                 {myLoc.state === 'approximate' ? 'Approximate' : 'You'}: {accuracyText(student.accuracy)}
               </span>
             )}
-            {selected && <Button size="sm" variant="soft" icon={Crosshair} onClick={() => setFit({ kind: 'bus', nonce: Date.now() })}>Centre bus</Button>}
-            {selected && <Button size="sm" variant="soft" icon={Maximize2} onClick={() => (student ? setFit({ kind: 'both', nonce: Date.now() }) : locate('both'))}>Me + bus</Button>}
+            {selected && <Button size="sm" variant="map" icon={Crosshair} onClick={() => setFit({ kind: 'bus', nonce: Date.now() })}>Centre bus</Button>}
+            {selected && <Button size="sm" variant="map" icon={Maximize2} onClick={() => (student ? setFit({ kind: 'both', nonce: Date.now() }) : locate('both'))}>Me + bus</Button>}
           </div>
         </Card>
 
@@ -278,9 +304,13 @@ export default function Transport() {
               <dl className="grid grid-cols-2 gap-2 text-xs">
                 <div><dt className="muted">Last GPS update</dt><dd className="font-semibold">{selectedLoc ? agoText(selectedLoc.at) : 'never'}</dd></div>
                 <div><dt className="muted">Speed</dt><dd className="font-semibold">{status === 'live' && Number.isFinite(selectedLoc?.speed) ? `${Math.round(selectedLoc.speed * 3.6)} km/h` : '—'}</dd></div>
-                <div><dt className="muted">Next stop</dt><dd className="font-semibold">{eta?.nextStop?.name || '—'}</dd></div>
-                <div><dt className="muted">Trip</dt><dd className="font-semibold">{selected.trip?.status === 'active' ? 'In progress' : 'Not running'}</dd></div>
+                <div><dt className="muted">Next stop</dt><dd className="font-semibold">{journey ? journey.nextStop?.name || '—' : eta?.nextStop?.name || '—'}</dd></div>
+                <div><dt className="muted">Trip</dt><dd className="font-semibold">{selected.trip?.status === 'active' ? `In progress${journey?.direction ? ` · ${DIRECTION_LABEL[journey.direction]}` : ''}` : 'Not running'}</dd></div>
               </dl>
+              {journey ? (
+                <JourneyPanel journey={journey} tz={config?.timezone} selectedStopId={stopId} onSelectStop={(id) => select(selectedId, id)} />
+              ) : (
+              <>
               <div className={cn('rounded-2xl p-3 text-sm', eta?.status === 'ok' ? 'bg-emerald-500/10' : 'bg-white/40 dark:bg-white/5')}>
                 <p className="text-xs muted">ETA to {eta?.stop?.name || (stopId ? 'the selected stop' : 'the next stop')}</p>
                 <p className="font-bold">{etaText(eta)}</p>
@@ -291,7 +321,12 @@ export default function Transport() {
                   </p>
                 )}
               </div>
-              {status !== 'live' && selectedLoc && <p className="text-xs text-amber-700 dark:text-amber-300">The bus is shown where it was last reported, {agoText(selectedLoc.at)}. It may have moved.</p>}
+              {status === 'not_sharing' && selectedLoc && (
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Nobody is sharing this bus’s location now. The marker is its last shared position, from {new Date(selectedLoc.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} ({agoText(selectedLoc.at)}) — not where it is now.
+                </p>
+              )}
+              {status !== 'live' && status !== 'not_sharing' && selectedLoc && <p className="text-xs text-amber-700 dark:text-amber-300">The bus is shown where it was last reported, {agoText(selectedLoc.at)}. It may have moved.</p>}
               {detail?.route && (
                 <div>
                   <p className="label">Stops</p>
@@ -311,6 +346,8 @@ export default function Transport() {
                   </ol>
                 </div>
               )}
+              </>
+              )}
               <Button size="sm" variant="ghost" onClick={() => select('', null)}>Show all buses</Button>
             </Card>
           ) : (
@@ -324,7 +361,7 @@ export default function Transport() {
               ) : (
                 <ul className="divide-y divide-white/10">
                   {buses.map((b) => {
-                    const st = freshnessOf(locOf(b)?.at, thresholds);
+                    const st = busStatus(b, locOf(b), thresholds);
                     return (
                       <li key={b._id}>
                         <button type="button" onClick={() => select(b._id, null)} className="flex w-full items-center gap-3 py-2.5 text-left">
@@ -345,7 +382,9 @@ export default function Transport() {
                 </p>
               )}
               {me.role !== 'student' && config?.canShare && (
-                <p className="mt-3 text-xs muted">Staff assigned to a bus share its location from the VEXON Android app (Bus Tracking → Start trip).</p>
+                <p className="mt-3 text-xs muted">
+                  Assigned to a bus? Share its location from this browser on <Link className="text-primary-600 underline" to="/transport/share">Share bus location</Link>, or from the VEXON Android app (Bus Tracking → Start trip).
+                </p>
               )}
               {config?.canManage && <p className="mt-2 text-xs"><Link className="text-primary-600 underline" to="/transport/manage">Manage buses, routes and assignments</Link></p>}
             </Card>

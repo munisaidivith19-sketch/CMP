@@ -17,7 +17,11 @@ cd mobile-kotlin
 
 The debug build installs as `com.vexon.campus.native` ("JNN (Kotlin)"), so it can sit
 next to the Expo dev build. The release build keeps `com.vexon.campus`. Release builds
-are signed with the debug key until you add a real `signingConfig`.
+are signed only with the release keystore and never fall back to the debug key: set
+`vexon.release.storeFile`, `vexon.release.storePassword`, `vexon.release.keyAlias` and
+`vexon.release.keyPassword` in `~/.gradle/gradle.properties` (or the environment variables
+`VEXON_RELEASE_STORE_FILE`, `VEXON_RELEASE_STORE_PASSWORD`, `VEXON_RELEASE_KEY_ALIAS`,
+`VEXON_RELEASE_KEY_PASSWORD`). Without them `assembleRelease` fails with a clear message.
 
 ## Configuration
 

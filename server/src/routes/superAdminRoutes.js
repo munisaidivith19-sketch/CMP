@@ -65,7 +65,7 @@ router.post(
   ...profileRules(true),
   body('email').isString().trim().isEmail().withMessage('Enter a valid email').normalizeEmail({ gmail_remove_dots: false }),
   password('password'),
-  body('policies').optional().isArray({ max: 20 }),
+  body('policies').optional().isArray({ max: 40 }),
   validate,
   sa.createAdmin
 );
@@ -82,7 +82,9 @@ router.post(
   sa.resetAdminPassword
 );
 router.post('/admins/:id/revoke-sessions', idParam('id'), ...sensitive, sa.revokeAdminSessions);
-router.put('/admins/:id/policies', idParam('id'), ...sensitive, body('policies').isArray({ max: 20 }).withMessage('Policies must be a list'), validate, sa.setAdminPolicies);
+router.put('/admins/:id/policies', idParam('id'), ...sensitive, body('policies').isArray({ max: 40 }).withMessage('Policies must be a list'), validate, sa.setAdminPolicies);
+// Dashboard modules as checkboxes: exactly the ticked module keys (policies.js → modulesToPolicies).
+router.put('/admins/:id/modules', idParam('id'), ...sensitive, body('modules').isArray({ max: 40 }).withMessage('Modules must be a list'), body('modules.*').isString().isLength({ max: 40 }), validate, sa.setAdminModules);
 // Delegation limits: which roles the Admin may create / assign and the most it may delegate.
 router.put('/admins/:id/delegation', idParam('id'), ...sensitive, body('delegation').isObject().withMessage('Delegation must be an object'), validate, sa.setAdminDelegation);
 router.get('/admins/:id/events', idParam('id'), sa.adminEvents);

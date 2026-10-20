@@ -2,7 +2,7 @@ import AlumniJob from '../../models/AlumniJob.js';
 import JobApplication from '../../models/JobApplication.js';
 import AlumniProfile from '../../models/AlumniProfile.js';
 import User from '../../models/User.js';
-import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '../../utils/http.js';
+import { ApiError, asyncHandler, assertHttpUrl, escapeRegex, pageMeta, paginate, pick } from '../../utils/http.js';
 import { logActivity } from '../../utils/activity.js';
 import { notifyUsers } from '../../utils/notify.js';
 import { emitToUsers } from '../../config/socket.js';
@@ -220,7 +220,15 @@ export const updateJob = asyncHandler(async (req, res) => {
     'skills', 'experienceMin', 'experienceMax', 'stipendOrSalary',
     'applyMode', 'externalUrl', 'deadline', 'eligibleDepartments', 'eligibleYears',
   ];
-  Object.assign(job, pick(req.body, allowed));
+  const patch = pick(req.body, allowed);
+  // Same rule as createJob: an external-link job needs an http(s) URL.
+  assertHttpUrl(patch.externalUrl, 'External URL');
+  const applyMode = patch.applyMode ?? job.applyMode;
+  const externalUrl = patch.externalUrl !== undefined ? patch.externalUrl : job.externalUrl;
+  if (applyMode === 'external_link' && (!externalUrl || !/^https?:\/\//i.test(externalUrl))) {
+    throw new ApiError(422, 'A valid https external URL is required for external link jobs');
+  }
+  Object.assign(job, patch);
   await job.save();
 
   await job.populate('postedBy', PUBLIC_USER_FIELDS);
@@ -238,8 +246,10 @@ export const closeJob = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Permission denied');
   }
 
-  job.status = 'closed';
-  await job.save();
+  // Only a live posting can be closed: closing a removed job would let its
+  // poster "reopen" what staff took down.
+  const closed = await AlumniJob.findOneAndUpdate({ _id: job._id, status: { $in: ['open', 'pending_review'] } }, { $set: { status: 'closed' } }, { new: true });
+  if (!closed) throw new ApiError(409, `A ${job.status.replace('_', ' ')} job cannot be closed`);
   res.json({ ok: true, message: 'Job closed' });
 });
 
@@ -257,9 +267,21 @@ export const reopenJob = asyncHandler(async (req, res) => {
   if (user.role !== 'admin' && !['closed', 'expired'].includes(job.status)) {
     throw new ApiError(403, `A ${job.status.replace('_', ' ')} job cannot be reopened`);
   }
+  if (job.status === 'open') throw new ApiError(409, 'This job is already open');
+  // A job past its deadline stays closed: the poster sets a new deadline first.
+  if (job.deadline && job.deadline <= new Date()) throw new ApiError(422, 'The application deadline has passed. Set a new deadline before reopening.');
+  // The poster must still be allowed to post: an active account and, for an
+  // alumnus, a profile that is still verified.
+  if (user.role !== 'admin') {
+    const poster = await User.findById(job.postedBy).select('role isActive').lean();
+    const verified = poster?.role !== 'alumni' || (await AlumniProfile.exists({ user: job.postedBy, isVerified: true }));
+    if (!poster?.isActive || !verified) throw new ApiError(403, 'Your account can no longer post jobs');
+  }
 
-  job.status = 'open';
-  await job.save();
+  // Conditional on the status just checked, so a concurrent staff removal wins.
+  const from = user.role === 'admin' ? { $ne: 'open' } : { $in: ['closed', 'expired'] };
+  const reopened = await AlumniJob.findOneAndUpdate({ _id: job._id, status: from }, { $set: { status: 'open' } }, { new: true });
+  if (!reopened) throw new ApiError(409, 'This job changed while you were reopening it. Refresh and try again.');
   res.json({ ok: true, message: 'Job reopened' });
 });
 
@@ -377,6 +399,10 @@ export const listJobApplications = asyncHandler(async (req, res) => {
   const filter = { job: id };
   if (status) filter.status = status;
   else filter.status = { $ne: 'withdrawn' };
+  // An HOD (not the poster) sees only applications from their own department's students.
+  if (!isPoster && user.role === 'hod') {
+    filter.student = { $in: await User.find({ department: user.department, role: { $in: ['student', 'club_admin'] } }).distinct('_id') };
+  }
 
   const [items, total] = await Promise.all([
     JobApplication.find(filter)
@@ -432,11 +458,15 @@ export const updateApplication = asyncHandler(async (req, res) => {
   if (!['referred', 'shortlisted', 'rejected'].includes(status)) {
     throw new ApiError(422, 'Status must be referred, shortlisted, or rejected');
   }
+  // The student withdrew: the application is theirs again, not the poster's to change.
+  if (app.status === 'withdrawn') throw new ApiError(409, 'This application was withdrawn by the student');
 
-  app.status = status;
-  if (posterNote !== undefined) app.posterNote = String(posterNote).slice(0, 500);
-  app.statusChangedAt = new Date();
-  await app.save();
+  const set = { status, statusChangedAt: new Date() };
+  if (posterNote !== undefined) set.posterNote = String(posterNote).slice(0, 500);
+  // Conditional: a withdrawal landing at the same moment wins.
+  const updated = await JobApplication.findOneAndUpdate({ _id: app._id, status: { $ne: 'withdrawn' } }, { $set: set }, { new: true });
+  if (!updated) throw new ApiError(409, 'This application was withdrawn by the student');
+  Object.assign(app, set);
 
   await notifyUsers([app.student], {
     type: 'alumni',

@@ -154,6 +154,9 @@ export async function seedAlumniUsers() {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const { connectDB } = await import('../config/db.js');
+  const { env } = await import('../config/env.js');
+  const { assertSeedAllowed } = await import('../utils/seedGuard.js');
+  assertSeedAllowed('the alumni seeder', process.env, env.mongoUri);
   const { default: mongoose } = await import('mongoose');
   await connectDB();
   const rows = await seedAlumniUsers();

@@ -13,6 +13,10 @@ public struct TransportConfig: Decodable, Sendable, Equatable {
     public let staleSeconds: Int
     public let canManage: Bool
     public let canShare: Bool
+    /// Campus timezone for showing times (older servers omit it → Asia/Kolkata).
+    public let timezone: String?
+    public let canViewHistory: Bool?
+    public let canViewReports: Bool?
 }
 
 /// Freshness of a bus's last fix, as computed by the server (`freshness()`).
@@ -69,10 +73,13 @@ public struct BusTrip: Decodable, Sendable, Identifiable, Equatable {
     public let endReason: String?
     public let lastLocationAt: Date?
     public let mine: Bool?
+    /// towards_college | towards_home (absent from older servers).
+    public let direction: String?
+    public let directionAssumed: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id = "_id"
-        case source, status, startedAt, endedAt, endReason, lastLocationAt, mine
+        case source, status, startedAt, endedAt, endReason, lastLocationAt, mine, direction, directionAssumed
     }
 
     public var isActive: Bool { status == "active" }
@@ -196,6 +203,212 @@ public struct BusDetail: Decodable, Sendable {
     public let myStop: String?
     public let travelled: [TravelledPoint]
     public let serverTime: Date?
+    /// The active trip's server-recorded journey (nil without a trip or from older servers).
+    public let journey: TripJourney?
+    /// The route the bus is actually following when it differs from `route` (a separate return route).
+    public let journeyRoute: BusRoute?
+
+    /// The route to draw on the map.
+    public var mapRoute: BusRoute? { journeyRoute ?? route }
+}
+
+/// A journey ETA from the server (`stopEtas`). When `status` is not "ok", `reason`
+/// says why and the app shows that instead of a time.
+public struct JourneyETA: Decodable, Sendable, Equatable {
+    public let status: String
+    public let reason: String?
+    public let minutes: Int?
+    public let predictedArrivalAt: Date?
+    /// history | recent_speed | assumed_speed
+    public let method: String?
+    /// high | medium | low
+    public let confidence: String?
+    public let approximate: Bool?
+
+    public init(status: String, reason: String? = nil, minutes: Int? = nil, predictedArrivalAt: Date? = nil, method: String? = nil, confidence: String? = nil, approximate: Bool? = nil) {
+        self.status = status
+        self.reason = reason
+        self.minutes = minutes
+        self.predictedArrivalAt = predictedArrivalAt
+        self.method = method
+        self.confidence = confidence
+        self.approximate = approximate
+    }
+
+    public var isAvailable: Bool { status == "ok" }
+}
+
+/// One planned stop of a trip, in travel order. `status`: upcoming | arrived | departed | not_recorded.
+/// `actual*` times are RECORDED; `eta` is a PREDICTION — they are never mixed up.
+public struct JourneyStop: Decodable, Sendable, Equatable, Identifiable {
+    public let order: Int
+    public let stopId: String
+    public let name: String
+    public let isCollege: Bool?
+    public let status: String
+    public let notRecordedReason: String?
+    public let actualArrivalAt: Date?
+    public let actualDepartureAt: Date?
+    public let arrivalSource: String?
+    public let departureSource: String?
+    public let eta: JourneyETA?
+
+    public init(order: Int, stopId: String, name: String, isCollege: Bool? = nil, status: String, notRecordedReason: String? = nil, actualArrivalAt: Date? = nil, actualDepartureAt: Date? = nil, arrivalSource: String? = nil, departureSource: String? = nil, eta: JourneyETA? = nil) {
+        self.order = order
+        self.stopId = stopId
+        self.name = name
+        self.isCollege = isCollege
+        self.status = status
+        self.notRecordedReason = notRecordedReason
+        self.actualArrivalAt = actualArrivalAt
+        self.actualDepartureAt = actualDepartureAt
+        self.arrivalSource = arrivalSource
+        self.departureSource = departureSource
+        self.eta = eta
+    }
+
+    public var id: Int { order }
+    public var isManual: Bool { arrivalSource == "manual" || departureSource == "manual" }
+    public var hasRecordedTime: Bool { actualArrivalAt != nil || actualDepartureAt != nil }
+}
+
+public struct JourneyCollege: Decodable, Sendable, Equatable {
+    public let order: Int
+    public let name: String
+    public let actualArrivalAt: Date?
+    public let eta: JourneyETA?
+}
+
+/// `journey` in `GET /transport/buses/:id` and `GET /transport/trips/:id/journey`.
+public struct TripJourney: Decodable, Sendable, Equatable {
+    public let tripId: String
+    public let status: String
+    public let direction: String?
+    public let directionAssumed: Bool?
+    /// forward | return_route | reverse
+    public let routeMode: String?
+    public let tripStartedAt: Date?
+    public let endedAt: Date?
+    public let tracking: String?
+    public let currentStop: JourneyStop?
+    public let nextStop: JourneyStop?
+    public let followingStop: JourneyStop?
+    public let nextStopUncertain: Bool?
+    public let uncertainReason: String?
+    public let college: JourneyCollege?
+    public let stops: [JourneyStop]
+
+    public var isActive: Bool { status == "active" }
+    /// The direction can still be corrected: active and no stop recorded yet.
+    public var canChangeDirection: Bool { isActive && !stops.contains { $0.hasRecordedTime } }
+}
+
+// MARK: - Journey history (`/transport/history/*`)
+// Managers, principal, dean, AO and chairman see every trip; people who share a
+// bus see their own (`scope` = "own"). Only RECORDED times — no GPS tracks.
+
+public struct HistoryNamedRef: Decodable, Sendable, Equatable {
+    public let id: String
+    public let name: String?
+    public let number: String?
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case name, number
+    }
+}
+
+public struct HistoryOperator: Decodable, Sendable, Equatable {
+    public let name: String
+    public let isSelf: Bool?
+    enum CodingKeys: String, CodingKey {
+        case name
+        case isSelf = "self"
+    }
+}
+
+/// One trip in the history list (and the header of a trip's detail).
+public struct HistoryTrip: Decodable, Sendable, Equatable, Identifiable, Hashable {
+    public let id: String
+    public let bus: HistoryNamedRef?
+    public let route: HistoryNamedRef?
+    public let direction: String?
+    public let directionAssumed: Bool?
+    public let status: String
+    public let interrupted: Bool?
+    public let tripStartedAt: Date?
+    public let endedAt: Date?
+    public let collegeArrivedAt: Date?
+    public let durationMinutes: Double?
+    public let stopsPlanned: Int?
+    public let stopsRecorded: Int?
+    public let manualRecords: Int?
+    public let `operator`: HistoryOperator?
+    /// Detail only: measured first departure → arrival at the final stop.
+    public let journeyMinutes: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case bus, route, direction, directionAssumed, status, interrupted, tripStartedAt, endedAt, collegeArrivedAt,
+             durationMinutes, stopsPlanned, stopsRecorded, manualRecords, `operator`, journeyMinutes
+    }
+
+    public static func == (a: HistoryTrip, b: HistoryTrip) -> Bool { a.id == b.id && a.status == b.status && a.stopsRecorded == b.stopsRecorded }
+    public func hash(into h: inout Hasher) { h.combine(id) }
+}
+
+/// `GET /transport/history/trips`.
+public struct HistoryTripList: Decodable, Sendable {
+    public let trips: [HistoryTrip]
+    public let total: Int
+    public let page: Int
+    public let limit: Int
+    public let timezone: String?
+    /// all | own
+    public let scope: String?
+
+    public var hasMore: Bool { page * limit < total }
+}
+
+public struct HistoryEventInfo: Decodable, Sendable, Equatable {
+    public let source: String?
+    public let reason: String?
+    public let corrected: Bool?
+}
+
+/// One planned stop of a past trip with what was RECORDED there.
+public struct HistoryStop: Decodable, Sendable, Equatable, Identifiable {
+    public let order: Int
+    public let name: String
+    public let isCollege: Bool?
+    public let actualArrivalAt: Date?
+    public let actualDepartureAt: Date?
+    public let arrivalSource: String?
+    public let departureSource: String?
+    /// Why no arrival was recorded: pending | not_detected | before_tracking.
+    public let notRecorded: String?
+    public let minutesFromPreviousStop: Double?
+    public let dwellMinutes: Double?
+    /// Against a real timetable only (positive = late).
+    public let delayMinutes: Double?
+    public let arrival: HistoryEventInfo?
+    public let departure: HistoryEventInfo?
+
+    public var id: Int { order }
+    public var isManual: Bool { arrivalSource == "manual" || departureSource == "manual" }
+    public var isCorrected: Bool { arrival?.corrected == true || departure?.corrected == true }
+}
+
+/// `GET /transport/history/trips/:id`.
+public struct HistoryTripDetail: Decodable, Sendable {
+    public let trip: HistoryTrip
+    public let stops: [HistoryStop]
+    public let timezone: String?
+}
+
+/// Socket event `bus:journey` — a stop arrival/departure (or trip end) was recorded.
+public struct BusJourneyEvent: Decodable, Sendable {
+    public let busId: String
+    public let tripId: String
 }
 
 /// `GET /transport/search?q=`.

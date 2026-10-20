@@ -10,6 +10,14 @@ import kotlin.math.roundToInt
 object BusMath {
     data class LatLng(val lat: Double, val lng: Double)
 
+    /**
+     * Where the map opens before a bus, route or the user's position is known:
+     * Chennai at city level. Applied once when the map is created — never
+     * re-applied, so the user can still pan / zoom out to Tamil Nadu, India or the world.
+     */
+    val DEFAULT_CENTER = LatLng(13.0827, 80.2707)
+    const val DEFAULT_ZOOM = 11.0
+
     fun lerp(a: LatLng, b: LatLng, t: Double): LatLng {
         val k = t.coerceIn(0.0, 1.0)
         return LatLng(a.lat + (b.lat - a.lat) * k, a.lng + (b.lng - a.lng) * k)

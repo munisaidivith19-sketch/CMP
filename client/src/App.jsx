@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import AppLayout, { Backdrop } from './components/layout/AppLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { PageLoader, Spinner } from './components/ui/primitives';
@@ -9,8 +9,9 @@ import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
 import { setMaintenance } from './features/uiSlice';
 import { STAFF_GRANT_ROLES, grantedPages } from './utils/delegation';
-import { useGetMyPoliciesQuery } from './services/superAdmin';
-import { COE, EMERGENCY_CONTROL_PATH, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TRANSPORT, TRANSPORT_MANAGERS, TRANSPORT_VIEW } from './utils/constants';
+import { useGetAccountModulesQuery, useGetMyPoliciesQuery } from './services/superAdmin';
+import { moduleForPath, routeAllowed } from './utils/adminModules';
+import { COE, EMERGENCY_CONTROL_PATH, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TRANSPORT, TRANSPORT_HISTORY_VIEW, TRANSPORT_MANAGERS, TRANSPORT_VIEW, TRIP_SHARERS } from './utils/constants';
 
 // The People directory: students see only their own class (classmates and
 // that class's faculty); staff see their academic scope. Security and Warden
@@ -68,6 +69,8 @@ const SOSAlerts = lazy(() => import('./pages/sos/SOSAlerts'));
 const Hostel = lazy(() => import('./pages/hostel/Hostel'));
 const Transport = lazy(() => import('./pages/transport/Transport'));
 const TransportAdmin = lazy(() => import('./pages/transport/TransportAdmin'));
+const ShareLocation = lazy(() => import('./pages/transport/ShareLocation'));
+const TransportHistory = lazy(() => import('./pages/transport/TransportHistory'));
 const SuperAdmin = lazy(() => import('./pages/superadmin/SuperAdmin'));
 const EmergencyControl = lazy(() => import('./pages/superadmin/EmergencyControl'));
 const SocDashboard = lazy(() => import('./pages/superadmin/Soc'));
@@ -134,6 +137,30 @@ function CoeConfine({ children }) {
   if (user?.mustChangePassword && pathname !== '/settings/security') return <Navigate to="/settings/security?required=1" replace />;
   const rule = CONFINED[role];
   if (rule && ![...rule.pages, ...extra].some((p) => pathname === p || pathname.startsWith(`${p}/`))) return <Navigate to={rule.home} replace />;
+  return children;
+}
+
+/**
+ * Policy-managed Admins: a page of a module that is not ticked (or was just
+ * unticked by a Super Admin) sends them to the Dashboard with a message. The
+ * module list is live: re-read every minute and at once whenever the server
+ * refuses a module (services/api.js). The server refuses the API either way.
+ */
+function ModuleGuard({ children }) {
+  const isAdmin = useSelector((s) => s.auth.user?.role) === 'admin';
+  const { pathname } = useLocation();
+  const { data: account, isLoading } = useGetAccountModulesQuery(undefined, { skip: !isAdmin, pollingInterval: 60000 });
+  const had = useRef(new Set());
+  const blocked = isAdmin && account && !routeAllowed(pathname, account) ? moduleForPath(pathname, account.catalogue) : null;
+  useEffect(() => {
+    if (blocked) {
+      const removed = had.current.has(blocked.key);
+      toast.error(removed ? `Your access to ${blocked.label} was turned off by a Super Admin.` : `You do not have access to ${blocked.label}.`, { id: `module-${blocked.key}` });
+    }
+    if (account?.modules) had.current = new Set(account.modules);
+  }, [blocked, account]);
+  if (isAdmin && isLoading) return <PageLoader />;
+  if (blocked) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -240,7 +267,7 @@ export default function App() {
           {/* Public Innovation Gallery: published PUBLIC projects only (the server enforces it). */}
           <Route path="/gallery" element={<SwPublicGallery />} />
           <Route path="/gallery/:id" element={<SwPublicGalleryDetail />} />
-          <Route element={<RequireAuth><CoeConfine><AppLayout /></CoeConfine></RequireAuth>}>
+          <Route element={<RequireAuth><CoeConfine><ModuleGuard><AppLayout /></ModuleGuard></CoeConfine></RequireAuth>}>
             <Route index element={<Dashboard />} />
             <Route path="events" element={<Events />} />
             <Route path="events/:id" element={<EventDetail />} />
@@ -290,6 +317,8 @@ export default function App() {
             <Route path="hostel" element={<RequireAuth roles={HOSTEL_ROLES}><Hostel /></RequireAuth>} />
             <Route path="transport" element={<RequireAuth roles={TRANSPORT_VIEW} dayScholarOnly><Transport /></RequireAuth>} />
             <Route path="transport/manage" element={<RequireAuth roles={TRANSPORT_MANAGERS}><TransportAdmin /></RequireAuth>} />
+            <Route path="transport/share" element={<RequireAuth roles={TRIP_SHARERS}><ShareLocation /></RequireAuth>} />
+            <Route path="transport/history" element={<RequireAuth roles={TRANSPORT_HISTORY_VIEW}><TransportHistory /></RequireAuth>} />
             <Route path="skill-wallet" element={<RequireAuth roles={SW_STUDENT_ROLES}><SkillWallet /></RequireAuth>} />
             <Route path="skill-wallet/projects/:id" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwProjectDetail /></RequireAuth>} />
             <Route path="skill-wallet/gallery" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwGallery /></RequireAuth>} />

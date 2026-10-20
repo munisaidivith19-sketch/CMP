@@ -4,6 +4,8 @@
  */
 import mongoose from 'mongoose';
 import { connectDB } from '../config/db.js';
+import { env } from '../config/env.js';
+import { assertSeedAllowed } from '../utils/seedGuard.js';
 import User from '../models/User.js';
 import Club from '../models/Club.js';
 import Event from '../models/Event.js';
@@ -37,6 +39,7 @@ const pickN = (arr, n) => [...arr].sort(() => Math.random() - 0.5).slice(0, n);
 const DEPARTMENTS = ['CSE (Cyber Security)', 'CSE', 'AI & DS', 'ECE', 'VLSI', 'Robotics', 'Agri', 'Bio Medical'];
 
 async function seed() {
+  assertSeedAllowed('the demo seeder', process.env, env.mongoUri);
   await connectDB();
   console.log('[seed] Clearing collections…');
   await Promise.all(

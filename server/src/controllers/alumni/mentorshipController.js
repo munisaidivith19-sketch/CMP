@@ -140,6 +140,11 @@ export const getRequestById = asyncHandler(async (req, res) => {
   const isStaff = ['admin', 'hod', 'principal'].includes(user.role);
 
   if (!isParticipant && !isStaff) throw new ApiError(403, 'Access denied');
+  // Same scope as listRequests: an HOD sees only their own department's students.
+  if (!isParticipant && user.role === 'hod') {
+    const student = await User.findById(request.student._id).select('department').lean();
+    if (!student || student.department !== user.department) throw new ApiError(404, 'Mentorship request not found');
+  }
 
   const sessions = await MentorshipSession.find({ request: request._id })
     .sort({ scheduledAt: -1 })

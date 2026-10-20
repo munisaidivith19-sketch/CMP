@@ -56,6 +56,9 @@ export const env = {
   refreshExpires: process.env.JWT_REFRESH_EXPIRES || '7d',
   uploadDir: process.env.UPLOAD_DIR || 'uploads',
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB) || 5,
+  // Per-user daily quota on POST /api/uploads (files and total megabytes per UTC day).
+  uploadDailyMaxFiles: Number(process.env.UPLOAD_DAILY_MAX_FILES) || 60,
+  uploadDailyMaxMb: Number(process.env.UPLOAD_DAILY_MAX_MB) || 150,
   // Public URL of the web app — used to build password-reset links.
   appUrl: (process.env.APP_URL || process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].trim(),
   smtp: {

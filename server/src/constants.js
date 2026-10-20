@@ -67,6 +67,12 @@ export const TRANSPORT_VIEW_ROLES = ['student', 'club_admin', 'faculty', 'hod', 
 // May share their phone's location for a bus they are assigned to (dean, faculty, HOD, AO, transport officer).
 export const TRIP_SHARER_ROLES = ['faculty', 'hod', 'dean', 'ao', TRANSPORT_ROLE];
 export const BUS_GPS_SOURCES = ['tracker', 'phone'];
+// Which way a bus trip runs. Trips started without one (older app versions) are
+// recorded as towards_college with `directionAssumed`.
+export const BUS_TRIP_DIRECTIONS = ['towards_college', 'towards_home'];
+// Journey history and reports for every bus. Trip sharers (faculty, HOD, …)
+// additionally see the trips they ran themselves.
+export const TRANSPORT_HISTORY_ROLES = [...TRANSPORT_MANAGE_ROLES, 'principal', 'dean', 'ao', 'chairman'];
 export const STAY_TYPES = ['hosteler', 'day_scholar'];
 export const normalizePhoneDigits = (val) => {
   if (!val) return '';

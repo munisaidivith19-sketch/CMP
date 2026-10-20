@@ -77,9 +77,26 @@ public enum API {
 
     public static func transportMine() -> Endpoint<TransportMine> { Endpoint(.get, "/transport/me") }
 
-    public static func startTrip(busId: String) -> Endpoint<StartTripResponse> {
-        struct Body: Encodable, Sendable { let busId: String }
-        return Endpoint(.post, "/transport/trips", body: Body(busId: busId))
+    /// `direction`: towards_college | towards_home (nil → the server records towards_college, marked assumed).
+    public static func startTrip(busId: String, direction: String? = nil) -> Endpoint<StartTripResponse> {
+        struct Body: Encodable, Sendable { let busId: String; let direction: String? }
+        return Endpoint(.post, "/transport/trips", body: Body(busId: busId, direction: direction))
+    }
+
+    /// Journey history. `range`: day | week | month | all; `direction`/`status` nil = any
+    /// (`status` "interrupted" = stopped or timed out before the final stop).
+    public static func transportHistory(range: String, direction: String?, status: String?, page: Int) -> Endpoint<HistoryTripList> {
+        Endpoint(.get, "/transport/history/trips", query: ["range": range, "direction": direction, "status": status, "page": String(page), "limit": "20"])
+    }
+
+    public static func transportHistoryTrip(id: String) -> Endpoint<HistoryTripDetail> {
+        Endpoint(.get, "/transport/history/trips/\(id)")
+    }
+
+    /// Correct the direction of your active trip before any stop is recorded.
+    public static func setTripDirection(tripId: String, direction: String) -> Endpoint<EmptyResponse> {
+        struct Body: Encodable, Sendable { let direction: String }
+        return Endpoint(.patch, "/transport/trips/\(tripId)/direction", body: Body(direction: direction))
     }
 
     public static func stopTrip(id: String) -> Endpoint<EmptyResponse> {

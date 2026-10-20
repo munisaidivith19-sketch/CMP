@@ -159,7 +159,8 @@ test('breakdown: principal drill-down into one department lists years 1–4 with
   assert.deepEqual(r.body.groups.map((g) => g.year), [1, 2, 3, 4]);
   const y2 = r.body.groups.find((g) => g.year === 2);
   assert.deepEqual(y2.lowAttendance.map((s) => s.rollNo), ['E-001']);
-  assert.equal(y2.lowAttendance[0].parentPhone, '9811111111');
+  // Audit B8: read-only oversight roles (principal …) never receive parentPhone.
+  assert.equal(y2.lowAttendance[0].parentPhone ?? null, null);
   assert.ok(!JSON.stringify(r.body).includes('Y2-001'), 'only the chosen department');
 
   const host = await get('principal', '/attendance/summary/students?stayType=hosteler&department=ECE&year=2');

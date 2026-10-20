@@ -27,6 +27,7 @@ import com.vexon.campus.core.ApiException
 import com.vexon.campus.core.Http
 import com.vexon.campus.core.QueryClient
 import com.vexon.campus.core.get
+import com.vexon.campus.core.oid
 import com.vexon.campus.core.str
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,7 +90,7 @@ class TripLocationService : Service() {
         if (intent?.action == ACTION_STOP) {
             val id = tripId
             scope.launch {
-                if (id != null) runCatching { Http.request("POST", "/transport/trips/$id/stop", body = mapOf("reason" to "completed")) }
+                if (id != null) runCatching { Http.request("POST", "/transport/trips/${oid(id)}/stop", body = mapOf("reason" to "completed")) }
                 QueryClient.invalidate("Transport")
                 shutdown()
             }
@@ -152,7 +153,7 @@ class TripLocationService : Service() {
             if (buffer.isEmpty()) continue
             val batch = buffer.toList()
             try {
-                Http.request("POST", "/transport/trips/$id/locations", body = mapOf("fixes" to batch))
+                Http.request("POST", "/transport/trips/${oid(id)}/locations", body = mapOf("fixes" to batch))
                 repeat(batch.size) { if (buffer.isNotEmpty()) buffer.removeFirst() }
                 state.value = state.value?.copy(lastSentAt = System.currentTimeMillis(), problem = null)
             } catch (e: ApiException) {
@@ -206,7 +207,7 @@ class TripLocationService : Service() {
     private fun notification(bus: String): Notification {
         val open = PendingIntent.getActivity(
             this, 1,
-            Intent(this, MainActivity::class.java).putExtra(com.vexon.campus.push.Push.EXTRA_LINK, "/transport").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            com.vexon.campus.push.Push.appIntent(this, "/transport").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val stop = PendingIntent.getService(this, 2, Intent(this, TripLocationService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)

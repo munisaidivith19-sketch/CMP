@@ -148,6 +148,18 @@ final class BusTrackingModel {
         }
     }
 
+    /// Correct the direction of the viewer's own active trip (only before any
+    /// stop is recorded — the server enforces this). Returns an error message.
+    func changeDirection(tripId: String, to direction: String) async -> String? {
+        do {
+            _ = try await client.send(API.setTripDirection(tripId: tripId, direction: direction))
+            await refreshDetail(force: true)
+            return nil
+        } catch {
+            return APIError.wrap(error).userMessage
+        }
+    }
+
     // MARK: - Search
 
     func search(_ text: String) async {
@@ -214,6 +226,9 @@ final class BusTrackingModel {
                 if busesById[e.busId] == nil || e.busId == selectedBusId { await load() }
                 if config?.canShare == true { await refreshMine() }
             }
+        case "bus:journey":
+            // A stop arrival / departure was recorded: show the server's times at once.
+            if let e = event.decode(BusJourneyEvent.self), e.busId == selectedBusId { await refreshDetail(force: true) }
         default:
             break
         }

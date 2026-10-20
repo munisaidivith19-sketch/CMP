@@ -1,4 +1,5 @@
 import { ADMIN_ASSIGNABLE_ROLES, DEPARTMENTS } from './constants.js';
+import { ADMIN_MODULES, ADMIN_MODULE_KEYS } from './constants/adminModules.js';
 
 /**
  * Module policy catalogue for policy-managed Admin accounts.
@@ -109,6 +110,17 @@ export const POLICY_CATALOGUE = {
   },
 };
 
+// Dashboard modules (constants/adminModules.js) with no fine-grained entry
+// above get a single `use` action: ticking the module's checkbox opens that
+// whole dashboard (middleware/adminPolicy.js guards its API prefixes with it).
+for (const m of ADMIN_MODULES) {
+  for (const p of m.policies) {
+    if (!POLICY_CATALOGUE[p]) {
+      POLICY_CATALOGUE[p] = { label: m.label, scopes: ['campus'], actions: { use: `Open and use ${m.label} with an Admin's access` } };
+    }
+  }
+}
+
 export const POLICY_MODULES = Object.keys(POLICY_CATALOGUE);
 const SCOPE_RANK = { department: 1, campus: 2 };
 
@@ -146,12 +158,15 @@ export function normalizePolicies(input, catalogue = POLICY_CATALOGUE) {
 }
 
 /**
- * Admin and Super Admin are never restricted by module policies: Admin keeps
- * the full admin dashboard. Policies apply only to other (staff) roles, through
- * their additional grants (isStaffGrantee). Kept as a function so every caller
- * that asks "is this admin policy-managed?" gets a plain `false`.
+ * Is this an Admin account whose access a Super Admin restricted with module
+ * policies? Such an admin is deny-by-default (middleware/adminPolicy.js): it
+ * may use only the modules, actions and department scopes in `policies` (an
+ * empty list grants nothing). Admins without the flag are legacy,
+ * unrestricted admins; Super Admin and staff roles are never policy-managed
+ * (staff use additional grants, isStaffGrantee). The flag is written only by
+ * the policy service (services/adminPolicies.js).
  */
-export const isPolicyManaged = () => false;
+export const isPolicyManaged = (user) => user?.role === 'admin' && user?.policyManaged === true;
 
 /** The grant for one module, or null. */
 export function grantFor(user, module) {
@@ -162,6 +177,46 @@ export function grantFor(user, module) {
 export function hasPolicy(user, module, action) {
   const g = grantFor(user, module);
   return Boolean(g && g.actions.includes(action));
+}
+
+// ── Dashboard modules (one checkbox each, constants/adminModules.js) ──────
+
+/**
+ * The dashboard module keys this account may see and use, read from its
+ * current policies (no cache): every module for a legacy Admin, exactly the
+ * modules holding at least one granted action for a policy-managed Admin
+ * (none ticked = none). Null for every other role: their access comes from
+ * their role, not from module checkboxes.
+ */
+export function adminModulesFor(user) {
+  if (user?.role !== 'admin') return null;
+  if (!isPolicyManaged(user)) return [...ADMIN_MODULE_KEYS];
+  return ADMIN_MODULES.filter((m) => m.policies.some((p) => grantFor(user, p)?.actions?.length)).map((m) => m.key);
+}
+
+/**
+ * The policy list for exactly the ticked module keys. A module that stays
+ * ticked keeps the grants it already has (so fine-tuned actions and
+ * department scopes survive a checkbox save); a newly ticked module gets
+ * every action, campus-wide; an unticked module loses its grants. Throws an
+ * Error with a user-facing message on unknown keys.
+ */
+export function modulesToPolicies(keys, previous = []) {
+  if (!Array.isArray(keys)) throw new Error('Modules must be a list');
+  const wanted = new Set(keys.map(String));
+  const unknown = [...wanted].find((k) => !ADMIN_MODULE_KEYS.includes(k));
+  if (unknown) throw new Error(`Unknown module "${unknown.slice(0, 40)}"`);
+  const out = [];
+  for (const m of ADMIN_MODULES) {
+    if (!wanted.has(m.key)) continue;
+    const kept = m.policies.map((p) => (previous || []).find((g) => g.module === p && g.actions?.length)).filter(Boolean);
+    if (kept.length) {
+      out.push(...kept.map((g) => ({ module: g.module, actions: [...g.actions], scope: g.scope || 'campus', ...(g.department ? { department: g.department } : {}) })));
+      continue;
+    }
+    out.push(...m.policies.map((p) => ({ module: p, actions: Object.keys(POLICY_CATALOGUE[p].actions), scope: 'campus' })));
+  }
+  return normalizePolicies(out);
 }
 
 // ── Additional policies for individual staff accounts ─────────────────

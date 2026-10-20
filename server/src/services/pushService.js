@@ -109,8 +109,16 @@ export async function sendPushToUsers(userIds, { title, body, data } = {}) {
     const users = await User.find({ _id: { $in: ids }, isActive: true, 'pushTokens.0': { $exists: true } })
       .select('+pushTokens')
       .lean();
+    // Only tokens bound to a live session (as for FCM devices): a token whose
+    // session was revoked, expired or signed out, or that was registered before
+    // tokens were bound to sessions, gets nothing until the app registers again.
+    const sessionIds = users.flatMap((u) => (u.pushTokens || []).map((t) => t.session).filter(Boolean));
+    const live = sessionIds.length
+      ? new Set((await Session.find({ _id: { $in: sessionIds }, revokedAt: null, expiresAt: { $gt: new Date() } }).distinct('_id')).map(String))
+      : new Set();
     const messages = users.flatMap((u) =>
       (u.pushTokens || [])
+        .filter((t) => t.session && live.has(String(t.session)))
         .map((t) => t.token)
         .filter(isExpoToken)
         .map((to) => ({ to, title: String(title || '').slice(0, 120), body: String(body || '').slice(0, 240), data, sound: 'default', channelId: 'default' }))

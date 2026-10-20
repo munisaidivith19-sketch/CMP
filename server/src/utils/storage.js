@@ -65,8 +65,9 @@ async function getCloudinary() {
  * Validate and store an uploaded file.
  * @param {Express.Multer.File} file
  * @param {'image'|'document'} kind  'document' allows images and PDFs
+ * @param {{ owner?: import('mongoose').Types.ObjectId }} [opts]  the uploader (POST /uploads)
  */
-export async function persistFile(file, kind = 'image') {
+export async function persistFile(file, kind = 'image', { owner } = {}) {
   if (!file) throw new ApiError(400, 'No file uploaded');
 
   const detected = await fileTypeFromBuffer(file.buffer);
@@ -101,7 +102,7 @@ export async function persistFile(file, kind = 'image') {
 
   // Production without Cloudinary: the disk is ephemeral, so keep the bytes in the database.
   if (env.isProd) {
-    await StoredFile.create({ filename, mimeType, data: file.buffer });
+    await StoredFile.create({ filename, mimeType, data: file.buffer, size: file.size, ...(owner ? { uploadedBy: owner } : {}) });
     return { ...meta, url: `/uploads/${filename}` };
   }
 

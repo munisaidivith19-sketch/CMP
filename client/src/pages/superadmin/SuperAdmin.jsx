@@ -7,7 +7,7 @@ import {
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, StatCard, Tabs, cn } from '../../components/ui/primitives';
 import { Input, Select } from '../../components/ui/form';
 import { Modal } from '../../components/ui/Modal';
-import PolicyEditor from '../../components/superadmin/PolicyEditor';
+import ModuleCheckboxes from '../../components/superadmin/ModuleCheckboxes';
 import DelegationEditor from '../../components/superadmin/DelegationEditor';
 import { reportError, useReauth } from '../../components/superadmin/Reauth';
 import {
@@ -26,12 +26,14 @@ import {
   useResetAdminPasswordMutation,
   useRevokeAdminSessionsMutation,
   useSetAdminDelegationMutation,
+  useSetAdminModulesMutation,
   useSetAdminPoliciesMutation,
   useSetAdminStatusMutation,
   useUpdateSuperAdminAdminMutation,
 } from '../../services/superAdmin';
 import { ROLE_LABELS } from '../../utils/constants';
 import { rolesSummary } from '../../utils/delegation';
+import { checkedModules } from '../../utils/adminModules';
 import { OtpTab } from '../admin/SecurityLogs';
 import { fmtDateTime } from '../../utils/format';
 
@@ -192,8 +194,9 @@ function CreateAdminModal({ guard, onClose }) {
         <Input label="Phone (optional)" value={form.phone} onChange={set('phone')} />
         <Input label="Temporary password" type="password" autoComplete="new-password" hint="10+ characters with a letter, number and symbol. Never stored or shown again." value={form.password} onChange={set('password')} className="sm:col-span-2" />
       </div>
-      <p className="mb-2 mt-5 text-sm font-extrabold">Module policies</p>
-      <PolicyEditor catalogue={cat?.modules} value={policies} onChange={setPolicies} />
+      <p className="mb-1 mt-5 text-sm font-extrabold">Dashboards this Admin can see and use</p>
+      <p className="mb-3 text-xs muted">Grouped like the Admin's sidebar. Unticked modules are hidden from the Admin and their pages and API are refused.</p>
+      <ModuleCheckboxes adminModules={cat?.adminModules} sections={cat?.adminModuleSections} catalogue={cat?.modules} value={policies} onChange={setPolicies} />
     </Modal>
   );
 }
@@ -208,6 +211,12 @@ function AdminDetail({ guard, adminId, initial, onClose }) {
   const [reset, setReset] = useState({ newPassword: '', confirmPassword: '', reason: '' });
   const [reason, setReason] = useState('');
   const [savePolicies, savingPolicies] = useSetAdminPoliciesMutation();
+  const [saveModules, savingModules] = useSetAdminModulesMutation();
+  // Checkbox-only edits save the ticked module keys; fine-tuned drafts save the exact policies.
+  const [fineTuned, setFineTuned] = useState(false);
+  const saveAccess = () => (fineTuned
+    ? savePolicies({ id: adminId, policies })
+    : saveModules({ id: adminId, modules: checkedModules(policies, cat?.adminModules) })).unwrap();
   const [saveDelegation, savingDelegation] = useSetAdminDelegationMutation();
   const [update, updating] = useUpdateSuperAdminAdminMutation();
   const [setStatus, settingStatus] = useSetAdminStatusMutation();
@@ -240,14 +249,16 @@ function AdminDetail({ guard, adminId, initial, onClose }) {
         </section>
 
         <section>
-          <h4 className="mb-1 text-sm font-extrabold">Module policies</h4>
+          <h4 className="mb-1 text-sm font-extrabold">Dashboards</h4>
           <p className="mb-3 text-xs muted">
-            {admin.policyManaged ? 'This admin can use only what is ticked below.' : 'Legacy admin: currently unrestricted. Saving policies switches this account to deny-by-default.'}
+            {admin.policyManaged
+              ? 'This admin sees and uses only the dashboards ticked below; everything else is hidden and refused.'
+              : 'Legacy admin: currently unrestricted (every dashboard). Saving switches this account to only the ticked dashboards.'}
           </p>
-          <PolicyEditor catalogue={cat?.modules} value={policies} onChange={setPolicies} />
-          <Button size="sm" className="mt-3" icon={ShieldCheck} loading={savingPolicies.isLoading}
-            onClick={() => run(() => savePolicies({ id: adminId, policies }).unwrap(), 'Policies saved — effective on the admin’s next request', 'Could not save policies')}>
-            Save policies
+          <ModuleCheckboxes adminModules={cat?.adminModules} sections={cat?.adminModuleSections} catalogue={cat?.modules} value={policies} onChange={setPolicies} onFineTune={() => setFineTuned(true)} />
+          <Button size="sm" className="mt-3" icon={ShieldCheck} loading={savingPolicies.isLoading || savingModules.isLoading}
+            onClick={() => run(saveAccess, 'Dashboards saved — effective on the admin’s next request', 'Could not save the dashboards')}>
+            Save dashboards
           </Button>
         </section>
 

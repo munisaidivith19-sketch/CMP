@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { selectUser } from '../features/authSlice';
 import { useGetAchievementsDashboardQuery, useGetAttendanceSummaryQuery, useGetDashboardQuery, useGetSecurityDashboardQuery } from '../services/api';
+import { useGetAccountModulesQuery } from '../services/superAdmin';
+import { isModuleRestricted } from '../utils/adminModules';
 import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, EmptyState, ErrorState, PageHeader, Skeleton, StatCard, cn } from '../components/ui/primitives';
 import { AnnouncementDetail, AnnouncementItem } from '../components/domain';
 import { CategoryDonut, EngagementChart } from '../components/charts';
@@ -245,7 +247,10 @@ export default function Dashboard() {
   if (isAlumni) return <AlumniDashboard />;
 
   const { data, isLoading, error, refetch } = useGetDashboardQuery(undefined, { skip: isSecurity || isAlumni });
-  const { data: achievementsData } = useGetAchievementsDashboardQuery(undefined, { skip: isSecurity || isAlumni });
+  // A policy-managed Admin: widgets only for its ticked modules (the others' API answers 403).
+  const { data: account } = useGetAccountModulesQuery(undefined, { skip: user?.role !== 'admin', pollingInterval: 60000 });
+  const hasModule = (key) => user?.role !== 'admin' || !isModuleRestricted(account) || account.modules.includes(key);
+  const { data: achievementsData } = useGetAchievementsDashboardQuery(undefined, { skip: isSecurity || isAlumni || !hasModule('achievements') });
   const [popover, setPopover] = useState(null);
   const [viewingAnn, setViewingAnn] = useState(null);
 
@@ -255,7 +260,7 @@ export default function Dashboard() {
 
   const { stats, campus } = data;
   const isStaff = STAFF_VIEW.includes(user.role);
-  const seesAttendance = SUMMARY_VIEW.includes(user.role);
+  const seesAttendance = SUMMARY_VIEW.includes(user.role) && hasModule('attendance');
   const upcoming = (stats.upcomingRegistrations ? data.myUpcoming : data.upcomingEvents) || [];
 
   return (

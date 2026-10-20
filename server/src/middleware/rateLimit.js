@@ -25,6 +25,17 @@ export const locationLimiter = rateLimit({
   message: json('Location updates are arriving too fast'),
 });
 
+// Road-route previews call an outside routing server (the public OSRM demo by
+// default, fair use only): a few per manager per minute is plenty.
+export const routingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.ROUTING_RATE_LIMIT) || 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `routing:${req.user?._id || req.ip}`,
+  message: json('Too many route generations. Wait a minute and try again.'),
+});
+
 // Vehicle-tracker webhook: one gateway reporting for the whole fleet.
 export const trackerLimiter = rateLimit({
   windowMs: 60 * 1000,

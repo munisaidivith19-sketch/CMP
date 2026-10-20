@@ -162,11 +162,11 @@ fun Screen(
 }
 
 @Composable
-fun Header(title: String?, subtitle: String? = null, back: Boolean = false, right: (@Composable () -> Unit)? = null) {
+fun Header(title: String?, subtitle: String? = null, back: Boolean = false, right: (@Composable () -> Unit)? = null, titleMaxLines: Int = 1) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 2.dp)) {
         if (back) IconButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = { Nav.back() })
         Column(Modifier.weight(1f)) {
-            H1(title, maxLines = 1)
+            H1(title, maxLines = titleMaxLines)
             if (!subtitle.isNullOrEmpty()) Small(subtitle, maxLines = 2)
         }
         right?.invoke()
@@ -266,7 +266,8 @@ fun <T> Grid2(items: List<T>, gap: Dp = 12.dp, cell: @Composable (T, Modifier) -
 
 /* ── Buttons ────────────────────────────────────────────────────── */
 
-enum class Variant { Primary, Soft, Ghost, Outline, Danger, Success }
+/** [Map]: opaque, outlined, high-contrast — for buttons floating on a map. */
+enum class Variant { Primary, Soft, Ghost, Outline, Danger, Success, Map }
 
 @Composable
 fun Button(
@@ -287,6 +288,7 @@ fun Button(
         Variant.Outline -> C.glass(0.6f) to C.ink
         Variant.Danger -> C.dangerSoft to C.roseText
         Variant.Success -> C.successSoft to C.emeraldText
+        Variant.Map -> C.surface to C.ink
     }
     val shape = RoundedCornerShape(if (small) Radius.sm else Radius.md)
     val active = enabled && !loading
@@ -297,6 +299,7 @@ fun Button(
             .clip(shape)
             .then(if (primary) Modifier.background(Brush.linearGradient(Grad.primary)) else Modifier.background(bg))
             .then(if (variant == Variant.Outline) Modifier.border(1.dp, C.border, shape) else Modifier)
+            .then(if (variant == Variant.Map) Modifier.border(1.5.dp, C.controlBorder, shape) else Modifier)
             .padding(horizontal = if (small) 12.dp else 18.dp, vertical = if (small) 8.dp else 13.dp)
             .semantics { if (title == null && icon != null) contentDescription = "button" },
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),

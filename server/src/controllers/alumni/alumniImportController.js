@@ -164,6 +164,12 @@ export const previewImport = asyncHandler(async (req, res) => {
   res.status(201).json(batch);
 });
 
+/**
+ * The same scope as listImports: an HOD sees only batches of their own
+ * department (never a campus-wide batch an Admin uploaded, which has none).
+ */
+const batchInScope = (batch, user) => user.role !== 'hod' || (Boolean(batch.department) && batch.department === user.department);
+
 // ── POST /api/alumni/import/:batchId/commit ────────────────────────
 export const commitImport = asyncHandler(async (req, res) => {
   const { batchId } = req.params;
@@ -171,7 +177,7 @@ export const commitImport = asyncHandler(async (req, res) => {
   const user = req.user;
 
   const batch = await AlumniImportBatch.findById(batchId);
-  if (!batch) throw new ApiError(404, 'Import batch not found');
+  if (!batch || !batchInScope(batch, user)) throw new ApiError(404, 'Import batch not found');
 
   if (batch.status === 'done') {
     throw new ApiError(409, 'This import batch has already been committed');
@@ -279,11 +285,7 @@ export const listImports = asyncHandler(async (req, res) => {
 export const getImportBatch = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const batch = await AlumniImportBatch.findById(id).populate('uploadedBy', 'name email');
-  if (!batch) throw new ApiError(404, 'Import batch not found');
-
-  if (req.user.role === 'hod' && batch.department && batch.department !== req.user.department) {
-    throw new ApiError(403, 'Permission denied');
-  }
+  if (!batch || !batchInScope(batch, req.user)) throw new ApiError(404, 'Import batch not found');
 
   res.json(batch);
 });

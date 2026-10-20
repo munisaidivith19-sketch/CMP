@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.vexon.campus.core.Auth
+import com.vexon.campus.push.IntentNonce
 import com.vexon.campus.push.Push
 import androidx.compose.runtime.DisposableEffect
 import com.vexon.campus.ui.ThemeState
@@ -59,17 +60,23 @@ class MainActivity : ComponentActivity() {
         handleLink(intent)
     }
 
-    /** Notification taps (extra) and vexon:// deep links open the matching screen. */
+    /**
+     * Notification taps (extras) and vexon:// deep links open the matching screen.
+     * MainActivity is exported, so link / notificationId extras are honoured only
+     * from the app's own PendingIntents (Push.appIntent, carrying this install's
+     * nonce); from anywhere else they are ignored.
+     */
     private fun handleLink(intent: Intent?) {
-        val link = intent?.getStringExtra(Push.EXTRA_LINK)
+        val (trustedLink, notificationId) = Push.trustedExtras(intent, IntentNonce.get(this))
+        val link = trustedLink
             ?: intent?.data?.takeIf { it.scheme == "vexon" }?.let { uri ->
                 "/" + listOfNotNull(uri.host, uri.path?.trim('/')).filter { it.isNotEmpty() }.joinToString("/") +
                     (uri.query?.let { "?$it" } ?: "")
             }
         // Only known app screens; each one re-checks access with the server when it loads.
         if (link != null) AppState.pendingLink.value = Push.safeLink(link)
-        // Opening a notification from the shade marks it read.
-        intent?.getStringExtra(Push.EXTRA_NOTIFICATION_ID)?.takeIf { Auth.user != null }?.let { id ->
+        // Opening a notification from the shade marks it read (a validated id only).
+        notificationId?.takeIf { Auth.user != null }?.let { id ->
             com.vexon.campus.core.QueryClient.scope.launch { runCatching { com.vexon.campus.core.Api.markNotificationRead(id) } }
         }
     }

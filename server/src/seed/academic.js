@@ -207,6 +207,9 @@ export async function seedAcademic({ log = console.log } = {}) {
 // Run directly: node src/seed/academic.js
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const { connectDB } = await import('../config/db.js');
+  const { env } = await import('../config/env.js');
+  const { assertSeedAllowed } = await import('../utils/seedGuard.js');
+  assertSeedAllowed('the academic seeder', process.env, env.mongoUri);
   await connectDB();
   try {
     await seedAcademic();

@@ -52,7 +52,8 @@ final class TripSharingService: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Trip lifecycle
 
-    func start(busId: String, busNumber: String, client: APIClient) async {
+    /// `direction` (towards_college | towards_home) sets the stop order riders see.
+    func start(busId: String, busNumber: String, direction: String?, client: APIClient) async {
         guard phase == .idle else { return }
         problem = nil
         phase = .starting
@@ -61,7 +62,7 @@ final class TripSharingService: NSObject, CLLocationManagerDelegate {
             return
         }
         do {
-            let response = try await client.send(API.startTrip(busId: busId))
+            let response = try await client.send(API.startTrip(busId: busId, direction: direction))
             begin(tripId: response.trip.id, busNumber: busNumber, client: client)
         } catch {
             phase = .idle

@@ -17,6 +17,12 @@ public enum BusMath {
         }
     }
 
+    /// Where the map opens before a bus, route or the user's position is known:
+    /// Chennai at city level. Applied once when the map is created — never
+    /// re-applied, so the user can still pan / zoom out to Tamil Nadu, India or the world.
+    public static let defaultCenter = LatLng(lat: 13.0827, lng: 80.2707)
+    public static let defaultZoom: Double = 11
+
     public static func lerp(_ a: LatLng, _ b: LatLng, _ t: Double) -> LatLng {
         let k = min(1, max(0, t))
         return LatLng(lat: a.lat + (b.lat - a.lat) * k, lng: a.lng + (b.lng - a.lng) * k)

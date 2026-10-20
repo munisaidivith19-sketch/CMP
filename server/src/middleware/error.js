@@ -70,10 +70,30 @@ function errorMeta(err) {
 /**
  * Rate-limit responses are sent by express-rate-limit itself (they never
  * reach errorHandler), so they are recorded when the response finishes.
+ * Anonymous 429s from the global limiter (no signed-in user, no matched
+ * route — the path is whatever the client sent) are grouped into ONE record
+ * whatever the path, method or module: a scanner hammering random URLs
+ * cannot create a new SOC row per path. Signed-in 429s, and 429s from a
+ * route's own limiter (a real, finite route such as /auth/login), keep their
+ * route template.
  */
+export const ANONYMOUS_RATE_LIMIT_ROUTE = 'anonymous:*';
 export function captureRateLimited(req, res, next) {
   res.on('finish', () => {
-    if (res.statusCode === 429) captureError({ source: 'rate_limit', req, httpStatus: 429, message: 'Rate limit exceeded', route: req.originalUrl });
+    if (res.statusCode !== 429) return;
+    if (req.user || req.route) {
+      captureError({ source: 'rate_limit', req, httpStatus: 429, message: 'Rate limit exceeded', route: req.originalUrl });
+      return;
+    }
+    captureError({
+      source: 'rate_limit',
+      // Only what identifies the client type and correlation; no method / path.
+      req: { headers: req.headers, id: req.id },
+      httpStatus: 429,
+      message: 'Rate limit exceeded (anonymous)',
+      route: ANONYMOUS_RATE_LIMIT_ROUTE,
+      module: 'anonymous_traffic',
+    });
   });
   next();
 }

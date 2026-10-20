@@ -16,7 +16,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import okhttp3.Call
 import okhttp3.Callback
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -113,18 +113,15 @@ object Http {
         }
     }
 
+    /**
+     * Built segment by segment (ApiPath.url → HttpUrl.Builder.addPathSegment).
+     * A path with a rejected id (see ApiPath.oid) sends no request at all.
+     */
     private fun url(path: String, params: Map<String, Any?>?): String {
-        val base = "${ServerConfig.apiUrl}/api$path".toHttpUrlOrNull()
-            ?: throw ApiException(0, kind = ApiException.Kind.NETWORK)
-        val b = base.newBuilder()
-        params?.forEach { (k, v) ->
-            when (v) {
-                null, Omit -> Unit
-                is Iterable<*> -> v.forEach { item -> if (item != null) b.addQueryParameter(k, item.toString()) }
-                else -> b.addQueryParameter(k, v.toString())
-            }
-        }
-        return b.build().toString()
+        if (ServerConfig.apiUrl.isEmpty()) throw ApiException(0, kind = ApiException.Kind.NETWORK)
+        val built = ApiPath.url(ServerConfig.apiUrl, path, params, Omit)
+            ?: throw ApiException(400, jsonOf("message" to "This item could not be opened (invalid link)"))
+        return built.toString()
     }
 
     private suspend fun raw(method: String, path: String, params: Map<String, Any?>?, body: Any?, timeoutMs: Long, token: String?): JsonElement {

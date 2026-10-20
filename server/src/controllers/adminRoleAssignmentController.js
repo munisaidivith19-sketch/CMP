@@ -7,6 +7,7 @@ import { notifyUsers } from '../utils/notify.js';
 import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, SEMESTERS, yearOfSemester } from '../constants.js';
 import { STUDENT_ROLES } from '../utils/academicScope.js';
 import { revokeSessions } from './authController.js';
+import { grantFor, isPolicyManaged, isStaffGrantee } from '../policies.js';
 
 const norm = (s) => String(s || '').trim().toUpperCase();
 const classKey = (c) => `${c.department}|${c.year}|${norm(c.section)}|${c.semester}`;
@@ -15,14 +16,24 @@ const classKey = (c) => `${c.department}|${c.year}|${norm(c.section)}|${c.semest
  * Overview of all classes, assigned Class In-Charges, Department HODs,
  * and available faculty members for assignment in the Admin panel.
  */
-export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
+/** The departments this caller's role-assignment overview covers. */
+function overviewDepartments(user) {
+  if (!isPolicyManaged(user) && !isStaffGrantee(user)) return DEPARTMENTS;
+  const g = grantFor(user, 'staff_management');
+  return g?.scope === 'department' ? DEPARTMENTS.filter((d) => d === g.department) : DEPARTMENTS;
+}
+
+export const getRoleAssignmentsOverview = asyncHandler(async (req, res) => {
+  // A department-scoped Staff Management grant sees only its own department
+  // (the same scope its assignment actions are held to in adminPolicy.js).
+  const depts = overviewDepartments(req.user);
   const [studentCounts, timetableSlots, assignedFaculty, allFaculty, hodUsers] = await Promise.all([
     // Student counts aggregated by exact class
     User.aggregate([
       {
         $match: {
           role: { $in: STUDENT_ROLES },
-          department: { $in: DEPARTMENTS },
+          department: { $in: depts },
           year: { $in: ACADEMIC_YEARS },
           section: { $ne: null, $nin: ['', null] },
         },
@@ -43,7 +54,7 @@ export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
     TimetableSlot.aggregate([
       {
         $match: {
-          department: { $in: DEPARTMENTS },
+          department: { $in: depts },
           isActive: true,
           isBreak: { $ne: true },
         },
@@ -62,7 +73,7 @@ export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
     // Active faculty currently designated as Class In-Charge
     User.find({
       role: 'faculty',
-      department: { $in: DEPARTMENTS },
+      department: { $in: depts },
       inChargeYear: { $ne: null },
       inChargeSemester: { $ne: null },
       section: { $ne: null, $nin: ['', null] },
@@ -73,6 +84,7 @@ export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
     User.find({
       role: 'faculty',
       isActive: true,
+      ...(depts.length === DEPARTMENTS.length ? {} : { department: { $in: depts } }),
     })
       .select('name title gender email employeeId avatar department section inChargeYear inChargeSemester')
       .sort({ department: 1, name: 1 })
@@ -80,7 +92,7 @@ export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
     // All current HODs
     User.find({
       role: 'hod',
-      department: { $in: DEPARTMENTS },
+      department: { $in: depts },
     })
       .select('name title gender email employeeId avatar department phone isActive')
       .lean(),
@@ -109,7 +121,7 @@ export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
     const normSec = norm(section);
     const numYear = Number(year);
     const numSem = Number(semester) || numYear * 2;
-    if (!department || !DEPARTMENTS.includes(department)) return;
+    if (!department || !depts.includes(department)) return;
     if (!numYear || !ACADEMIC_YEARS.includes(numYear)) return;
     if (!normSec || !SECTIONS.includes(normSec)) return;
     if (!numSem || !SEMESTERS.includes(numSem)) return;
@@ -139,7 +151,7 @@ export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
   });
 
   // Ensure standard sections exist for all departments and years so new classes can be assigned
-  DEPARTMENTS.forEach((dept) => {
+  depts.forEach((dept) => {
     ACADEMIC_YEARS.forEach((yr) => {
       ['A', 'B'].forEach((sec) => {
         const sem = yr * 2; // Default to current even semester of the year
@@ -170,7 +182,7 @@ export const getRoleAssignmentsOverview = asyncHandler(async (_req, res) => {
   // Build HODs map by department
   const hodMap = new Map();
   hodUsers.forEach((h) => hodMap.set(h.department, h));
-  const hods = DEPARTMENTS.map((dept) => ({
+  const hods = depts.map((dept) => ({
     department: dept,
     hod: hodMap.get(dept) || null,
   }));

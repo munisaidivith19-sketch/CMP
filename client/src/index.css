@@ -92,6 +92,12 @@
   .btn-icon {
     @apply btn h-10 w-10 rounded-2xl p-0;
   }
+  /* Buttons floating on a map: opaque, bordered and high-contrast over any tiles (light or dark). */
+  .btn-map {
+    @apply border border-slate-300 bg-white text-ink shadow-md hover:bg-slate-100 active:bg-slate-200
+      focus-visible:ring-primary-500/60
+      dark:border-white/25 dark:bg-[#1b1d3a] dark:text-white dark:hover:bg-[#2a2d55] dark:active:bg-[#34386a];
+  }
 
   /* ── Form controls ──────────────────────────────── */
   .input,

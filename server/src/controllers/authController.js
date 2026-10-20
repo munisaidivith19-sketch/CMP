@@ -31,7 +31,6 @@ import {
   getNextLockMinutes,
   checkIpThrottled,
   recordIpFailure,
-  clearIpFailure,
   checkAnonLockout,
   recordAnonFailure,
 } from '../utils/loginSecurity.js';
@@ -136,6 +135,7 @@ export async function revokeSessions(filter, reason) {
   disconnectSessions(ids);
   // A signed-out / revoked device must stop receiving this user's pushes.
   await DeviceToken.deleteMany({ session: { $in: ids } });
+  await User.updateMany({ 'pushTokens.session': { $in: ids } }, { $pull: { pushTokens: { session: { $in: ids } } } });
   return ids.length;
 }
 
@@ -205,7 +205,7 @@ export const login = asyncHandler(async (req, res) => {
 
   // 2. Anti-Enumeration Defense for Non-Existent Users
   if (!user) {
-    const anonCheck = await checkAnonLockout(req.ip, normalizedEmail);
+    const anonCheck = await checkAnonLockout(normalizedEmail);
     if (anonCheck.locked) {
       await bcrypt.compare(String(password), DUMMY_HASH); // equalize response timing
       throw new ApiError(423, `Too many failed attempts. Try again in ${anonCheck.mins} minute(s).`, null, {
@@ -219,7 +219,7 @@ export const login = asyncHandler(async (req, res) => {
     await bcrypt.compare(String(password), DUMMY_HASH); // equalize response timing
     await recordIpFailure(req.ip);
     logSecurity(req, 'LOGIN_FAILED', { actor: null, success: false, identifier: normalizedEmail, reason: 'unknown_account' });
-    const anonRes = await recordAnonFailure(req.ip, normalizedEmail);
+    const anonRes = await recordAnonFailure(normalizedEmail);
 
     if (anonRes.locked) {
       throw new ApiError(423, `Too many failed attempts. Account locked for ${anonRes.mins} minute(s).`, null, {
@@ -345,13 +345,13 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(503, maintenanceBody(await getPlatformState()).message, undefined, { code: 'MAINTENANCE', maintenance: true });
   }
 
-  // 6. Successful Authentication: Reset counters & clear IP penalty
+  // 6. Successful Authentication: reset the account's counters. The per-IP
+  // failure counter is left alone (it only expires by TTL; see loginSecurity.js).
   user.failedLogins = 0;
   user.lockUntil = undefined;
   user.lastFailedLoginAt = undefined;
   user.lastLogin = new Date();
   await user.save({ validateModifiedOnly: true });
-  await clearIpFailure(req.ip);
 
   // New-device detection: first successful sign-in from this device label.
   const device = parseDevice(req.headers['user-agent'], req);
@@ -579,7 +579,8 @@ export const registerPushToken = asyncHandler(async (req, res) => {
   await User.updateMany({ _id: { $ne: req.user._id } }, { $pull: { pushTokens: { token } } });
   const user = await User.findById(req.user._id).select('+pushTokens');
   const rest = (user.pushTokens || []).filter((t) => t.token !== token);
-  user.pushTokens = [...rest, { token, addedAt: new Date() }].slice(-MAX_PUSH_TOKENS);
+  // Bound to this session: revoking or signing it out drops the token (revokeSessions).
+  user.pushTokens = [...rest, { token, addedAt: new Date(), session: req.sessionId }].slice(-MAX_PUSH_TOKENS);
   await user.save({ validateModifiedOnly: true });
   res.json({ ok: true });
 });

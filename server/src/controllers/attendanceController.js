@@ -26,6 +26,7 @@ import {
   facultyClasses,
   inClasses,
   ownDepartment,
+  studentsInClassesFilter,
 } from '../utils/academicScope.js';
 import { buildReport, byRollNo, reportFilename, reportPeriods } from '../services/attendanceReport.js';
 import { renderReportPdf } from '../services/attendanceReportPdf.js';
@@ -1684,14 +1685,33 @@ export const requestCorrection = asyncHandler(async (req, res) => {
   res.status(201).json(request);
 });
 
+/**
+ * The correction requests a faculty member may see and decide: requests for a
+ * subject they teach, from a student of a class they teach it to — read from
+ * the timetable (facultyAssignments), never from Subject.faculty membership.
+ */
+export async function facultyCorrectionScope(user) {
+  const bySubject = new Map();
+  for (const a of await facultyAssignments(user)) {
+    const k = String(a.subject);
+    if (!bySubject.has(k)) bySubject.set(k, { subject: a.subject, classes: [] });
+    bySubject.get(k).classes.push(a);
+  }
+  if (!bySubject.size) return { _id: null };
+  const clauses = await Promise.all(
+    [...bySubject.values()].map(async ({ subject, classes }) => ({ subject, student: { $in: await User.find(studentsInClassesFilter(classes)).distinct('_id') } }))
+  );
+  return { $or: clauses };
+}
+
 export const listCorrections = asyncHandler(async (req, res) => {
-  const filter = {};
+  let filter = {};
   if (STUDENT_ROLES.includes(req.user.role)) {
     filter.student = req.user._id;
   } else {
     if (req.query.student) filter.student = oid(req.query.student, 'student');
     if (req.user.role === 'faculty') {
-      filter.subject = { $in: await Subject.find({ faculty: req.user._id }).distinct('_id') };
+      filter = { $and: [filter, await facultyCorrectionScope(req.user)] };
     } else if (req.user.role === 'hod') {
       if (isFirstYearHod(req.user)) {
         filter.subject = { $in: await Subject.find({ semester: { $in: [1, 2] }, isActive: true }).distinct('_id') };
@@ -1727,8 +1747,10 @@ export const reviewCorrection = asyncHandler(async (req, res) => {
   if (request.status !== 'pending') throw new ApiError(422, 'This request has already been reviewed');
 
   if (req.user.role === 'faculty') {
-    const subject = await Subject.findById(request.subject).select('faculty');
-    if (!subject || !isAssigned(subject, req.user)) throw new ApiError(403, 'You are not assigned to this subject');
+    // The same scope as the list: a class they actually teach this subject to.
+    if (!(await AttendanceCorrectionRequest.exists({ $and: [{ _id: request._id }, await facultyCorrectionScope(req.user)] }))) {
+      throw new ApiError(403, 'You are not assigned to this subject');
+    }
   } else if (req.user.role === 'hod') {
     const subject = await Subject.findById(request.subject).select('department semester year');
     if (!subject) throw new ApiError(404, 'Subject not found');

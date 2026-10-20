@@ -8,12 +8,19 @@ import { emitToRoles, emitToUsers } from '../config/socket.js';
 import { studentTotals } from '../services/attendanceTotals.js';
 import { dayFilter, dayKey, resolveRange, toDay, today } from '../utils/dates.js';
 import { LOW_ATTENDANCE_THRESHOLD, STUDENT_ROLES, percentage } from './attendanceController.js';
-import { ACADEMIC_OVERSIGHT_ROLES, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod } from '../constants.js';
+import { ACADEMIC_OVERSIGHT_ROLES, ATTENDANCE_READ_ONLY_ROLES, DEPARTMENTS, FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod } from '../constants.js';
 
 // Staff whose daily attendance is tracked.
 const TRACKED_STAFF = ['faculty', 'hod'];
 const FACULTY_FIELDS = 'name employeeId department designation phone avatar role';
 const STUDENT_FIELDS = 'name rollNo section department year semester phone parentPhone avatar stayType';
+/**
+ * Read-only oversight roles (ATTENDANCE_READ_ONLY_ROLES: principal / dean / AO /
+ * chairman, COE, Office, Super Admin) look at attendance, they never contact a
+ * family: the parent's mobile is left out of what they receive.
+ */
+const withoutParentPhone = (fields, user) =>
+  ATTENDANCE_READ_ONLY_ROLES.includes(user?.role) ? fields.split(' ').filter((f) => f !== 'parentPhone').join(' ') : fields;
 // An approved On Duty period counts as attended, exactly as in attendanceController.
 const attendedExpr = { $sum: { $cond: [{ $in: ['$status', ['present', 'od']] }, 1, 0] } };
 
@@ -144,7 +151,7 @@ export const summaryStudents = asyncHandler(async (req, res) => {
 
   const filters = classFilters(req.query);
   const sFilter = studentFilter(department, filters, req.user);
-  const students = await User.find(sFilter).select(STUDENT_FIELDS).sort({ department: 1, section: 1, rollNo: 1 }).limit(2000).lean();
+  const students = await User.find(sFilter).select(withoutParentPhone(STUDENT_FIELDS, req.user)).sort({ department: 1, section: 1, rollNo: 1 }).limit(2000).lean();
   const studentIds = students.map((s) => s._id);
   const needsNarrowing = isNarrowed(filters) || isFirstYearHod(req.user) || isBranchHod(req.user);
   const status = await studentDayStatus(day, department, needsNarrowing ? studentIds : null);
@@ -181,7 +188,7 @@ export const departmentBreakdown = asyncHandler(async (req, res) => {
   const collegeOverview = ACADEMIC_OVERSIGHT_ROLES.includes(req.user.role) && !department;
   const byDepartment = isFirstYearHod(req.user) || collegeOverview;
 
-  const students = await User.find(studentFilter(department, {}, req.user)).select(BREAKDOWN_FIELDS).lean();
+  const students = await User.find(studentFilter(department, {}, req.user)).select(withoutParentPhone(BREAKDOWN_FIELDS, req.user)).lean();
   const ids = students.map((s) => s._id);
   // Semester totals: earlier days come from a cache that every attendance
   // write invalidates, today is always read fresh (services/attendanceTotals).

@@ -17,7 +17,8 @@ import { notifyUsers } from '../utils/notify.js';
 import { emitToRoles, disconnectAllExcept } from '../config/socket.js';
 import { revokeSessions } from './authController.js';
 import { applyDelegation, applyPolicies } from '../services/adminPolicies.js';
-import { DELEGATABLE_ROLES, POLICY_CATALOGUE, normalizePolicies } from '../policies.js';
+import { DELEGATABLE_ROLES, POLICY_CATALOGUE, adminModulesFor, modulesToPolicies, normalizePolicies } from '../policies.js';
+import { ADMIN_MODULES, ADMIN_MODULE_SECTIONS } from '../constants/adminModules.js';
 import { GATE_PASS_PENDING_STATUSES, ROLES, SUPER_ADMIN_ROLE } from '../constants.js';
 import {
   HEALTH_CHECK_VALID_MS,
@@ -147,7 +148,8 @@ export const createAdmin = asyncHandler(async (req, res) => {
     email,
     password: req.body.password,
     role: 'admin',
-    policyManaged: false,
+    // Deny-by-default: the new Admin holds only the policies given here (A1).
+    policyManaged: true,
     policies,
     mustChangePassword: true,
     createdBy: req.user._id,
@@ -240,6 +242,25 @@ export const setAdminPolicies = asyncHandler(async (req, res) => {
   res.json(await User.findById(updated._id).select(ADMIN_FIELDS).lean());
 });
 
+/**
+ * Dashboard modules as checkboxes: the Admin gets exactly the ticked module
+ * keys (policies.js → modulesToPolicies) and becomes policy-managed. Goes
+ * through the same policy service as PUT /policies (validation, audit trail,
+ * notification), effective on the Admin's next request.
+ */
+export const setAdminModules = asyncHandler(async (req, res) => {
+  const target = await loadAdmin(req.params.id);
+  let policies;
+  try {
+    policies = modulesToPolicies(req.body.modules, (target.policies || []).map((p) => (p.toObject ? p.toObject() : p)));
+  } catch (err) {
+    throw new ApiError(422, err.message);
+  }
+  const updated = await applyPolicies(req, target._id, policies);
+  noStore(res);
+  res.json({ ...(await User.findById(updated._id).select(ADMIN_FIELDS).lean()), modules: adminModulesFor(updated) });
+});
+
 export const adminEvents = asyncHandler(async (req, res) => {
   const admin = await loadAdmin(req.params.id);
   const { page, limit, skip } = paginate(req, 20, 50);
@@ -259,7 +280,8 @@ export const setAdminDelegation = asyncHandler(async (req, res) => {
   res.json(await User.findById(updated._id).select(ADMIN_FIELDS).lean());
 });
 
-export const policyCatalogue = (_req, res) => res.json({ modules: POLICY_CATALOGUE, delegatableRoles: DELEGATABLE_ROLES });
+export const policyCatalogue = (_req, res) =>
+  res.json({ modules: POLICY_CATALOGUE, delegatableRoles: DELEGATABLE_ROLES, adminModules: ADMIN_MODULES, adminModuleSections: ADMIN_MODULE_SECTIONS });
 
 // ── Security center ─────────────────────────────────────────────────
 export const securityEvents = asyncHandler(async (req, res) => {

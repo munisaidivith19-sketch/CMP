@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertOctagon, Bell, CalendarClock, CalendarDays, CheckCheck, ClipboardCheck, DoorOpen, Info, Megaphone, MessageCircle, MessagesSquare, PackageSearch, ShieldAlert, Shapes } from 'lucide-react';
 import { useGetNotificationsQuery, useMarkAllNotificationsReadMutation, useMarkNotificationReadMutation } from '../../services/api';
+import { useSelector } from 'react-redux';
+import { useGetAccountModulesQuery } from '../../services/superAdmin';
+import { isModuleRestricted } from '../../utils/adminModules';
 import { cn } from '../ui/primitives';
 import { timeAgo } from '../../utils/format';
 
@@ -33,7 +36,11 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const navigate = useNavigate();
-  const { data } = useGetNotificationsQuery({ limit: 8 });
+  // A policy-managed Admin without the Notifications module gets no bell (its API answers 403).
+  const role = useSelector((st) => st.auth.user?.role);
+  const { data: account } = useGetAccountModulesQuery(undefined, { skip: role !== 'admin', pollingInterval: 60000 });
+  const allowed = role !== 'admin' || (account && (!isModuleRestricted(account) || account.modules.includes('notifications')));
+  const { data } = useGetNotificationsQuery({ limit: 8 }, { skip: !allowed });
   const [markRead] = useMarkNotificationReadMutation();
   const [markAll] = useMarkAllNotificationsReadMutation();
   const unread = data?.unread || 0;
@@ -49,6 +56,8 @@ export default function NotificationBell() {
     setOpen(false);
     if (n.link) navigate(n.link);
   };
+
+  if (!allowed) return null;
 
   return (
     <div className="relative" ref={ref}>

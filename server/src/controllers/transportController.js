@@ -22,14 +22,16 @@ import User from '../models/User.js';
 import { ApiError, asyncHandler, escapeRegex } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { sameId } from '../utils/permissions.js';
-import { campusParts } from '../utils/dates.js';
-import { TRANSPORT_MANAGE_ROLES, TRANSPORT_VIEW_ROLES, TRIP_SHARER_ROLES } from '../constants.js';
+import { campusParts, campusTimezone } from '../utils/dates.js';
+import { TRANSPORT_HISTORY_ROLES, TRANSPORT_MANAGE_ROLES, TRANSPORT_VIEW_ROLES, TRIP_SHARER_ROLES } from '../constants.js';
 import { busFilter, canViewBus, viewerScope } from '../services/transport/access.js';
 import { freshness, transportConfig } from '../services/transport/config.js';
 import { computeEta, progress, recentSpeed } from '../services/transport/eta.js';
 import { FixRejected, ingestFix } from '../services/transport/ingest.js';
-import { startTrip, stopTrip, tripApi } from '../services/transport/trips.js';
-import { validLatLng } from '../services/transport/geo.js';
+import { deviceKeyMatches, startTrip, stopTrip, tripApi } from '../services/transport/trips.js';
+import { cumulative, project, validLatLng } from '../services/transport/geo.js';
+import { generateRoadGeometry, MAX_GEOMETRY_POINTS, RoutingError, stopsKey } from '../services/transport/routing.js';
+import { journeyView, recordTripEnd } from '../services/transport/stopEvents.js';
 
 const isManager = (u) => TRANSPORT_MANAGE_ROLES.includes(u.role);
 const nowMinutes = () => {
@@ -84,6 +86,11 @@ export const getConfig = asyncHandler(async (req, res) => {
     staleSeconds: cfg.staleSeconds,
     canManage: isManager(req.user),
     canShare: TRIP_SHARER_ROLES.includes(req.user.role),
+    // Journey history: every bus, or (trip sharers) the trips they ran; reports for history roles only.
+    canViewHistory: TRANSPORT_HISTORY_ROLES.includes(req.user.role) || TRIP_SHARER_ROLES.includes(req.user.role),
+    canViewReports: TRANSPORT_HISTORY_ROLES.includes(req.user.role),
+    // Times are UTC on the wire; clients show them in the campus zone.
+    timezone: campusTimezone(),
   });
 });
 
@@ -118,13 +125,19 @@ export const getBus = asyncHandler(async (req, res) => {
   const eta = computeEta({ route, location: bus.lastLocation, stopId, speed, campusMinutesNow: nowMinutes() });
   // The path travelled on this trip (thinned history), for the "travelled" line.
   const path = trip ? await BusLocation.find({ trip: trip._id }).sort({ at: 1 }).limit(1000).select('lat lng at -_id').lean() : [];
+  // A trip on a separately configured return route follows THAT route's stops and road line.
+  const followed = trip?.route && route && !sameId(trip.route, route._id) ? await BusRoute.findById(trip.route).lean() : null;
   res.set('Cache-Control', 'no-store');
   res.json({
     bus: busApi({ ...bus, route: route ? { _id: route._id, name: route.name, code: route.code } : null }, req.user, trip),
-    route: route ? { _id: route._id, name: route.name, code: route.code || null, stops: route.stops, geometry: route.geometry || null } : null,
+    // geometryExact false = no road geometry: the line is straight stop-to-stop and labelled approximate.
+    route: route ? { _id: route._id, name: route.name, code: route.code || null, stops: route.stops, geometry: route.geometry || null, geometryExact: route.geometry?.length >= 2 } : null,
+    journeyRoute: followed ? { _id: followed._id, name: followed.name, code: followed.code || null, stops: followed.stops, geometry: followed.geometry || null, geometryExact: followed.geometry?.length >= 2 } : null,
     progress: progress(route, bus.lastLocation),
     eta,
     myStop: myStop || null,
+    // Server-recorded journey of the active trip (direction, next stops, actual times, ETAs).
+    journey: trip ? await journeyView(trip, bus) : null,
     travelled: path,
     serverTime: new Date().toISOString(),
   });
@@ -142,8 +155,21 @@ export const listRoutes = asyncHandler(async (req, res) => {
   const scope = await requireScope(req.user);
   const filter = isManager(req.user) && req.query.all === 'true' ? {} : { isActive: true };
   if (!scope.all) filter._id = { $in: scope.routes };
-  const routes = await BusRoute.find(filter).select('name code stops isActive').sort({ name: 1 }).lean();
-  res.json({ routes });
+  if (!isManager(req.user)) {
+    const routes = await BusRoute.find(filter).select('name code stops isActive').sort({ name: 1 }).lean();
+    return res.json({ routes });
+  }
+  // Managers also see each route's geometry status (point count only — not the line itself).
+  const routes = await BusRoute.find(filter).select('name code stops isActive returnRoute geometrySource geometryProvider geometryUpdatedAt geometryStopsKey').sort({ name: 1 }).lean();
+  const counts = await BusRoute.aggregate([{ $match: { _id: { $in: routes.map((r) => r._id) } } }, { $project: { n: { $size: { $ifNull: ['$geometry', []] } } } }]);
+  const pointsOf = new Map(counts.map((c) => [String(c._id), c.n]));
+  res.json({
+    routes: routes.map((r) => {
+      const info = geometryInfo(r, pointsOf.get(String(r._id)) || 0);
+      delete r.geometryStopsKey;
+      return { ...r, geometryInfo: info };
+    }),
+  });
 });
 
 export const getRoute = asyncHandler(async (req, res) => {
@@ -152,7 +178,7 @@ export const getRoute = asyncHandler(async (req, res) => {
   if (!scope.all && !scope.routes.includes(String(req.params.id))) throw new ApiError(404, 'Route not found');
   const route = await BusRoute.findOne({ _id: req.params.id, ...(isManager(req.user) ? {} : { isActive: true }) }).lean();
   if (!route) throw new ApiError(404, 'Route not found');
-  res.json({ route });
+  res.json({ route, ...(isManager(req.user) ? { geometryInfo: geometryInfo(route) } : {}) });
 });
 
 /** Search buses (number), routes (name / code) and stops (name) the viewer may see. */
@@ -186,16 +212,18 @@ export const getMine = asyncHandler(async (req, res) => {
       ? { route: assignment.route ? { _id: assignment.route._id, name: assignment.route.name } : null, bus: assignment.bus || null, stop: assignment.route?.stops?.find((s) => sameId(s._id, assignment.stop)) || null }
       : null,
     shareable: shareable.map((b) => ({ _id: b._id, number: b.number, gpsSource: b.gpsSource, route: b.route?.name || null })),
-    activeTrip: activeTrip ? { ...tripApi(activeTrip, req.user), bus: { _id: activeTrip.bus._id, number: activeTrip.bus.number } } : null,
+    activeTrip: activeTrip ? { ...tripApi(activeTrip, req.user), channel: activeTrip.channel || 'app', bus: { _id: activeTrip.bus._id, number: activeTrip.bus.number } } : null,
   });
 });
 
 // ── Trips and phone locations ──────────────────────────────────────
 
 export const startTripCtrl = asyncHandler(async (req, res) => {
-  const { trip, bus } = await startTrip(req.user, req.body.busId);
-  logActivity(req, 'transport.trip_started', { entityType: 'bus_trip', entityId: trip._id, summary: `${bus.number} (${trip.source})` });
-  res.status(201).json({ trip: tripApi(trip.toObject(), req.user), bus: { _id: bus._id, number: bus.number } });
+  const { trip, bus, deviceKey } = await startTrip(req.user, req.body.busId, { bindDevice: req.body.bindDevice === true, direction: req.body.direction || null });
+  logActivity(req, 'transport.trip_started', { entityType: 'bus_trip', entityId: trip._id, summary: `${bus.number} (${trip.source}, ${trip.channel}, ${trip.direction}${trip.directionAssumed ? ' assumed' : ''})` });
+  res.set('Cache-Control', 'no-store');
+  // The device key is returned once, here, and stored only as a hash.
+  res.status(201).json({ trip: tripApi(trip.toObject(), req.user), bus: { _id: bus._id, number: bus.number }, ...(deviceKey ? { deviceKey } : {}) });
 });
 
 export const stopTripCtrl = asyncHandler(async (req, res) => {
@@ -230,9 +258,11 @@ async function ingestMany(bus, fixes, opts) {
 
 /** Phone locations: only from the person sharing this ACTIVE trip. */
 export const postTripLocations = asyncHandler(async (req, res) => {
-  const trip = await BusTrip.findById(req.params.id).lean();
+  const trip = await BusTrip.findById(req.params.id).select('+deviceKeyHash').lean();
   if (!trip) throw new ApiError(404, 'Trip not found');
   if (!trip.sharedBy || !sameId(trip.sharedBy, req.user)) throw new ApiError(403, 'Only the person sharing this trip can send its location');
+  // A device-bound trip (web sharing) takes locations only from the tab that started it.
+  if (!deviceKeyMatches(trip, req.get('x-trip-key'))) throw new ApiError(403, 'This trip is being shared from another browser tab or device', undefined, { code: 'wrong_device' });
   // Ended trips tell the phone to stop its location service.
   if (trip.status !== 'active') throw new ApiError(409, 'This trip is no longer active', undefined, { code: 'trip_not_active', status: trip.status });
   const bus = await Bus.findById(trip.bus).lean();
@@ -285,6 +315,7 @@ const STOP_FIELDS = (s, i) => {
     sequence: Number(s.sequence ?? i + 1),
     scheduledTime: s.scheduledTime || undefined,
     isCollege: Boolean(s.isCollege),
+    arrivalRadiusM: s.arrivalRadiusM ? Number(s.arrivalRadiusM) : undefined,
   };
 };
 
@@ -301,7 +332,7 @@ function routeData(body, partial = false) {
   if (body.geometry !== undefined) {
     if (body.geometry === null) data.geometry = undefined;
     else {
-      if (!Array.isArray(body.geometry) || body.geometry.length < 2 || body.geometry.length > 20000) throw new ApiError(422, 'Route geometry must be 2–20000 [longitude, latitude] points');
+      if (!Array.isArray(body.geometry) || body.geometry.length < 2 || body.geometry.length > MAX_GEOMETRY_POINTS) throw new ApiError(422, `Route geometry must be 2–${MAX_GEOMETRY_POINTS} [longitude, latitude] points`);
       data.geometry = body.geometry.map((p) => {
         const [lng, lat] = (Array.isArray(p) ? p : []).map(Number);
         if (!validLatLng(lat, lng)) throw new ApiError(422, 'Route geometry contains an invalid point');
@@ -310,14 +341,87 @@ function routeData(body, partial = false) {
     }
   }
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
+  if (body.returnRoute !== undefined) data.returnRoute = body.returnRoute || undefined;
   return data;
 }
 
+/** A separately configured return route must be another, active route. */
+async function checkReturnRoute(data, selfId) {
+  if (!data.returnRoute) return;
+  if (selfId && String(data.returnRoute) === String(selfId)) throw new ApiError(422, 'A route cannot be its own return route');
+  if (!mongoose.isValidObjectId(data.returnRoute) || !(await BusRoute.exists({ _id: data.returnRoute, isActive: true }))) throw new ApiError(422, 'Choose an active return route');
+}
+
+// How far (m) a stop may be from saved geometry. Catches [latitude, longitude]
+// pasted where GeoJSON needs [longitude, latitude], and lines for another route.
+const maxStopOffset = () => {
+  const n = Number(process.env.ROUTE_GEOMETRY_MAX_STOP_OFFSET_M);
+  return Number.isFinite(n) && n >= 50 && n <= 10000 ? n : 500;
+};
+
+/**
+ * Geometry is only ever set or removed when the request says so explicitly
+ * (`geometry`); edited stops keep the stored line (see geometryStopsKey).
+ * New geometry must pass near every stop, and records where it came from.
+ */
+function applyGeometry(data, body, stops) {
+  if (body.geometry === undefined) return '';
+  if (body.geometry === null) {
+    Object.assign(data, { geometry: undefined, geometrySource: undefined, geometryProvider: undefined, geometryUpdatedAt: undefined, geometryStopsKey: undefined });
+    return 'geometry removed';
+  }
+  const points = data.geometry.map(([lng, lat]) => ({ lat, lng }));
+  const cum = cumulative(points);
+  const limit = maxStopOffset();
+  stops.forEach((s, i) => {
+    const off = project(points, cum, { lat: s.lat, lng: s.lng }).offset;
+    if (off > limit) {
+      throw new ApiError(422, `Stop ${i + 1} (${s.name}) is ${Math.round(off)} m from the route geometry (limit ${limit} m). Check the geometry is [longitude, latitude] and belongs to this route.`, undefined, { code: 'geometry_off_stops', stopIndex: i });
+    }
+  });
+  const generated = body.geometrySource === 'generated';
+  Object.assign(data, {
+    geometrySource: generated ? 'generated' : 'manual',
+    geometryProvider: generated ? String(body.geometryProvider || 'osrm').slice(0, 40) : undefined,
+    geometryUpdatedAt: new Date(),
+    geometryStopsKey: stopsKey(stops),
+  });
+  return `geometry ${data.geometrySource}${generated ? ` (${data.geometryProvider})` : ''}, ${data.geometry.length} points`;
+}
+
+/** Managers' view of a route's geometry: present, where from, and whether the stops changed since. */
+function geometryInfo(route, points = route.geometry?.length || 0) {
+  if (!points) return { points: 0, source: null, stale: false };
+  return {
+    points,
+    source: route.geometrySource || 'unrecorded',
+    provider: route.geometryProvider || null,
+    updatedAt: route.geometryUpdatedAt || null,
+    // Unknown for routes saved before stop keys were recorded.
+    stale: route.geometryStopsKey ? route.geometryStopsKey !== stopsKey(route.stops) : null,
+  };
+}
+
+/** Road geometry preview for the stops in the request. Saves nothing. */
+export const previewRouteGeometry = asyncHandler(async (req, res) => {
+  try {
+    const result = await generateRoadGeometry(req.body.stops);
+    res.set('Cache-Control', 'no-store');
+    res.json({ ...result, stopsKey: stopsKey(result.stops) });
+  } catch (err) {
+    if (err instanceof RoutingError) throw new ApiError(err.status, err.message, undefined, { code: err.code, ...err.details });
+    throw err;
+  }
+});
+
 export const createRoute = asyncHandler(async (req, res) => {
   try {
-    const route = await BusRoute.create({ ...routeData(req.body), createdBy: req.user._id, updatedBy: req.user._id });
-    logActivity(req, 'transport.route_created', { entityType: 'bus_route', entityId: route._id, summary: `${route.name} (${route.stops.length} stops)` });
-    res.status(201).json({ route });
+    const data = routeData(req.body);
+    await checkReturnRoute(data);
+    const geo = applyGeometry(data, req.body, [...data.stops].sort((a, b) => a.sequence - b.sequence));
+    const route = await BusRoute.create({ ...data, createdBy: req.user._id, updatedBy: req.user._id });
+    logActivity(req, 'transport.route_created', { entityType: 'bus_route', entityId: route._id, summary: `${route.name} (${route.stops.length} stops)${geo ? `; ${geo}` : ''}` });
+    res.status(201).json({ route, geometryInfo: geometryInfo(route) });
   } catch (err) {
     if (err.code === 11000) throw new ApiError(409, 'A route with this name already exists');
     throw err;
@@ -328,7 +432,9 @@ export const updateRoute = asyncHandler(async (req, res) => {
   const route = await BusRoute.findById(req.params.id);
   if (!route) throw new ApiError(404, 'Route not found');
   const data = routeData(req.body, true);
+  await checkReturnRoute(data, route._id);
   if (data.isActive === false && (await Bus.exists({ route: route._id, isActive: true }))) throw new ApiError(409, 'Active buses still use this route — reassign them first');
+  const geo = applyGeometry(data, req.body, [...(data.stops || route.stops)].sort((a, b) => a.sequence - b.sequence));
   Object.assign(route, data, { updatedBy: req.user._id });
   try {
     await route.save();
@@ -339,8 +445,8 @@ export const updateRoute = asyncHandler(async (req, res) => {
   // Assignments to stops that no longer exist lose their stop (never point at a ghost).
   const ids = route.stops.map((s) => s._id);
   await TransportAssignment.updateMany({ route: route._id, stop: { $nin: ids } }, { $unset: { stop: 1 } });
-  logActivity(req, 'transport.route_updated', { entityType: 'bus_route', entityId: route._id, summary: route.name });
-  res.json({ route });
+  logActivity(req, 'transport.route_updated', { entityType: 'bus_route', entityId: route._id, summary: `${route.name}${geo ? `; ${geo}` : ''}` });
+  res.json({ route, geometryInfo: geometryInfo(route) });
 });
 
 async function busData(body, partial = false) {
@@ -396,7 +502,11 @@ export const updateBus = asyncHandler(async (req, res) => {
     if (err.code === 11000) throw new ApiError(409, err.keyPattern?.trackerDeviceId ? 'That tracker device is already linked to another bus' : 'A bus with this number already exists');
     throw err;
   }
-  if (data.isActive === false) await BusTrip.updateMany({ bus: bus._id, status: 'active' }, { $set: { status: 'stopped', endedAt: new Date(), endedBy: req.user._id, endReason: 'Bus deactivated' } });
+  if (data.isActive === false) {
+    const running = await BusTrip.find({ bus: bus._id, status: 'active' }).select('_id').lean();
+    await BusTrip.updateMany({ _id: { $in: running.map((t) => t._id) }, status: 'active' }, { $set: { status: 'stopped', endedAt: new Date(), endedBy: req.user._id, endReason: 'Bus deactivated' } });
+    for (const t of await BusTrip.find({ _id: { $in: running.map((r) => r._id) } }).lean()) await recordTripEnd(t);
+  }
   logActivity(req, 'transport.bus_updated', { entityType: 'bus', entityId: bus._id, summary: `${before} → ${bus.number} route:${bus.route || '—'} staff:${bus.trackingStaff.length}` });
   res.json({ bus });
 });

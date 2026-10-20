@@ -68,6 +68,21 @@ test('A1 the department-scope DENY on role assignments applies to a department-s
   assert.equal(res.body.code, 'POLICY_DENIED');
 });
 
+test('A1 an Admin created by the Super Admin is policy-managed, so it holds only the policies given', async () => {
+  const sa = await login({ role: 'super_admin', name: 'A1 Owner' });
+  assert.equal((await call('POST', '/super-admin/reauth', sa, { password: 'Password@123' })).status, 200);
+  const email = `a1.ops.${uniq()}@test.edu`;
+  const made = await call('POST', '/super-admin/admins', sa, { name: 'A1 Ops', email, employeeId: `E-${uniq()}`, password: 'Password@123', policies: [{ module: 'events', actions: ['view'] }] });
+  assert.equal(made.status, 201, JSON.stringify(made.body));
+  const saved = await ctx.models.User.findOne({ email }).lean();
+  assert.equal(saved.policyManaged, true);
+  // Signed in, it is held to that one policy.
+  await ctx.models.User.updateOne({ _id: saved._id }, { $set: { mustChangePassword: false } });
+  const ops = { u: saved, ...(await ctx.loginWeb(saved)) };
+  assert.equal((await call('GET', '/clubs', ops)).status, 403);
+  assert.equal((await call('GET', '/events', ops)).status, 200);
+});
+
 // ── A2–A5: build, repository and deploy hygiene (static checks) ────
 
 test('A2 release builds never fall back to the debug signing key', () => {

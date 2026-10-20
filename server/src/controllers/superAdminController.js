@@ -147,7 +147,8 @@ export const createAdmin = asyncHandler(async (req, res) => {
     email,
     password: req.body.password,
     role: 'admin',
-    policyManaged: false,
+    // Deny-by-default: the new Admin holds only the policies given here (A1).
+    policyManaged: true,
     policies,
     mustChangePassword: true,
     createdBy: req.user._id,

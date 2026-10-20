@@ -14,6 +14,9 @@ import { scrub } from '../../utils/securityLog.js';
  * - Control characters are removed so a message cannot forge extra log lines
  *   or terminal escapes (log injection). The UI renders text, never HTML.
  */
+// A path segment of 24+ URL-safe characters mixing letters and digits.
+export const TOKEN_SEGMENT = /(?<=\/)(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{24,}(?![A-Za-z0-9_-])/g;
+
 const PATTERNS = [
   // Connection strings: keep scheme + host, drop the credentials.
   [/\b(mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqp|https?):\/\/[^\s/@:]+:[^\s/@]+@/gi, '$1://[redacted]@'],
@@ -27,6 +30,12 @@ const PATTERNS = [
   [/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[email]'],
   // Phone numbers: 10+ digits with optional + and separators.
   [/(?<![\w.])\+?\d[\d\s-]{8,}\d(?![\w.])/g, '[number]'],
+  // High-entropy path segments (alumni-claim / invite / reset tokens such as
+  // 64 hex characters, long base64url secrets) become ":token". 24-hex object
+  // ids are turned into ":id" by routeTemplate before this runs.
+  [TOKEN_SEGMENT, ':token'],
+  // The same secrets outside a path: long runs of hex.
+  [/\b[a-f0-9]{32,}\b/gi, '[redacted-token]'],
 ];
 
 // eslint-disable-next-line no-control-regex

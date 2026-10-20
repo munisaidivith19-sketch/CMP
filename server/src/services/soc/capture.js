@@ -18,17 +18,23 @@ import { messageShape, redactLine, redactObject, redactStack, redactText, routeT
  *    WRITE_WINDOW_MS (repeats inside the window are added to the next write),
  *    and at most GLOBAL_PER_MIN writes happen per minute; anything beyond is
  *    counted as "dropped" and reported on the health page;
+ *  - noise (rate-limit and authorization refusals, which anyone can trigger
+ *    from outside) has its own per-minute budget, NOISE_PER_MIN, so a flood
+ *    of it can never use up the budget of real faults (5xx, database, jobs);
  *  - unknown errors are stored as UNCLASSIFIED, never discarded.
  */
 const WRITE_WINDOW_MS = 5_000;
 const GLOBAL_PER_MIN = 300;
+const NOISE_PER_MIN = 100;
 const MAX_TRACKED = 2_000;
+const NOISE_SOURCES = new Set(['rate_limit', 'authorization']);
 
 const stats = {
   accepted: 0,
   written: 0,
   coalesced: 0,
   dropped: 0,
+  droppedNoise: 0,
   failed: 0,
   lastWriteAt: null,
   lastFailureAt: null,
@@ -38,7 +44,8 @@ const stats = {
 let enabled = process.env.SOC_CAPTURE_ENABLED !== 'false';
 const windows = new Map(); // fingerprint -> { lastWriteAt, pendingCount }
 let minuteStart = Date.now();
-let minuteWrites = 0;
+let minuteWrites = 0; // faults
+let minuteNoiseWrites = 0; // rate-limit / authorization refusals
 
 export const captureStats = () => ({ ...stats, enabled, trackedFingerprints: windows.size });
 export const setCaptureEnabled = (v) => {
@@ -172,12 +179,22 @@ export function captureError(o = {}) {
     if (now - minuteStart > 60_000) {
       minuteStart = now;
       minuteWrites = 0;
+      minuteNoiseWrites = 0;
     }
-    if (minuteWrites >= GLOBAL_PER_MIN) {
-      stats.dropped += 1;
-      return null;
+    if (NOISE_SOURCES.has(o.source)) {
+      if (minuteNoiseWrites >= NOISE_PER_MIN) {
+        stats.dropped += 1;
+        stats.droppedNoise += 1;
+        return null;
+      }
+      minuteNoiseWrites += 1;
+    } else {
+      if (minuteWrites >= GLOBAL_PER_MIN) {
+        stats.dropped += 1;
+        return null;
+      }
+      minuteWrites += 1;
     }
-    minuteWrites += 1;
     const count = 1 + (w && !w.timer ? w.pendingCount : 0);
     if (w?.timer) w.lastWriteAt = now;
     else {
@@ -261,8 +278,9 @@ export function resetCaptureForTests() {
   for (const w of windows.values()) if (w.timer) clearTimeout(w.timer);
   windows.clear();
   minuteWrites = 0;
+  minuteNoiseWrites = 0;
   minuteStart = Date.now();
-  Object.assign(stats, { accepted: 0, written: 0, coalesced: 0, dropped: 0, failed: 0, lastWriteAt: null, lastFailureAt: null, lastFailure: null });
+  Object.assign(stats, { accepted: 0, written: 0, coalesced: 0, dropped: 0, droppedNoise: 0, failed: 0, lastWriteAt: null, lastFailureAt: null, lastFailure: null });
 }
 
 /** Test hook: wait until fire-and-forget writes have settled. */

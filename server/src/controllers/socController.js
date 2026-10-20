@@ -16,7 +16,7 @@ import { computeAlerts, overview as socOverview, rangeSince } from '../services/
 import { systemHealth } from '../services/soc/health.js';
 import { explainError } from '../services/soc/explain.js';
 import { coverageReport } from '../services/soc/coverage.js';
-import { redactLine, redactObject, redactText } from '../services/soc/sanitize.js';
+import { redactLine, redactObject, redactText, routeTemplate } from '../services/soc/sanitize.js';
 import * as groq from '../services/ai/groqService.js';
 
 /**
@@ -468,7 +468,8 @@ export const reportClientError = asyncHandler(async (req, res) => {
     meta: {
       kind: b.kind,
       componentStack: b.componentStack ? redactText(b.componentStack, 1200) : undefined,
-      apiEndpoint: b.endpoint ? redactLine(String(b.endpoint).split('?')[0], 120) : undefined,
+      // Same template as a server route: ids → :id, tokens → :token, no query string.
+      apiEndpoint: b.endpoint ? routeTemplate(String(b.endpoint)).slice(0, 120) : undefined,
       appVersion: b.appVersion ? redactLine(b.appVersion, 40) : undefined,
     },
   });

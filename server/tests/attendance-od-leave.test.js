@@ -27,7 +27,8 @@ before(async () => {
 
   users.principal = await make('principal');
   users.hodCse = await make('hod', { department: 'CSE' });
-  users.facultyCse = await make('faculty', { department: 'CSE', section: 'A' });
+  // Class In-Charge of CSE 3-A (audit B8: in-charge needs both section and year).
+  users.facultyCse = await make('faculty', { department: 'CSE', section: 'A', inChargeYear: 3, inChargeSemester: 5 });
 
   studentCse = await ctx.createUser({
     role: 'student',

@@ -141,9 +141,11 @@ const userSchema = new Schema(
     resetTokenHash: { type: String, select: false },
     resetTokenExpires: { type: Date, select: false },
 
-    // Expo push tokens for the Android app (one per installed device).
+    // Expo push tokens for the Android app (one per installed device), each
+    // bound to the session that registered it: revoking or signing out that
+    // session drops the token, and only tokens of live sessions get pushes.
     pushTokens: {
-      type: [{ token: { type: String, maxlength: 200 }, addedAt: { type: Date, default: Date.now } }],
+      type: [{ token: { type: String, maxlength: 200 }, addedAt: { type: Date, default: Date.now }, session: { type: Schema.Types.ObjectId, ref: 'Session' } }],
       default: [],
       select: false,
     },

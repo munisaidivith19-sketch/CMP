@@ -2,7 +2,7 @@
  * Login Security & Progressive Backoff Rate Limiting
  *
  * Per-account counters live on the User document. The counters that have no
- * account to live on — per client IP, and per IP + unknown email (so an
+ * account to live on — per client IP, and per unknown email (so an
  * attacker cannot tell which emails exist) — are kept in MongoDB
  * (LoginThrottle), not process memory: they survive restarts and deploys and
  * are shared by every instance. Thresholds and messages are unchanged.
@@ -12,25 +12,29 @@ import LoginThrottle from '../models/LoginThrottle.js';
 
 // A counter idle this long is removed by the TTL index (longer than any lock).
 const ENTRY_MAX_AGE = 2 * 60 * 60 * 1000; // 2 hours
+// Unknown-email counters live as long as an account's failure count does
+// (authController resets failedLogins 24 hours after the last failure).
+const ANON_MAX_AGE = 24 * 60 * 60 * 1000;
+const maxAgeOf = (kind) => (kind === 'anon' ? ANON_MAX_AGE : ENTRY_MAX_AGE);
 
 /** Only a hash of the IP / typed email is stored. */
 const throttleKey = (kind, ...parts) => crypto.createHash('sha256').update([kind, ...parts].join('\u0000')).digest('hex');
 const ipKey = (ip) => throttleKey('ip', ip);
-const anonKey = (ip, email) => throttleKey('anon', ip || 'unknown', String(email).toLowerCase().trim());
+const anonKey = (email) => throttleKey('anon', String(email).toLowerCase().trim());
 
 /** Count one more failure for `key` atomically and return the updated counter. */
 async function bumpCounter(key, kind) {
   const now = new Date();
   return LoginThrottle.findOneAndUpdate(
     { key },
-    { $inc: { count: 1 }, $set: { kind, lastAttempt: now, expiresAt: new Date(now.getTime() + ENTRY_MAX_AGE) } },
+    { $inc: { count: 1 }, $set: { kind, lastAttempt: now, expiresAt: new Date(now.getTime() + maxAgeOf(kind)) } },
     { upsert: true, new: true, lean: true }
   );
 }
 
-async function setLock(key, lockUntilMs) {
+async function setLock(key, lockUntilMs, kind) {
   const lockUntil = new Date(lockUntilMs);
-  await LoginThrottle.updateOne({ key }, { $set: { lockUntil, expiresAt: new Date(Math.max(lockUntilMs, Date.now()) + ENTRY_MAX_AGE) } });
+  await LoginThrottle.updateOne({ key }, { $set: { lockUntil, expiresAt: new Date(Math.max(lockUntilMs, Date.now()) + maxAgeOf(kind)) } });
   return lockUntil;
 }
 
@@ -103,7 +107,7 @@ export async function recordIpFailure(ip) {
   else if (entry.count >= 10) lockMs = 5 * 60 * 1000;
 
   if (lockMs > 0) {
-    const lockUntil = await setLock(key, Date.now() + lockMs);
+    const lockUntil = await setLock(key, Date.now() + lockMs, 'ip');
     return {
       locked: true,
       ipLocked: true,
@@ -115,26 +119,20 @@ export async function recordIpFailure(ip) {
   return null;
 }
 
-/**
- * Clear or decay IP failure count upon successful authentication.
- */
-export async function clearIpFailure(ip) {
-  if (!ip) return;
-  const key = ipKey(ip);
-  const entry = await LoginThrottle.findOneAndUpdate({ key }, [{ $set: { count: { $max: [0, { $subtract: ['$count', 2] }] } } }], {
-    new: true,
-    lean: true,
-  });
-  if (entry && entry.count === 0) await LoginThrottle.deleteOne({ key, count: 0 });
-}
+// A successful sign-in never clears or decays the per-IP counter: otherwise an
+// attacker holding one valid account could interleave its logins with guesses
+// against other accounts and never reach the IP throttle. The counter only
+// expires through its TTL (ENTRY_MAX_AGE after the last failure).
 
 /**
- * Track failed attempts for non-existent emails (keyed by IP + email).
- * Emulates identical progressive lockout and remaining attempts so attackers
- * cannot enumerate which emails exist.
+ * Track failed attempts for non-existent emails. Emulates the per-account
+ * counter exactly so attackers cannot enumerate which emails exist: one
+ * counter per typed email whatever the client IP (an account's counter is
+ * shared by every IP too), the same progressive lockout and remaining
+ * attempts, and the same 24-hour cooldown before the count starts over.
  */
-export async function checkAnonLockout(ip, email) {
-  const { entry, lock } = await activeLock(anonKey(ip, email));
+export async function checkAnonLockout(email) {
+  const { entry, lock } = await activeLock(anonKey(email));
   if (!entry) return { locked: false, count: 0 };
   if (lock) {
     const retryAfterSeconds = Math.ceil((lock - Date.now()) / 1000);
@@ -148,14 +146,14 @@ export async function checkAnonLockout(ip, email) {
   return { locked: false, count: entry.count || 0 };
 }
 
-export async function recordAnonFailure(ip, email) {
-  const key = anonKey(ip, email);
+export async function recordAnonFailure(email) {
+  const key = anonKey(email);
   const entry = await bumpCounter(key, 'anon');
 
   const remainder = entry.count % 3;
   if (remainder === 0) {
     const lockMs = calculateLockoutMs(entry.count);
-    const lockUntil = await setLock(key, Date.now() + lockMs);
+    const lockUntil = await setLock(key, Date.now() + lockMs, 'anon');
     return {
       locked: true,
       lockUntil: lockUntil.toISOString(),

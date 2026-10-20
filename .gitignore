@@ -19,3 +19,11 @@ server/.env*
 *service-account*.json
 # Skill Wallet private files (certificates, private project images) — never committed.
 server/private-uploads/
+# Signing keys, certificates and provisioning profiles — never committed.
+*.jks
+*.keystore
+*.pem
+*.p12
+*.p8
+*.mobileprovision
+mobile-kotlin/app/google-services.json

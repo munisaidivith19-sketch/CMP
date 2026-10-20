@@ -23,6 +23,24 @@ val easProjectId = setting("vexon.easProjectId", "EAS_PROJECT_ID")
 // configured backend (e.g. a campus LAN server) is not served over HTTPS.
 val allowCleartext = apiUrl.isEmpty() || apiUrl.startsWith("http://")
 
+/** Release signing secrets: -Pvexon.release.* (e.g. ~/.gradle/gradle.properties) > env var. Never in this repo. */
+fun signingSetting(prop: String, env: String): String? =
+    providers.gradleProperty(prop).orNull?.takeIf { it.isNotBlank() }
+        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = signingSetting("vexon.release.storeFile", "VEXON_RELEASE_STORE_FILE")
+val releaseStorePassword = signingSetting("vexon.release.storePassword", "VEXON_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = signingSetting("vexon.release.keyAlias", "VEXON_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = signingSetting("vexon.release.keyPassword", "VEXON_RELEASE_KEY_PASSWORD")
+val missingReleaseSigning = listOf(
+    "vexon.release.storeFile / VEXON_RELEASE_STORE_FILE" to releaseStoreFile,
+    "vexon.release.storePassword / VEXON_RELEASE_STORE_PASSWORD" to releaseStorePassword,
+    "vexon.release.keyAlias / VEXON_RELEASE_KEY_ALIAS" to releaseKeyAlias,
+    "vexon.release.keyPassword / VEXON_RELEASE_KEY_PASSWORD" to releaseKeyPassword,
+).filter { it.second == null }.map { it.first } +
+    listOfNotNull(releaseStoreFile?.takeIf { !file(it).isFile }?.let { "keystore file not found: $it" })
+val hasReleaseSigning = missingReleaseSigning.isEmpty()
+
 android {
     namespace = "com.vexon.campus"
     compileSdk = 36
@@ -41,6 +59,17 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = allowCleartext.toString()
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Installs next to the Expo dev build (same package, different signing key).
@@ -54,9 +83,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sign with the debug key unless a real keystore is configured, so
-            // `assembleRelease` produces an installable APK out of the box.
-            signingConfig = signingConfigs.getByName("debug")
+            // Release builds are signed with the real release key only — never
+            // the debug key. Without one, checkReleaseSigning fails the build.
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
             // QA only: `-Pvexon.appIdSuffix=.qa` installs a minified build beside the store app.
             (findProperty("vexon.appIdSuffix") as String?)?.let { applicationIdSuffix = it }
         }
@@ -74,6 +103,22 @@ android {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/INDEX.LIST", "/META-INF/DEPENDENCIES")
     }
 }
+
+// A release build without the release keystore stops here with a clear message
+// (debug builds never run this check).
+val checkReleaseSigning by tasks.registering {
+    val missing = missingReleaseSigning
+    doLast {
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Release signing is not configured, so no release build is produced " +
+                    "(release builds never fall back to the debug key). Missing: " + missing.joinToString("; ") +
+                    ". Set them as Gradle properties (e.g. in ~/.gradle/gradle.properties) or environment variables."
+            )
+        }
+    }
+}
+tasks.matching { it.name.startsWith("pre") && it.name.endsWith("ReleaseBuild") }.configureEach { dependsOn(checkReleaseSigning) }
 
 kotlin {
     jvmToolchain(17)

@@ -9,7 +9,7 @@ services:
     # `npm install` skip devDeps), so the client install forces them in.
     # Express then serves the built client/dist itself (see server/src/app.js),
     # so the whole app runs from this one service — same origin, no CORS setup.
-    buildCommand: npm install && cd ../client && npm install --include=dev && npm run build
+    buildCommand: npm ci && cd ../client && npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:

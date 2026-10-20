@@ -1,5 +1,6 @@
 import { ApiError } from '../utils/http.js';
-import { grantFor, hasPolicy, isPolicyManaged, isStaffGrantee, staffHolds, withinRoleLimit } from '../policies.js';
+import { POLICY_CATALOGUE, grantFor, hasPolicy, isPolicyManaged, isStaffGrantee, staffHolds, withinRoleLimit } from '../policies.js';
+import { ADMIN_MODULES } from '../constants/adminModules.js';
 import { logSecurity } from '../utils/securityLog.js';
 
 /**
@@ -27,19 +28,29 @@ const DENY = [['__deny__', '__deny__']]; // a requirement nobody holds
 const either = (action, ...modules) => modules.map((m) => [m, action]);
 const anyOf = (pairs) => pairs;
 
+// A policy key of the dashboard modules that open with a single `use` action.
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const USE_RULES = ADMIN_MODULES.flatMap((m) => {
+  const usePolicies = m.policies.filter((p) => Object.keys(POLICY_CATALOGUE[p].actions).join() === 'use');
+  if (!usePolicies.length) return [];
+  return m.api.map((prefix) => [new RegExp(`^${escapeRe(prefix)}(\\/|$)`), ANY, usePolicies.map((p) => [p, 'use'])]);
+});
+
 const RULES = [
-  // ── Baseline: own account, notifications, dashboard, effective permissions.
+  // ── Baseline: own account, dashboard, effective permissions and modules.
+  //    (Notifications, Announcements and Analytics are dashboard modules: see USE_RULES.)
   [/^\/auth\//, ANY, NONE],
   [/^\/users\/me(\/avatar)?$/, ['PUT'], NONE],
-  [/^\/notifications(\/|$)/, ANY, NONE],
   [/^\/devices$/, ['POST', 'DELETE'], NONE],
+  // Raising an SOS is never blocked; the SOS alerts dashboard is a module.
   [/^\/sos$/, ['POST'], NONE],
   [/^\/client-errors$/, ['POST'], NONE],
   [/^\/dashboard$/, READ, NONE],
-  [/^\/admin\/analytics$/, READ, NONE],
   [/^\/admin\/my-policies$/, READ, NONE],
-  [/^\/announcements$/, READ, NONE],
+  [/^\/account\/modules$/, READ, NONE],
   [/^\/holidays$/, READ, NONE],
+  // File uploads feed the modules' forms: any Admin holding at least one module.
+  [/^\/uploads$/, ['POST'], (req) => ((req.user.policies || []).some((p) => p.actions?.length) ? NONE : DENY)],
 
   // ── Staff attendance (matched before the general attendance rules).
   [/^\/attendance\/faculty\/mark$/, ['POST'], [['staff_attendance', 'record']]],
@@ -56,11 +67,11 @@ const RULES = [
   [/^\/attendance(\/|$)/, WRITE, [['attendance', 'update']]],
   [/^\/attendance(\/|$)/, READ, [['attendance', 'view']]],
 
-  // ── Timetable (periods and subjects).
-  [/^\/(timetable|subjects)(\/|$)/, READ, [['timetable', 'view']]],
-  [/^\/(timetable|subjects)(\/|$)/, ['POST'], [['timetable', 'create']]],
-  [/^\/(timetable|subjects)(\/|$)/, ['PUT', 'PATCH'], [['timetable', 'edit']]],
-  [/^\/(timetable|subjects)(\/|$)/, ['DELETE'], [['timetable', 'cancel']]],
+  // ── Timetable (periods, subjects and the exam timetable).
+  [/^\/(timetable|subjects|exams)(\/|$)/, READ, [['timetable', 'view']]],
+  [/^\/(timetable|subjects|exams)(\/|$)/, ['POST'], [['timetable', 'create']]],
+  [/^\/(timetable|subjects|exams)(\/|$)/, ['PUT', 'PATCH'], [['timetable', 'edit']]],
+  [/^\/(timetable|subjects|exams)(\/|$)/, ['DELETE'], [['timetable', 'cancel']]],
 
   // ── Events. A club's event may be handled with Clubs → club events instead.
   [/^\/events(\/|$)/, READ, [['events', 'view']]],
@@ -101,6 +112,9 @@ const RULES = [
   // ── Logs.
   [/^\/admin\/security\//, READ, [['security_logs', 'view']]],
   [/^\/admin\/activity$/, READ, [['activity_logs', 'view']]],
+
+  // ── Every other dashboard module: its API prefixes need its `use` policy.
+  ...USE_RULES,
 ];
 
 const DENIED = 'Your administrator policies do not include this action';

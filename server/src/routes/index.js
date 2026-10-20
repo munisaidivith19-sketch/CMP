@@ -7,7 +7,8 @@ import { passwordChangeGate, platformGate, publicPlatformGate, requireRecentReau
 import { publicStatus } from '../services/platformState.js';
 import superAdminRouter from './superAdminRoutes.js';
 import { POLICY_MODES, applyPolicies, listPolicyTargets, policyView } from '../services/adminPolicies.js';
-import { effectiveDelegation, grantFor, isPolicyManaged, isStaffGrantee, POLICY_CATALOGUE, STAFF_GRANT_ROLES, staffCatalogue, staffHolds } from '../policies.js';
+import { adminModulesFor, effectiveDelegation, grantFor, isPolicyManaged, isStaffGrantee, POLICY_CATALOGUE, STAFF_GRANT_ROLES, staffCatalogue, staffHolds } from '../policies.js';
+import { ADMIN_MODULES, ADMIN_MODULE_SECTIONS } from '../constants/adminModules.js';
 import { idParam, validate } from '../middleware/validate.js';
 import { clientErrorLimiter, aiHourLimiter, aiMinuteLimiter, authLimiter, refreshLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { ApiError } from '../utils/http.js';
@@ -779,7 +780,7 @@ router.post(
   // Policy Assignment: "none" (role access only, the default) or "custom"
   // (additional policies, checked against the caller's authority in the controller).
   body('policyMode').optional().isIn(POLICY_MODES).withMessage('Choose a policy option'),
-  body('policies').optional().isArray({ max: 20 }).withMessage('Policies must be a list'),
+  body('policies').optional().isArray({ max: 40 }).withMessage('Policies must be a list'),
   validate,
   // A Super Admin adding policies re-enters its password, as in the Policies dialog.
   (req, res, next) => (req.user.role === SUPER_ADMIN_ROLE && req.body.policyMode === 'custom' ? requireRecentReauth(req, res, next) : next()),
@@ -833,8 +834,24 @@ router.get('/admin/my-policies', authorize('admin', SUPER_ADMIN_ROLE, ...STAFF_G
     // Roles it may create / assign and what it may delegate (null for legacy admins).
     delegation: managed || req.user.role === SUPER_ADMIN_ROLE ? effectiveDelegation(req.user) : null,
     catalogue: POLICY_CATALOGUE,
+    // Dashboard modules this account may see and use (one checkbox each).
+    modules: adminModulesFor(req.user),
     // What staff accounts may receive as additional policies (User Creation → Add Policies).
     staffCatalogue: staffCatalogue(),
+  });
+});
+// The signed-in account's dashboard modules, read live from its policies on
+// every request (protect loads the user fresh; no-store). `modules` is the
+// list of module keys a policy-managed Admin may see and use, every module for
+// a legacy Admin, and null for every other role (their role decides).
+router.get('/account/modules', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    role: req.user.role,
+    policyManaged: isPolicyManaged(req.user),
+    modules: adminModulesFor(req.user),
+    sections: ADMIN_MODULE_SECTIONS,
+    catalogue: ADMIN_MODULES.map(({ key, label, section, nav }) => ({ key, label, section, nav })),
   });
 });
 // One account's policies, as far as the caller may see and change them:
@@ -868,7 +885,7 @@ router.put(
   authorize('admin', SUPER_ADMIN_ROLE),
   reauthIfSuperAdmin,
   writeLimiter,
-  body('policies').isArray({ max: 20 }).withMessage('Policies must be a list'),
+  body('policies').isArray({ max: 40 }).withMessage('Policies must be a list'),
   body('merge').optional().isBoolean().withMessage('merge must be true or false').toBoolean(),
   validate,
   async (req, res, next) => {

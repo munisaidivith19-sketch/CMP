@@ -21,6 +21,7 @@ import com.vexon.campus.BuildConfig
 import com.vexon.campus.MainActivity
 import com.vexon.campus.R
 import com.vexon.campus.core.Api
+import com.vexon.campus.core.ApiPath
 import com.vexon.campus.core.Auth
 import com.vexon.campus.core.QueryClient
 import kotlinx.coroutines.launch
@@ -144,6 +145,24 @@ object Push {
         return if (ALLOWED.any { l == it || l.startsWith("$it/") || l.startsWith("$it?") }) l else "/notifications"
     }
 
+    /**
+     * The intent the app's own (immutable) PendingIntents open MainActivity
+     * with: a safe link, a valid notification id, and this install's nonce —
+     * MainActivity ignores link / notificationId extras without it.
+     */
+    fun appIntent(context: Context, link: String, notificationId: String? = null): Intent =
+        Intent(context, MainActivity::class.java).apply {
+            putExtra(EXTRA_LINK, safeLink(link))
+            notificationId?.takeIf { ApiPath.isObjectId(it) }?.let { putExtra(EXTRA_NOTIFICATION_ID, it) }
+            putExtra(IntentNonce.EXTRA, IntentNonce.get(context))
+        }
+
+    /** The link / notification id extras of `intent`, only when it came from the app itself. */
+    fun trustedExtras(intent: Intent?, nonce: String): Pair<String?, String?> {
+        if (intent == null || !IntentNonce.matches(nonce, intent.getStringExtra(IntentNonce.EXTRA))) return null to null
+        return intent.getStringExtra(EXTRA_LINK) to intent.getStringExtra(EXTRA_NOTIFICATION_ID)?.takeIf { ApiPath.isObjectId(it) }
+    }
+
     fun show(context: Context, title: String?, text: String?, link: String?, category: String? = null, notificationId: String? = null) {
         ensureChannels(context)
         if (!permissionGranted(context)) return
@@ -151,10 +170,8 @@ object Push {
         // In the open app the live socket already shows it; only urgent ones also pop up.
         if (foreground && !urgent) return
         val target = safeLink(link)
-        val intent = Intent(context, MainActivity::class.java).apply {
+        val intent = appIntent(context, target, notificationId).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_LINK, target)
-            if (notificationId != null) putExtra(EXTRA_NOTIFICATION_ID, notificationId)
         }
         val pending = PendingIntent.getActivity(context, (notificationId ?: target + title).hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val channel = channelFor(category)

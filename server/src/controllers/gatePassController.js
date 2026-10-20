@@ -29,6 +29,18 @@ const GRACE_AFTER_RETURN_MS = 2 * HOUR;
 const MAX_DURATION_MS = 30 * DAY;
 export const QR_PREFIX = 'CCGP:';
 export const STUDENT_FIELDS = 'name email rollNo avatar department year section semester phone';
+// The guard needs to recognise the student, not contact them: no email / phone.
+const GUARD_STUDENT_FIELDS = 'name rollNo avatar department year section';
+// The only passes the gate needs: approved (about to leave), active (outside,
+// return pending) and completed (returned). Pending requests stay with reviewers.
+export const SECURITY_PASS_STATUSES = ['approved', 'active', 'completed'];
+const pickStudent = (s) => s && pick(s, ['_id', 'name', 'rollNo', 'avatar', 'department', 'year', 'section']);
+/** What a security guard sees of a pass: the guard student fields, the parent's number masked. */
+const securityView = (pass) => ({
+  ...pass,
+  student: pass.student && typeof pass.student === 'object' && pass.student.name !== undefined ? pickStudent(pass.student) : pass.student,
+  parentPhone: pass.parentPhone ? otpService.maskMobile(pass.parentPhone) : pass.parentPhone,
+});
 /** When an approved pass's code stops working: the end of its return day, plus the grace period. */
 export const verificationExpiryFor = (toDate) => new Date(new Date(toDate).getTime() + DAY + GRACE_AFTER_RETURN_MS);
 const REVIEWER_FIELDS = 'name role';
@@ -66,6 +78,8 @@ export async function isClassFaculty(pass, user) {
  * semester) get it masked; the other roles are unchanged.
  */
 async function parentPhoneGuard(user) {
+  // Security never contacts the family: masked number, no student contact details.
+  if (user.role === 'security') return securityView;
   if (user.role !== 'faculty') return (pass) => pass;
   const classes = await facultyClasses(user);
   return (pass) =>
@@ -379,7 +393,7 @@ export const listGatePasses = asyncHandler(async (req, res) => {
     // AO / Dean / Chairman: only the emergency requests sent to them.
     filter = { passType: 'emergency', emergencyAuthority: role };
   } else if (role === 'security') {
-    filter.status = { $in: ['approved', 'active', 'completed'] };
+    filter.status = { $in: SECURITY_PASS_STATUSES };
   } else {
     // Fail closed: a role with no gate-pass scope (e.g. warden) sees nothing,
     // never the empty filter that would match every pass in the college.
@@ -420,7 +434,9 @@ export const listGatePasses = asyncHandler(async (req, res) => {
 
 async function canView(pass, user) {
   if (sameId(pass.student, user)) return true;
-  if (['admin', 'security', 'super_admin'].includes(user.role)) return true;
+  if (['admin', 'super_admin'].includes(user.role)) return true;
+  // Security opens only the passes the gate handles (same statuses as its list).
+  if (user.role === 'security') return SECURITY_PASS_STATUSES.includes(pass.status);
   // Emergency passes bypass faculty and HOD; they see one only once the student
   // has actually left (for "outside now" and the return notice).
   if (pass.passType === 'emergency' && ['faculty', 'hod'].includes(user.role) && !pass.actualExit) return false;
@@ -1205,6 +1221,7 @@ export async function getGatePassUserScopeFilter(user) {
   if (STUDENT_ROLES.includes(role)) {
     return { student: user._id };
   }
+  if (role === 'security') return { status: { $in: SECURITY_PASS_STATUSES } };
   return {};
 }
 
@@ -1512,7 +1529,7 @@ export const massApproveGatePass = asyncHandler(async (req, res) => {
 
 // ── Security dashboard: 3 cards ──────────────────────────────────────
 
-export const securityDashboard = asyncHandler(async (_req, res) => {
+export const securityDashboard = asyncHandler(async (req, res) => {
   await expireGatePasses();
   const day = toDay(new Date());
   const todayTs = timestampFilter({ from: day, to: day });
@@ -1523,20 +1540,19 @@ export const securityDashboard = asyncHandler(async (_req, res) => {
     GatePass.countDocuments({ actualExit: todayTs }),
   ]);
   const outside = outsideStudents.length;
+  const guard = await parentPhoneGuard(req.user);
 
   res.json({
     total: totalStudents,
     inside: Math.max(0, totalStudents - outside),
     outside,
     leftToday,
-    outsideStudents: outsideStudents.map(withFlags),
+    outsideStudents: outsideStudents.map((p) => guard(withFlags(p))),
   });
 });
 
 // ── Security dashboard card lists: who "Students in / out / Left today" counts ──
 
-// The guard needs to recognise the student, not contact them: no email / phone.
-const GUARD_STUDENT_FIELDS = 'name rollNo avatar department year section';
 const GUARD_PASS_FIELDS = 'student passType dayScholarOuting fromDate toDate leaveAt expectedReturnAt actualExit actualReturn status';
 
 const leavePeriod = (p) =>
@@ -1553,8 +1569,6 @@ const leavePeriod = (p) =>
     status: p.status,
     overdue: withFlags(p).overdue,
   };
-
-const pickStudent = (s) => s && pick(s, ['_id', 'name', 'rollNo', 'avatar', 'department', 'year', 'section']);
 
 export const securityStudentList = asyncHandler(async (req, res) => {
   await expireGatePasses();

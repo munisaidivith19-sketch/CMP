@@ -48,6 +48,9 @@ export function refreshSession() {
   return refreshPromise;
 }
 
+let lastPolicyRefresh = 0;
+let apiRef = null; // the api below (the base query runs only after it exists)
+
 const NO_RETRY = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
 
 /** Access tokens are short-lived: on a 401, refresh once and replay the request. */
@@ -80,6 +83,12 @@ const baseQueryWithReauth = async (args, api, extra) => {
       result = await rawBaseQuery(args, api, extra);
     }
   }
+  // An Admin's module was unticked meanwhile: refetch the live module list so
+  // the sidebar drops it and the route guard leaves its page (with a message).
+  if (result.error?.status === 403 && result.error.data?.code === 'POLICY_DENIED' && apiRef && Date.now() - lastPolicyRefresh > 3000) {
+    lastPolicyRefresh = Date.now();
+    api.dispatch(apiRef.util.invalidateTags(['AccountModules', 'MyPolicies']));
+  }
   // Emergency maintenance: show the maintenance page instead of a broken screen.
   if (result.error?.status === 503 && result.error.data?.code === 'MAINTENANCE') {
     api.dispatch(setMaintenance(result.error.data.message));
@@ -106,6 +115,7 @@ const TAGS = [
   'Security', 'ClassStudents', 'ODLeave',
   'AlumniProfile', 'MentorshipRequest', 'MentorshipSlot', 'MentorshipSession', 'AlumniJob', 'JobApplication', 'AlumniEvent', 'Chapter', 'ChapterPost', 'AlumniInvite', 'AlumniImport', 'AlumniAnalytics', 'Achievement',
   'SOSAlert', 'Exam', 'Cover', 'Transport',
+  'MyPolicies', 'AccountModules',
 ];
 
 export const api = createApi({
@@ -985,6 +995,7 @@ export const api = createApi({
     resolveSOSAlert: b.mutation({ query: ({ id, ...body }) => ({ url: `/sos/${id}/resolve`, method: 'PATCH', body }), invalidatesTags: ['SOSAlert'] }),
   }),
 });
+apiRef = api;
 
 export const {
   useLoginMutation,

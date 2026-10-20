@@ -16,6 +16,22 @@ struct BusTrackingView: View {
         }
         .navigationTitle("Bus Tracking")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Title + subtitle inside the navigation bar (the system keeps it clear of the
+            // status bar and notch). iOS 17 has no navigationSubtitle, hence the principal item.
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 1) {
+                    Text("Bus Tracking").font(.headline).lineLimit(1)
+                    Text("College buses at their latest GPS position")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+            }
+        }
         .onAppear { if model == nil { model = BusTrackingModel(client: app.client) } }
     }
 }
@@ -40,6 +56,12 @@ private struct BusTrackingScreen: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showBusList = true } label: { Label("All buses", systemImage: "list.bullet") }
+                }
+                // Journey history: only for accounts the server allows (managers, principal, dean, AO, chairman, bus sharers).
+                if model.config?.canViewHistory == true {
+                    ToolbarItem(placement: .primaryAction) {
+                        NavigationLink { TransportHistoryView() } label: { Label("Journey history", systemImage: "clock.arrow.circlepath") }
+                    }
                 }
             }
             .sheet(isPresented: $showBusList) {
@@ -86,8 +108,10 @@ private struct BusTrackingScreen: View {
                     styleURL: styleURL,
                     buses: model.buses,
                     selectedBusId: model.selectedBusId,
-                    route: model.detail.value?.route,
-                    progress: model.detail.value?.progress,
+                    // The route the bus is actually following (a separate return route, when it has one).
+                    route: model.detail.value?.mapRoute,
+                    fraction: JourneyFormat.mapFraction(model.detail.value),
+                    passed: JourneyFormat.mapPassed(model.detail.value),
                     selectedStopId: model.selectedStopId,
                     student: locator.coordinate,
                     command: command,
@@ -246,8 +270,13 @@ private struct BusDetailPanel: View {
             case .failed(let error):
                 Text(error.userMessage).font(.footnote).foregroundStyle(.secondary)
             case .loaded(let d):
-                etaSection(d)
-                if let route = d.route, !route.stops.isEmpty {
+                if let journey = d.journey {
+                    JourneySection(journey: journey, tz: model.config?.timezone, mine: bus.trip?.mine == true,
+                                   selectedStopId: model.selectedStopId, model: model)
+                } else {
+                    etaSection(d)
+                }
+                if d.journey == nil, let route = d.route, !route.stops.isEmpty {
                     DisclosureGroup(isExpanded: $expanded) {
                         StopList(route: route, progress: d.progress, selectedStopId: model.selectedStopId) { id in
                             Task { await model.select(stopId: id) }
@@ -314,6 +343,128 @@ private struct BusDetailPanel: View {
         case .stale: return Theme.warning
         case .offline: return .secondary
         }
+    }
+}
+
+/// The server-recorded journey of the bus's active trip: direction, the stop it
+/// is at, next and following stop with ETAs, the college, and every stop in
+/// travel order with RECORDED times or a PREDICTED time — never mixed up.
+/// The person sharing can correct the direction until a stop is recorded.
+private struct JourneySection: View {
+    let journey: TripJourney
+    let tz: String?
+    let mine: Bool
+    let selectedStopId: String?
+    let model: BusTrackingModel
+    @State private var expanded = false
+    @State private var switching = false
+    @State private var problem: String?
+
+    private var assumed: Bool { journey.directionAssumed == true }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                StatusPill(text: JourneyFormat.directionText(journey.direction, assumed: assumed),
+                           color: assumed ? Theme.warning : Theme.primary)
+                if let started = journey.tripStartedAt {
+                    Text("Trip started \(JourneyFormat.campusTime(started, tz: tz))").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if assumed {
+                Text("The direction was not chosen when the trip started, so “towards college” is assumed. Stops may be in the wrong order until it is corrected.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if journey.nextStopUncertain == true, let reason = journey.uncertainReason {
+                Text("\(reason). The next stop may not be accurate.").font(.caption).foregroundStyle(Theme.warning)
+            }
+            if let current = journey.currentStop {
+                Text("At stop now: \(current.name) · arrived \(JourneyFormat.campusTime(current.actualArrivalAt, tz: tz)) (recorded)")
+                    .font(.subheadline)
+            }
+            nextStopBox
+            if let following = journey.followingStop {
+                Text("Then: \(following.name)\(following.eta.map { " · \(JourneyFormat.etaLine($0, tz: tz))" } ?? "")")
+                    .font(.footnote)
+            }
+            if let college = journey.college {
+                Text("College · \(college.name): \(collegeText(college))").font(.footnote)
+            }
+            DisclosureGroup(isExpanded: $expanded) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(journey.stops) { stop in stopRow(stop) }
+                    }
+                }
+                .frame(maxHeight: 220)
+            } label: {
+                Text("Stops in travel order").font(.subheadline.weight(.semibold))
+            }
+            Text("Arrival and departure times are recorded by VEXON from the bus’s GPS. “Expected” times are estimates.")
+                .font(.caption2).foregroundStyle(.secondary)
+            if mine, journey.canChangeDirection {
+                let other = JourneyFormat.opposite(journey.direction)
+                Button {
+                    switching = true
+                    Task {
+                        problem = await model.changeDirection(tripId: journey.tripId, to: other)
+                        switching = false
+                    }
+                } label: {
+                    if switching { ProgressView() } else { Text("Wrong direction? Switch to \(JourneyFormat.directionLabel(other).lowercased())") }
+                }
+                .buttonStyle(.bordered)
+                .disabled(switching)
+                if let problem { Text(problem).font(.caption).foregroundStyle(Theme.warning) }
+            }
+        }
+    }
+
+    private var nextStopBox: some View {
+        let next = journey.nextStop
+        let ok = next?.eta?.isAvailable == true
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("Next stop").font(.caption).foregroundStyle(.secondary)
+            Text(next?.name ?? (journey.isActive ? "No stops left on this trip" : "—")).font(.subheadline.bold())
+            if let eta = next?.eta {
+                Text(JourneyFormat.etaLine(eta, tz: tz)).font(.subheadline)
+                if ok, let method = JourneyFormat.methodText(eta.method) {
+                    Text("Predicted \(method) · \(eta.confidence ?? "low") confidence · no live traffic data")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background((ok ? Theme.success : Color.secondary).opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func collegeText(_ c: JourneyCollege) -> String {
+        if let at = c.actualArrivalAt { return "Arrived \(JourneyFormat.campusTime(at, tz: tz)) (recorded)" }
+        if let eta = c.eta { return "Expected \(JourneyFormat.etaLine(eta, tz: tz))" }
+        return "—"
+    }
+
+    private func stopRow(_ stop: JourneyStop) -> some View {
+        let done = stop.status != "upcoming"
+        let line = JourneyFormat.stopLine(stop, tz: tz) + (stop.isManual ? " · recorded by staff" : "")
+        return Button { Task { await model.select(stopId: stop.stopId) } } label: {
+            HStack(spacing: 10) {
+                Image(systemName: stop.status == "arrived" ? "bus.fill" : done ? "checkmark.circle.fill" : (stop.stopId == selectedStopId ? "mappin.circle.fill" : "circle"))
+                    .foregroundStyle(stop.stopId == selectedStopId ? Color.orange : (done ? Color.secondary : Theme.primary))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(stop.order + 1). \(stop.name)\(stop.isCollege == true ? " (college)" : "")")
+                        .foregroundStyle(stop.status == "departed" ? .secondary : .primary)
+                    Text(line).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(stop.name). \(line)\(stop.stopId == selectedStopId ? ", selected" : "")")
     }
 }
 
@@ -450,6 +601,8 @@ private struct TripSharingCard: View {
     let model: BusTrackingModel
     @Environment(AppModel.self) private var app
     @State private var chosenBus: String?
+    /// Which way the trip runs — chosen before starting; sets the stop order riders see.
+    @State private var direction: String?
     @State private var confirmStop = false
 
     private var sharing: TripSharingService { app.tripSharing }
@@ -479,6 +632,11 @@ private struct TripSharingCard: View {
                         .buttonStyle(.borderedProminent)
                 } else if let buses = model.mine?.shareable, !buses.isEmpty {
                     Text("Share this iPhone’s location for a bus trip").font(.subheadline.bold())
+                    Picker("Direction", selection: $direction) {
+                        ForEach(JourneyFormat.directions, id: \.self) { Text(JourneyFormat.directionLabel($0)).tag(Optional($0)) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Trip direction")
                     HStack {
                         Picker("Bus", selection: Binding(get: { chosenBus ?? buses.first?.id ?? "" }, set: { chosenBus = $0 })) {
                             ForEach(buses) { Text("\($0.number)\($0.route.map { " · \($0)" } ?? "")").tag($0.id) }
@@ -486,14 +644,16 @@ private struct TripSharingCard: View {
                         Spacer()
                         Button("Start trip") {
                             let id = chosenBus ?? buses.first?.id
-                            guard let id, let bus = buses.first(where: { $0.id == id }) else { return }
+                            guard let id, let direction, let bus = buses.first(where: { $0.id == id }) else { return }
                             Task {
-                                await sharing.start(busId: bus.id, busNumber: bus.number, client: app.client)
+                                await sharing.start(busId: bus.id, busNumber: bus.number, direction: direction, client: app.client)
                                 await model.refreshMine()
                             }
                         }
                         .buttonStyle(.borderedProminent)
+                        .disabled(direction == nil)
                     }
+                    if direction == nil { Text("Choose the direction first.").font(.caption).foregroundStyle(.secondary) }
                     Text("Location is shared only while the trip is active and stops when you end it.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
@@ -549,10 +709,26 @@ private struct MapButton: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.body.weight(.semibold))
+                .foregroundStyle(Color.primary)
                 .frame(width: 44, height: 44)
-                .background(.regularMaterial, in: Circle())
+                // Opaque and outlined so it stays readable over any map tiles, light or dark.
+                .background(Color(uiColor: .systemBackground), in: Circle())
+                .overlay(Circle().strokeBorder(Color(uiColor: .systemGray2), lineWidth: 1.5))
+                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                .contentShape(Circle())
         }
+        .buttonStyle(MapButtonStyle())
         .accessibilityLabel(label)
+    }
+}
+
+/// Pressed: dimmed and slightly smaller, so a tap is visible over the map.
+private struct MapButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

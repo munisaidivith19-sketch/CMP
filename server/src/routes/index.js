@@ -70,6 +70,8 @@ import {
   REMINDER_MINUTES,
   STAFF_REPORT_ROLES,
   TRANSPORT_MANAGE_ROLES,
+  TRANSPORT_HISTORY_ROLES,
+  BUS_TRIP_DIRECTIONS,
   TRANSPORT_VIEW_ROLES,
   TRIP_SHARER_ROLES,
 } from '../constants.js';
@@ -103,7 +105,8 @@ import * as exams from '../controllers/examController.js';
 import * as staff from '../controllers/staffController.js';
 import * as monitor from '../controllers/attendanceMonitorController.js';
 import * as transport from '../controllers/transportController.js';
-import { locationLimiter, trackerLimiter } from '../middleware/rateLimit.js';
+import * as transportHistory from '../controllers/transportHistoryController.js';
+import { locationLimiter, routingLimiter, trackerLimiter } from '../middleware/rateLimit.js';
 import * as gatePass from '../controllers/gatePassController.js';
 import * as gateBind from '../controllers/gatePassBindController.js';
 import * as lostFound from '../controllers/lostFoundController.js';
@@ -1656,7 +1659,11 @@ const routeRules = (optional = false) => {
     body('stops.*.sequence').optional().isInt({ min: 1, max: 200 }),
     body('stops.*.scheduledTime').optional({ values: 'falsy' }).matches(HHMM).withMessage('Scheduled time must be HH:mm'),
     body('stops.*.isCollege').optional().isBoolean(),
+    body('stops.*.arrivalRadiusM').optional({ values: 'null' }).isInt({ min: 10, max: 500 }).withMessage('Arrival radius must be 10–500 m'),
+    body('returnRoute').optional({ values: 'null' }).isMongoId(),
     body('geometry').optional({ values: 'null' }).isArray({ min: 2, max: 20000 }),
+    body('geometrySource').optional().isIn(['manual', 'generated']),
+    body('geometryProvider').optional().isIn(['osrm']),
     body('isActive').optional().isBoolean(),
     validate,
   ];
@@ -1669,7 +1676,53 @@ router.get('/transport/routes', authorize(...TRANSPORT_VIEW_ROLES), transport.li
 router.get('/transport/routes/:id', authorize(...TRANSPORT_VIEW_ROLES), idParam('id'), transport.getRoute);
 router.get('/transport/search', authorize(...TRANSPORT_VIEW_ROLES), query('q').optional().isString().isLength({ max: 60 }), validate, transport.search);
 router.get('/transport/me', authorize(...TRANSPORT_VIEW_ROLES), transport.getMine);
-router.post('/transport/trips', writeLimiter, authorize(...TRIP_SHARER_ROLES), body('busId').isMongoId(), validate, transport.startTripCtrl);
+router.post(
+  '/transport/trips',
+  writeLimiter,
+  authorize(...TRIP_SHARER_ROLES),
+  body('busId').isMongoId(),
+  body('bindDevice').optional().isBoolean({ strict: true }),
+  body('direction').optional({ values: 'null' }).isIn(BUS_TRIP_DIRECTIONS).withMessage('Direction must be towards_college or towards_home'),
+  validate,
+  transport.startTripCtrl
+);
+// Journey: live (any viewer of the bus), direction (sharer / starter / manager),
+// manual stop records (managers), history and reports (history roles; sharers: own trips).
+router.get('/transport/trips/:id/journey', idParam('id'), authorize(...TRANSPORT_VIEW_ROLES), transportHistory.getJourney);
+router.patch(
+  '/transport/trips/:id/direction',
+  writeLimiter,
+  idParam('id'),
+  authorize(...new Set([...TRIP_SHARER_ROLES, ...TRANSPORT_MANAGE_ROLES])),
+  body('direction').isIn(BUS_TRIP_DIRECTIONS).withMessage('Direction must be towards_college or towards_home'),
+  validate,
+  transportHistory.setDirection
+);
+router.post(
+  '/transport/trips/:id/stop-events',
+  writeLimiter,
+  idParam('id'),
+  authorize(...TRANSPORT_MANAGE_ROLES),
+  body('order').isInt({ min: 0, max: 199 }).toInt(),
+  body('type').isIn(['arrival', 'departure']),
+  body('at').isISO8601().withMessage('A valid time is required'),
+  body('reason').isString().trim().isLength({ min: 3, max: 300 }).withMessage('A reason of 3–300 characters is required'),
+  validate,
+  transportHistory.recordStopEvent
+);
+const historyQuery = [
+  query('bus').optional({ values: 'falsy' }).isMongoId(),
+  query('route').optional({ values: 'falsy' }).isMongoId(),
+  query('direction').optional({ values: 'falsy' }).isIn(BUS_TRIP_DIRECTIONS),
+  query('status').optional({ values: 'falsy' }).isIn(['active', 'completed', 'stopped', 'timeout', 'interrupted']),
+  query('range').optional({ values: 'falsy' }).isIn(['day', 'week', 'month', 'semester', 'all', 'custom']),
+  query('from').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}-\d{2}$/),
+  query('to').optional({ values: 'falsy' }).matches(/^\d{4}-\d{2}-\d{2}$/),
+];
+const HISTORY_VIEWERS = [...new Set([...TRANSPORT_HISTORY_ROLES, ...TRIP_SHARER_ROLES])];
+router.get('/transport/history/trips', authorize(...HISTORY_VIEWERS), ...historyQuery, query('page').optional().isInt({ min: 1, max: 10000 }), query('limit').optional().isInt({ min: 1, max: 100 }), validate, transportHistory.listHistory);
+router.get('/transport/history/trips/:id', idParam('id'), authorize(...HISTORY_VIEWERS), transportHistory.getHistoryTrip);
+router.get('/transport/history/report', authorize(...TRANSPORT_HISTORY_ROLES), ...historyQuery, validate, transportHistory.historyReport);
 router.post('/transport/trips/:id/stop', writeLimiter, idParam('id'), authorize(...TRIP_SHARER_ROLES), body('reason').optional().isIn(['completed', 'stopped']), validate, transport.stopTripCtrl);
 router.get('/transport/trips/:id', idParam('id'), authorize(...TRANSPORT_VIEW_ROLES), transport.getTrip);
 router.post(
@@ -1685,6 +1738,18 @@ router.post(
   body('fixes.*.heading').optional({ values: 'null' }).isFloat({ min: 0, max: 360 }),
   validate,
   transport.postTripLocations
+);
+// Road geometry PREVIEW through the given stops (server-side OSRM call; saves nothing).
+router.post(
+  '/transport/routes/preview-geometry',
+  authorize(...TRANSPORT_MANAGE_ROLES),
+  routingLimiter,
+  body('stops').isArray({ min: 2, max: 200 }).withMessage('A route needs 2–200 stops'),
+  ...latLng('stops.*.'),
+  body('stops.*.sequence').optional().isInt({ min: 1, max: 200 }),
+  body('stops.*.name').optional().isString().isLength({ max: 80 }),
+  validate,
+  transport.previewRouteGeometry
 );
 router.post('/transport/routes', writeLimiter, authorize(...TRANSPORT_MANAGE_ROLES), ...routeRules(), transport.createRoute);
 router.put('/transport/routes/:id', writeLimiter, idParam('id'), authorize(...TRANSPORT_MANAGE_ROLES), ...routeRules(true), transport.updateRoute);

@@ -10,6 +10,7 @@ import {
   BookOpenCheck,
   BusFront,
   CalendarDays,
+  History,
   ClipboardCheck,
   ClipboardList,
   Crown,
@@ -22,6 +23,7 @@ import {
   MessageCircle,
   MessagesSquare,
   MessageSquareWarning,
+  Navigation,
   PackageSearch,
   Settings2,
   Shapes,
@@ -34,7 +36,7 @@ import {
   UsersRound,
   Wallet,
 } from 'lucide-react';
-import { COE, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TIMETABLE_ROLES, TRANSPORT, TRANSPORT_VIEW } from '../../utils/constants.js';
+import { COE, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TIMETABLE_ROLES, TRANSPORT, TRANSPORT_VIEW, TRIP_SHARERS } from '../../utils/constants.js';
 import { grantedPages } from '../../utils/delegation.js';
 import { navItemAllowed } from '../../utils/adminModules.js';
 
@@ -60,7 +62,9 @@ export const MAIN = [
 export const CAMPUS = [
   { to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' },
   { to: '/timetable', label: 'Timetable', icon: CalendarDays, roles: TIMETABLE_ROLES, excludeRoles: ['warden', 'security'] },
-  { to: '/transport', label: 'Bus Tracking', icon: BusFront, dayScholarOnly: true, excludeRoles: ROLES.filter((r) => !TRANSPORT_VIEW.includes(r)) },
+  { to: '/transport', label: 'Bus Tracking', icon: BusFront, end: true, dayScholarOnly: true, excludeRoles: ROLES.filter((r) => !TRANSPORT_VIEW.includes(r)) },
+  // Staff who may be assigned to a bus; the page itself lists only the buses each one may share.
+  { to: '/transport/share', label: 'Share Bus Location', icon: Navigation, excludeRoles: ROLES.filter((r) => !TRIP_SHARERS.includes(r)) },
   { to: '/study-materials', label: 'Study Materials', icon: BookOpen, excludeRoles: ['warden', 'security', 'ao'] },
   { to: '/achievements', label: 'Achievements', icon: Trophy, excludeRoles: ['warden', 'security'] },
   // Skill Wallet: students' own wallet; the gallery for college roles; the review
@@ -122,7 +126,9 @@ const OFFICE_MAIN = [
 ];
 const TRANSPORT_MAIN = [
   { to: '/transport', label: 'Bus Tracking', icon: BusFront, end: true },
+  { to: '/transport/share', label: 'Share bus location', icon: Navigation },
   { to: '/transport/manage', label: 'Manage buses', icon: Settings2 },
+  { to: '/transport/history', label: 'Journey history', icon: History },
   { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 

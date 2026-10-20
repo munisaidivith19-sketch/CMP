@@ -111,7 +111,13 @@ object Api {
         get("/transport/buses/${oid(id)}", "Transport", params = mapOf("stopId" to stopId), skip = skip, pollMs = pollMs)
     @Composable fun transportSearch(q: String, skip: Boolean = false) = get("/transport/search", "TransportSearch", params = mapOf("q" to q), skip = skip)
     @Composable fun transportMe(skip: Boolean = false) = get("/transport/me", "Transport", skip = skip)
-    suspend fun startBusTrip(busId: String) = post("/transport/trips", jsonOf("busId" to busId), "Transport")
+    // `direction`: towards_college | towards_home (null = the server records towards_college, marked assumed).
+    suspend fun startBusTrip(busId: String, direction: String? = null) = post("/transport/trips", jsonOf("busId" to busId, "direction" to direction), "Transport")
+    // Correct the direction of your active trip before any stop is recorded.
+    suspend fun setTripDirection(tripId: String, direction: String) = patch("/transport/trips/${oid(tripId)}/direction", jsonOf("direction" to direction), "Transport")
+    // Journey history: managers / principal / dean / AO / chairman see all trips; people who share a bus see their own.
+    @Composable fun transportHistory(params: Params? = null, skip: Boolean = false) = get("/transport/history/trips", "TransportHistory", params = params, skip = skip, keep = false)
+    @Composable fun transportHistoryTrip(id: String) = get("/transport/history/trips/${oid(id)}", "TransportHistory", keep = false)
     suspend fun stopBusTrip(tripId: String) = post("/transport/trips/${oid(tripId)}/stop", jsonOf("reason" to "completed"), "Transport")
     // FCM device registration (bound by the server to this account and session) and notification preferences.
     suspend fun registerDevice(token: String) = post("/devices", jsonOf("token" to token, "deviceName" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".take(80), "appVersion" to com.vexon.campus.BuildConfig.VERSION_NAME))

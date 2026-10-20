@@ -8,6 +8,16 @@
 // Reading the device and its states live in myLocation.js (on top of the shared
 // readFreshFix); only the pure presentation helpers are here.
 
+/**
+ * Where a map opens before anything better is known (no bus position, no
+ * route): Chennai at city level. Used once, when the map is created — never
+ * re-applied, so panning and zooming out to Tamil Nadu, India or the world stay free.
+ */
+export const DEFAULT_VIEW = { center: [80.2707, 13.0827], zoom: 11 }; // [lng, lat]
+
+/** The first framing of the bus map: the bus asked for in the link, otherwise everything known. */
+export const initialFit = (selectedBusId) => ({ kind: selectedBusId ? 'bus' : 'all', nonce: 0 });
+
 /** Coarser than this is an estimate (Wi-Fi / network / "approximate" permission), not GPS. */
 export const COARSE_FIX_M = 100;
 
@@ -66,6 +76,20 @@ export function freshnessOf(at, { liveSeconds = 60, staleSeconds = 300 } = {}, n
   return 'offline';
 }
 
+/**
+ * What a bus's position means right now:
+ *  - offline:     no position at all;
+ *  - not_sharing: a phone-shared bus whose trip has ended — its last position
+ *                 is history (shown with its time), never "live";
+ *  - otherwise live / stale / offline by the age of the fix (vehicle trackers
+ *    report without trips, so only their age counts).
+ */
+export function busStatus(bus, loc, thresholds, now = Date.now()) {
+  if (!loc?.at) return 'offline';
+  if (bus?.gpsSource !== 'tracker' && bus?.trip?.status !== 'active') return 'not_sharing';
+  return freshnessOf(loc.at, thresholds, now);
+}
+
 /** "just now", "45 s ago", "3 min ago", "2 h ago". */
 export function agoText(at, now = Date.now()) {
   if (!at) return 'never';
@@ -108,6 +132,60 @@ export function boundsOf(points) {
     n += pad;
   }
   return [[w, s], [e, n]];
+}
+
+// ── Route line and stops ──────────────────────────────────────────
+
+/**
+ * The line a route is drawn along: its stored road geometry ([lng, lat]
+ * pairs) when present (`exact`), otherwise straight lines between the stops
+ * in order — which the map must label as approximate, never as a road route.
+ */
+export function routeLine(route) {
+  if (route?.geometry?.length >= 2) return { points: route.geometry.map(([lng, lat]) => ({ lat, lng })), exact: true };
+  const stops = [...(route?.stops || [])].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+  return { points: stops.map((s) => ({ lat: s.lat, lng: s.lng })), exact: false };
+}
+
+/**
+ * Stop points for the map, with the first and last stop marked as the route's
+ * start and end (and named so in their labels).
+ */
+export function stopFeatures(stops, { selectedStopId, passed = [] } = {}) {
+  const ordered = [...(stops || [])].filter((s) => Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng))).sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+  const done = new Set(passed);
+  const last = ordered.length - 1;
+  return {
+    type: 'FeatureCollection',
+    features: ordered.map((s, i) => {
+      const role = i === 0 ? 'start' : i === last ? 'end' : 'stop';
+      const label = `${s.sequence ?? i + 1}. ${s.name || 'Unnamed stop'}`;
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [Number(s.lng), Number(s.lat)] },
+        properties: {
+          id: String(s._id ?? i),
+          role,
+          name: role === 'start' ? `Start · ${label}` : role === 'end' ? `End · ${label}` : label,
+          selected: s._id != null && String(s._id) === String(selectedStopId),
+          passed: done.has(s.sequence),
+        },
+      };
+    }),
+  };
+}
+
+/** Stop coordinates in travel order as text — equal only when no stop moved, was added, removed or reordered. */
+export function stopsSignature(stops) {
+  return (stops || []).map((s) => `${Number(s.lat).toFixed(6)},${Number(s.lng).toFixed(6)}`).join(';');
+}
+
+/** "12.4 km · about 35 min by road (no traffic)". */
+export function routeSummary(distanceM, durationS) {
+  const parts = [];
+  if (Number.isFinite(distanceM)) parts.push(distanceM < 1000 ? `${Math.round(distanceM)} m` : `${(distanceM / 1000).toFixed(1)} km`);
+  if (Number.isFinite(durationS)) parts.push(`about ${Math.max(1, Math.round(durationS / 60))} min by road (no traffic)`);
+  return parts.join(' · ');
 }
 
 /**

@@ -7,6 +7,7 @@ import com.vexon.campus.core.BusMath.MyLocation as L
 import com.vexon.campus.core.LocationRead as R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Bus-map rules. TEST DATA ONLY: synthetic coordinates near 13.000 N, 80.000 E. */
@@ -140,5 +141,13 @@ class BusMathTest {
         assertEquals("About 4 min", BusMath.etaText(true, 4, "high", null))
         assertEquals("About 4 min (approximate)", BusMath.etaText(true, 4, "low", null))
         assertEquals("Arriving now", BusMath.etaText(true, 0, "high", null))
+    }
+
+    @Test
+    fun mapOpensOnChennaiAtCityLevel() {
+        // Chennai (not swapped lat/lng), city level — not the whole world.
+        assertEquals(13.08, BusMath.DEFAULT_CENTER.lat, 0.05)
+        assertEquals(80.27, BusMath.DEFAULT_CENTER.lng, 0.05)
+        assertTrue(BusMath.DEFAULT_ZOOM in 10.0..12.0)
     }
 }

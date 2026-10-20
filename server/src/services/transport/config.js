@@ -33,6 +33,28 @@ export function transportConfig() {
     trackingLostMinutes: num('TRACKING_LOST_MINUTES', 5, 1, 120),
     // "Approaching your stop" alert threshold.
     approachingMinutes: num('BUS_APPROACHING_MINUTES', 5, 1, 30),
+    // Stop arrival / departure detection (services/transport/journey.js).
+    // A stop is "reached" within its radius (per-stop override on the route),
+    // using only fixes at least this accurate, confirmed by several fixes, the
+    // bus standing still, or progress past the stop.
+    arrivalRadiusM: num('STOP_ARRIVAL_RADIUS_M', 50, 10, 500),
+    arrivalMaxAccuracyM: num('STOP_ARRIVAL_MAX_ACCURACY_M', 50, 5, 200),
+    arrivalConfirmFixes: num('STOP_ARRIVAL_CONFIRM_FIXES', 2, 1, 5),
+    dwellSpeedMps: num('STOP_DWELL_SPEED_MPS', 2, 0, 10),
+    departureMarginM: num('STOP_DEPARTURE_MARGIN_M', 30, 0, 500),
+    offRouteM: num('ROUTE_OFF_ROUTE_M', 500, 50, 5000),
+    // Distance a trip must cover before its final stop can complete it.
+    minTripTravelM: num('TRIP_MIN_TRAVEL_M', 1000, 0, 50000),
+    // End the trip (and the phone's sharing) once the final stop is reached.
+    tripAutoComplete: process.env.TRIP_AUTO_COMPLETE !== 'false',
+    // ETAs: the disclosed fallback speed before any measurement, dwell per stop,
+    // and how many recorded trips a segment needs before history is used.
+    etaDefaultSpeedKmh: num('ETA_DEFAULT_SPEED_KMH', 20, 5, 80),
+    etaDwellSeconds: num('ETA_DWELL_SECONDS', 30, 0, 600),
+    etaHistoryMinTrips: num('ETA_HISTORY_MIN_TRIPS', 3, 1, 50),
+    // Reports: minimum trips before averages are shown; on-time tolerance.
+    reportMinTrips: num('TRANSPORT_REPORT_MIN_TRIPS', 3, 1, 100),
+    onTimeMinutes: num('TRANSPORT_ON_TIME_MINUTES', 5, 0, 60),
     // Inbound vehicle-tracker webhook (disabled unless a secret is set).
     trackerSecret: process.env.TRACKER_WEBHOOK_SECRET || '',
   };

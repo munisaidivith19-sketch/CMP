@@ -3,14 +3,14 @@ import * as maplibregl from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { BUS_ICON_SIZE, createBusMarkerElement, updateBusMarkerElement } from './busMarker';
-import { accuracyCircle, boundsOf, easeOut, freshnessOf, lerpPosition, remainingPath } from './busGeo';
+import { DEFAULT_VIEW, accuracyCircle, boundsOf, busStatus, easeOut, lerpPosition, remainingPath, routeLine, stopFeatures } from './busGeo';
 import { accuracyBounds, showsDot, syncUserMarker } from './myLocation';
 
 // The worker is bundled to a same-origin file (strict CSP: no blob:, no remote script).
 maplibregl.setWorkerUrl(workerUrl);
 
 const EMPTY = { type: 'FeatureCollection', features: [] };
-const line = (pts) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lng, p.lat]) }, properties: {} });
+const line = (pts, properties = {}) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.map((p) => [p.lng, p.lat]) }, properties });
 const COMPACT_BELOW_ZOOM = 12;
 
 /**
@@ -34,8 +34,9 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
     const m = new maplibregl.Map({
       container: container.current,
       style: styleUrl,
-      center: [78.9629, 20.5937], // until the buses / route are known
-      zoom: 4,
+      // Chennai at city level until a bus / route / the viewer's position is known (applied once).
+      center: DEFAULT_VIEW.center,
+      zoom: DEFAULT_VIEW.zoom,
       attributionControl: { compact: true, customAttribution: attribution },
       cooperativeGestures: false,
     });
@@ -51,14 +52,16 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       m.addSource('me-accuracy', { type: 'geojson', data: EMPTY });
       m.addLayer({ id: 'me-accuracy', type: 'fill', source: 'me-accuracy', paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.12, 'fill-outline-color': '#2563eb' } });
       m.addLayer({ id: 'route-travelled', type: 'line', source: 'route-travelled', paint: { 'line-color': '#94a3b8', 'line-width': 4, 'line-dasharray': [1.5, 1.5] }, layout: { 'line-cap': 'round' } });
-      m.addLayer({ id: 'route-remaining', type: 'line', source: 'route-remaining', paint: { 'line-color': '#6c5dd3', 'line-width': 5, 'line-opacity': 0.85 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      m.addLayer({ id: 'route-remaining', type: 'line', source: 'route-remaining', filter: ['!', ['get', 'approx']], paint: { 'line-color': '#6c5dd3', 'line-width': 5, 'line-opacity': 0.85 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
+      // No road geometry: straight stop-to-stop lines, dashed so they never pass for roads.
+      m.addLayer({ id: 'route-approx', type: 'line', source: 'route-remaining', filter: ['get', 'approx'], paint: { 'line-color': '#6c5dd3', 'line-width': 3, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } });
       m.addLayer({
         id: 'stops',
         type: 'circle',
         source: 'stops',
         paint: {
-          'circle-radius': ['case', ['get', 'selected'], 9, 6],
-          'circle-color': ['case', ['get', 'selected'], '#cb0101', ['get', 'passed'], '#cbd5e1', '#ffffff'],
+          'circle-radius': ['case', ['get', 'selected'], 9, ['!=', ['get', 'role'], 'stop'], 8, 6],
+          'circle-color': ['case', ['get', 'selected'], '#cb0101', ['==', ['get', 'role'], 'start'], '#16a34a', ['==', ['get', 'role'], 'end'], '#1b1d3a', ['get', 'passed'], '#cbd5e1', '#ffffff'],
           'circle-stroke-color': '#6c5dd3',
           'circle-stroke-width': 2.5,
         },
@@ -106,7 +109,7 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       if (!loc) continue; // never place a bus without a real position
       const id = String(bus._id);
       seen.add(id);
-      const status = freshnessOf(loc.at, thresholds);
+      const status = busStatus(bus, loc, thresholds);
       let entry = markers.current.get(id);
       if (!entry) {
         const el = createBusMarkerElement(bus, (busId) => callbacks.current.onSelect(busId));
@@ -146,19 +149,11 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
   useEffect(() => {
     const m = map.current;
     if (!m || !ready) return;
-    const path = route ? (route.geometry?.length >= 2 ? route.geometry.map(([lng, lat]) => ({ lat, lng })) : route.stops.map((s) => ({ lat: s.lat, lng: s.lng }))) : [];
+    const { points: path, exact } = route ? routeLine(route) : { points: [], exact: true };
     const pos = selectedId ? locations[selectedId] || buses.find((b) => String(b._id) === String(selectedId))?.location : null;
-    m.getSource('route-remaining')?.setData(path.length >= 2 ? line(remainingPath(path, pos)) : EMPTY);
+    m.getSource('route-remaining')?.setData(path.length >= 2 ? line(remainingPath(path, pos), { approx: !exact }) : EMPTY);
     m.getSource('route-travelled')?.setData(travelled?.length >= 2 ? line(travelled) : EMPTY);
-    const passed = new Set(route?.passedSequences || []);
-    m.getSource('stops')?.setData({
-      type: 'FeatureCollection',
-      features: (route?.stops || []).map((s) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
-        properties: { id: String(s._id), name: `${s.sequence}. ${s.name}`, selected: String(s._id) === String(selectedStopId), passed: passed.has(s.sequence) },
-      })),
-    });
+    m.getSource('stops')?.setData(stopFeatures(route?.stops, { selectedStopId, passed: route?.passedSequences }));
   }, [ready, route, travelled, selectedStopId, selectedId, locations, buses]);
 
   // The student's own position — a blue dot, only when they asked for it.
@@ -189,9 +184,11 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       return;
     }
     let pts = [];
-    if (fit.kind === 'bus') pts = [busPos];
+    // A selected bus with a real position comes first; without one, frame whatever is known.
+    if (fit.kind === 'bus' && busPos) pts = [busPos];
     else if (fit.kind === 'both') pts = [busPos, student];
     else pts = [...buses.map((b) => locations[b._id] || b.location), ...(route?.stops || [])];
+    // Nothing known yet: stay where the map is (the Chennai default on first load).
     const b = boundsOf(pts);
     if (!b) return;
     if (pts.filter(Boolean).length === 1) m.flyTo({ center: [(b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2], zoom: Math.max(m.getZoom(), 15), essential: true });
@@ -200,5 +197,15 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fit]);
 
-  return <div ref={container} className="h-full w-full" role="application" aria-label="Live bus map" />;
+  const approximate = Boolean(route?.stops?.length >= 2 && !routeLine(route).exact);
+  return (
+    <div className="relative h-full w-full">
+      <div ref={container} className="h-full w-full" role="application" aria-label="Live bus map" />
+      {approximate && (
+        <p className="pointer-events-none absolute left-2 top-2 z-10 max-w-[70%] rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow" role="status">
+          Approximate path — straight lines between stops, not the road
+        </p>
+      )}
+    </div>
+  );
 }

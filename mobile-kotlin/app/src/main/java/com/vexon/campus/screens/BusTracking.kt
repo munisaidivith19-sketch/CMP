@@ -11,6 +11,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.DirectionsBus
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ZoomOutMap
@@ -49,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.vexon.campus.core.Api
 import com.vexon.campus.core.BusMath
+import com.vexon.campus.core.Journey
 import com.vexon.campus.core.LocationRead
 import com.vexon.campus.core.QueryClient
 import com.vexon.campus.core.Realtime
@@ -87,11 +95,30 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.geometry.LatLng as MapLatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import java.time.Instant
 
 private fun epochMs(v: JsonElement?): Long? = v.str?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+
+// The server's journey (GET /transport/buses/:id → journey), read into the shared display model.
+private fun etaOf(e: JsonElement?): Journey.Eta? = e?.let {
+    Journey.Eta(it["status"].str == "ok", it["minutes"].int, it["predictedArrivalAt"].str, it["approximate"].bool, it["method"].str, it["confidence"].str, it["reason"].str)
+}
+private fun stopOf(s: JsonElement): Journey.Stop = Journey.Stop(
+    order = s["order"].int ?: 0,
+    stopId = s["stopId"].str.orEmpty(),
+    name = s["name"].str.orEmpty(),
+    status = s["status"].str ?: "upcoming",
+    actualArrivalAt = s["actualArrivalAt"].str,
+    actualDepartureAt = s["actualDepartureAt"].str,
+    notRecordedReason = s["notRecordedReason"].str,
+    eta = etaOf(s["eta"]),
+    manual = s["arrivalSource"].str == "manual" || s["departureSource"].str == "manual",
+    isCollege = s["isCollege"].bool,
+)
 
 private val TRACKING_LABEL = mapOf(BusMath.Tracking.LIVE to ("Live" to Tone.Success), BusMath.Tracking.STALE to ("Position is old" to Tone.Warning), BusMath.Tracking.OFFLINE to ("Tracking offline" to Tone.Neutral))
 
@@ -146,6 +173,8 @@ fun BusTrackingScreen(route: Route) {
                     }
                 }
                 "bus:trip" -> QueryClient.invalidate("Transport")
+                // A stop arrival / departure was recorded: show the server's times at once.
+                "bus:journey" -> if (e.args.firstOrNull()["busId"].str == selected) detail.refetch()
                 "connect" -> Realtime.emitWithAck("transport:subscribe", "all")
             }
         }
@@ -173,11 +202,14 @@ fun BusTrackingScreen(route: Route) {
     val d = detail.data
     LaunchedEffect(controller, d, selected) {
         val c = controller ?: return@LaunchedEffect
-        val r = if (selected.isEmpty()) null else d["route"]
+        // The route the bus is actually following (a separate return route, when it has one).
+        val r = if (selected.isEmpty()) null else d["journeyRoute"] ?: d["route"]
         val geometry = r["geometry"].list.mapNotNull { pt -> val lng = pt[0].dbl; val lat = pt[1].dbl; if (lat != null && lng != null) BusMath.LatLng(lat, lng) else null }
         val stops = r["stops"].list
         val path = geometry.ifEmpty { stops.mapNotNull { s -> pos(s) } }
-        val passed = d["progress"]["passedSequences"].list.mapNotNull { it.int }.toSet()
+        val journeyStops = d["journey"]["stops"].list.map(::stopOf)
+        val passed = if (journeyStops.isNotEmpty()) Journey.passedSequences(journeyStops, stops.map { it.id.orEmpty() to (it["sequence"].int ?: 0) })
+            else d["progress"]["passedSequences"].list.mapNotNull { it.int }.toSet()
         val selStop = d["eta"]["stop"].id ?: effectiveStop
         c.setRoute(
             path,
@@ -186,10 +218,12 @@ fun BusTrackingScreen(route: Route) {
         )
     }
     LaunchedEffect(controller, me) { controller?.setStudent(me?.pos, me?.accuracy) }
-    // First view: all buses (or the route) in frame.
+    // First view: the selected bus when it has a real position, else all buses in frame;
+    // with no positions at all the map stays on its Chennai default.
     LaunchedEffect(controller, buses.isNotEmpty()) {
         val c = controller ?: return@LaunchedEffect
-        c.fit(buses.mapNotNull { pos(locOf(it)) })
+        val sel = buses.firstOrNull { it.id == selected }?.let { pos(locOf(it)) }
+        c.fit(if (sel != null) listOf(sel) else buses.mapNotNull { pos(locOf(it)) })
     }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
@@ -214,8 +248,16 @@ fun BusTrackingScreen(route: Route) {
         permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
-    Column(Modifier.fillMaxSize().background(C.bg)) {
-        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { Header("Bus Tracking", "College buses at their latest GPS position", back = true) }
+    // The app draws edge-to-edge: keep the header (and the map below it) clear of the
+    // status bar, camera cutout and side insets, like the shared Screen does for other pages.
+    Column(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Header(
+                "Bus Tracking", "College buses at their latest GPS position", back = true, titleMaxLines = 2,
+                // Journey history: only for accounts the server allows (managers, principal, dean, AO, chairman, bus sharers).
+                right = if (cfg.data["canViewHistory"].bool) ({ com.vexon.campus.ui.IconButton(Icons.Rounded.History, "Journey history") { com.vexon.campus.nav.Nav.push("/transport/history") } }) else null,
+            )
+        }
         when {
             cfg.data == null && cfg.error != null -> Box(Modifier.padding(16.dp)) { ErrorState(cfg.error) { cfg.refetch() } }
             cfg.data == null || list.data == null && list.error == null -> Loading()
@@ -233,19 +275,20 @@ fun BusTrackingScreen(route: Route) {
                             BusMapView(cfg.data["mapStyleUrl"].str.orEmpty(), { controller = it }, { mapError = it }, { id -> selected = id; stopId = "" }, { id -> stopId = id })
                         }
                     }
-                    Row(Modifier.align(Alignment.BottomStart).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button(if (locating) "Finding you…" else "My location", { myLocation() }, variant = Variant.Soft, icon = Icons.Rounded.MyLocation, small = true, loading = locating)
+                    // Bottom-left; the map's logo and attribution sit bottom-right (see BusMapView). Wraps on narrow screens.
+                    FlowRow(Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 96.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(if (locating) "Finding you…" else "My location", { myLocation() }, variant = Variant.Map, icon = Icons.Rounded.MyLocation, small = true, loading = locating)
                         me?.takeIf { !locating }?.let { m ->
-                            Badge("You: ${BusMath.accuracyText(m.accuracy)}", if (m.accuracy > BusMath.COARSE_FIX_M) Tone.Warning else Tone.Neutral, Modifier.align(Alignment.CenterVertically))
+                            Badge("You: ${BusMath.accuracyText(m.accuracy)}", if (m.accuracy > BusMath.COARSE_FIX_M) Tone.Warning else Tone.Neutral)
                         }
                         if (selected.isNotEmpty()) {
                             val bp = buses.firstOrNull { it.id == selected }?.let { pos(locOf(it)) }
-                            Button("Bus", { controller?.fit(listOfNotNull(bp)) }, variant = Variant.Soft, icon = Icons.Rounded.CenterFocusStrong, small = true)
-                            Button("Me + bus", { if (student == null) myLocation(both = true) else controller?.fit(listOfNotNull(bp, student)) }, variant = Variant.Soft, icon = Icons.Rounded.ZoomOutMap, small = true)
+                            Button("Centre bus", { controller?.fit(listOfNotNull(bp)) }, variant = Variant.Map, icon = Icons.Rounded.CenterFocusStrong, small = true)
+                            Button("Me + bus", { if (student == null) myLocation(both = true) else controller?.fit(listOfNotNull(bp, student)) }, variant = Variant.Map, icon = Icons.Rounded.ZoomOutMap, small = true)
                         }
                     }
                 }
-                Column(Modifier.fillMaxWidth().weight(0.45f).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.fillMaxWidth().weight(0.45f).verticalScroll(rememberScrollState()).padding(16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (!Realtime.connected) Small("Live updates paused — reconnecting. Positions refresh when you are back online.", color = C.amberText)
                     locMessage?.let { msg ->
                         Small(msg, color = if (msg.startsWith("Location found")) C.muted else C.amberText)
@@ -270,7 +313,7 @@ fun BusTrackingScreen(route: Route) {
                     Input(query, { query = it }, label = "Find a bus, route or stop")
                     if (query.isNotBlank()) SearchResults(found.data, buses) { busId, stop -> selected = busId; stopId = stop.orEmpty(); query = "" }
                     val sel = buses.firstOrNull { it.id == selected }
-                    if (sel != null) BusDetail(sel, locOf(sel), d, tracking(locOf(sel)), now, effectiveStop, { stopId = it }, { selected = ""; stopId = "" })
+                    if (sel != null) BusDetail(sel, locOf(sel), d, tracking(locOf(sel)), now, effectiveStop, cfg.data["timezone"].str, { stopId = it }, { selected = ""; stopId = "" })
                     else BusList(buses, ::locOf, ::tracking, now, { selected = it; stopId = "" }, { list.refetch() }, mine)
                 }
             }
@@ -347,6 +390,11 @@ private fun BusMapView(styleUrl: String, onReady: (BusMapController) -> Unit, on
         mapView.getMapAsync { map ->
             map.uiSettings.isRotateGesturesEnabled = false
             map.uiSettings.isTiltGesturesEnabled = false
+            // Logo + attribution bottom-right, clear of the map buttons (bottom-left). Still always visible.
+            map.uiSettings.logoGravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
+            map.uiSettings.attributionGravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
+            // Opening view (once): Chennai at city level, until buses / the route are framed.
+            map.cameraPosition = CameraPosition.Builder().target(MapLatLng(BusMath.DEFAULT_CENTER.lat, BusMath.DEFAULT_CENTER.lng)).zoom(BusMath.DEFAULT_ZOOM).build()
             map.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
                 val c = BusMapController(context, map, style, onBus, onStop)
                 controller = c
@@ -405,9 +453,25 @@ private fun BusList(buses: List<JsonElement>, locOf: (JsonElement) -> JsonElemen
 }
 
 @Composable
-private fun BusDetail(bus: JsonElement, loc: JsonElement?, d: JsonElement?, tracking: BusMath.Tracking, now: Long, stopId: String, pickStop: (String) -> Unit, back: () -> Unit) {
+private fun BusDetail(bus: JsonElement, loc: JsonElement?, d: JsonElement?, tracking: BusMath.Tracking, now: Long, stopId: String, tz: String?, pickStop: (String) -> Unit, back: () -> Unit) {
     val (label, tone) = TRACKING_LABEL.getValue(tracking)
     val eta = d["eta"]
+    val journey = d["journey"]
+    if (journey != null) {
+        Card(Modifier.fillMaxWidth(), gap = 8.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Strong(bus["number"].str)
+                    Small(bus["route"]["name"].text ?: "No route assigned", color = C.muted)
+                }
+                Badge(label, tone)
+            }
+            Small("Last GPS update: ${BusMath.agoText(epochMs(loc["at"]), now)}")
+            JourneyCard(journey, tz, d["bus"]["trip"]["mine"].bool, stopId, pickStop)
+            Button("Show all buses", back, variant = Variant.Outline, small = true)
+        }
+        return
+    }
     Card(Modifier.fillMaxWidth(), gap = 8.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -454,6 +518,64 @@ private fun BusDetail(bus: JsonElement, loc: JsonElement?, d: JsonElement?, trac
 }
 
 /**
+ * The server-recorded journey of the bus's active trip: direction, the stop it
+ * is at, next and following stop with ETAs, the college, and every stop in
+ * travel order with RECORDED times or a PREDICTED time — never mixed up.
+ * The person sharing can correct the direction until a stop is recorded.
+ */
+@Composable
+private fun JourneyCard(journey: JsonElement, tz: String?, mine: Boolean, selectedStop: String, pickStop: (String) -> Unit) {
+    val stops = journey["stops"].list.map(::stopOf)
+    val assumed = journey["directionAssumed"].bool
+    val save = rememberMutation()
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Badge(Journey.directionText(journey["direction"].str, assumed), if (assumed) Tone.Warning else Tone.Primary)
+        journey["tripStartedAt"].str?.let { Small("Trip started ${Journey.campusTime(it, tz)}", color = C.muted) }
+    }
+    if (assumed) Small("The direction was not chosen when the trip started, so \u201ctowards college\u201d is assumed. Stops may be in the wrong order until it is corrected.", color = C.muted)
+    if (journey["nextStopUncertain"].bool) journey["uncertainReason"].text?.let { Small("$it. The next stop may not be accurate.", color = C.amberText) }
+    journey["currentStop"]?.let { c -> Small("At stop now: ${c["name"].str} · arrived ${Journey.campusTime(c["actualArrivalAt"].str, tz)} (recorded)") }
+    val next = journey["nextStop"]
+    Box(Modifier.fillMaxWidth().background(if (next["eta"]["status"].str == "ok") C.successSoft else C.glass(0.5f)).padding(10.dp)) {
+        Column {
+            Small("Next stop", color = C.muted)
+            Strong(next["name"].str ?: if (journey["status"].str == "active") "No stops left on this trip" else "—")
+            etaOf(next["eta"])?.let { e ->
+                Small(Journey.etaLine(e, tz))
+                Journey.methodText(e.method)?.takeIf { e.ok }?.let { Small("Predicted $it · ${e.confidence} confidence", color = C.muted) }
+            }
+        }
+    }
+    journey["followingStop"]?.let { f -> Small("Then: ${f["name"].str}${etaOf(f["eta"])?.let { " · ${Journey.etaLine(it, tz)}" } ?: ""}") }
+    journey["college"]?.let { c ->
+        val text = c["actualArrivalAt"].str?.let { "Arrived ${Journey.campusTime(it, tz)} (recorded)" } ?: etaOf(c["eta"])?.let { "Expected ${Journey.etaLine(it, tz)}" } ?: "—"
+        Small("College · ${c["name"].str}: $text")
+    }
+    Label("Stops in travel order")
+    stops.forEach { s ->
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { pickStop(s.stopId) }.padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Badge("${s.order + 1}", when (s.status) { "upcoming" -> Tone.Primary; "arrived" -> Tone.Success; else -> Tone.Neutral })
+            Column(Modifier.weight(1f)) {
+                Small(s.name + if (s.isCollege) " (college)" else "", color = if (s.stopId == selectedStop) C.primary else if (s.status == "departed") C.muted else androidx.compose.ui.graphics.Color.Unspecified)
+                Small(Journey.stopLine(s, tz) + if (s.manual) " · recorded by staff" else "", color = C.muted)
+            }
+        }
+    }
+    Small("Arrival and departure times are recorded by VEXON from the bus\u2019s GPS. \u201cExpected\u201d times are estimates.", color = C.muted)
+    val recorded = stops.any { it.actualArrivalAt != null || it.actualDepartureAt != null }
+    if (mine && !recorded && journey["status"].str == "active") {
+        val other = if (journey["direction"].str == "towards_home") "towards_college" else "towards_home"
+        Button("Wrong direction? Switch to ${Journey.directionLabel(other).lowercase()}", {
+            save.launch(onError = { Dialogs.alert("Could not change the direction", errMsg(it)) }) { Api.setTripDirection(journey["tripId"].str.orEmpty(), other) }
+        }, variant = Variant.Outline, small = true, loading = save.isLoading)
+    }
+}
+
+/**
  * Trip sharing for staff assigned to a bus. Starting needs location permission
  * (while in use) and shows a persistent notification for the whole trip;
  * sharing stops when the trip ends here, from the notification, or on the server.
@@ -466,6 +588,8 @@ private fun TripSharing(mine: com.vexon.campus.core.Query) {
     val sharing by TripLocationService.state.collectAsState()
     val save = rememberMutation()
     var pending by remember { mutableStateOf<JsonElement?>(null) }
+    // Which way the trip runs — chosen before starting; sets the stop order riders see.
+    var direction by rememberSaveable { mutableStateOf("") }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
         val bus = pending ?: return@rememberLauncherForActivityResult
         pending = null
@@ -474,7 +598,7 @@ private fun TripSharing(mine: com.vexon.campus.core.Query) {
             return@rememberLauncherForActivityResult
         }
         save.launch(onError = { Dialogs.alert("Could not start the trip", errMsg(it)) }) {
-            val res = Api.startBusTrip(bus.id.orEmpty())
+            val res = Api.startBusTrip(bus.id.orEmpty(), direction.ifEmpty { null })
             TripLocationService.start(context, res["trip"].id.orEmpty(), bus["number"].str.orEmpty())
         }
     }
@@ -504,7 +628,12 @@ private fun TripSharing(mine: com.vexon.campus.core.Query) {
             }
             else -> {
                 Small("Only during a trip you start. Stops when you end the trip.", color = C.muted)
+                Label("Direction")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("towards_college", "towards_home").forEach { dir -> Chip(Journey.directionLabel(dir), direction == dir) { direction = dir } }
+                }
+                if (direction.isEmpty()) Small("Choose the direction first.", color = C.muted)
+                else FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     shareable.forEach { b ->
                         Chip("Start ${b["number"].str}", false) {
                             pending = b

@@ -11,7 +11,7 @@ import { setMaintenance } from './features/uiSlice';
 import { STAFF_GRANT_ROLES, grantedPages } from './utils/delegation';
 import { useGetAccountModulesQuery, useGetMyPoliciesQuery } from './services/superAdmin';
 import { moduleForPath, routeAllowed } from './utils/adminModules';
-import { COE, EMERGENCY_CONTROL_PATH, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TRANSPORT, TRANSPORT_MANAGERS, TRANSPORT_VIEW } from './utils/constants';
+import { COE, EMERGENCY_CONTROL_PATH, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TRANSPORT, TRANSPORT_HISTORY_VIEW, TRANSPORT_MANAGERS, TRANSPORT_VIEW, TRIP_SHARERS } from './utils/constants';
 
 // The People directory: students see only their own class (classmates and
 // that class's faculty); staff see their academic scope. Security and Warden
@@ -69,6 +69,8 @@ const SOSAlerts = lazy(() => import('./pages/sos/SOSAlerts'));
 const Hostel = lazy(() => import('./pages/hostel/Hostel'));
 const Transport = lazy(() => import('./pages/transport/Transport'));
 const TransportAdmin = lazy(() => import('./pages/transport/TransportAdmin'));
+const ShareLocation = lazy(() => import('./pages/transport/ShareLocation'));
+const TransportHistory = lazy(() => import('./pages/transport/TransportHistory'));
 const SuperAdmin = lazy(() => import('./pages/superadmin/SuperAdmin'));
 const EmergencyControl = lazy(() => import('./pages/superadmin/EmergencyControl'));
 const SocDashboard = lazy(() => import('./pages/superadmin/Soc'));
@@ -315,6 +317,8 @@ export default function App() {
             <Route path="hostel" element={<RequireAuth roles={HOSTEL_ROLES}><Hostel /></RequireAuth>} />
             <Route path="transport" element={<RequireAuth roles={TRANSPORT_VIEW} dayScholarOnly><Transport /></RequireAuth>} />
             <Route path="transport/manage" element={<RequireAuth roles={TRANSPORT_MANAGERS}><TransportAdmin /></RequireAuth>} />
+            <Route path="transport/share" element={<RequireAuth roles={TRIP_SHARERS}><ShareLocation /></RequireAuth>} />
+            <Route path="transport/history" element={<RequireAuth roles={TRANSPORT_HISTORY_VIEW}><TransportHistory /></RequireAuth>} />
             <Route path="skill-wallet" element={<RequireAuth roles={SW_STUDENT_ROLES}><SkillWallet /></RequireAuth>} />
             <Route path="skill-wallet/projects/:id" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwProjectDetail /></RequireAuth>} />
             <Route path="skill-wallet/gallery" element={<RequireAuth roles={SW_COLLEGE_ROLES}><SwGallery /></RequireAuth>} />

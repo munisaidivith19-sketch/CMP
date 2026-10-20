@@ -6,6 +6,13 @@ import Testing
 
 @Suite("Bus map maths")
 struct BusMathTests {
+    @Test("The map opens on Chennai at city level (latitude/longitude not swapped)")
+    func defaultCamera() {
+        #expect(abs(BusMath.defaultCenter.lat - 13.08) < 0.05)
+        #expect(abs(BusMath.defaultCenter.lng - 80.27) < 0.05)
+        #expect((10...12).contains(BusMath.defaultZoom))
+    }
+
     @Test func shortestTurn() {
         #expect(BusMath.shortestTurn(from: 350, to: 10) == 20)
         #expect(BusMath.shortestTurn(from: 10, to: 350) == -20)

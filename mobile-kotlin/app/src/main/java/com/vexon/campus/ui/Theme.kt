@@ -89,6 +89,8 @@ object C {
     /** Translucent panel (light: white at [alpha], dark: navy at [alpha]). */
     fun glass(alpha: Float) = pick(Color.White.copy(alpha = alpha), darkSurface.copy(alpha = alpha))
     val border get() = pick(Color(0x241F6FEB), Color(0x3D7EB6F7))
+    /** Stronger outline for controls floating on a map (readable over any tiles). */
+    val controlBorder get() = pick(Color(0xFF94A3B8), Color(0x8CFFFFFF))
     val divider get() = pick(Color(0x1A1D6FEB), Color(0x267EB6F7))
     /** Main text: black in light mode, white in dark mode. */
     val ink get() = pick(Color.Black, Color.White)

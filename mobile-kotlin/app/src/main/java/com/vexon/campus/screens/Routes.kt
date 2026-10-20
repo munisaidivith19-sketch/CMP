@@ -74,6 +74,8 @@ fun RouteContent(route: Route) {
         route.path == "/holidays" -> HolidaysScreen()
         route.path == "/exams" -> ExamTimetableScreen()
         route.path == "/transport" -> BusTrackingScreen(route)
+        route.path == "/transport/history" -> TransportHistoryScreen()
+        s.size == 3 && s[0] == "transport" && s[1] == "history" -> TransportHistoryTripScreen(s[2])
         route.path == "/people" -> PeopleScreen()
 
         route.path == "/skill-wallet" -> SkillWalletScreen(route)

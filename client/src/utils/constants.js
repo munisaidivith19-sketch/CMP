@@ -17,6 +17,11 @@ export const TRANSPORT = 'transport';
 export const TRANSPORT_VIEW = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', TRANSPORT];
 /** Manage buses, routes, stops and rider assignments. */
 export const TRANSPORT_MANAGERS = ['admin', TRANSPORT];
+/** May share a bus's live location (only for buses they are assigned to — the server decides). Mirrors TRIP_SHARER_ROLES. */
+export const TRIP_SHARERS = ['faculty', 'hod', 'dean', 'ao', TRANSPORT];
+// Journey history: every bus for these; trip sharers see the trips they ran (server-enforced).
+export const TRANSPORT_HISTORY = ['admin', TRANSPORT, 'principal', 'dean', 'ao', 'chairman'];
+export const TRANSPORT_HISTORY_VIEW = [...new Set([...TRANSPORT_HISTORY, ...TRIP_SHARERS])];
 
 export const STUDENT_ROLES = ['student', 'club_admin'];
 /** Can act on academic data (mark attendance, moderate…). */

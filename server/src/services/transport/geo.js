@@ -64,3 +64,37 @@ export function project(points, cum, p) {
 export function stopPositions(route, points, cum) {
   return (route.stops || []).map((s) => ({ stop: s, along: project(points, cum, { lat: s.lat, lng: s.lng }).along }));
 }
+
+/**
+ * Like `project`, but only considers the stretch of the path between
+ * `minAlong` and `maxAlong` metres — where the bus can plausibly be given its
+ * last known progress. Keeps a route that doubles back on the same road (or
+ * passes a later stop early) from snapping to the wrong side.
+ */
+export function projectWithin(points, cum, p, minAlong = -Infinity, maxAlong = Infinity) {
+  let best = { along: 0, offset: Infinity, index: 0 };
+  for (let i = 1; i < points.length; i += 1) {
+    if (cum[i] < minAlong || cum[i - 1] > maxAlong) continue;
+    const a = points[i - 1];
+    const b = points[i];
+    const kx = Math.cos(rad((a.lat + b.lat) / 2)) * (Math.PI / 180) * R;
+    const ky = (Math.PI / 180) * R;
+    const bx = (b.lng - a.lng) * kx;
+    const by = (b.lat - a.lat) * ky;
+    const px = (p.lng - a.lng) * kx;
+    const py = (p.lat - a.lat) * ky;
+    const len2 = bx * bx + by * by;
+    const seg = cum[i] - cum[i - 1];
+    let t = len2 ? Math.max(0, Math.min(1, (px * bx + py * by) / len2)) : 0;
+    let along = cum[i - 1] + t * seg;
+    if (along < minAlong || along > maxAlong) {
+      along = Math.max(minAlong, Math.min(maxAlong, along));
+      t = seg > 0 ? (along - cum[i - 1]) / seg : 0;
+    }
+    const dx = px - t * bx;
+    const dy = py - t * by;
+    const offset = Math.sqrt(dx * dx + dy * dy);
+    if (offset < best.offset) best = { along, offset, index: i - 1 };
+  }
+  return best;
+}

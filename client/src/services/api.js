@@ -541,6 +541,9 @@ export const api = createApi({
     searchTransport: b.query({ query: (q) => ({ url: '/transport/search', params: { q } }) }),
     getTransportMe: b.query({ query: () => '/transport/me', providesTags: ['Transport'] }),
     getTransportRoutes: b.query({ query: (params) => ({ url: '/transport/routes', params }), providesTags: ['Transport'] }),
+    getTransportRoute: b.query({ query: (id) => `/transport/routes/${id}`, providesTags: ['Transport'] }),
+    // Road geometry preview (server calls the routing provider; nothing is saved).
+    previewRouteGeometry: b.mutation({ query: (body) => ({ url: '/transport/routes/preview-geometry', method: 'POST', body }) }),
     createBusRoute: b.mutation({ query: (body) => ({ url: '/transport/routes', method: 'POST', body }), invalidatesTags: ['Transport'] }),
     updateBusRoute: b.mutation({ query: ({ id, ...body }) => ({ url: `/transport/routes/${id}`, method: 'PUT', body }), invalidatesTags: ['Transport'] }),
     createBus: b.mutation({ query: (body) => ({ url: '/transport/buses', method: 'POST', body }), invalidatesTags: ['Transport'] }),
@@ -550,6 +553,22 @@ export const api = createApi({
     deleteTransportAssignment: b.mutation({ query: (id) => ({ url: `/transport/assignments/${id}`, method: 'DELETE' }), invalidatesTags: ['Transport'] }),
     pickTransportPeople: b.query({ query: (params) => ({ url: '/transport/people', params }) }),
     stopBusTrip: b.mutation({ query: (id) => ({ url: `/transport/trips/${id}/stop`, method: 'POST', body: { reason: 'stopped' } }), invalidatesTags: ['Transport'] }),
+    // Web location sharing: the trip is bound to this tab's device key (sent as a header, never in a URL).
+    // `arg`: a bus id, or { busId, direction } (towards_college | towards_home).
+    startBusTrip: b.mutation({
+      query: (arg) => {
+        const { busId, direction } = typeof arg === 'object' && arg ? arg : { busId: arg };
+        return { url: '/transport/trips', method: 'POST', body: { busId, bindDevice: true, ...(direction ? { direction } : {}) } };
+      },
+      invalidatesTags: ['Transport'],
+    }),
+    getTripJourney: b.query({ query: (id) => `/transport/trips/${id}/journey`, providesTags: ['Transport'] }),
+    setTripDirection: b.mutation({ query: ({ id, direction }) => ({ url: `/transport/trips/${id}/direction`, method: 'PATCH', body: { direction } }), invalidatesTags: ['Transport'] }),
+    recordStopEvent: b.mutation({ query: ({ id, ...body }) => ({ url: `/transport/trips/${id}/stop-events`, method: 'POST', body }), invalidatesTags: ['Transport'] }),
+    getTransportHistory: b.query({ query: (params) => ({ url: '/transport/history/trips', params }), providesTags: ['Transport'] }),
+    getTransportHistoryTrip: b.query({ query: (id) => `/transport/history/trips/${id}`, providesTags: ['Transport'] }),
+    getTransportReport: b.query({ query: (params) => ({ url: '/transport/history/report', params }), providesTags: ['Transport'] }),
+    postTripLocations: b.mutation({ query: ({ tripId, deviceKey, fixes }) => ({ url: `/transport/trips/${tripId}/locations`, method: 'POST', body: { fixes }, headers: deviceKey ? { 'X-Trip-Key': deviceKey } : undefined }) }),
 
     // ── Staff attendance, cover and monitoring (scoped server-side) ──
     getStaffReport: b.query({ query: (params) => ({ url: '/attendance/staff-report', params }), providesTags: ['Attendance', 'StaffAttendance', 'Cover'] }),
@@ -1231,6 +1250,8 @@ export const {
   useSearchTransportQuery,
   useGetTransportMeQuery,
   useGetTransportRoutesQuery,
+  useGetTransportRouteQuery,
+  usePreviewRouteGeometryMutation,
   useCreateBusRouteMutation,
   useUpdateBusRouteMutation,
   useCreateBusMutation,
@@ -1240,6 +1261,14 @@ export const {
   useDeleteTransportAssignmentMutation,
   usePickTransportPeopleQuery,
   useStopBusTripMutation,
+  useStartBusTripMutation,
+  usePostTripLocationsMutation,
+  useGetTripJourneyQuery,
+  useSetTripDirectionMutation,
+  useRecordStopEventMutation,
+  useGetTransportHistoryQuery,
+  useGetTransportHistoryTripQuery,
+  useGetTransportReportQuery,
   useGetStaffReportQuery,
   useGetLowMonitorQuery,
   useGetCoverQuery,

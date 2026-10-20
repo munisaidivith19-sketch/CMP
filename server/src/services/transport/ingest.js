@@ -23,6 +23,7 @@ import { emitToRooms } from '../../config/socket.js';
 import { haversine, validLatLng } from './geo.js';
 import { transportConfig } from './config.js';
 import { evaluateTripEvents } from './events.js';
+import { processFix } from './stopEvents.js';
 
 const lastHistoryAt = new Map(); // busId → ms (history thinning)
 const lastTripTouch = new Map(); // tripId → ms (trip.lastLocationAt write thinning)
@@ -110,6 +111,15 @@ export async function ingestFix(bus, raw, { source, trip = null, now = Date.now(
     await BusTrip.updateOne({ _id: tripId, status: 'active' }, { $set: { lastLocationAt: fix.at } });
   }
   emitToRooms([`bus:${busKey}`, 'transport:all'], 'bus:location', livePayload(bus, fix, tripId));
+  // Stop arrivals / departures (awaited so the trip's journey is current when
+  // the request returns; a failure there never rejects the accepted fix).
+  if (tripId) {
+    try {
+      await processFix(bus._id, fix, tripId);
+    } catch (err) {
+      console.error('[transport] stop events failed:', err.message);
+    }
+  }
   evaluateTripEvents(bus, fix, trip).catch((err) => console.error('[transport] events failed:', err.message));
   return fix;
 }

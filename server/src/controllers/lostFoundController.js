@@ -159,6 +159,8 @@ export const updateStatus = asyncHandler(async (req, res) => {
   if (!staff) {
     if (!isOwner(item, req.user)) throw new ApiError(403, 'Only staff or the reporter can change this report');
     if (status !== 'closed') throw new ApiError(403, 'You can close your own report; other status changes are made by staff');
+    // Staff recorded the hand-over: the reporter cannot overwrite it.
+    if (item.status === 'returned') throw new ApiError(409, 'This item was marked returned by staff and cannot be changed');
   }
 
   let match = null;
@@ -176,7 +178,14 @@ export const updateStatus = asyncHandler(async (req, res) => {
     item.resolvedBy = req.user._id;
     item.resolvedAt = new Date();
   }
-  await item.save();
+  // Saved only if staff did not mark it returned meanwhile (reporter changes).
+  if (!staff) item.$where = { status: { $ne: 'returned' } };
+  try {
+    await item.save();
+  } catch (err) {
+    if (err?.name === 'DocumentNotFoundError') throw new ApiError(409, 'This item was marked returned by staff and cannot be changed');
+    throw err;
+  }
 
   // Keep the link symmetric and move the counterpart along with it.
   const counterpart = match || (item.matchedWith ? await LostFoundItem.findById(item.matchedWith) : null);

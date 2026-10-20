@@ -26,6 +26,27 @@ function checkAudienceMatch(event, user, profile) {
   return true;
 }
 
+const PUBLISHED = ['scheduled', 'completed'];
+const CANCELLABLE = ['pending_approval', 'scheduled'];
+
+/** An HOD reviews proposals for their own department, or for every department (no audience set). */
+const hodCovers = (event, user) => {
+  const depts = event.audience?.departments || [];
+  return depts.length === 0 || depts.includes(user.department);
+};
+
+/**
+ * May `user` open this event by id? The same scope as listEvents: published
+ * events for everyone, any event for its organizer, Admin and Principal; an
+ * HOD sees an unpublished proposal only when it is in their department.
+ */
+function canSeeEvent(event, user) {
+  if (sameId(event.createdBy?._id || event.createdBy, user._id)) return true;
+  if (['admin', 'principal'].includes(user.role)) return true;
+  if (PUBLISHED.includes(event.status)) return true;
+  return user.role === 'hod' && hodCovers(event, user);
+}
+
 // ── GET /api/alumni/events ─────────────────────────────────────────
 export const listEvents = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req, 10, 50);
@@ -181,9 +202,9 @@ export const createEvent = asyncHandler(async (req, res) => {
 export const getEventById = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const event = await AlumniEvent.findById(id).populate('createdBy', PUBLIC_USER_FIELDS);
-  if (!event) throw new ApiError(404, 'Event not found');
-
   const user = req.user;
+  if (!event || !canSeeEvent(event, user)) throw new ApiError(404, 'Event not found');
+
   const isOrganizer = sameId(event.createdBy._id, user._id);
   const isStaff = ['admin', 'hod', 'principal'].includes(user.role);
 
@@ -248,7 +269,8 @@ export const updateEvent = asyncHandler(async (req, res) => {
 export const approveEvent = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const event = await AlumniEvent.findById(id);
-  if (!event) throw new ApiError(404, 'Event not found');
+  // An HOD reviews only their own department's proposals (as in the pending list).
+  if (!event || (req.user.role === 'hod' && !hodCovers(event, req.user))) throw new ApiError(404, 'Event not found');
   // Only a proposal can be approved — not a cancelled or rejected event.
   if (event.status !== 'pending_approval') throw new ApiError(409, 'Only pending event proposals can be approved');
 
@@ -271,7 +293,7 @@ export const rejectEvent = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
   const event = await AlumniEvent.findById(id);
-  if (!event) throw new ApiError(404, 'Event not found');
+  if (!event || (req.user.role === 'hod' && !hodCovers(event, req.user))) throw new ApiError(404, 'Event not found');
   if (event.status !== 'pending_approval') throw new ApiError(409, 'Only pending event proposals can be rejected');
 
   event.status = 'rejected';
@@ -302,9 +324,17 @@ export const cancelEvent = asyncHandler(async (req, res) => {
 
   if (!isOrganizer && !isAdmin) throw new ApiError(403, 'Permission denied');
 
-  event.status = 'cancelled';
-  event.cancelReason = reason?.trim()?.slice(0, 300);
-  await event.save();
+  // Only a live event (a proposal or a scheduled event) can be cancelled: a
+  // cancelled, completed or rejected one is final. Conditional on the stored
+  // status, so two concurrent requests cannot both act.
+  const cancelReason = reason?.trim()?.slice(0, 300);
+  const updated = await AlumniEvent.findOneAndUpdate(
+    { _id: event._id, status: { $in: CANCELLABLE } },
+    { $set: { status: 'cancelled', cancelReason } },
+    { new: true }
+  );
+  if (!updated) throw new ApiError(409, `This event is already ${event.status} and cannot be cancelled`);
+  event.cancelReason = updated.cancelReason;
 
   // Notify all RSVPs
   const rsvps = await AlumniEventRsvp.find({ event: event._id, status: { $in: ['going', 'waitlisted'] } }).distinct('user');

@@ -181,8 +181,10 @@ export default function AlumniJobsTab() {
           ? 'Application intent recorded! Redirecting to company portal...'
           : 'Application submitted! The alumni poster has been notified.'
       );
-      if (selectedJob.applyMode === 'external_link' && selectedJob.externalUrl) {
-        window.open(selectedJob.externalUrl, '_blank', 'noreferrer');
+      // Only an http(s) link is ever opened (never javascript: / data:).
+      const externalHref = selectedJob.applyMode === 'external_link' ? safeHref(selectedJob.externalUrl) : undefined;
+      if (externalHref) {
+        window.open(externalHref, '_blank', 'noopener,noreferrer');
       }
       setSelectedJob(null);
       setApplyNote('');

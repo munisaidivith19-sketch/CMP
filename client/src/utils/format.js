@@ -48,11 +48,13 @@ export const fmtStamp = (d, pattern = 'dd MMM, h:mm a') => (d ? format(new Date(
 /**
  * Only http(s) and same-site paths may become an <a href>. The server already
  * validates links on write; this keeps any stored legacy value such as
- * `javascript:` from ever being rendered as a clickable script.
+ * `javascript:` from ever being rendered as a clickable script. A same-site
+ * path may not start with "//" or "/\" (browsers read both as another host)
+ * and may hold no backslash at all.
  */
 export const safeHref = (url) => {
   const s = String(url || '').trim();
-  return /^https?:\/\//i.test(s) || /^\/(?!\/)/.test(s) ? s : undefined;
+  return /^https?:\/\//i.test(s) || /^\/(?![/\\])[^\\]*$/.test(s) ? s : undefined;
 };
 
 /** "Dr. Mohan Babu" — a person's name with their honorific, when one is on file. */

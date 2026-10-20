@@ -412,6 +412,17 @@ const clubRules = (optional = false) => {
     tagArray('tags'),
     safeUrl('logo'),
     safeUrl('coverImage'),
+    // Social links are shown as clickable links: https web addresses only.
+    body('socialLinks').optional({ values: 'null' }).isObject().withMessage('Social links must be an object'),
+    ...['website', 'instagram', 'linkedin'].map((k) =>
+      body(`socialLinks.${k}`)
+        .optional({ values: 'falsy' })
+        .isString()
+        .bail()
+        .trim()
+        .isURL({ protocols: ['https'], require_protocol: true })
+        .withMessage(`The ${k} link must be an https:// URL`)
+    ),
     validate,
   ];
 };

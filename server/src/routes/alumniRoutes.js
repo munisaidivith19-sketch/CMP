@@ -145,7 +145,11 @@ mentorshipRouter.post(
   body('slots.*.startsAt').isISO8601().withMessage('Valid start time required'),
   body('slots.*.durationMin').isInt({ min: 15, max: 180 }).withMessage('Duration must be 15–180 minutes'),
   body('slots.*.mode').isIn(SESSION_MODES).withMessage('Valid mode required'),
-  body('slots.*.meetingLink').optional({ values: 'falsy' }).isURL().withMessage('Meeting link must be a valid URL'),
+  // Shown to the student as a clickable link: an https web address only.
+  body('slots.*.meetingLink')
+    .optional({ values: 'falsy' })
+    .isURL({ protocols: ['https'], require_protocol: true })
+    .withMessage('Meeting link must be an https:// URL'),
   body('slots.*.note').optional().trim().isLength({ max: 300 }),
   validate,
   mentorship.createSlots
@@ -244,6 +248,13 @@ alumniRouter.put(
 alumniRouter.get('/filters', alumniProfile.getAlumniFilters);
 
 // 2. Jobs & Applications
+// The same rule on create and edit: a web link only (javascript:/data: URLs
+// would run in a student's browser when they press "Apply").
+const jobExternalUrl = () =>
+  body('externalUrl')
+    .optional({ values: 'falsy' })
+    .isURL({ protocols: ['http', 'https'], require_protocol: true })
+    .withMessage('External URL must be an http(s) URL');
 alumniRouter.get(
   '/jobs',
   query('search').optional().trim().isLength({ max: 100 }),
@@ -266,14 +277,14 @@ alumniRouter.post(
   body('workMode').isIn(JOB_WORK_MODES).withMessage('Valid work mode required'),
   body('description').trim().isLength({ min: 20, max: 4000 }).withMessage('Description must be 20–4000 characters'),
   body('applyMode').isIn(JOB_APPLY_MODES).withMessage('Valid apply mode required'),
-  body('externalUrl').optional({ values: 'falsy' }).isURL().withMessage('Valid external URL required'),
+  jobExternalUrl(),
   body('deadline').isISO8601().withMessage('Valid deadline required'),
   validate,
   alumniJobs.createJob
 );
 
 alumniRouter.get('/jobs/:id', idParam('id'), validate, alumniJobs.getJobById);
-alumniRouter.patch('/jobs/:id', idParam('id'), validate, alumniJobs.updateJob);
+alumniRouter.patch('/jobs/:id', idParam('id'), jobExternalUrl(), body('applyMode').optional().isIn(JOB_APPLY_MODES).withMessage('Valid apply mode required'), validate, alumniJobs.updateJob);
 alumniRouter.patch('/jobs/:id/close', idParam('id'), validate, alumniJobs.closeJob);
 alumniRouter.patch('/jobs/:id/reopen', idParam('id'), validate, alumniJobs.reopenJob);
 alumniRouter.delete(

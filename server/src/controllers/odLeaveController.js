@@ -30,13 +30,12 @@ const norm = (s) => String(s || '').trim().toUpperCase();
  */
 function reviewScope(user) {
   if (user.role === 'faculty') {
-    if (!user.department) return null;
+    // Only a Class In-Charge reviews, and only their own class (department +
+    // section + year). A faculty member without an in-charge section and
+    // year gets nothing — never a department-wide (or all-years) fallback.
     const section = norm(user.section);
-    return {
-      department: user.department,
-      ...(section ? { section } : {}),
-      ...(section && user.inChargeYear != null ? { year: Number(user.inChargeYear) } : {}),
-    };
+    if (!user.department || !section || user.inChargeYear == null) return null;
+    return { department: user.department, section, year: Number(user.inChargeYear) };
   }
   if (user.role === 'hod') {
     if (isFirstYearHod(user)) return { year: 1 };

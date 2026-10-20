@@ -346,13 +346,21 @@ export const markNotResolved = asyncHandler(async (req, res) => {
 
 // ── Student confirms resolution (final close) ──────────────────────
 
+// A cancelled or already closed grievance is final: the student can confirm
+// (close) only a resolved or still-open one.
+const NOT_CLOSABLE = ['CANCELLED', 'CLOSED'];
+
 export const markResolved = asyncHandler(async (req, res) => {
   const complaint = await Complaint.findOneAndUpdate(
-    { _id: req.params.id, student: req.user._id },
+    { _id: req.params.id, student: req.user._id, status: { $nin: NOT_CLOSABLE } },
     { $set: { status: 'CLOSED', closedAt: new Date() } },
     { new: true }
   );
-  if (!complaint) throw new ApiError(404, 'Grievance not found');
+  if (!complaint) {
+    const exists = await Complaint.findById(req.params.id).select('student status').lean();
+    if (!exists || !sameId(exists.student, req.user)) throw new ApiError(404, 'Grievance not found');
+    throw new ApiError(422, `A ${exists.status.toLowerCase()} grievance cannot be closed`);
+  }
 
   await writeHistory(complaint._id, {
     action: 'closed',

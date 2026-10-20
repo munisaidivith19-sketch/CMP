@@ -12,6 +12,7 @@ import { ApiError, asyncHandler } from '../utils/http.js';
 import { canManageClub } from '../utils/permissions.js';
 import { campusTimezone, dayFilter, dayKey, resolveRange, timestampFilter } from '../utils/dates.js';
 import { LOW_ATTENDANCE_THRESHOLD, STUDENT_ROLES, percentage } from './attendanceController.js';
+import { facultyAssignments, studentsInClassesFilter } from '../utils/academicScope.js';
 
 const presentExpr = { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } };
 const pct = (present, total) => ({
@@ -188,12 +189,22 @@ export const studentAnalytics = asyncHandler(async (req, res) => {
 export const facultyAnalytics = asyncHandler(async (req, res) => {
   const w = windowFrom(req.query, 'month');
   const filter = { isActive: true };
-  if (req.user.role === 'faculty' || req.query.mine === 'true') filter.faculty = req.user._id;
+  // A faculty member (or anyone asking for "mine") sees only the classes they
+  // actually teach, read from the timetable: subject + department + section.
+  // Subject.faculty membership alone grants no class.
+  const own = req.user.role === 'faculty' || req.query.mine === 'true';
+  const assignments = own ? await facultyAssignments(req.user) : null;
+  if (own) filter._id = { $in: [...new Set(assignments.map((a) => String(a.subject)))] };
   // HOD sees every subject in their department, not just ones they personally teach.
   else if (req.user.role === 'hod' && req.user.department) filter.department = req.user.department;
   const mySubjects = await Subject.find(filter).select('name code department semester sections').lean();
   const subjectIds = mySubjects.map((s) => s._id);
-  const match = { subject: { $in: subjectIds }, ...(w.days_ ? { date: w.days_ } : {}) };
+  const scope = own
+    ? assignments.length
+      ? { $or: assignments.map((a) => ({ subject: a.subject, department: a.department, section: a.section })) }
+      : { _id: null }
+    : { subject: { $in: subjectIds } };
+  const match = { ...scope, ...(w.days_ ? { date: w.days_ } : {}) };
 
   const [overall, trend, subjectStats, belowThreshold, sessions] = await Promise.all([
     attendanceTotals(match),
@@ -222,9 +233,11 @@ export const facultyAnalytics = asyncHandler(async (req, res) => {
   ]);
 
   // Event participation of students in the classes this faculty teaches.
-  const classFilters = mySubjects.flatMap((s) =>
-    s.sections?.length ? s.sections.map((sec) => ({ department: s.department, section: sec })) : [{ department: s.department }]
-  );
+  const classFilters = own
+    ? studentsInClassesFilter(assignments).$or || []
+    : mySubjects.flatMap((s) =>
+      s.sections?.length ? s.sections.map((sec) => ({ department: s.department, section: sec })) : [{ department: s.department }]
+    );
   let participation = null;
   if (classFilters.length) {
     const studentIds = await User.find({ role: { $in: STUDENT_ROLES }, isActive: true, $or: classFilters }).distinct('_id');

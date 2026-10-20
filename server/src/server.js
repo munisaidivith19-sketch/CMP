@@ -17,6 +17,7 @@ import { attachDbMonitor, attachProcessMonitor, registerJob, runJob } from './se
 import { flushMetrics, startMetricsFlusher } from './services/soc/metrics.js';
 import { sweepOrphanAssets } from './services/skillWallet/assets.js';
 import { sweepPartialWrites } from './utils/privateStorage.js';
+import { sweepOrphanUploads } from './services/orphanUploads.js';
 
 async function start() {
   // SOC: observe crashes (does not change Node's crash behaviour).
@@ -76,6 +77,12 @@ async function start() {
     60 * 60 * 1000
   );
   swSweep.unref();
+
+  // Uploads (POST /api/uploads) kept in MongoDB but never attached to a record
+  // within 24 hours are deleted (hourly). Attached files are never touched.
+  registerJob('uploads.orphan_sweep', { intervalMs: 60 * 60 * 1000, description: 'Remove uploads never attached to a record' });
+  const uploadSweep = setInterval(() => runJob('uploads.orphan_sweep', sweepOrphanUploads, { logTag: '[uploads] sweep' }), 60 * 60 * 1000);
+  uploadSweep.unref();
 
   server.listen(env.port, () => {
     console.log(`[api] CampusConnect API listening on http://localhost:${env.port}`);

@@ -27,3 +27,12 @@ server/private-uploads/
 *.p8
 *.mobileprovision
 mobile-kotlin/app/google-services.json
+.claude/
+skills-lock.json
+error_handling/
+docs/GATE_SCANNER.md
+docs/LEGAL_POLICIES.md
+docs/*.pdf
+docs/vps-guide/
+
+

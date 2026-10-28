@@ -1269,6 +1269,11 @@ export const getAttendanceRecords = asyncHandler(async (req, res) => {
     if (req.query.student) narrow.student = oid(req.query.student, 'student');
   }
   if (req.query.subject) narrow.subject = oid(req.query.subject, 'subject');
+  if (req.query.semester) {
+    // One semester's classes, as in studentSummary: the subjects taught in that semester.
+    const inSem = await Subject.find({ semester: Number(req.query.semester) }).distinct('_id');
+    narrow.subject = narrow.subject ? { $in: inSem.filter((id) => sameId(id, narrow.subject)) } : { $in: inSem };
+  }
   if (req.query.status === 'present' || req.query.status === 'absent' || req.query.status === 'od') narrow.status = req.query.status;
   if (req.query.date) narrow.date = toDay(req.query.date);
   else {

@@ -144,6 +144,18 @@ export const verifyLimiter = rateLimit({
   message: json('Too many verification attempts. Please wait a moment.'),
 });
 
+// Windows Gate Scanner scans, per signed-in guard (not per IP: every gate PC
+// may share one campus address). A busy gate passes a student every couple of
+// seconds; a repeated hardware read is deduplicated by the app before it gets here.
+export const gateScanLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.GATE_SCAN_RATE_LIMIT) || 90,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `gate-scan:${req.user?._id || req.ip}`,
+  message: json('Scans are arriving too fast. Wait a few seconds and scan again.'),
+});
+
 // Parent OTP send/verify, per signed-in user. The per-OTP attempt limit and
 // resend cooldown are enforced separately by the OTP service.
 export const otpLimiter = rateLimit({

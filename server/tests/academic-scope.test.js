@@ -206,19 +206,27 @@ test('Chat: faculty class groups follow year + section, not the section letter a
 
 // ── Study Materials ────────────────────────────────────────────────
 
-test('Study Materials: a 3rd-year student never sees 2nd-year Section A material', async () => {
+test('Study Materials: a 3rd-year student sees earlier semesters but never a later one', async () => {
   const base = { category: 'notes', department: 'CSE', section: 'A', uploadedBy: admin.u._id, isActive: true, file: { url: '/uploads/x.txt', name: 'x.txt', mimeType: 'text/plain' } };
+  const subj7 = await ctx.models.Subject.create({ name: 'Cloud Computing', code: 'CS701', department: 'CSE', semester: 7, sections: ['A'] });
   await ctx.models.StudyMaterial.create({ ...base, title: 'Year 3 notes', semester: 5, subject: subj5._id, subjectName: subj5.name, subjectCode: subj5.code });
   await ctx.models.StudyMaterial.create({ ...base, title: 'Year 2 notes', semester: 3, subject: subj3._id, subjectName: subj3.name, subjectCode: subj3.code });
+  await ctx.models.StudyMaterial.create({ ...base, title: 'Year 4 notes', semester: 7, subject: subj7._id, subjectName: subj7.name, subjectCode: subj7.code });
 
-  const res = await ctx.request('GET', '/study-materials?year=2&semester=3', { token: stu3A.token });
-  assert.equal(res.status, 200);
-  const titles = res.body.items.map((m) => m.title);
-  assert.ok(!titles.includes('Year 2 notes'), 'query params cannot widen a student’s scope');
+  // An earlier semester can be revisited through the semester filter.
+  const past = await ctx.request('GET', '/study-materials?year=2&semester=3', { token: stu3A.token });
+  assert.equal(past.status, 200);
+  assert.deepEqual(past.body.items.map((m) => m.title), ['Year 2 notes']);
+
+  // A later semester never, whatever the query says.
+  const ahead = await ctx.request('GET', '/study-materials?year=4&semester=7', { token: stu3A.token });
+  assert.equal(ahead.status, 200);
+  assert.deepEqual(ahead.body.items, [], 'query params cannot widen a student’s scope');
 
   const own = await ctx.request('GET', '/study-materials', { token: stu3A.token });
-  assert.ok(own.body.items.some((m) => m.title === 'Year 3 notes'));
-  assert.ok(own.body.items.every((m) => m.year === 3));
+  const titles = own.body.items.map((m) => m.title);
+  assert.ok(titles.includes('Year 3 notes') && titles.includes('Year 2 notes'));
+  assert.ok(own.body.items.every((m) => m.semester <= 5));
 });
 
 test('Study Materials: a client-sent year that contradicts the semester is rejected', async () => {

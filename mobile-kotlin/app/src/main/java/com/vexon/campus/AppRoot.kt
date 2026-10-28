@@ -23,7 +23,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -41,21 +40,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vexon.campus.core.Auth
 import com.vexon.campus.core.Connection
+import com.vexon.campus.core.Legal
 import com.vexon.campus.core.QueryClient
 import com.vexon.campus.core.RefreshResult
 import com.vexon.campus.core.Realtime
 import com.vexon.campus.core.ServerConfig
 import com.vexon.campus.core.id
 import com.vexon.campus.nav.Nav
+import com.vexon.campus.push.NotificationGate
 import com.vexon.campus.push.Push
+import com.vexon.campus.screens.NotificationsRequiredScreen
 import com.vexon.campus.screens.OfflineLaunch
 import com.vexon.campus.screens.RouteContent
+import com.vexon.campus.screens.TermsAcceptanceScreen
 import com.vexon.campus.ui.C
 import com.vexon.campus.ui.DialogHost
+import com.vexon.campus.ui.InAppBanner
+import com.vexon.campus.ui.InAppBannerHost
 import com.vexon.campus.ui.Jakarta
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Launch-wide state shared with MainActivity (splash + links from notifications). */
@@ -92,7 +96,6 @@ fun AppRoot() {
     val auth by Auth.state.collectAsState()
     val offline by AppState.launchOffline.collectAsState()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { if (!auth.ready) AppState.restore() }
 
@@ -107,6 +110,13 @@ fun AppRoot() {
     }
 
     val userId = auth.user.id
+    // Notifications are mandatory once signed in; sign-in itself is never blocked.
+    val notifications by NotificationGate.status.collectAsState()
+    val notificationsOn = notifications == NotificationGate.Status.Granted
+    // The current Terms and Conditions come first; the server refuses every
+    // other API until they are accepted (core/Legal.kt).
+    val termsPending = userId != null && Legal.termsRequired(auth.user)
+    val blocked = userId != null && (termsPending || !notificationsOn)
 
     // Signed in ↔ out swaps the whole stack (the RN `(app)` group redirect).
     LaunchedEffect(userId) {
@@ -119,7 +129,7 @@ fun AppRoot() {
         }
     }
 
-    // One socket per signed-in session + push registration.
+    // One socket per signed-in session.
     LaunchedEffect(userId) {
         if (userId == null) return@LaunchedEffect
         Realtime.connect(onUnauthorized = {
@@ -129,29 +139,40 @@ fun AppRoot() {
                 RefreshResult.Offline -> false
             }
         })
-        scope.launch { Push.register(context.applicationContext) }
         Realtime.events.collect { event ->
             Realtime.LIVE_TAGS[event.name]?.let { QueryClient.invalidate(it) }
+            InAppBanner.onEvent(event)
             // Coming back online: refetch everything that may have changed meanwhile.
             if (event.name == "connect") QueryClient.invalidate(Realtime.LIVE_TAGS.values.flatten().toSet())
         }
     }
 
+    // Push registration, once notifications are allowed (again after a re-grant).
+    LaunchedEffect(userId, notificationsOn) {
+        if (userId != null && notificationsOn) Push.register(context.applicationContext)
+    }
+
     // Tapping a push (or a vexon:// link) opens the matching screen once signed in.
     val pending by AppState.pendingLink.collectAsState()
-    LaunchedEffect(pending, userId, Nav.stack.firstOrNull()?.route?.path) {
+    LaunchedEffect(pending, userId, blocked, Nav.stack.firstOrNull()?.route?.path) {
         val link = pending ?: return@LaunchedEffect
-        if (userId != null && Nav.stack.firstOrNull()?.route?.path == "/") {
+        if (userId != null && !blocked && Nav.stack.firstOrNull()?.route?.path == "/") {
             AppState.pendingLink.value = null
             Nav.push(link)
         }
     }
 
-    BackHandler(enabled = Nav.canGoBack || Nav.tab != "index") { Nav.back() }
+    BackHandler(enabled = !blocked && (Nav.canGoBack || Nav.tab != "index")) { Nav.back() }
 
     Box(Modifier.fillMaxSize().background(C.bg)) {
-        StackHost()
+        // Back from the gate leaves the app (system default); the stack in Nav is kept for later.
+        when {
+            !blocked -> StackHost()
+            termsPending -> TermsAcceptanceScreen()
+            else -> notifications?.let { NotificationsRequiredScreen(it) }
+        }
         ConnectionBanner(signedIn = userId != null)
+        if (userId != null && !blocked) InAppBannerHost()
         DialogHost()
     }
 }

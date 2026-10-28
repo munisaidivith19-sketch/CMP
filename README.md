@@ -311,6 +311,14 @@ node server/scripts/realtime-smoke.mjs       # against a RUNNING server: web ↔
 
 Students keep a project portfolio in the **Skill Wallet**, with team invitations by roll number, NPTEL certificates and profile links. NPTEL certificates are verified manually by staff, and every certificate image is re-encoded to WebP on the server. Faculty review projects against a versioned rubric, and IIC coordinators run **Innovation Management**. The **Innovation Gallery** (`/gallery`) shows only projects the owner has explicitly published, as college-only or public; projects are private by default and approval never publishes. Files are stored privately and served through short-lived signed URLs. Android supports viewing and creating projects and answering invitations. Full design, permissions, API, environment variables and limitations: [docs/SKILL_WALLET.md](docs/SKILL_WALLET.md).
 
+### Terms and Conditions & Privacy Policy
+
+Anyone can read the Terms and Conditions and the Privacy Policy at `/terms` and `/privacy-policy`, with no sign-in needed. On the web, Android and iOS, the profile has an **About the App** section with three entries: About the App, Terms and Conditions and Privacy Policy. Mobile app users must accept the current Terms version when they sign in; the web app does not ask. The server enforces this on every API for mobile sessions (`403 TERMS_ACCEPTANCE_REQUIRED`). Each acceptance is stored on the server as an append-only record tied to the exact version accepted. Policy versions are published from `server/src/legal/registry.js` and cannot be changed after publication. The policy text contains placeholders the College must complete before go-live. Details: [docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md).
+
+### Gate Scanner for Windows (`gate-scanner/`)
+
+Security staff can record gate-pass exits and returns from a Windows PC with a USB or Bluetooth QR scanner (keyboard mode) or a USB virtual COM scanner. The app is an Electron desktop app that only Security accounts can use. Its session type is `gate_desktop`, which can reach only `/api/gate-scanner`. The sign-in is saved encrypted with Windows DPAPI. Exits and returns go through the same server code as the web Security screen, and success is shown only after the server commits. Every scan is idempotent, and the dashboard and history are built from the gate-pass records. Web, Android and iOS are unchanged. Build the installer with `cd gate-scanner && npm run dist`. Details: [docs/GATE_SCANNER.md](docs/GATE_SCANNER.md).
+
 ## 9. College bus tracking
 
 Live bus map on the web (**Bus Tracking**) and in the Android app (**Campus → Bus Tracking**).

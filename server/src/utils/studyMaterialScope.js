@@ -34,8 +34,9 @@ export const STUDY_MATERIAL_STUDENT_ROLES = ['student', 'club_admin'];
 /**
  * Mongo filter for the study materials `user` may READ, derived only from the
  * authenticated account — never from client-supplied department/section/etc.
- * Students see their own class (department + semester, and their section or
- * section-less uploads); staff roles allowed into the module see all active
+ * Students see their own department's material for their current semester and
+ * every earlier one (their section or section-less uploads) — never a later
+ * semester or another department; staff roles allowed into the module see all active
  * materials. Shared by the list/detail endpoints and Study Assistant retrieval
  * so all three always agree on what a user can see.
  */
@@ -43,9 +44,13 @@ export function materialReadFilter(user) {
   const filter = { isActive: true };
   if (STUDY_MATERIAL_STUDENT_ROLES.includes(user.role)) {
     filter.department = user.department || '__none__';
-    // Year is always pinned, so a student with no semester on file still never sees another year's material.
-    filter.year = user.year || -1;
-    if (user.semester) filter.semester = user.semester;
+    if (user.semester) {
+      // Semesters 1 … current: a student may revisit earlier semesters' material, never a later one.
+      filter.semester = { $gte: 1, $lte: user.semester };
+    } else {
+      // No semester on file: pin the year, so a student still never sees another year's material.
+      filter.year = user.year || -1;
+    }
     if (user.section) filter.$or = [{ section: user.section }, { section: '' }, { section: null }];
   }
   return filter;

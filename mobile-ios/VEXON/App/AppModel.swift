@@ -29,6 +29,8 @@ final class AppModel {
     /// Lives at app level so an active staff trip keeps sharing while the user uses other tabs.
     let tripSharing = TripSharingService()
     let allowInsecureHTTP: Bool
+    /// The chat thread on screen, so its new messages do not also pop up as a banner.
+    var openConversationId: String?
 
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
 
@@ -57,6 +59,7 @@ final class AppModel {
 
     func start() async {
         phase = .launching
+        await push.refreshStatus() // the notification gate is decided before the first signed-in frame
         await refreshServerAddress()
         switch await client.restore() {
         case .signedIn(let user): didSignIn(user)
@@ -89,6 +92,25 @@ final class AppModel {
         guard let me = try? await client.send(API.me()) else { return }
         await client.updateCurrentUser(me)
         if case .signedIn = phase { phase = .signedIn(me) }
+    }
+
+    // MARK: - Terms and Conditions
+
+    /// The server refused a request until the current Terms are accepted: RootView shows the acceptance screen.
+    func markTermsRequired() {
+        guard case .signedIn(let user) = phase, !user.termsAcceptanceRequired else { return }
+        let updated = user.replacingLegal((user.legal ?? LegalStatus(termsRequired: true)).markedRequired)
+        phase = .signedIn(updated)
+        Task { await client.updateCurrentUser(updated) }
+    }
+
+    /// Record acceptance of `version` for the signed-in account (the server takes the account from the session).
+    func acceptTerms(version: Int) async throws {
+        let legal = try await client.send(API.acceptTerms(version: version))
+        guard case .signedIn(let user) = phase else { return }
+        let updated = user.replacingLegal(legal)
+        await client.updateCurrentUser(updated)
+        phase = .signedIn(updated)
     }
 
     // MARK: - Server address
@@ -154,6 +176,7 @@ final class AppModel {
                 switch event {
                 case .expired: self.sessionExpired()
                 case .reachability(let online): if self.isOnline != online { self.isOnline = online }
+                case .termsRequired: self.markTermsRequired()
                 }
             }
         }
@@ -161,6 +184,8 @@ final class AppModel {
 
     /// Called when the app returns to the foreground.
     func didBecomeActive() {
+        // Back from Settings, or notifications revoked while away: re-check the mandatory permission.
+        Task { await push.refreshStatus() }
         guard case .signedIn = phase else { return }
         realtime.resume()
     }

@@ -11,7 +11,7 @@ struct DashboardView: View {
     @State private var attendance: LoadState<AttendanceSummary> = .idle
 
     private var modules: [Feature] {
-        FeatureAccess.features(for: user.role).filter { [.attendance, .timetable, .exams, .complaints, .busTracking].contains($0) }
+        FeatureAccess.features(for: user.role).filter { [.attendance, .timetable, .exams, .studyMaterials, .complaints, .busTracking].contains($0) }
     }
 
     var body: some View {
@@ -138,7 +138,8 @@ struct DashboardView: View {
     private func loadAttendance() async {
         guard FeatureAccess.isStudent(user.role) else { return }
         if attendance.value == nil { attendance = .loading }
-        do { attendance = .loaded(try await app.client.send(API.myAttendance(range: .semester))) } catch {
+        // The current semester, as the Attendance screen opens on.
+        do { attendance = .loaded(try await app.client.send(API.myAttendance(range: .all, semester: user.semester))) } catch {
             let e = APIError.wrap(error)
             if e != .cancelled { attendance = .failed(e) }
         }
@@ -201,6 +202,7 @@ extension Feature {
         case .attendance: return "checkmark.circle"
         case .timetable: return "calendar"
         case .exams: return "doc.text"
+        case .studyMaterials: return "books.vertical"
         case .complaints: return "exclamationmark.bubble"
         case .chat: return "bubble.left.and.bubble.right"
         case .busTracking: return "bus"
@@ -217,9 +219,10 @@ struct FeatureDestination: View {
 
     var body: some View {
         switch feature {
-        case .attendance: AttendanceView()
+        case .attendance: AttendanceView(user: user)
         case .timetable: TimetableView(user: user)
         case .exams: ExamsView()
+        case .studyMaterials: StudyMaterialsView()
         case .complaints: ComplaintsView()
         case .busTracking: BusTrackingView()
         case .chat: ConversationsView()

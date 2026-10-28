@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.vexon.campus.core.Auth
 import com.vexon.campus.push.IntentNonce
+import com.vexon.campus.push.NotificationGate
 import com.vexon.campus.push.Push
 import androidx.compose.runtime.DisposableEffect
 import com.vexon.campus.ui.ThemeState
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private var permissionResult: CompletableDeferred<Boolean>? = null
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        NotificationGate.refresh(this)
         permissionResult?.complete(granted)
         permissionResult = null
     }
@@ -37,9 +39,12 @@ class MainActivity : ComponentActivity() {
         Push.permissionRequester = {
             CompletableDeferred<Boolean>().also {
                 permissionResult = it
+                NotificationGate.markAsked(this)
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }.await()
         }
+        // Decide the notification gate before the first frame (re-read on every resume).
+        NotificationGate.refresh(this)
         handleLink(intent)
         setContent {
             VexonTheme {
@@ -53,6 +58,12 @@ class MainActivity : ComponentActivity() {
                 AppRoot()
             }
         }
+    }
+
+    /** Back from Settings, or notifications revoked while away: re-check the mandatory permission. */
+    override fun onResume() {
+        super.onResume()
+        NotificationGate.refresh(this)
     }
 
     override fun onNewIntent(intent: Intent) {

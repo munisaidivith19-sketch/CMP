@@ -3,9 +3,11 @@ import { body, query, param } from 'express-validator';
 import { protect, authorize } from '../middleware/auth.js';
 import { confinedRoleGuard } from '../middleware/coeGuard.js';
 import { adminPolicyGuard, staffGrantGuard } from '../middleware/adminPolicy.js';
-import { passwordChangeGate, platformGate, publicPlatformGate, requireRecentReauth } from '../middleware/platform.js';
+import { passwordChangeGate, platformGate, publicPlatformGate, requireRecentReauth, termsGate } from '../middleware/platform.js';
 import { publicStatus } from '../services/platformState.js';
 import superAdminRouter from './superAdminRoutes.js';
+import gateScannerRouter from './gateScannerRoutes.js';
+import { gateDesktopScope } from '../middleware/gateScanner.js';
 import { POLICY_MODES, applyPolicies, listPolicyTargets, policyView } from '../services/adminPolicies.js';
 import { adminModulesFor, effectiveDelegation, grantFor, isPolicyManaged, isStaffGrantee, POLICY_CATALOGUE, STAFF_GRANT_ROLES, staffCatalogue, staffHolds } from '../policies.js';
 import { ADMIN_MODULES, ADMIN_MODULE_SECTIONS } from '../constants/adminModules.js';
@@ -77,6 +79,8 @@ import {
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
+import * as legal from '../controllers/legalController.js';
+import { POLICY_IDS } from '../legal/registry.js';
 import * as soc from '../controllers/socController.js';
 import * as sos from '../controllers/sosController.js';
 import * as hostel from '../controllers/hostelController.js';
@@ -269,6 +273,19 @@ router.get('/platform/status', async (_req, res, next) => {
     next(err);
   }
 });
+// ── Legal documents (Terms and Conditions, Privacy Policy) ─────────
+// Public and open in every platform mode: users and app-store reviewers can
+// always read them, signed in or not. Drafts are never served.
+router.get('/legal/policies', legal.listPolicies);
+router.get('/legal/policies/:policyId', param('policyId').isIn(POLICY_IDS).withMessage('Unknown document'), validate, legal.getPolicy);
+router.get(
+  '/legal/policies/:policyId/versions/:version',
+  param('policyId').isIn(POLICY_IDS).withMessage('Unknown document'),
+  param('version').isInt({ min: 1, max: 100000 }).withMessage('Invalid version').toInt(),
+  validate,
+  legal.getPolicyVersion
+);
+
 // Outside normal mode the public endpoints close (login / refresh decide per
 // account: only a Super Admin gets in). Authenticated requests are decided by
 // platformGate after protect.
@@ -315,10 +332,14 @@ router.use('/skill-wallet', skillWalletPublicRouter);
 
 // Everything below requires a signed-in user.
 router.use(protect);
+// A Windows Gate Scanner session reaches the gate-scanner endpoints only.
+router.use(gateDesktopScope);
 // Maintenance / lockdown / recovery: only a Super Admin continues.
 router.use(platformGate);
 // A temporary password must be replaced before anything else.
 router.use(passwordChangeGate);
+// The current Terms and Conditions must be accepted before anything else.
+router.use(termsGate);
 // Staff accounts with additional policies: mark admin routes they were granted.
 router.use(staffGrantGuard);
 // COE (Timetable / Exam Timetable / Attendance) and Office (attendance, read)
@@ -328,6 +349,8 @@ router.use(confinedRoleGuard);
 router.use(adminPolicyGuard);
 // Super Admin platform administration and emergency control.
 router.use('/super-admin', superAdminRouter);
+// Windows Gate Scanner (Security role only): scans, dashboard, history.
+router.use('/gate-scanner', gateScannerRouter);
 // Web / mobile client error reports for the Super Admin SOC (redacted, deduplicated, rate-limited).
 router.post(
   '/client-errors',
@@ -370,6 +393,18 @@ router.post(
   auth.changePassword
 );
 router.get('/auth/login-history', auth.getLoginHistory);
+
+// Terms acceptance (open through termsGate). The account is always req.user.
+router.get('/legal/status', legal.getStatus);
+router.post(
+  '/legal/accept',
+  writeLimiter,
+  body('policyId').equals('terms').withMessage('Only the Terms and Conditions are accepted here'),
+  body('version').isInt({ min: 1, max: 100000 }).withMessage('Invalid version').toInt(),
+  body('agreed').custom((v) => v === true).withMessage('Tick the box to confirm you agree'),
+  validate,
+  legal.accept
+);
 
 // ── Dashboard + search ─────────────────────────────────────────────
 router.get('/dashboard', getDashboard);
@@ -1192,7 +1227,7 @@ router.post(
   attendance.markAttendance
 );
 router.get('/attendance/my', ...rangeQuery, query('semester').optional().isInt({ min: 1, max: 12 }), validate, attendance.getMyAttendance);
-router.get('/attendance/records', ...rangeQuery, validate, attendance.getAttendanceRecords);
+router.get('/attendance/records', ...rangeQuery, query('semester').optional().isInt({ min: 1, max: 12 }), validate, attendance.getAttendanceRecords);
 router.get('/attendance/trends', ...rangeQuery, validate, attendance.getAttendanceTrends);
 router.get('/attendance/sessions', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.listSessions);
 router.get('/attendance/low', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getLowAttendance);
@@ -1818,6 +1853,7 @@ const materialWriteRules = (optional = false) => {
 };
 
 router.get('/study-materials', authorize(...STUDY_MATERIAL_VIEW_ROLES), materials.listMaterials);
+router.get('/study-materials/filters', authorize(...STUDY_MATERIAL_VIEW_ROLES), materials.getMaterialFilters);
 router.get('/study-materials/my-assignments', authorize('faculty'), materials.getMyAssignments);
 // Upload status per subject of one class — HOD (own scope); Principal, Dean and Chairman (any department).
 router.get(

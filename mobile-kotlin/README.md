@@ -50,3 +50,29 @@ the same rule `app.config.js` uses.
 | components/ui.js, theme.js | `ui/Ui.kt`, `ui/Theme.kt`, `ui/Fields.kt` |
 
 The Expo app is unchanged and still builds as before.
+
+## Mandatory notification permission
+
+Notifications are required once signed in. `AppRoot` shows
+`NotificationsRequiredScreen` (in `screens/NotificationSettings.kt`) instead of
+the app until `push/NotificationGate.kt` reports them on. Sign-in, the offline
+launch screen and the server setting are never gated, and the screen offers
+Sign out. The navigation stack is kept, so the user returns where they were.
+
+"On" means the app-level switch (`areNotificationsEnabled()`) is on and, on
+Android 13+, `POST_NOTIFICATIONS` is granted. Individual channels can still be
+tuned in Android settings.
+
+| Situation | Gate | Enable Notifications |
+|---|---|---|
+| Android 13+, never asked, or denied once (rationale shown) | `CanRequest` | Shows the system dialog (only on tap) |
+| Android 13+, denied for good | `SettingsOnly` | Tries the dialog; when Android no longer shows it, opens Settings |
+| Android 8–12, notifications switched off | `SettingsOnly` | Opens Settings (there is no runtime prompt) |
+| Permission granted but app notifications switched off | `SettingsOnly` | Opens Settings |
+
+"Asked before" is kept in SharedPreferences because Android reports no rationale
+both before the first request and after a permanent denial. `MainActivity`
+re-reads the status in `onCreate`, after the dialog and on every `onResume`, so
+returning from Settings continues automatically and revoking later shows the
+gate again. Push registration (`Push.register`) runs only once notifications are
+on and never shows the dialog itself. Tests: `NotificationGateTest`.

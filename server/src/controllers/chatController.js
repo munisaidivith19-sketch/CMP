@@ -398,19 +398,21 @@ export const sendMessage = asyncHandler(async (req, res) => {
   const populated = openMsg(await populateMessage(Message.findById(msg._id)));
   emitToUsers(participantIds(conv), 'chat:message', { conversationId: String(conv._id), message: populated });
 
-  // Android devices that are not connected get a push notification.
+  const title = conv.type === 'private' ? req.user.name : `${req.user.name} · ${conv.name}`;
+  // Legacy Expo devices that are not connected get a push notification.
   const offline = recipients.filter((id) => !isUserOnline(id));
   if (offline.length) {
-    const title = conv.type === 'private' ? req.user.name : `${req.user.name} · ${conv.name}`;
     sendPushToUsers(offline, {
       title,
       body: text,
       data: { type: 'chat', conversationId: String(conv._id), link: `/chat/${conv._id}` },
     });
-    // Native Android app (FCM): only members of this conversation, honouring
-    // their chat preference; the text is hidden on the lock screen by the app.
-    pushNow(offline, { title, body: text.slice(0, 200), link: `/chat/${conv._id}`, category: 'chat' });
   }
+  // Native Android app (FCM): every member of this conversation, honouring their
+  // chat preference — being "online" (a web tab, or the app still connected in
+  // the background) must not stop the phone from popping it up. The app itself
+  // shows an in-app banner instead while it is open, and hides the text on the lock screen.
+  if (recipients.length) pushNow(recipients, { title, body: text.slice(0, 200), link: `/chat/${conv._id}`, category: 'chat' });
 
   res.status(201).json(populated);
 });

@@ -166,6 +166,11 @@ fun LoginScreen() {
             Button(if (lockedInfo != null) "Locked" else "Sign in", ::submit, Modifier.fillMaxWidth(), loading = login.isLoading, enabled = lockedInfo == null)
             // Passwords are reset by the Class In-Charge or an Admin — there is no email reset.
             Small(PASSWORD_HELP, Modifier.align(Alignment.CenterHorizontally).padding(4.dp), C.muted)
+            // Public documents: readable before signing in.
+            Row(Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Button("Terms and Conditions", { Nav.push("/terms") }, variant = Variant.Ghost, small = true)
+                Button("Privacy Policy", { Nav.push("/privacy-policy") }, variant = Variant.Ghost, small = true)
+            }
         }
     }
 }

@@ -73,4 +73,20 @@ export function clearRefreshCookie(res) {
  */
 export const isMobileClient = (req) => req.get('x-client-platform') === 'mobile' && !req.get('sec-fetch-site');
 
+/**
+ * The Windows Gate Scanner (gate-scanner/). Its Electron main process makes
+ * every request from Node, never from a page, so — like the mobile app — it
+ * never sends Sec-Fetch-Site and keeps its refresh token in the body (stored
+ * with Windows DPAPI). Only the Security role may hold such a session, and it
+ * reaches the gate-scanner endpoints only (middleware/gateScanner.js).
+ */
+export const GATE_DESKTOP_CLIENT = 'gate_desktop';
+export const isGateDesktopClient = (req) => req.get('x-client-platform') === 'gate-desktop' && !req.get('sec-fetch-site');
+
+/** A native client (mobile app or Gate Scanner): refresh token in the body, not a cookie. */
+export const isNativeClient = (req) => isMobileClient(req) || isGateDesktopClient(req);
+
+/** The client type bound to a new Session row. */
+export const clientTypeOf = (req) => (isMobileClient(req) ? 'mobile' : isGateDesktopClient(req) ? GATE_DESKTOP_CLIENT : 'web');
+
 export const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');

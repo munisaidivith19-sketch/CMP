@@ -50,8 +50,13 @@ object Api {
     suspend fun registerPushToken(token: String) = post("/auth/push-token", jsonOf("token" to token))
     suspend fun updateMe(body: JsonElement) = put("/users/me", body, "Me", "User")
 
+    // ── Terms and Conditions / Privacy Policy (public documents; acceptance is for the signed-in user) ──
+    @Composable fun legalPolicy(policyId: String) = get("/legal/policies/${keyword(policyId)}", "LegalPolicy")
+    suspend fun acceptTerms(version: Int) = post("/legal/accept", jsonOf("policyId" to Legal.TERMS, "version" to version, "agreed" to true))
+
     // ── Study materials + JNN Study Assistant ──
     @Composable fun studyMaterials(params: Params? = null) = get("/study-materials", "StudyMaterial", params = params)
+    @Composable fun studyMaterialFilters() = get("/study-materials/filters", "StudyMaterial")
     // Faculty upload only for the classes they currently teach; HODs inside their department (server-enforced).
     @Composable fun myTeachingAssignments(skip: Boolean = false) = get("/study-materials/my-assignments", "StudyMaterial", "Timetable", skip = skip)
     suspend fun uploadStudyMaterial(body: JsonElement) = post("/study-materials", body, "StudyMaterial")
@@ -61,9 +66,8 @@ object Api {
     suspend fun assistantConversation(id: String) = Http.request("GET", "/ai/study-assistant/conversations/${oid(id)}")
     suspend fun deleteAssistantConversation(id: String) = delete("/ai/study-assistant/conversations/${oid(id)}")
 
-    // ── Dashboard / search / uploads ──────────────────
+    // ── Dashboard / uploads ──────────────────
     @Composable fun dashboard() = get("/dashboard", "Dashboard")
-    @Composable fun search(q: String, skip: Boolean = false) = get("/search", params = mapOf("q" to q), skip = skip)
     suspend fun uploadImage(uri: Uri) = Http.request("POST", "/uploads", params = mapOf("kind" to "image"), body = Http.imagePart(uri), timeoutMs = 60_000)
     // A document: image, PDF, DOC/DOCX or TXT — the server checks the real type from the file's bytes.
     suspend fun uploadDocument(uri: Uri) = Http.request("POST", "/uploads", params = mapOf("kind" to "document"), body = Http.imagePart(uri), timeoutMs = 90_000)

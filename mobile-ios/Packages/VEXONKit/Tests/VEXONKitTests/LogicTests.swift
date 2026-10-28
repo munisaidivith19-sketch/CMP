@@ -158,6 +158,24 @@ struct FeatureAccessTests {
         #expect(FeatureAccess.allows(.busTracking, for: .warden))
     }
 
+    @Test("Study materials follow STUDY_MATERIAL_BLOCKED_ROLES")
+    func studyMaterials() {
+        #expect(FeatureAccess.allows(.studyMaterials, for: .student))
+        #expect(FeatureAccess.allows(.studyMaterials, for: .faculty))
+        #expect(!FeatureAccess.allows(.studyMaterials, for: .warden))
+        #expect(!FeatureAccess.allows(.studyMaterials, for: .coe))
+        #expect(!FeatureAccess.allows(.studyMaterials, for: .alumni))
+    }
+
+    @Test("A student's semester dropdown runs 1 … current; staff get 1 … 8")
+    func semesterOptions() throws {
+        let student = try VEXONJSON.decoder().decode(StudyMaterialFilters.self, from: Data(#"{"currentSemester":5,"semesters":[2,5],"categories":["notes"],"subjects":[{"_id":"s1","name":"Networks","code":"CS501","semester":5}]}"#.utf8))
+        #expect(student.semesterOptions == [1, 2, 3, 4, 5])
+        #expect(student.subjects.first?.display == "CS501 · Networks")
+        let staff = try VEXONJSON.decoder().decode(StudyMaterialFilters.self, from: Data(#"{"currentSemester":null,"semesters":[],"categories":[],"subjects":[]}"#.utf8))
+        #expect(staff.semesterOptions == Array(1...8))
+    }
+
     @Test("Unknown roles get only the always-available modules")
     func unknown() {
         #expect(FeatureAccess.features(for: .other("librarian")) == [.notifications, .profile])

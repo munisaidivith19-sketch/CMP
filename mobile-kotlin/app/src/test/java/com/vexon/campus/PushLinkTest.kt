@@ -27,13 +27,13 @@ class PushLinkTest {
     }
 
     @Test
-    fun onlyUrgentCategoriesUseTheHighImportanceChannels() {
+    fun categoriesMapToTheirPopUpChannels() {
         assertEquals("alerts", Push.channelFor("sos"))
         assertEquals("alerts", Push.channelFor("gate_pass"))
         assertEquals("classes", Push.channelFor("reminder"))
         assertEquals("classes", Push.channelFor("substitute"))
-        assertEquals("messages", Push.channelFor("chat"))
-        assertEquals("updates", Push.channelFor("attendance"))
-        assertEquals("updates", Push.channelFor(null))
+        assertEquals("messages_popup", Push.channelFor("chat"))
+        assertEquals("updates_popup", Push.channelFor("attendance"))
+        assertEquals("updates_popup", Push.channelFor(null))
     }
 }

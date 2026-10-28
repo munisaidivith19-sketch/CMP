@@ -11,6 +11,7 @@ import { setMaintenance } from './features/uiSlice';
 import { STAFF_GRANT_ROLES, grantedPages } from './utils/delegation';
 import { useGetAccountModulesQuery, useGetMyPoliciesQuery } from './services/superAdmin';
 import { moduleForPath, routeAllowed } from './utils/adminModules';
+import { ABOUT_PATH, PRIVACY_PATH, PUBLIC_LEGAL_PATHS, TERMS_PATH } from './utils/legal';
 import { COE, EMERGENCY_CONTROL_PATH, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TRANSPORT, TRANSPORT_HISTORY_VIEW, TRANSPORT_MANAGERS, TRANSPORT_VIEW, TRIP_SHARERS } from './utils/constants';
 
 // The People directory: students see only their own class (classmates and
@@ -85,6 +86,8 @@ const SwPortfolio = lazy(() => import('./pages/skillwallet/Portfolio'));
 const SwReviewWorkspace = lazy(() => import('./pages/skillwallet/ReviewWorkspace'));
 const SwReviewProject = lazy(() => import('./pages/skillwallet/ReviewWorkspace').then((m) => ({ default: m.ReviewProject })));
 const SwManagement = lazy(() => import('./pages/skillwallet/Management'));
+const AboutApp = lazy(() => import('./pages/legal/AboutApp'));
+const PolicyPage = lazy(() => import('./pages/legal/PolicyPage'));
 
 /**
  * Admin pages that staff accounts can open through additional policies
@@ -238,7 +241,7 @@ export default function App() {
 
   // Signed-in ordinary users get the maintenance screen; the Super Admin keeps
   // working (the server lets only that role through).
-  if (maintenance && user && user.role !== SUPER_ADMIN) {
+  if (maintenance && user && user.role !== SUPER_ADMIN && !PUBLIC_LEGAL_PATHS.includes(location.pathname)) {
     return <MaintenanceScreen message={maintenance} onRetry={() => checkPlatform().then((msg) => (msg ? dispatch(setMaintenance(msg)) : window.location.reload()))} />;
   }
 
@@ -264,6 +267,10 @@ export default function App() {
           <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
           <Route path="/reset-password" element={<Navigate to="/login" replace />} />
           <Route path="/alumni/claim" element={<AlumniClaim />} />
+          {/* Public legal pages: readable signed in or not (app-store reviewers too). */}
+          <Route path={ABOUT_PATH} element={<AboutApp />} />
+          <Route path={TERMS_PATH} element={<PolicyPage policyId="terms" />} />
+          <Route path={PRIVACY_PATH} element={<PolicyPage policyId="privacy" />} />
           {/* Public Innovation Gallery: published PUBLIC projects only (the server enforces it). */}
           <Route path="/gallery" element={<SwPublicGallery />} />
           <Route path="/gallery/:id" element={<SwPublicGalleryDetail />} />

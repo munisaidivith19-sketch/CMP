@@ -192,7 +192,8 @@ export const NOTIFICATION_CATEGORIES = [
 ];
 export const OPTIONAL_NOTIFICATION_CATEGORIES = ['chat', 'reminder', 'student_entry', 'event', 'announcement', 'timetable', 'transport'];
 // Heads-up (high priority) only where acting promptly matters.
-export const HIGH_PRIORITY_CATEGORIES = ['sos', 'gate_pass', 'reminder', 'substitute'];
+// FCM high priority: delivered at once even in Doze. Chat is included so messages pop up immediately.
+export const HIGH_PRIORITY_CATEGORIES = ['sos', 'gate_pass', 'reminder', 'substitute', 'chat'];
 export const REMINDER_MINUTES = [5, 10, 15, 20, 30];
 export const NOTIFICATION_TYPES = [
   'announcement', 'event', 'club', 'discussion', 'report', 'system',

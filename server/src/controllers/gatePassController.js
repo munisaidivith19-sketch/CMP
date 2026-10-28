@@ -870,7 +870,7 @@ export const cancelGatePass = asyncHandler(async (req, res) => {
 
 // ── Security: verify a presented code ───────────────────────────────
 
-function problemsFor(pass) {
+export function problemsFor(pass) {
   const now = clock.now();
   const problems = [];
   const messages = {
@@ -939,7 +939,16 @@ export const verifyGatePass = asyncHandler(async (req, res) => {
 export const recordOut = asyncHandler(async (req, res) => {
   const code = normalizeGateCode(req.body.code, QR_PREFIX);
   if (!code) throw new ApiError(422, 'Enter the 4-character gate pass code');
-  const pass = await GatePass.findById(req.params.id).select('+verificationCode');
+  res.json(withFlags(await confirmExit(req, req.params.id, code)));
+});
+
+/**
+ * The exit commit shared by the web OUT screen (recordOut) and the Windows
+ * Gate Scanner: same checks, same single atomic update, same notifications.
+ * `code` is an already-normalised exit code; returns the updated pass.
+ */
+export async function confirmExit(req, passId, code) {
+  const pass = await GatePass.findById(passId).select('+verificationCode');
   if (!pass) throw new ApiError(404, 'Gate pass not found');
   if (pass.status !== 'approved') throw new ApiError(pass.actualExit ? 409 : 422, pass.actualExit ? 'Exit has already been recorded' : 'Only an approved, unused pass can be used to exit');
   if (pass.verificationCode !== code) throw new ApiError(422, 'This code does not belong to this gate pass');
@@ -974,8 +983,8 @@ export const recordOut = asyncHandler(async (req, res) => {
     { push: false }
   );
   publish(updated);
-  res.json(withFlags(updated));
-});
+  return updated;
+}
 
 /**
  * Security: "Student is inside". Re-checks the return credential and completes
@@ -984,9 +993,17 @@ export const recordOut = asyncHandler(async (req, res) => {
  */
 export const recordIn = asyncHandler(async (req, res) => {
   const credential = returnSvc.parseReturnCredential(req.body.code);
+  res.json(withFlags(await confirmReturn(req, req.params.id, credential)));
+});
+
+/**
+ * The return commit shared by the web Return screen (recordIn) and the Windows
+ * Gate Scanner. `credential` comes from returnSvc.parseReturnCredential.
+ */
+export async function confirmReturn(req, passId, credential) {
   const now = new Date();
   const updated = await GatePass.findOneAndUpdate(
-    { _id: req.params.id, status: 'active', actualExit: { $ne: null }, ...credential, returnCredentialExpiresAt: { $gt: now } },
+    { _id: passId, status: 'active', actualExit: { $ne: null }, ...credential, returnCredentialExpiresAt: { $gt: now } },
     {
       $set: { status: 'completed', actualReturn: now, returnVerifiedBy: req.user._id, verificationExpiry: now },
       // Every credential is consumed: none of them can be verified again.
@@ -995,7 +1012,7 @@ export const recordIn = asyncHandler(async (req, res) => {
     { new: true }
   ).populate('student', STUDENT_FIELDS);
   if (!updated) {
-    const pass = await loadPass(req.params.id);
+    const pass = await loadPass(passId);
     if (pass.status === 'completed') throw new ApiError(409, 'This student’s return has already been recorded');
     if (pass.status !== 'active') throw new ApiError(422, 'The student has not exited on this pass');
     logActivity(req, 'gate_pass.return_failed', { entityType: 'gate_pass', entityId: pass._id, summary: 'Invalid or expired return credential' });
@@ -1007,8 +1024,8 @@ export const recordIn = asyncHandler(async (req, res) => {
   passSecurity(req, 'GATE_PASS_RETURN_CONFIRMED', updated);
   publish(updated);
   await returnSvc.notifyReturned({ pass: updated, student: updated.student, returnedAt: now });
-  res.json(withFlags(updated));
-});
+  return updated;
+}
 
 // ── Return to campus: student location check → return credential ────
 

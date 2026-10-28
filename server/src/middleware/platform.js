@@ -3,6 +3,7 @@ import Session from '../models/Session.js';
 import { ApiError, asyncHandler } from '../utils/http.js';
 import { SUPER_ADMIN_ROLE } from '../constants.js';
 import { authenticateAccessToken } from './auth.js';
+import { termsAcceptanceRequired } from '../services/legal.js';
 
 // Public endpoints that keep working in maintenance so the Super Admin can
 // still sign in (login / refresh refuse everyone else themselves) and every
@@ -50,6 +51,30 @@ export function passwordChangeGate(req, _res, next) {
   if (PASSWORD_CHANGE_OPEN.some((re) => re.test(path))) return next();
   return next(new ApiError(403, 'Change your temporary password before continuing', undefined, { code: 'PASSWORD_CHANGE_REQUIRED' }));
 }
+
+// What an account that has not accepted the current Terms may still do: read
+// itself and its legal status, accept, manage its sessions / push token, and
+// report client errors. Public policy pages and sign-out are public routes.
+const TERMS_OPEN = [/^\/auth\/me$/, /^\/auth\/activity$/, /^\/auth\/sessions(\/|$)/, /^\/auth\/push-token$/, /^\/auth\/change-password$/, /^\/legal(\/|$)/, /^\/client-errors$/];
+
+export const TERMS_REQUIRED_BODY = {
+  message: 'Please read and accept the Terms and Conditions to continue.',
+  code: 'TERMS_ACCEPTANCE_REQUIRED',
+};
+
+/**
+ * The current Terms version must have been accepted (services/legal.js) before
+ * any other API is used, whatever the client. Answered directly rather than as
+ * an ApiError so routine refusals are not recorded as SOC authorization errors.
+ */
+export const termsGate = asyncHandler(async (req, res, next) => {
+  // Mobile apps only: the web app does not ask for acceptance (the client comes from the server-side session row).
+  if (req.sessionClient === 'web') return next();
+  const path = req.path.replace(/\/+$/, '') || '/';
+  if (TERMS_OPEN.some((re) => re.test(path))) return next();
+  if (!(await termsAcceptanceRequired(req.user?._id))) return next();
+  return res.status(403).json(TERMS_REQUIRED_BODY);
+});
 
 export const REAUTH_WINDOW_MS = 5 * 60 * 1000;
 

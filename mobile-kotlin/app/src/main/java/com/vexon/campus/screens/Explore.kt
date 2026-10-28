@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MenuBook
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -104,6 +103,7 @@ import com.vexon.campus.ui.Label
 import com.vexon.campus.ui.Loading
 import com.vexon.campus.ui.MarkdownText
 import com.vexon.campus.ui.Opt
+import com.vexon.campus.ui.SelectField
 import com.vexon.campus.ui.ROLE_LABELS
 import com.vexon.campus.ui.RowCard
 import com.vexon.campus.ui.STUDENT_ROLES
@@ -119,7 +119,6 @@ import com.vexon.campus.ui.Variant
 import com.vexon.campus.ui.fmtHolidayDates
 import com.vexon.campus.ui.hiddenIf
 import com.vexon.campus.ui.holidaysOn
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import java.time.DayOfWeek
@@ -169,80 +168,6 @@ fun PersonScreen(id: String) {
                     H2(num(v))
                     Small(l)
                 }
-            }
-        }
-    }
-}
-
-/* ── Search ─────────────────────────────────────────────────────── */
-
-@Composable
-fun SearchScreen() {
-    var text by rememberSaveable { mutableStateOf("") }
-    var q by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(text) {
-        delay(350)
-        q = text.trim()
-    }
-    val res = Api.search(q, skip = q.length < 2)
-    val data = res.data
-    val users = data["users"].list
-    val clubs = data["clubs"].list
-    val events = data["events"].list
-    val discussions = data["discussions"].list
-    val announcements = data["announcements"].list
-    val achievements = data["achievements"].list
-    val total = users.size + clubs.size + events.size + discussions.size + announcements.size + achievements.size
-
-    Screen {
-        Header("Search", back = true)
-        Input(text, { text = it }, placeholder = "People, clubs, events, discussions…")
-        when {
-            q.length < 2 -> EmptyState(Icons.Rounded.Search, "Search JNN", "Type at least 2 characters.")
-            data == null -> Loading()
-            total == 0 -> EmptyState(Icons.Rounded.Search, "Nothing found for “$q”")
-            else -> {
-                if (users.isNotEmpty()) SectionTitle("People")
-                users.forEach { u ->
-                    RowCard(Wide, onClick = { Nav.push("/people/${u.id}") }, gap = 10.dp) {
-                        Avatar(u, size = 38.dp)
-                        Column(Modifier.weight(1f)) {
-                            Strong(u["name"].str)
-                            Small((ROLE_LABELS[u.role] ?: "") + (u["department"].text?.let { " · $it" } ?: ""))
-                        }
-                    }
-                }
-                if (clubs.isNotEmpty()) SectionTitle("Clubs")
-                clubs.forEach { c ->
-                    RowCard(Wide, onClick = { Nav.push("/clubs/${c["slug"].str}") }, gap = 10.dp) {
-                        Avatar(name = c["name"].str, uri = c["logo"].str, size = 38.dp)
-                        Strong(c["name"].str, Modifier.weight(1f))
-                        Small("${num(c["memberCount"])} members")
-                    }
-                }
-                if (events.isNotEmpty()) SectionTitle("Events")
-                events.forEach { e ->
-                    Card(Wide, onClick = { Nav.push("/events/${e.id}") }) {
-                        Strong(e["title"].str)
-                        Small(Fmt.dateTime(e["startDate"]))
-                    }
-                }
-                if (discussions.isNotEmpty()) SectionTitle("Discussions")
-                discussions.forEach { d ->
-                    Card(Wide, onClick = { Nav.push("/discussions/${d.id}") }) {
-                        Strong(d["title"].str)
-                        Small("${num(d["replyCount"])} replies")
-                    }
-                }
-                if (announcements.isNotEmpty()) SectionTitle("Announcements")
-                announcements.forEach { a ->
-                    Card(Wide, onClick = { Nav.push("/announcements") }) {
-                        Strong(a["title"].str)
-                        Small(a["content"].str, maxLines = 2)
-                    }
-                }
-                if (achievements.isNotEmpty()) SectionTitle("Achievements")
-                achievements.forEach { AchievementRow(it) }
             }
         }
     }
@@ -365,36 +290,70 @@ private fun Materials(modifier: Modifier) {
     val context = LocalContext.current
     val me = me()
     val remove = rememberMutation()
-    val q = Api.studyMaterials(mapOf("limit" to 50))
+    // Every material by default; each dropdown narrows the list on the server.
+    var semester by rememberSaveable { mutableStateOf<Int?>(null) }
+    var subject by rememberSaveable { mutableStateOf<String?>(null) }
+    var category by rememberSaveable { mutableStateOf<String?>(null) }
+    val filters = Api.studyMaterialFilters().data
+    val q = Api.studyMaterials(mapOf("limit" to 50, "semester" to semester, "subject" to subject, "category" to category))
     val data = q.data
-    Box(modifier) {
-        when {
-            data == null && q.error != null -> ErrorState(q.error) { q.refetch() }
-            data == null -> Loading()
-            else -> PullToRefreshBox(isRefreshing = q.isFetching && !q.isLoading, onRefresh = { q.refetch() }, modifier = Modifier.fillMaxSize()) {
-                val items = data["items"].list
-                LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
-                    if (items.isEmpty()) item { Card(Wide) { EmptyState(Icons.Rounded.MenuBook, "No study materials yet", "Materials for your class will appear here once uploaded.") } }
-                    items(items, key = { it.id ?: it.hashCode() }) { m ->
-                        Card(Wide, gap = 6.dp) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Rounded.Description, null, Modifier.size(16.dp), tint = C.primary)
-                                Strong(m["title"].str, Modifier.weight(1f), maxLines = 2)
-                                Badge(CATEGORY_LABELS[m["category"].str] ?: m["category"].str)
+    // A student reads semesters 1 … current; staff any semester.
+    val semesters = filters["currentSemester"].int?.let { (1..it).toList() } ?: (1..8).toList()
+    val allSubjects = filters["subjects"].list
+    val subjects = allSubjects.filter { semester == null || it["semester"].int == semester }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SelectField(
+                "Semester", semester, listOf(Opt<Int?>(null, "All semesters")) + semesters.map { Opt<Int?>(it, "Semester $it") },
+                { s -> semester = s; if (allSubjects.none { it.id == subject && (s == null || it["semester"].int == s) }) subject = null },
+                modifier = Modifier.weight(1f),
+            )
+            SelectField(
+                "Category", category, listOf(Opt<String?>(null, "All categories")) + CATEGORY_LABELS.map { (k, v) -> Opt<String?>(k, v) },
+                { category = it }, modifier = Modifier.weight(1f),
+            )
+        }
+        SelectField(
+            "Subject", subject,
+            listOf(Opt<String?>(null, "All subjects")) + subjects.map { Opt<String?>(it.id, "${it["code"].str ?: ""} · ${it["name"].str ?: ""}") },
+            { subject = it }, modifier = Wide,
+        )
+        Box(Modifier.weight(1f)) {
+            when {
+                data == null && q.error != null -> ErrorState(q.error) { q.refetch() }
+                data == null -> Loading()
+                else -> PullToRefreshBox(isRefreshing = q.isFetching && !q.isLoading, onRefresh = { q.refetch() }, modifier = Modifier.fillMaxSize()) {
+                    val items = data["items"].list
+                    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 24.dp)) {
+                        val filtered = semester != null || subject != null || category != null
+                        if (items.isEmpty()) item {
+                            Card(Wide) {
+                                if (filtered) EmptyState(Icons.Rounded.MenuBook, "No materials match these filters", "Try another semester, subject or category.",
+                                    action = { Button("Show all materials", { semester = null; subject = null; category = null }, variant = Variant.Soft, small = true) })
+                                else EmptyState(Icons.Rounded.MenuBook, "No study materials yet", "Materials for your class will appear here once uploaded.")
                             }
-                            Small(
-                                "${m["subjectName"].str ?: ""} — ${m["subjectCode"].str ?: ""} · ${m["department"].str ?: ""}" +
-                                    (m["section"].text?.let { " · Sec $it" } ?: "") + " · Sem ${m["semester"].str ?: ""}",
-                            )
-                            m["description"].text?.let { Body(it, maxLines = 3) }
-                            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                m["file"]["url"].text?.let { url ->
-                                    Button(m["file"]["name"].text ?: "Open", { openUrl(context, ServerConfig.assetUrl(url)) }, Modifier.weight(1f, fill = false), variant = Variant.Outline, icon = Icons.Rounded.Download, small = true)
+                        }
+                        items(items, key = { it.id ?: it.hashCode() }) { m ->
+                            Card(Wide, gap = 6.dp) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Rounded.Description, null, Modifier.size(16.dp), tint = C.primary)
+                                    Strong(m["title"].str, Modifier.weight(1f), maxLines = 2)
+                                    Badge(CATEGORY_LABELS[m["category"].str] ?: m["category"].str)
                                 }
-                                // The uploader (or admin) may remove it; the server re-checks.
-                                if (me.role == "admin" || sameId(m["uploadedBy"], me)) IconButton(Icons.Rounded.Delete, "Delete material", C.danger) {
-                                    Dialogs.confirm("Delete this material?", m["title"].str, "Delete", destructive = true) {
-                                        remove.launch(onError = { Dialogs.alert("Could not delete", errMsg(it)) }) { Api.deleteStudyMaterial(m.id.orEmpty()) }
+                                Small(
+                                    "${m["subjectName"].str ?: ""} — ${m["subjectCode"].str ?: ""} · ${m["department"].str ?: ""}" +
+                                        (m["section"].text?.let { " · Sec $it" } ?: "") + " · Sem ${m["semester"].str ?: ""}",
+                                )
+                                m["description"].text?.let { Body(it, maxLines = 3) }
+                                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    m["file"]["url"].text?.let { url ->
+                                        Button(m["file"]["name"].text ?: "Open", { openUrl(context, ServerConfig.assetUrl(url)) }, Modifier.weight(1f, fill = false), variant = Variant.Outline, icon = Icons.Rounded.Download, small = true)
+                                    }
+                                    // The uploader (or admin) may remove it; the server re-checks.
+                                    if (me.role == "admin" || sameId(m["uploadedBy"], me)) IconButton(Icons.Rounded.Delete, "Delete material", C.danger) {
+                                        Dialogs.confirm("Delete this material?", m["title"].str, "Delete", destructive = true) {
+                                            remove.launch(onError = { Dialogs.alert("Could not delete", errMsg(it)) }) { Api.deleteStudyMaterial(m.id.orEmpty()) }
+                                        }
                                     }
                                 }
                             }

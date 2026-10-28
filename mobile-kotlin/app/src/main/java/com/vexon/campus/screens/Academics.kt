@@ -109,6 +109,7 @@ import com.vexon.campus.ui.SUMMARY_VIEW
 import com.vexon.campus.ui.Screen
 import com.vexon.campus.ui.SectionTitle
 import com.vexon.campus.ui.Segmented
+import com.vexon.campus.ui.SelectField
 import com.vexon.campus.ui.Sheet
 import com.vexon.campus.ui.Small
 import com.vexon.campus.ui.StatusBadge
@@ -261,7 +262,9 @@ fun AttendanceScreen(route: Route? = null) {
     if (me().role in STUDENT_ROLES) StudentAttendance() else StaffAttendance(route)
 }
 
-private val RANGES = listOf(Opt("week", "Week"), Opt("month", "Month"), Opt("semester", "Semester"), Opt("all", "All"))
+// Within the current semester the student can still zoom in to this week / month.
+private val RANGES = listOf(Opt("all", "Whole semester"), Opt("month", "Month"), Opt("week", "Week"))
+private val SEMESTERS = (1..8).toList()
 
 @Composable
 private fun CorrectionSheet(record: JsonElement, onClose: () -> Unit) {
@@ -288,10 +291,14 @@ private fun CorrectionSheet(record: JsonElement, onClose: () -> Unit) {
 
 @Composable
 private fun StudentAttendance() {
-    var range by rememberSaveable { mutableStateOf("semester") }
+    // The current semester by default; the dropdown opens any earlier (or later) one.
+    val current = me()["semester"].int
+    var semester by rememberSaveable { mutableStateOf(current) }
+    var range by rememberSaveable { mutableStateOf("all") }
     var correct by remember { mutableStateOf<JsonElement?>(null) }
-    val summary = Api.myAttendance(mapOf("range" to range))
-    val records = Api.attendanceRecords(mapOf("limit" to 30))
+    val isCurrent = semester == current
+    val summary = Api.myAttendance(mapOf("range" to if (isCurrent) range else "all", "semester" to semester))
+    val records = Api.attendanceRecords(mapOf("limit" to 30, "semester" to semester))
     val corrections = Api.corrections(mapOf("limit" to 10))
     val data = summary.data
     val o = data["overall"]
@@ -300,7 +307,12 @@ private fun StudentAttendance() {
 
     Screen(refreshing = summary.isFetching && !summary.isLoading, onRefresh = { summary.refetch(); records.refetch(); corrections.refetch() }) {
         Header("Attendance", "Present ÷ conducted periods", back = true)
-        Segmented(RANGES, range, { range = it })
+        SelectField(
+            "Semester", semester,
+            SEMESTERS.map { Opt<Int?>(it, if (it == current) "Semester $it (current)" else "Semester $it") },
+            { semester = it }, placeholder = "All semesters", modifier = Wide,
+        )
+        if (isCurrent) Segmented(RANGES, range, { range = it })
         when {
             data == null && summary.error != null -> ErrorState(summary.error) { summary.refetch() }
             data == null -> Loading()
@@ -321,7 +333,7 @@ private fun StudentAttendance() {
                 }
                 SectionTitle("Subject-wise")
                 val subjects = data["subjects"].list
-                if (subjects.isEmpty()) Card(Wide) { EmptyState(Icons.Rounded.FactCheck, "No classes recorded in this period") }
+                if (subjects.isEmpty()) Card(Wide) { EmptyState(Icons.Rounded.FactCheck, if (semester != null) "No classes recorded in semester $semester" else "No classes recorded in this period") }
                 else Card(Wide, gap = 14.dp) {
                     subjects.forEach { s ->
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

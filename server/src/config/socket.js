@@ -11,6 +11,7 @@ import Bus from '../models/Bus.js';
 import { busFilter, canViewBus, viewerScope } from '../services/transport/access.js';
 import { platformAllows } from '../services/platformState.js';
 import { attachSocketMonitor } from '../services/soc/monitors.js';
+import { termsAcceptanceRequired } from '../services/legal.js';
 
 let io = null;
 
@@ -49,12 +50,15 @@ export function initSocket(httpServer) {
   // Every socket must present a valid access token bound to a live session.
   io.use(async (socket, next) => {
     try {
-      const { user, sessionId } = await authenticateAccessToken(socket.handshake.auth?.token, socket.handshake.address);
+      const { user, sessionId, client } = await authenticateAccessToken(socket.handshake.auth?.token, socket.handshake.address);
       // Maintenance / lockdown / recovery: only the Super Admin recovery path stays connected.
       if (!(await platformAllows(user))) return next(new Error('maintenance'));
+      // The Gate Scanner polls its own endpoints; its session never joins the realtime channels.
+      if (client === 'gate_desktop') return next(new Error('unauthorized'));
       socket.data.userId = String(user._id);
       socket.data.role = user.role;
       socket.data.sessionId = sessionId;
+      socket.data.client = client;
       // A policy-managed admin holds only some modules, so it never joins the
       // all-admin room whose broadcasts span every module (policies.js).
       socket.data.roleRoom = user.role === 'admin' && user.policyManaged ? 'role:admin_policy' : `role:${user.role}`;
@@ -68,6 +72,11 @@ export function initSocket(httpServer) {
     const { userId, sessionId, roleRoom } = socket.data;
     const { role } = socket.data;
     socket.join([`user:${userId}`, `session:${sessionId}`, roleRoom]);
+
+    // Like the REST termsGate: no chat, discussion or bus rooms until the
+    // current Terms are accepted. Checked at each join (cached per user), so
+    // accepting takes effect without reconnecting.
+    const termsPending = () => (socket.data.client === 'web' ? Promise.resolve(false) : termsAcceptanceRequired(userId).catch(() => true));
 
     const count = (online.get(userId) || 0) + 1;
     online.set(userId, count);
@@ -87,6 +96,7 @@ export function initSocket(httpServer) {
     // ── Discussions (public threads; hidden ones only for moderators) ──
     socket.on('discussion:join', async (id, cb) => {
       if (!mongoose.isValidObjectId(id)) return ack(cb, { ok: false });
+      if (await termsPending()) return ack(cb, { ok: false, error: 'terms_required' });
       const d = await Discussion.findById(id).select('isHidden').lean().catch(() => null);
       if (!d || (d.isHidden && !['admin', 'faculty', 'hod', 'principal'].includes(role))) return ack(cb, { ok: false });
       socket.join(`discussion:${id}`);
@@ -102,6 +112,7 @@ export function initSocket(httpServer) {
     // after a reconnect (rooms do not survive a new connection). ──
     socket.on('transport:subscribe', async (busId, cb) => {
       try {
+        if (await termsPending()) return ack(cb, { ok: false, error: 'terms_required' });
         const scope = await viewerScope(userId);
         if (!scope) return ack(cb, { ok: false, error: 'forbidden' });
         if (busId && busId !== 'all') {
@@ -133,6 +144,7 @@ export function initSocket(httpServer) {
     // ── Chat: a room is joined only after membership is checked in MongoDB ──
     socket.on('chat:join', async (conversationId, cb) => {
       if (!mongoose.isValidObjectId(conversationId)) return ack(cb, { ok: false, error: 'invalid' });
+      if (await termsPending()) return ack(cb, { ok: false, error: 'terms_required' });
       if (!(await canUseConversation(userId, conversationId))) return ack(cb, { ok: false, error: 'forbidden' });
       socket.join(`chat:${conversationId}`);
       return ack(cb, { ok: true });
@@ -153,6 +165,7 @@ export function initSocket(httpServer) {
     socket.on('chat:read', async (data = {}, cb) => {
       const { conversationId } = data;
       if (!mongoose.isValidObjectId(conversationId)) return ack(cb, { ok: false });
+      if (await termsPending()) return ack(cb, { ok: false });
       if (!(await canUseConversation(userId, conversationId))) return ack(cb, { ok: false });
       const ok = await markConversationRead(userId, conversationId).catch(() => false);
       return ack(cb, { ok });

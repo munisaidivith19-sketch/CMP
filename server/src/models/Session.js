@@ -11,7 +11,8 @@ const sessionSchema = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     jti: { type: String, required: true, select: false },
-    client: { type: String, enum: ['web', 'mobile'], default: 'web' },
+    // gate_desktop: the Windows Gate Scanner (Security role only, see utils/tokens.js).
+    client: { type: String, enum: ['web', 'mobile', 'gate_desktop'], default: 'web' },
     device: { type: String, maxlength: 200 },
     userAgent: { type: String, maxlength: 500 },
     ip: { type: String, maxlength: 45 },

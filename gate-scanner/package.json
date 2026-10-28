@@ -1,0 +1,66 @@
+{
+  "name": "jnn-gate-scanner",
+  "productName": "J.N.N Gate Scanner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows Gate Scanner for J.N.N Campus Connect security staff",
+  "author": "J.N.N Institute of Engineering",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "gateScanner": {
+    "productionApiUrl": "https://jnn.onrender.com"
+  },
+  "scripts": {
+    "dev": "vite build --mode development && cross-env GATE_SCANNER_API_URL=http://localhost:5000 electron .",
+    "build:renderer": "vite build",
+    "start": "electron .",
+    "test": "node --test \"tests/*.test.mjs\" \"tests/*.test.cjs\"",
+    "dist": "vite build && electron-builder --win --x64",
+    "dist:dir": "vite build && electron-builder --win --x64 --dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "5.1.0",
+    "@vitejs/plugin-react": "4.7.0",
+    "autoprefixer": "10.4.20",
+    "cross-env": "7.0.3",
+    "electron": "44.5.1",
+    "electron-builder": "26.17.0",
+    "lucide-react": "0.460.0",
+    "postcss": "8.4.49",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tailwindcss": "3.4.15",
+    "vite": "5.4.21"
+  },
+  "build": {
+    "appId": "edu.jnn.campusconnect.gatescanner",
+    "productName": "J.N.N Gate Scanner",
+    "artifactName": "JNN-Gate-Scanner-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "J.N.N Gate Scanner",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

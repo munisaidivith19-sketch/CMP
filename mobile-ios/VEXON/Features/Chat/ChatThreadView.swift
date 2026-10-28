@@ -111,6 +111,8 @@ struct ChatThreadView: View {
         .navigationTitle(conversation.title(myId: app.user?.id))
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.loadLatest(client: app.client) }
+        .onAppear { app.openConversationId = conversation.id }
+        .onDisappear { if app.openConversationId == conversation.id { app.openConversationId = nil } }
         .task { await live() }
     }
 

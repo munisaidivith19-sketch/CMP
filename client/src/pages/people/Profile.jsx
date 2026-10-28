@@ -7,6 +7,7 @@ import {
   Award,
   CalendarCheck2,
   Camera,
+  ChevronRight,
   KeyRound,
   Mail,
   MessagesSquare,
@@ -18,6 +19,7 @@ import {
   Trophy,
   Wrench,
 } from 'lucide-react';
+import { ABOUT_ENTRIES } from '../../utils/legal';
 import {
   useChangePasswordMutation,
   useGetStudentAchievementsQuery,
@@ -426,6 +428,24 @@ export default function Profile() {
           </Card>
         </div>
       </div>
+
+      {isMe && (
+        <Card>
+          <CardHeader title="About the App" />
+          <nav aria-label="About the App">
+            <ul className="divide-y divide-black/5 dark:divide-white/10">
+              {ABOUT_ENTRIES.map((e) => (
+                <li key={e.key}>
+                  <Link to={e.to} className="flex items-center justify-between gap-3 rounded-2xl px-2 py-3 text-sm font-semibold hover:bg-white/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:bg-white/5">
+                    {e.label}
+                    <ChevronRight className="h-4 w-4 text-ink-muted" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </Card>
+      )}
 
       {isMe && <EditProfile open={editing} onClose={() => setEditing(false)} user={{ ...me, ...user }} />}
       {isMe && <ChangePassword open={pwd} onClose={() => setPwd(false)} />}

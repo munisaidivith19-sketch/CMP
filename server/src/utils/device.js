@@ -1,4 +1,4 @@
-import { isMobileClient } from './tokens.js';
+import { isGateDesktopClient, isMobileClient } from './tokens.js';
 
 /** Browser family from a User-Agent string. */
 export function parseBrowser(ua = '') {
@@ -28,6 +28,10 @@ export function parseDevice(ua = '', req) {
   if (req && isMobileClient(req)) {
     const name = mobileDeviceName(req);
     return `Mobile app${name ? ` · ${name}` : ''}`;
+  }
+  if (req && isGateDesktopClient(req)) {
+    const name = mobileDeviceName(req);
+    return `Gate Scanner${name ? ` · ${name}` : ''}`;
   }
   return `${parseBrowser(ua)} on ${parseOs(ua)}`;
 }

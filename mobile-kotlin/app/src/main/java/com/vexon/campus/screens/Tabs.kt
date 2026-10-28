@@ -54,7 +54,6 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.ReportProblem
 import androidx.compose.material.icons.rounded.School
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Timer
@@ -157,6 +156,7 @@ import com.vexon.campus.ui.T
 import com.vexon.campus.ui.Tone
 import com.vexon.campus.ui.Type
 import com.vexon.campus.ui.Variant
+import com.vexon.campus.ui.YEAR_LABELS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -356,7 +356,8 @@ private fun GeneralHome(user: JsonElement) {
 
     val dash = Api.dashboard()
     val now = Api.currentClass(skip = noTimetable, pollMs = 120_000)
-    val att = Api.myAttendance(mapOf("range" to "semester"), skip = !isStudent)
+    // The current semester, as the Attendance screen opens on.
+    val att = Api.myAttendance(mapOf("range" to "all", "semester" to user["semester"].int), skip = !isStudent)
     val summary = Api.attendanceSummary(skip = !seesSummary, pollMs = 120_000)
     val passes = Api.gatePasses(mapOf("limit" to 5), skip = !isStudent)
     val unread = Api.chatUnread()
@@ -380,7 +381,6 @@ private fun GeneralHome(user: JsonElement) {
     Screen(refreshing = dash.isFetching && !dash.isLoading, onRefresh = { listOf(dash, now, att, summary, passes, unread).forEach { it.refetch() } }) {
         Greeting(user, "👋") {
             IconButton(Icons.Rounded.CalendarMonth, "Calendar") { Nav.push("/calendar") }
-            IconButton(Icons.Rounded.Search, "Search") { Nav.push("/search") }
         }
         HeroCard {
             Small(Fmt.format(java.time.ZonedDateTime.now(), "EEEE, dd MMMM"), color = Color(0xD9FFFFFF))
@@ -562,7 +562,6 @@ private fun AlumniHome(user: JsonElement) {
     Screen(refreshing = dash.isFetching && !dash.isLoading, onRefresh = { dash.refetch() }) {
         Greeting(user, "🎓") {
             IconButton(Icons.Rounded.Explore, "Alumni Network") { Nav.push("/alumni") }
-            IconButton(Icons.Rounded.Search, "Search") { Nav.push("/search") }
         }
         HeroCard {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -747,7 +746,6 @@ private val CAMPUS_ITEMS = listOf(
     CampusItem("/clubs", "Clubs", "Join & follow", Icons.Rounded.Category, Grad.rose),
     CampusItem("/announcements", "Announcements", "Campus news", Icons.Rounded.Campaign, Grad.amber),
     CampusItem("/discussions", "Discussions", "Ask & answer", Icons.Rounded.Forum, Grad.emerald),
-    CampusItem("/search", "Search", "People, clubs, events", Icons.Rounded.Search, Grad.primary),
     CampusItem("/settings/security", "Security", "Devices & password", Icons.Rounded.Shield, Grad.violet),
 )
 
@@ -757,10 +755,10 @@ private val ADMIN_ITEMS = listOf(
 )
 
 // Security only deals with gate passes and lost & found — the rest of campus life doesn't apply to them.
-private val HIDDEN_FOR_SECURITY = setOf("/timetable", "/study-materials", "/attendance", "/events", "/clubs", "/announcements", "/discussions", "/search", "/complaints", "/alumni", "/holidays")
+private val HIDDEN_FOR_SECURITY = setOf("/timetable", "/study-materials", "/attendance", "/events", "/clubs", "/announcements", "/discussions", "/complaints", "/alumni", "/holidays")
 // Warden/Security have zero timetable or study-materials access anywhere in the app.
 private val HIDDEN_FOR_NO_TIMETABLE = setOf("/timetable", "/study-materials", "/holidays")
-// Alumni only access alumni network, events, clubs, announcements, discussions, search, and security.
+// Alumni only access alumni network, events, clubs, announcements, discussions, and security.
 private val HIDDEN_FOR_ALUMNI = setOf("/timetable", "/attendance", "/study-materials", "/gate-pass", "/lost-found", "/complaints", "/holidays")
 // Students apply for OD / Leave; these staff roles review. The API enforces the same.
 private val OD_LEAVE_ROLES = STUDENT_ROLES + setOf("faculty", "hod", "principal", "admin")
@@ -844,9 +842,25 @@ fun NotificationsScreen() {
 
 /* ── Profile ────────────────────────────────────────────────────── */
 
+/** Sign out THIS device: the server revokes only this session and forgets its push token. */
+suspend fun signOutThisDevice() {
+    try {
+        val refreshToken = withContext(Dispatchers.IO) { Auth.readRefreshToken() }
+        val pushToken = runCatching { Push.getPushToken(VexonApp.instance, askPermission = false) }.getOrNull()
+        runCatching { Http.postPublic("/auth/logout", jsonOf("refreshToken" to refreshToken, "pushToken" to pushToken)) }
+    } finally {
+        withContext(Dispatchers.IO) { Auth.clearRefreshToken() }
+        Realtime.disconnect()
+        QueryClient.reset()
+        Auth.loggedOut()
+    }
+}
+
 @Composable
 fun ProfileScreen() {
     val user = me()
+    // Staff see their role, employee ID and mobile number instead of class details.
+    val staff = user.role !in STUDENT_ROLES && user.role != "alumni"
     var editing by remember { mutableStateOf(false) }
     var bio by remember(user, editing) { mutableStateOf(user["bio"].str.orEmpty()) }
     var phone by remember(user, editing) { mutableStateOf(user["phone"].str.orEmpty()) }
@@ -859,21 +873,10 @@ fun ProfileScreen() {
         if (uri != null) photo.launch(onError = { Dialogs.alert("Could not update photo", errMsg(it)) }) { Auth.setUser(Api.uploadAvatar(uri)) }
     }
 
-    /** Sign out THIS device: the server revokes only this session and forgets its push token. */
     fun signOut() {
         signingOut = true
         scope.launch {
-            try {
-                val refreshToken = withContext(Dispatchers.IO) { Auth.readRefreshToken() }
-                val pushToken = runCatching { Push.getPushToken(VexonApp.instance, askPermission = false) }.getOrNull()
-                runCatching { Http.postPublic("/auth/logout", jsonOf("refreshToken" to refreshToken, "pushToken" to pushToken)) }
-            } finally {
-                withContext(Dispatchers.IO) { Auth.clearRefreshToken() }
-                Realtime.disconnect()
-                QueryClient.reset()
-                Auth.loggedOut()
-                signingOut = false
-            }
+            try { signOutThisDevice() } finally { signingOut = false }
         }
     }
 
@@ -909,11 +912,19 @@ fun ProfileScreen() {
             }
         } else {
             Card(Wide) {
-                InfoRow("Department", user["department"].str)
-                InfoRow("Year", user["year"].str)
-                InfoRow("Section", user["section"].str)
-                InfoRow("Semester", user["semester"].str)
-                InfoRow("Roll number", user["rollNo"].str)
+                if (staff) {
+                    InfoRow("Role", ROLE_LABELS[user.role] ?: user.role)
+                    InfoRow("Employee ID", user["employeeId"].str)
+                    InfoRow("Mobile number", user["phone"].str)
+                    if (user.role == "hod") InfoRow("Department", user["department"].str)
+                    user["designation"].text?.let { InfoRow("Designation", it) }
+                } else {
+                    InfoRow("Department", user["department"].str)
+                    InfoRow("Year", user["year"].str)
+                    InfoRow("Section", user["section"].str)
+                    InfoRow("Semester", user["semester"].str)
+                    InfoRow("Roll number", user["rollNo"].str)
+                }
                 user["bio"].text?.let { Body(it, Modifier.padding(top = 8.dp)) }
                 val sk = user["skills"].strings
                 if (sk.isNotEmpty()) FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -921,16 +932,58 @@ fun ProfileScreen() {
                 }
             }
         }
+        if (user.role == "faculty") FacultyAssignments(user)
         if (user.role in STUDENT_ROLES) user.id?.let { StudentHonors(it) }
         Button("Account security", { Nav.push("/settings/security") }, Wide, variant = Variant.Outline, icon = Icons.Rounded.Shield)
         Button("Notifications", { Nav.push("/settings/notifications") }, Wide, variant = Variant.Outline, icon = Icons.Rounded.Notifications)
+        AboutTheAppSection()
         Button("Sign out", {
             Dialogs.alert("Sign out?", "You'll need your email and password to sign in again on this phone.", listOf(
                 DialogButton("Cancel", cancel = true),
                 DialogButton("Sign out", destructive = true) { signOut() },
             ))
         }, Wide, variant = Variant.Danger, icon = Icons.AutoMirrored.Rounded.Logout, loading = signingOut)
-        Small("Class details (section, semester) are managed by your administrator.", Wide, C.muted, TextAlign.Center)
+        Small(
+            if (staff) "Your employee ID and assignments are managed by your administrator." else "Class details (section, semester) are managed by your administrator.",
+            Wide, C.muted, TextAlign.Center,
+        )
+    }
+}
+
+/** "CSE · 3rd Year · Section A" — one class a faculty member is assigned to. */
+private fun classLabel(department: String?, year: Int?, section: String?): String =
+    listOfNotNull(department, year?.let { YEAR_LABELS[it] ?: "Year $it" }, section?.let { "Section $it" }).joinToString(" · ")
+
+/**
+ * The department, year and section a faculty member is assigned to: their
+ * current timetable assignments (what the server authorizes them for), plus
+ * the class they are Class In-Charge of.
+ */
+@Composable
+private fun FacultyAssignments(user: JsonElement) {
+    val q = Api.myTeachingAssignments()
+    val classes = q.data.list.groupBy { classLabel(it["department"].str, it["year"].int, it["section"].text) }
+    SectionTitle("Assigned classes")
+    Card(Wide, gap = 10.dp) {
+        if (isClassInCharge(user)) {
+            InfoRow("Class In-Charge", classLabel(user["department"].str, user["inChargeYear"].int, user["section"].str) + " · Sem ${user["inChargeSemester"].str}")
+        }
+        when {
+            q.data == null && q.error != null -> ErrorState(q.error) { q.refetch() }
+            q.data == null -> Loading()
+            classes.isEmpty() -> {
+                InfoRow("Department", user["department"].str)
+                InfoRow("Years", user["teachingYears"].list.mapNotNull { it.int }.joinToString(", ") { YEAR_LABELS[it] ?: "Year $it" })
+                InfoRow("Sections", user["teachingSections"].strings.joinToString(", "))
+                Small("No timetable classes are assigned to you yet.", color = C.muted)
+            }
+            else -> classes.forEach { (label, rows) ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Strong(label)
+                    Small(rows.joinToString(", ") { "${it["subject"]["code"].str ?: ""} ${it["subject"]["name"].str ?: ""}".trim() } + rows.first()["semester"].text.let { if (it != null) " · Sem $it" else "" })
+                }
+            }
+        }
     }
 }
 

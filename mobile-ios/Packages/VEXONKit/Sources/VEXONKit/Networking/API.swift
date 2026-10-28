@@ -7,14 +7,40 @@ public enum API {
     // MARK: Account
     public static func me() -> Endpoint<User> { Endpoint(.get, "/auth/me") }
 
-    // MARK: Attendance
-    public static func myAttendance(range: AttendanceRange) -> Endpoint<AttendanceSummary> {
-        Endpoint(.get, "/attendance/my", query: ["range": range.rawValue])
+    // MARK: Terms and Conditions / Privacy Policy
+    /// Public: readable signed in or out (no token, no refresh).
+    public static func legalPolicy(_ policy: Legal.Policy) -> Endpoint<PolicyDocument> {
+        Endpoint(.get, "/legal/policies/\(policy.rawValue)", authenticated: false)
     }
 
-    public static func attendanceRecords(page: Int, limit: Int = 30) -> Endpoint<AttendanceRecordsPage> {
-        Endpoint(.get, "/attendance/records", query: ["page": String(page), "limit": String(limit)])
+    /// Always recorded for the signed-in account; the body names no user.
+    public static func acceptTerms(version: Int) -> Endpoint<LegalStatus> {
+        struct Body: Encodable, Sendable { let policyId: String; let version: Int; let agreed: Bool }
+        return Endpoint(.post, "/legal/accept", body: Body(policyId: Legal.Policy.terms.rawValue, version: version, agreed: true))
     }
+
+    // MARK: Attendance
+    /// `semester`: only that semester's subjects (nil = every semester).
+    public static func myAttendance(range: AttendanceRange, semester: Int? = nil) -> Endpoint<AttendanceSummary> {
+        Endpoint(.get, "/attendance/my", query: ["range": range.rawValue, "semester": semester.map(String.init)])
+    }
+
+    public static func attendanceRecords(page: Int, limit: Int = 30, semester: Int? = nil) -> Endpoint<AttendanceRecordsPage> {
+        Endpoint(.get, "/attendance/records", query: ["page": String(page), "limit": String(limit), "semester": semester.map(String.init)])
+    }
+
+    // MARK: Study materials
+    /// Every material the account may read; each argument narrows it (nil = all).
+    public static func studyMaterials(semester: Int?, subjectId: String?, category: String?) -> Endpoint<StudyMaterialsPage> {
+        Endpoint(.get, "/study-materials", query: [
+            "limit": "50", "semester": semester.map(String.init), "subject": subjectId, "category": category,
+        ])
+    }
+
+    public static func studyMaterialFilters() -> Endpoint<StudyMaterialFilters> { Endpoint(.get, "/study-materials/filters") }
+
+    /// Faculty only: the classes they are currently assigned to teach.
+    public static func myTeachingAssignments() -> Endpoint<[TeachingAssignment]> { Endpoint(.get, "/study-materials/my-assignments") }
 
     // MARK: Timetable & exams
     public static func timetable() -> Endpoint<TimetableResponse> { Endpoint(.get, "/timetable") }

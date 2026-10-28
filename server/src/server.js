@@ -18,6 +18,7 @@ import { flushMetrics, startMetricsFlusher } from './services/soc/metrics.js';
 import { sweepOrphanAssets } from './services/skillWallet/assets.js';
 import { sweepPartialWrites } from './utils/privateStorage.js';
 import { sweepOrphanUploads } from './services/orphanUploads.js';
+import { syncPolicyVersions } from './services/legal.js';
 
 async function start() {
   // SOC: observe crashes (does not change Node's crash behaviour).
@@ -25,6 +26,11 @@ async function start() {
   // SOC: record MongoDB disconnects / connection errors (listeners attach once).
   attachDbMonitor();
   await connectDB();
+  // Publish the Terms / Privacy Policy versions in legal/registry.js. Not
+  // caught: without them the Terms gate cannot be enforced, so a failure
+  // (e.g. changed text of a published version in production) stops start-up.
+  const legal = await syncPolicyVersions();
+  if (legal.inserted || legal.published) console.log(`[legal] published ${legal.inserted + legal.published} policy version(s)`);
   // Make sure every subject in data/timetableData.js exists for the timetable.
   await syncSubjects()
     .then((n) => n && console.log(`[subjects] added ${n} subject(s) from data/timetableData.js`))

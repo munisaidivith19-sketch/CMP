@@ -2,7 +2,7 @@ import Foundation
 
 /// App modules the iOS client presents.
 public enum Feature: String, Sendable, CaseIterable, Identifiable {
-    case attendance, timetable, exams, complaints, chat, busTracking, notifications, profile
+    case attendance, timetable, exams, studyMaterials, complaints, chat, busTracking, notifications, profile
     public var id: String { rawValue }
 
     public var title: String {
@@ -10,6 +10,7 @@ public enum Feature: String, Sendable, CaseIterable, Identifiable {
         case .attendance: return "Attendance"
         case .timetable: return "Timetable"
         case .exams: return "Exams"
+        case .studyMaterials: return "Study Materials"
         case .complaints: return "Grievances"
         case .chat: return "Chat"
         case .busTracking: return "Bus Tracking"
@@ -29,6 +30,8 @@ public enum FeatureAccess {
     static let timetableBlocked: Set<Role> = [.warden, .security, .alumni, .office, .transport]
     /// TRANSPORT_VIEW_ROLES.
     static let transportView: Set<Role> = [.student, .clubAdmin, .faculty, .hod, .principal, .admin, .security, .dean, .ao, .chairman, .warden, .transport]
+    /// STUDY_MATERIAL_BLOCKED_ROLES.
+    static let studyMaterialsBlocked: Set<Role> = [.warden, .security, .alumni, .ao, .coe, .office, .transport]
     /// Confined roles (coeGuard.js): only their own module plus account / notifications.
     static let confined: Set<Role> = [.coe, .office, .transport]
 
@@ -43,6 +46,9 @@ public enum FeatureAccess {
         case .timetable, .exams:
             if case .other = role { return false }
             return !timetableBlocked.contains(role)
+        case .studyMaterials:
+            if case .other = role { return false }
+            return !studyMaterialsBlocked.contains(role)
         case .attendance:
             // The iOS attendance module is the student's own record (GET /attendance/my);
             // staff marking and reports remain on the web and Android apps for now.

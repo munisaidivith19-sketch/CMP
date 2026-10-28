@@ -1,6 +1,7 @@
 import Observation
 import UIKit
 import UserNotifications
+import VEXONKit
 
 /// Push notifications on iOS.
 ///
@@ -12,15 +13,17 @@ import UserNotifications
 /// token with that endpoint would store it as an Android device, so this app
 /// deliberately does NOT send its token yet.
 ///
-/// What this class does now: asks for permission only when the user opts in
-/// (Notification settings screen), registers with APNs so the token is ready,
-/// and reports the status. In-app notifications and live socket updates work
+/// What this class does now: asks for permission only from an explicit tap (the
+/// mandatory "Notifications Required" screen or Notification settings), registers
+/// with APNs so the token is ready, and reports the status that drives
+/// `NotificationGate`. In-app notifications and live socket updates work
 /// regardless. See README → "Push notifications: missing backend support".
 @MainActor
 @Observable
 final class PushManager {
     enum Status: Equatable {
-        case unknown, notDetermined, denied, authorized
+        /// `provisional`: quiet delivery to Notification Center only — not full authorization.
+        case unknown, notDetermined, denied, authorized, provisional
     }
 
     /// Flip to true once the server can deliver to APNs (see README).
@@ -29,22 +32,43 @@ final class PushManager {
     private(set) var status: Status = .unknown
     private(set) var hasDeviceToken = false
     private(set) var lastError: String?
+    /// Nil until the first read; drives the mandatory notification gate.
+    private(set) var authorization: NotificationAuthorization?
 
+    var gate: NotificationGate.State { NotificationGate.state(for: authorization) }
+
+    /// Re-read the system setting (at launch and whenever the app becomes active,
+    /// so a change made in Settings — either way — is picked up).
     func refreshStatus() async {
+        let wasAuthorized = status == .authorized
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         switch settings.authorizationStatus {
-        case .notDetermined: status = .notDetermined
-        case .denied: status = .denied
-        case .authorized, .provisional, .ephemeral: status = .authorized
-        @unknown default: status = .unknown
+        case .notDetermined: (status, authorization) = (.notDetermined, .notDetermined)
+        case .denied: (status, authorization) = (.denied, .denied)
+        case .authorized: (status, authorization) = (.authorized, .authorized)
+        case .provisional: (status, authorization) = (.provisional, .provisional)
+        case .ephemeral: (status, authorization) = (.authorized, .ephemeral)
+        @unknown default: (status, authorization) = (.unknown, .unknown)
+        }
+        // Turned on in Settings after a denial: register with APNs, as requestPermission does.
+        if status == .authorized && !wasAuthorized && !hasDeviceToken {
+            UIApplication.shared.registerForRemoteNotifications()
         }
     }
 
-    /// Ask for permission (only from an explicit user action) and register with APNs.
+    /// Opens this app's notification page in Settings. Returns false when iOS
+    /// refused; opening it does not mean anything was changed — the status is
+    /// re-read when the app becomes active again.
+    func openSettings() async -> Bool {
+        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return false }
+        return await UIApplication.shared.open(url)
+    }
+
+    /// Ask for permission (only from an explicit user action) and register with APNs
+    /// (refreshStatus registers once the new status is authorized).
     func requestPermission() async {
         do {
-            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
-            if granted { UIApplication.shared.registerForRemoteNotifications() }
+            _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
         } catch {
             lastError = "Could not ask for notification permission."
         }

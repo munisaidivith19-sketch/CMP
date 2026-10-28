@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useDispatch } from 'react-redux';
 import toast from 'react-hot-toast';
@@ -11,6 +11,7 @@ import { useLoginMutation } from '../../services/api';
 import { setCredentials } from '../../features/authSlice';
 import { IDLE_LOGOUT_MESSAGE, clearLogoutReason, peekLogoutReason } from '../../services/sessionSync';
 import { errMsg } from '../../utils/format';
+import { PRIVACY_PATH, TERMS_PATH } from '../../utils/legal';
 
 // Passwords are reset by the Class In-Charge or an Admin — there is no email reset.
 const PASSWORD_HELP = 'Forgot your password? Contact your Class In-Charge or Admin to reset your password.';
@@ -204,6 +205,11 @@ export default function Login() {
           {lockout.isLocked ? `Locked (${formatCountdown(lockout.secondsLeft)})` : 'Sign in'}
         </Button>
       </form>
+      <p className="mt-6 text-center text-xs muted">
+        Read our{' '}
+        <Link to={TERMS_PATH} className="font-semibold text-primary-600 underline underline-offset-2 dark:text-primary-300">Terms and Conditions</Link> and{' '}
+        <Link to={PRIVACY_PATH} className="font-semibold text-primary-600 underline underline-offset-2 dark:text-primary-300">Privacy Policy</Link>.
+      </p>
     </AuthShell>
   );
 }

@@ -737,9 +737,9 @@ private fun AchievementForm(me: JsonElement, existing: JsonElement?) {
     }
 }
 
-/* ── Shared pieces for Home, Search and profiles ────────────────── */
+/* ── Shared pieces for Home and profiles ───────────────────────── */
 
-/** One-line achievement row (search results, profile honors, "My achievements"). */
+/** One-line achievement row (profile honors, "My achievements"). */
 @Composable
 fun AchievementRow(a: JsonElement) {
     RowCard(Wide, onClick = { Nav.push("/achievements/${a.id}") }, gap = 10.dp) {

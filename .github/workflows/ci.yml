@@ -65,5 +65,11 @@ jobs:
         working-directory: client
       - run: npm run build
         working-directory: client
+      # Error-handling catalogue: schema, unique IDs, test references and source
+      # signatures must still match the repository (no database or network needed).
+      - name: Validate the error catalogue
+        run: python3 error_handling/diagnostics/validate_catalog.py --no-pdf-check
+      - name: Error-handling unit tests (no database)
+        run: node --test error_handling/tests/backend/error_handler.test.mjs error_handling/tests/web/client_error_handling.test.mjs
       - name: Scan the built bundle for secrets
         run: node scripts/verify-bundle.mjs client/dist

@@ -39,18 +39,18 @@ import kotlinx.coroutines.tasks.await
  *
  * Presentation:
  *  - one channel per kind of notification, so the user can tune each in
- *    Android settings and only urgent ones are heads-up;
+ *    Android settings; every channel pops up (heads-up) by default;
  *  - the text is hidden on the lock screen (VISIBILITY_PRIVATE with a neutral
  *    public version) — student names, chat text etc. never show there;
  *  - while the app is open, only urgent categories raise a system
- *    notification: the rest already appear in-app through the live socket.
+ *    notification: the rest pop up in-app (ui/InAppBanner.kt) from the live socket.
  */
 object Push {
     private const val TAG = "VexonPush"
     const val EXTRA_LINK = "vexon.link"
     const val EXTRA_NOTIFICATION_ID = "vexon.notificationId"
 
-    /** Set by MainActivity: asks for POST_NOTIFICATIONS (Android 13+) and resolves with the result. */
+    /** Set by MainActivity: asks for POST_NOTIFICATIONS (Android 13+), re-checks NotificationGate, resolves with the result. */
     var permissionRequester: (suspend () -> Boolean)? = null
 
     /** True while an app screen is visible (kept by VexonApp's process lifecycle observer). */
@@ -61,22 +61,26 @@ object Push {
     private val CHANNELS = listOf(
         Channel("alerts", "Urgent alerts", NotificationManager.IMPORTANCE_HIGH, "Emergencies and gate-pass decisions"),
         Channel("classes", "Classes & reminders", NotificationManager.IMPORTANCE_HIGH, "Next-period reminders and substitute classes"),
-        Channel("messages", "Messages", NotificationManager.IMPORTANCE_DEFAULT, "New chat messages"),
-        Channel("updates", "Updates", NotificationManager.IMPORTANCE_DEFAULT, "Attendance, timetable, exams, events and announcements"),
+        // "_popup": Android fixes a channel's importance once created, so the
+        // heads-up versions of the old (silent) "messages" / "updates" need new ids.
+        Channel("messages_popup", "Messages", NotificationManager.IMPORTANCE_HIGH, "New chat messages"),
+        Channel("updates_popup", "Updates", NotificationManager.IMPORTANCE_HIGH, "Attendance, timetable, exams, events and announcements"),
     )
+    private val LEGACY_CHANNELS = listOf("messages", "updates")
 
     /** Server category → channel. */
     fun channelFor(category: String?): String = when (category) {
         "sos", "gate_pass" -> "alerts"
         "reminder", "substitute" -> "classes"
-        "chat" -> "messages"
-        else -> "updates"
+        "chat" -> "messages_popup"
+        else -> "updates_popup"
     }
 
     private val URGENT = setOf("sos", "gate_pass", "reminder", "substitute")
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
+        LEGACY_CHANNELS.forEach { if (manager.getNotificationChannel(it) != null) manager.deleteNotificationChannel(it) }
         for (c in CHANNELS) {
             if (manager.getNotificationChannel(c.id) != null) continue
             manager.createNotificationChannel(
@@ -119,9 +123,12 @@ object Push {
         }
     }
 
-    /** Register this device with the backend for the signed-in account. */
+    /**
+     * Register this device with the backend for the signed-in account. Never
+     * shows the system dialog: NotificationGate explains and asks first.
+     */
     suspend fun register(context: Context) {
-        val token = getPushToken(context) ?: return
+        val token = getPushToken(context, askPermission = false) ?: return
         runCatching { Api.registerDevice(token) }
     }
 
@@ -187,7 +194,9 @@ object Push {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setPriority(if (urgent) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            // Pre-Android 8 heads-up comes from the priority (8+ from the channel).
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setCategory(if (category == "chat") NotificationCompat.CATEGORY_MESSAGE else if (category == "reminder") NotificationCompat.CATEGORY_REMINDER else NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)

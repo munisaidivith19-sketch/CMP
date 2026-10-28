@@ -39,6 +39,13 @@ export async function authenticateAccessToken(token, ip) {
 
   if (!user || !user.isActive) throw new ApiError(401, 'Account is unavailable');
 
+  // A Gate Scanner session belongs to a Security account; if the role changes
+  // the session ends for good (it cannot be refreshed back either).
+  if (session.client === 'gate_desktop' && user.role !== 'security') {
+    await Session.updateOne({ _id: session._id, revokedAt: null }, { $set: { revokedAt: new Date(), revokedReason: 'gate_scanner_role' } });
+    throw new ApiError(401, 'This account is no longer authorized for the Gate Scanner.', undefined, { code: 'GATE_SCANNER_ROLE_REQUIRED' });
+  }
+
   // Web portal, non-exempt role: 2 minutes without reported user activity ends
   // the session. Client type comes from the session row, role from the
   // database — nothing the request carries can switch the rule off. Requests
@@ -54,15 +61,16 @@ export async function authenticateAccessToken(token, ip) {
     Session.updateOne({ _id: session._id }, { $set: { lastUsedAt: new Date() } }).catch(() => null);
   }
 
-  return { user, sessionId: String(payload.sid), idleTimeoutMs: idleMs };
+  return { user, sessionId: String(payload.sid), idleTimeoutMs: idleMs, client: session.client };
 }
 
 /** Require a valid Bearer access token; attaches req.user and req.sessionId. */
 export const protect = asyncHandler(async (req, _res, next) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  const { user, sessionId, idleTimeoutMs } = await authenticateAccessToken(token, req.ip);
+  const { user, sessionId, idleTimeoutMs, client } = await authenticateAccessToken(token, req.ip);
   req.user = user;
+  req.sessionClient = client;
   req.sessionId = sessionId;
   req.sessionIdleTimeoutMs = idleTimeoutMs;
   next();

@@ -135,12 +135,13 @@ Key decisions (each mirrors the Android app):
 |---|---|---|
 | Sign-in | Email/password, validation, lockout + remaining-attempts messages, revoked-session notice, offline launch, server address | `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me` |
 | Dashboard | Role-aware modules, today's current/next class, student overall attendance; each card fails independently | `/timetable/current`, `/attendance/my` |
-| Attendance (students) | Range summary, subject-wise %, can-miss / must-attend, paged records, live refresh | `/attendance/my`, `/attendance/records`, socket `attendance:updated` |
+| Attendance (students) | Semester dropdown (current semester by default; week / month / whole semester within it), subject-wise %, can-miss / must-attend, paged records, live refresh | `/attendance/my?semester=`, `/attendance/records?semester=`, socket `attendance:updated` |
+| Study materials | Every readable material by default; semester, subject and category dropdowns; opens the file | `/study-materials`, `/study-materials/filters` |
 | Timetable + exams | Week by day, current period, exam timetable | `/timetable`, `/exams`, sockets `timetable:updated`, `exam:updated` |
 | Grievances (students) | Paged list, file new (server rules mirrored, duplicate-submit guard), cancel | `/complaints`, `/complaints/:id/cancel` |
 | Chat | Conversations (search, unread, presence), thread with paging, send, live messages, mark read | `/chat/conversations…`, sockets `chat:*` |
-| Notifications | In-app list (paged, live), mark read / all, category & reminder preferences, push permission | `/notifications…` |
-| Profile | Own account details, sign-out | `/auth/me` |
+| Notifications | In-app list (paged, live), mark read / all, category & reminder preferences, push permission, **mandatory permission gate** (below); new notifications and chat messages pop up as an in-app banner while the app is open | `/notifications…`, sockets `notification`, `chat:message` |
+| Profile | Own account details (staff: role, employee ID, mobile number; HOD: department; faculty: assigned classes), sign-out | `/auth/me`, `/study-materials/my-assignments` |
 | **Bus tracking** | See below | `/transport/*`, sockets `transport:subscribe`, `bus:location`, `bus:trip` |
 
 ### Bus tracking
@@ -185,6 +186,26 @@ Key decisions (each mirrors the Android app):
     the server answers `trip_not_active` / 403 / 404.
   - A trip already active for this user can be resumed after an app restart.
 
+### Mandatory notification permission
+
+Notifications are required once signed in. `RootView` shows
+`NotificationRequiredView` instead of the tabs until `UNUserNotificationCenter`
+reports full authorization (`NotificationGate` in VEXONKit decides; tested by
+`NotificationGateTests`). Sign-in and the offline launch screen are never gated,
+and the screen offers Sign out.
+
+| Authorization | Result |
+|---|---|
+| `authorized`, `ephemeral` | App opens |
+| `notDetermined` | Gate; **Enable Notifications** shows the iOS prompt (only on tap) |
+| `provisional` | Gate — quiet delivery is not treated as full authorization; Enable asks for full authorization |
+| `denied`, unknown | Gate; Enable and **Open Settings** open the app's notification settings (`openNotificationSettingsURLString`) |
+
+The status is re-read at launch and every time the scene becomes active, so
+allowing notifications in Settings continues automatically and revoking them
+later shows the gate again. Allowing it registers with APNs as before; the token
+is still not uploaded (see gap 1 below).
+
 ## Backend API dependencies and gaps
 
 The app uses only endpoints that already exist (listed per module above). Gaps
@@ -193,8 +214,8 @@ found while inspecting the backend — **not simulated in the app**:
 1. **Push notifications on iPhone — missing backend support.**
    `server/src/models/DeviceToken.js` allows only `provider: 'fcm'`,
    `platform: 'android'`. `services/fcm.js` sends **data-only** FCM messages,
-   which iOS does not display, and there is no APNs sender. The app therefore
-   asks for permission only when the user opts in, registers with APNs, and
+   which iOS does not display, and there is no APNs sender. The app asks for
+   permission from the mandatory notification screen, registers with APNs, and
    **does not upload its token** (`PushManager.backendSupportsAPNs = false`).
    In-app and live socket notifications work fully. To enable push, the server
    needs one of these:

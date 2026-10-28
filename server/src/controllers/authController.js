@@ -14,10 +14,15 @@ import { parseDevice } from '../utils/device.js';
 import { logSecurity } from '../utils/securityLog.js';
 import { getPlatformState, maintenanceBody, platformAllows } from '../services/platformState.js';
 import { SUPER_ADMIN_ROLE } from '../constants.js';
+import { withLegal } from '../services/legal.js';
 import {
   readRefreshCookie,
   clearRefreshCookie,
+  clientTypeOf,
+  GATE_DESKTOP_CLIENT,
+  isGateDesktopClient,
   isMobileClient,
+  isNativeClient,
   newJti,
   refreshExpiry,
   setRefreshCookie,
@@ -38,6 +43,9 @@ import { clearCsrfCookie, generateCsrfToken, setCsrfCookie } from '../middleware
 import { IDLE_MESSAGE, expireIdleSession, idleTimeoutFor, isIdleExpired, recordSessionActivity } from '../utils/sessionIdle.js';
 
 const MAX_PUSH_TOKENS = 5;
+// The only role the Windows Gate Scanner signs in (utils/tokens.js → isGateDesktopClient).
+export const GATE_SCANNER_ROLE = 'security';
+export const GATE_SCANNER_ROLE_MESSAGE = 'The Gate Scanner is for Security staff only. Sign in with a Security account.';
 const MAX_CONCURRENT_SESSIONS = 5;
 // Compared against when the email is unknown, so both paths cost one bcrypt check.
 const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 12);
@@ -70,7 +78,7 @@ function releaseLoginLease(userId) {
 }
 
 const clientMeta = (req) => ({
-  client: isMobileClient(req) ? 'mobile' : 'web',
+  client: clientTypeOf(req),
   device: parseDevice(req.headers['user-agent'], req),
   userAgent: String(req.headers['user-agent'] || '').slice(0, 500),
   ip: req.ip,
@@ -115,9 +123,10 @@ async function issueSession(req, res, user, existingSession) {
   const refreshToken = signRefreshToken(user, session._id, jti);
   const fresh = await User.findById(user._id).populate('clubs', 'name slug logo');
   // The client uses idleTimeoutSec only for its own timer; the server enforces regardless.
-  const body = { accessToken: signAccessToken(user, session._id), user: fresh, idleTimeoutSec: session.idleTimeoutMs ? session.idleTimeoutMs / 1000 : null };
+  // `user.legal` tells every client whether the Terms must be accepted first.
+  const body = { accessToken: signAccessToken(user, session._id), user: await withLegal(fresh, { enforced: isNativeClient(req) }), idleTimeoutSec: session.idleTimeoutMs ? session.idleTimeoutMs / 1000 : null };
 
-  if (isMobileClient(req)) {
+  if (isNativeClient(req)) {
     body.refreshToken = refreshToken;
   } else {
     setRefreshCookie(res, refreshToken);
@@ -339,6 +348,12 @@ export const login = asyncHandler(async (req, res) => {
     logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'super_admin_web_only' });
     throw new ApiError(403, 'Sign in to the Super Admin console from the web dashboard.');
   }
+  // The Windows Gate Scanner is for the Security role only (role read from the database).
+  if (isGateDesktopClient(req) && user.role !== GATE_SCANNER_ROLE) {
+    recordLogin(req, user, false, 'gate_scanner_role');
+    logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'gate_scanner_role' });
+    throw new ApiError(403, GATE_SCANNER_ROLE_MESSAGE, undefined, { code: 'GATE_SCANNER_ROLE_REQUIRED' });
+  }
   // Maintenance / lockdown / recovery: correct credentials, but only a Super Admin gets a session.
   if (!(await platformAllows(user))) {
     logSecurity(req, 'MAINTENANCE_BLOCKED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'login' });
@@ -379,7 +394,7 @@ export const login = asyncHandler(async (req, res) => {
 
 /** Rotate the refresh token and hand back a fresh access token. */
 export const refresh = asyncHandler(async (req, res) => {
-  const mobile = isMobileClient(req);
+  const mobile = isNativeClient(req);
   const token = mobile ? req.body?.refreshToken : readRefreshCookie(req);
   if (!token || typeof token !== 'string') throw new ApiError(401, 'No active session');
 
@@ -422,6 +437,15 @@ export const refresh = asyncHandler(async (req, res) => {
     throw fail('Session is no longer valid');
   }
 
+  // A Gate Scanner session ends for good once its account is no longer Security.
+  if (session.client === GATE_DESKTOP_CLIENT && user.role !== GATE_SCANNER_ROLE) {
+    await revokeSessions({ _id: session._id }, 'gate_scanner_role');
+    logSecurity(req, 'REFRESH_FAILED', { actor: null, target: user, success: false, reason: 'gate_scanner_role', entityType: 'session', entityId: session._id });
+    const err = fail(GATE_SCANNER_ROLE_MESSAGE);
+    err.data = { code: 'GATE_SCANNER_ROLE_REQUIRED' };
+    throw err;
+  }
+
   // An idle web session cannot be revived by its refresh token: it is revoked
   // here, so this and every older refresh token for it are dead for good.
   if (isIdleExpired(session, idleTimeoutFor(session.client, user.role))) {
@@ -441,7 +465,7 @@ export const refresh = asyncHandler(async (req, res) => {
 
 /** Sign out this device only. */
 export const logout = asyncHandler(async (req, res) => {
-  const token = isMobileClient(req) ? req.body?.refreshToken : readRefreshCookie(req);
+  const token = isNativeClient(req) ? req.body?.refreshToken : readRefreshCookie(req);
   if (token && typeof token === 'string') {
     try {
       const { sid, sub } = verifyRefreshToken(token);
@@ -482,7 +506,7 @@ export const recordActivity = asyncHandler(async (req, res) => {
 
 export const me = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).populate('clubs', 'name slug logo');
-  res.json(user);
+  res.json(await withLegal(user, { enforced: req.sessionClient !== 'web' }));
 });
 
 export const changePassword = asyncHandler(async (req, res) => {

@@ -5,7 +5,7 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '.
 import { logActivity } from '../utils/activity.js';
 import { assertFacultyAssignment, canManageStudyMaterial, facultyAssignments, materialReadFilter, STUDY_MATERIAL_STUDENT_ROLES } from '../utils/studyMaterialScope.js';
 import { queueIndex, removeFromIndex } from '../services/ai/pdfIndexer.js';
-import { FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
+import { FIRST_YEAR_HOD_DEPT, isBranchHod, isFirstYearHod, STUDY_MATERIAL_CATEGORIES, yearOfSemester } from '../constants.js';
 
 const STUDENT_ROLES = STUDY_MATERIAL_STUDENT_ROLES;
 const UPLOADED_BY_FIELDS = 'name role';
@@ -66,6 +66,11 @@ export const listMaterials = asyncHandler(async (req, res) => {
     if (req.query.department) filter.department = req.query.department;
     if (req.query.section) filter.section = String(req.query.section).toUpperCase();
     if (req.query.semester) filter.semester = Number(req.query.semester);
+  } else if (req.query.semester) {
+    // A student may narrow to one semester, but only inside the range they can already read.
+    const sem = Number(req.query.semester);
+    const allowed = filter.semester?.$lte;
+    filter.semester = Number.isInteger(sem) && sem >= 1 && (!allowed || sem <= allowed) ? sem : -1;
   }
   if (req.query.subject) filter.subject = req.query.subject;
   if (req.query.category) filter.category = req.query.category;
@@ -76,6 +81,30 @@ export const listMaterials = asyncHandler(async (req, res) => {
     StudyMaterial.countDocuments(filter),
   ]);
   res.json({ items, ...pageMeta(total, page, limit) });
+});
+
+/**
+ * What the Materials filters can offer this user: the semesters, subjects and
+ * categories that actually have material they may read. Built from the same
+ * read filter as the list, so a dropdown never offers something empty or hidden.
+ */
+export const getMaterialFilters = asyncHandler(async (req, res) => {
+  const filter = materialReadFilter(req.user);
+  const [semesters, categories, subjects] = await Promise.all([
+    StudyMaterial.distinct('semester', filter),
+    StudyMaterial.distinct('category', filter),
+    StudyMaterial.aggregate([
+      { $match: filter },
+      { $group: { _id: '$subject', name: { $first: '$subjectName' }, code: { $first: '$subjectCode' }, semester: { $first: '$semester' } } },
+      { $sort: { semester: 1, code: 1 } },
+    ]),
+  ]);
+  res.json({
+    currentSemester: STUDENT_ROLES.includes(req.user.role) ? req.user.semester || null : null,
+    semesters: semesters.filter((s) => s != null).sort((a, b) => a - b),
+    categories: STUDY_MATERIAL_CATEGORIES.filter((c) => categories.includes(c)),
+    subjects: subjects.map((s) => ({ _id: s._id, name: s.name, code: s.code, semester: s.semester })),
+  });
 });
 
 export const getMaterial = asyncHandler(async (req, res) => {

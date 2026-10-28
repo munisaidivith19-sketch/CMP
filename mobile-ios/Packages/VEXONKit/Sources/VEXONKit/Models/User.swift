@@ -98,15 +98,23 @@ public struct User: Decodable, Sendable, Identifiable, Equatable {
     public let avatar: String?
     public let phone: String?
     public let bio: String?
+    /// Faculty Class In-Charge: with `department` + `section`, the exact class they lead.
+    public let inChargeYear: Int?
+    public let inChargeSemester: Int?
+    /// Whether the current Terms must be accepted first (nil: an older server, or a
+    /// payload that does not carry it — the server's 403 still decides).
+    public let legal: LegalStatus?
 
     enum CodingKeys: String, CodingKey {
         case id = "_id"
         case name, email, role, title, department, year, section, semester, rollNo, employeeId, designation, avatar, phone, bio
+        case inChargeYear, inChargeSemester, legal
     }
 
     public init(id: String, name: String, email: String? = nil, role: Role, title: String? = nil, department: String? = nil,
                 year: Int? = nil, section: String? = nil, semester: Int? = nil, rollNo: String? = nil, employeeId: String? = nil,
-                designation: String? = nil, avatar: String? = nil, phone: String? = nil, bio: String? = nil) {
+                designation: String? = nil, avatar: String? = nil, phone: String? = nil, bio: String? = nil,
+                inChargeYear: Int? = nil, inChargeSemester: Int? = nil, legal: LegalStatus? = nil) {
         self.id = id
         self.name = name
         self.email = email
@@ -122,6 +130,18 @@ public struct User: Decodable, Sendable, Identifiable, Equatable {
         self.avatar = avatar
         self.phone = phone
         self.bio = bio
+        self.inChargeYear = inChargeYear
+        self.inChargeSemester = inChargeSemester
+        self.legal = legal
+    }
+
+    public var termsAcceptanceRequired: Bool { legal?.termsRequired == true }
+
+    /// The same account with a new `legal` status.
+    public func replacingLegal(_ legal: LegalStatus?) -> User {
+        User(id: id, name: name, email: email, role: role, title: title, department: department, year: year, section: section,
+             semester: semester, rollNo: rollNo, employeeId: employeeId, designation: designation, avatar: avatar, phone: phone, bio: bio,
+             inChargeYear: inChargeYear, inChargeSemester: inChargeSemester, legal: legal)
     }
 
     /// "Dr. Priya" when a title is set.

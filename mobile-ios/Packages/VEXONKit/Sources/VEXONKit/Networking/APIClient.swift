@@ -9,6 +9,8 @@ public enum SessionEvent: Sendable, Equatable {
     case expired
     /// Connectivity changed: true after any HTTP answer, false after a network failure.
     case reachability(Bool)
+    /// The server refused a request until the current Terms are accepted.
+    case termsRequired
 }
 
 /// Outcome of exchanging the stored refresh token.
@@ -256,7 +258,12 @@ public actor APIClient {
         let ms = Int(Date().timeIntervalSince(started) * 1000)
         log.log(.debug, "\(Redactor.describe(method: endpoint.method.rawValue, url: url)) → \(status) (\(ms) ms)")
 
-        guard (200..<300).contains(status) else { throw APIError.from(status: status, body: data) }
+        guard (200..<300).contains(status) else {
+            let error = APIError.from(status: status, body: data)
+            // The Terms gate: the app shows the acceptance screen.
+            if Legal.isTermsRequired(error) { eventContinuation.yield(.termsRequired) }
+            throw error
+        }
         if T.self == EmptyResponse.self, let empty = EmptyResponse() as? T { return empty }
         do {
             return try VEXONJSON.decoder().decode(T.self, from: data)

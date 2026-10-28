@@ -25,6 +25,9 @@ fun RouteContent(route: Route) {
         route.path == "/" -> TabsScreen()
         route.path == "/login" -> LoginScreen()
         route.path == "/forgot-password" -> ForgotPasswordScreen()
+        route.path == "/about" -> AboutAppScreen()
+        route.path == "/terms" -> PolicyScreen(com.vexon.campus.core.Legal.TERMS)
+        route.path == "/privacy-policy" -> PolicyScreen(com.vexon.campus.core.Legal.PRIVACY)
 
         route.path == "/announcements" -> AnnouncementsScreen()
         route.path == "/clubs" -> ClubsScreen()
@@ -35,7 +38,6 @@ fun RouteContent(route: Route) {
         route.path == "/discussions/new" -> NewDiscussionScreen()
         s.size == 2 && s[0] == "discussions" -> DiscussionDetailScreen(s[1])
         s.size == 2 && s[0] == "people" -> PersonScreen(s[1])
-        route.path == "/search" -> SearchScreen()
         route.path == "/calendar" -> CalendarScreen()
         route.path == "/study-materials" -> StudyMaterialsScreen()
         route.path == "/settings/security" -> SecuritySettingsScreen()

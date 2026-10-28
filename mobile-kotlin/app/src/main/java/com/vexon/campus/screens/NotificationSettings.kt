@@ -1,13 +1,27 @@
 package com.vexon.campus.screens
 
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
@@ -16,10 +30,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.vexon.campus.core.Api
@@ -29,13 +49,16 @@ import com.vexon.campus.core.int
 import com.vexon.campus.core.jsonOf
 import com.vexon.campus.core.rememberMutation
 import com.vexon.campus.core.strings
+import com.vexon.campus.push.NotificationGate
 import com.vexon.campus.push.Push
+import com.vexon.campus.ui.Backdrop
 import com.vexon.campus.ui.Button
 import com.vexon.campus.ui.C
 import com.vexon.campus.ui.Card
 import com.vexon.campus.ui.Chip
 import com.vexon.campus.ui.Dialogs
 import com.vexon.campus.ui.ErrorState
+import com.vexon.campus.ui.H2
 import com.vexon.campus.ui.Header
 import com.vexon.campus.ui.Label
 import com.vexon.campus.ui.Loading
@@ -147,6 +170,84 @@ fun NotificationSettingsScreen() {
                     }
                 }
                 Small("Emergency alerts, gate-pass decisions, your attendance, substitute classes and exam changes always arrive.", Wide, C.muted)
+            }
+        }
+    }
+}
+
+/**
+ * Shown instead of the main app while a signed-in user has notifications off
+ * (see NotificationGate). It never opens the system dialog by itself: the
+ * user taps Enable, and MainActivity re-checks on every resume, so turning
+ * notifications on in Settings and coming back continues automatically.
+ */
+@Composable
+fun NotificationsRequiredScreen(status: NotificationGate.Status) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var signingOut by remember { mutableStateOf(false) }
+    var settingsFailed by remember { mutableStateOf(false) }
+
+    fun openSettings() {
+        settingsFailed = !NotificationGate.openSettings(context)
+    }
+
+    fun enable() {
+        busy = true
+        settingsFailed = false
+        scope.launch {
+            try {
+                if (NotificationGate.canPrompt(Build.VERSION.SDK_INT, Push.permissionGranted(context))) {
+                    val askable = status == NotificationGate.Status.CanRequest
+                    val granted = Push.permissionRequester?.invoke() == true
+                    // The user just answered the dialog: respect "Don't allow" rather than jump to Settings.
+                    if (granted || askable) return@launch
+                }
+                // No dialog is available (or it was refused for good): Settings is the only way.
+                openSettings()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(C.bg)) {
+        Backdrop()
+        Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(Modifier.size(72.dp).clip(RoundedCornerShape(26.dp)).background(C.primarySoft), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.NotificationsOff, null, Modifier.size(32.dp), tint = C.primary)
+                }
+                H2("Notifications Required", Modifier.semantics { heading() }, align = TextAlign.Center)
+                Small(
+                    "Notifications are required to use JNN. Please enable notifications to continue using the app and receive important updates.",
+                    align = TextAlign.Center,
+                )
+                Small(
+                    if (status == NotificationGate.Status.CanRequest) "Tap Enable Notifications and choose Allow."
+                    else "Notifications are turned off for JNN. Tap Open Settings, switch notifications on, then come back — JNN continues automatically.",
+                    color = C.muted,
+                    align = TextAlign.Center,
+                )
+                if (settingsFailed) {
+                    Small(
+                        "Settings could not be opened. Open your phone's Settings → Apps → JNN → Notifications and switch them on.",
+                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        color = C.roseText,
+                        align = TextAlign.Center,
+                    )
+                }
+                Button("Enable Notifications", { enable() }, Modifier.fillMaxWidth(), icon = Icons.Rounded.NotificationsActive, loading = busy, enabled = !signingOut)
+                Button("Open Settings", { settingsFailed = false; openSettings() }, Modifier.fillMaxWidth(), variant = Variant.Outline, icon = Icons.Rounded.Settings, enabled = !signingOut)
+                Button("Sign out", {
+                    signingOut = true
+                    scope.launch { try { signOutThisDevice() } finally { signingOut = false } }
+                }, variant = Variant.Ghost, loading = signingOut)
             }
         }
     }

@@ -14,9 +14,8 @@ struct RootView: View {
                 OfflineLaunchView()
             case .signedOut(let sessionEnded):
                 LoginView(sessionEnded: sessionEnded)
-            case .signedIn(let user) where user.termsAcceptanceRequired:
-                // The current Terms come first; the server refuses every other API until then.
-                TermsAcceptanceView()
+            case .signedIn(let user) where user.mustChangePassword == true:
+                PasswordChangeRequiredView()
             case .signedIn(let user):
                 switch model.push.gate {
                 case .allowed:

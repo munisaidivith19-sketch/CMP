@@ -199,6 +199,9 @@ function ScannerSetup({ settings, saveSettings }) {
         </>
       )}
       <label className="flex items-center gap-2 text-sm font-semibold">
+        <input type="checkbox" checked={settings.startWithWindows} onChange={(e) => save({ startWithWindows: e.target.checked })} /> Open the Gate Scanner automatically when this PC starts
+      </label>
+      <label className="flex items-center gap-2 text-sm font-semibold">
         <input type="checkbox" checked={settings.alwaysOnTop} onChange={(e) => save({ alwaysOnTop: e.target.checked })} /> Keep this window on top (keyboard-mode scanners need it focused)
       </label>
     </Card>

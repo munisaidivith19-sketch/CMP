@@ -351,6 +351,7 @@ test('STUDENT IS INSIDE completes the pass once, consumes every credential, then
 
   assert.equal(parentMessagesFor(student.u.name).length, 0, 'no SMS goes to the parent on return — only on exit');
 
+  await afterAnswer();
   const [notice] = await returnNotices(classFaculty, id);
   assert.ok(notice, 'assigned class faculty notified');
   assert.match(notice.message, new RegExp(`^${student.u.name} — Roll No: ${student.u.rollNo} has returned to the campus\\.\\nDate: \\d{2}/\\d{2}/\\d{4}\\nTime: \\d{2}:\\d{2}:\\d{2}$`));
@@ -359,10 +360,14 @@ test('STUDENT IS INSIDE completes the pass once, consumes every credential, then
   }
 });
 
+// Notices to parents and faculty go out just after the gate is answered.
+const afterAnswer = () => new Promise((r) => setTimeout(r, 400));
+
 test('two guards pressing STUDENT IS INSIDE at once complete the pass exactly once', async () => {
   const { id, student, credential } = await verifiedPass();
   const results = await Promise.all([inside(id, credential.code), inside(id, credential.payload, security2)]);
   assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+  await afterAnswer();
   assert.equal(parentMessagesFor(student.u.name).length, 0, 'no parent message on return');
   assert.equal((await returnNotices(classFaculty, id)).length, 1, 'one faculty notice');
 });

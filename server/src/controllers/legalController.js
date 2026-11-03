@@ -31,7 +31,7 @@ export const getPolicyVersion = asyncHandler(async (req, res) => {
 
 /** GET /legal/status — the signed-in user's acceptance status (versions only). */
 export const getStatus = asyncHandler(async (req, res) => {
-  res.json(await legalStatus(req.user._id, { enforced: req.sessionClient !== 'web' }));
+  res.json(await legalStatus(req.user._id, { enforced: req.sessionClient === 'gate_desktop' }));
 });
 
 /**

@@ -31,7 +31,7 @@ async function setDelegation(target, delegation) {
 /** A valid create-user body for each role used here. */
 function body(role, extra = {}) {
   const id = uniq();
-  const base = { role, name: `New ${role} ${id}`, email: `${role}.${id}@test.edu`, password: 'Welcome123' };
+  const base = { role, name: `New ${role} ${id}`, email: `${role}.${id}@test.edu`, password: 'Welcome@123' };
   if (role === 'student' || role === 'club_admin') Object.assign(base, { rollNo: `R${id}`.toUpperCase(), department: 'CSE', year: 3, section: 'A', stayType: 'hosteler', parentPhone: '9111111111' });
   else if (role === 'faculty') Object.assign(base, { employeeId: `F${id}`, department: 'CSE', teachingYears: [3], teachingSections: ['A'] });
   else if (role === 'hod') Object.assign(base, { employeeId: `H${id}`, department: 'CSE' });
@@ -178,13 +178,15 @@ test('7. crafted requests cannot bypass the limits (mass assignment, hidden role
   const admin = await policyAdmin(CREATOR_POLICIES);
   assert.equal((await setDelegation(admin, { createRoles: ['student'], assignRoles: ['student', 'club_admin'] })).status, 200);
   // Privilege fields on create are never copied.
-  const res = await create(admin, 'student', { policyManaged: true, policies: [{ module: 'user_management', actions: ['policies'] }], delegation: { createRoles: ['principal'] }, isActive: true, tokenVersion: 9 });
+  const res = await create(admin, 'student', { policyManaged: true, delegation: { createRoles: ['principal'] }, isActive: true, tokenVersion: 9 });
   assert.equal(res.status, 201);
   const made = await ctx.models.User.findById(res.body._id).lean();
   assert.equal(made.role, 'student');
   assert.equal(made.policyManaged, false);
   assert.deepEqual(made.policies, []);
   assert.equal(made.delegation?.createRoles, undefined);
+  // Policies sent without choosing "Add Policies" are refused outright.
+  assert.equal((await create(admin, 'student', { policies: [{ module: 'user_management', actions: ['policies'] }] })).status, 422);
   // A role the UI never offers is refused by the server.
   assert.equal((await create(admin, 'principal')).status, 403);
   // Self-serve profile edits cannot write delegation or policies.

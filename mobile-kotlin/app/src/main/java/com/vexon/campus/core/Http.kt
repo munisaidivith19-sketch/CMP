@@ -109,8 +109,6 @@ object Http {
             return res
         } catch (e: ApiException) {
             Connection.set(!e.isNetwork)
-            // The Terms gate: AppRoot then shows the acceptance screen.
-            if (Legal.isTermsRequired(e.status, e.data)) Auth.markTermsRequired()
             throw e
         }
     }
@@ -205,17 +203,6 @@ object Auth {
 
     fun setUser(user: JsonElement?) {
         state.value = state.value.copy(user = user)
-    }
-
-    /** The server refused a request until the current Terms are accepted. */
-    fun markTermsRequired() {
-        val user = state.value.user ?: return
-        if (!Legal.termsRequired(user)) state.value = state.value.copy(user = Legal.withTermsRequired(user))
-    }
-
-    /** `legal` from POST /legal/accept (versions only). */
-    fun setLegal(legal: JsonElement) {
-        state.value = state.value.copy(user = Legal.withLegal(state.value.user, legal))
     }
 
     fun loggedOut() {

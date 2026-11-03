@@ -1,3 +1,4 @@
+import { passwordProblem } from '../../utils/passwordPolicy.js';
 import crypto from 'node:crypto';
 import AlumniImportBatch from '../../models/AlumniImportBatch.js';
 import AlumniInvite from '../../models/AlumniInvite.js';
@@ -412,9 +413,8 @@ export const submitPublicClaim = asyncHandler(async (req, res) => {
   const { token } = req.params;
   const { password } = req.body;
 
-  if (!password || password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-    throw new ApiError(422, 'Password must be at least 8 characters and contain both letters and digits');
-  }
+  const weak = passwordProblem(password);
+  if (weak) throw new ApiError(422, weak);
 
   const tokenHash = hashToken(token);
   const invite = await AlumniInvite.findOne({

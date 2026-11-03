@@ -439,6 +439,36 @@ test('dashboard: students outside are counted once each; event totals count ever
   assert.ok(d.myScansToday.success >= 3);
 });
 
+test('outside list: each active student once, with the pass, and it matches the dashboard count', async () => {
+  const get = async (p) => ctx.request('GET', p, { token: staff.security.desk.token, headers: DESKTOP });
+  const a = await approvedEmergency();
+  await scan(await exitPayload(a.id, a.student));
+  const list = (await get('/gate-scanner/outside')).body;
+  const dash = (await get('/gate-scanner/dashboard')).body.population;
+  assert.equal(list.total, dash.outsideOnPass);
+  assert.equal(list.overdue, dash.overdue);
+  const mine = list.items.filter((i) => String(i.student._id) === String(a.student.u._id));
+  assert.equal(mine.length, 1);
+  assert.match(mine[0].passRef, /^GP-[A-F0-9]{6}$/);
+  assert.equal(mine[0].overdue, false);
+  assert.equal(mine[0].student.email, undefined, 'no contact details');
+  assert.equal((await ctx.request('GET', '/gate-scanner/outside', { token: staff.faculty.token })).status, 403);
+});
+
+test('dashboard: overdue counts the same students as outside, so an inactive account is in neither', async () => {
+  const counts = async () => (await ctx.request('GET', '/gate-scanner/dashboard', { token: staff.security.desk.token, headers: DESKTOP })).body.population;
+  const a = await approvedEmergency();
+  await scan(await exitPayload(a.id, a.student));
+  await ctx.models.GatePass.updateOne({ _id: a.id }, { $set: { toDate: new Date(Date.now() - 3 * 86400000) } });
+  const before = await counts();
+
+  await ctx.models.User.updateOne({ _id: a.student.u._id }, { $set: { isActive: false } });
+  const after = await counts();
+  assert.equal(after.outsideOnPass, before.outsideOnPass - 1);
+  assert.equal(after.overdue, before.overdue - 1);
+  assert.ok(after.overdue <= after.outsideOnPass);
+});
+
 test('history: today / type / search / pagination, and the campus-day boundary', async () => {
   const token = staff.security.desk.token;
   const get = (qs) => ctx.request('GET', `/gate-scanner/history?${qs}`, { token, headers: DESKTOP });
@@ -477,7 +507,7 @@ test('history: today / type / search / pagination, and the campus-day boundary',
   const yest = await get(`range=yesterday&q=${edge.student.u.rollNo}`);
   assert.equal(yest.body.total, 1);
   assert.equal((await get(`range=today&q=${edge.student.u.rollNo}`)).body.total, 0);
-  assert.equal((await get(`range=week&q=${edge.student.u.rollNo}`)).body.total, new Date(todayStart).getUTCDay() === 1 ? 0 : 1);
+  assert.equal((await get(`range=week&q=${edge.student.u.rollNo}`)).body.total, toDay(new Date()).getUTCDay() === 1 ? 0 : 1);
 
   // Custom range validation.
   assert.equal((await get('range=custom&from=2026-01-10')).status, 422);
@@ -500,7 +530,7 @@ test('attempts: successful and rejected scans are listed for Security, filtered 
   }
 });
 
-test('Terms acceptance: a gate PC session follows the native-client rule and can accept through its scope', async () => {
+test('Terms acceptance: a gate PC session must accept and can do so through its scope', async () => {
   const { syncPolicyVersions } = await import('../src/services/legal.js');
   await syncPolicyVersions({ log: { warn() {}, info() {}, log() {} } });
   const guard = await ctx.createUser({ role: 'security', name: 'Terms guard', employeeId: 'GS-terms' });

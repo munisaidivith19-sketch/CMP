@@ -66,7 +66,7 @@ test('Import: an HOD previews a CSV, invalid / other-department / existing rows 
   assert.equal(info.status, 200);
   assert.equal(info.body.email, 'ravi.kumar@alumni.test');
 
-  const claim = await ctx.request('POST', `/auth/alumni-claim/${token}`, { body: { password: 'Alumni123', accept: true } });
+  const claim = await ctx.request('POST', `/auth/alumni-claim/${token}`, { body: { password: 'Alumni@123', accept: true } });
   assert.equal(claim.status, 200, JSON.stringify(claim.body));
   assert.equal(claim.body.user.role, 'alumni');
   assert.ok(claim.body.accessToken);
@@ -75,7 +75,7 @@ test('Import: an HOD previews a CSV, invalid / other-department / existing rows 
   assert.equal((await ctx.request('GET', `/auth/alumni-claim/${token}`)).status, 404, 'a claimed link is spent');
   assert.equal((await ctx.request('GET', '/auth/alumni-claim/deadbeef')).status, 404);
 
-  const login = await ctx.request('POST', '/auth/login', { body: { email: 'ravi.kumar@alumni.test', password: 'Alumni123' } });
+  const login = await ctx.request('POST', '/auth/login', { body: { email: 'ravi.kumar@alumni.test', password: 'Alumni@123' } });
   assert.equal(login.status, 200, 'the claimed account can sign in');
 });
 

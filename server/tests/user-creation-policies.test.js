@@ -29,6 +29,11 @@ async function login(overrides) {
   const u = await ctx.createUser(overrides);
   return { u, ...(await ctx.loginWeb(u)) };
 }
+// An account created here has already chosen its own password (first sign-in is covered by password-policy.test.js).
+const signInCreated = async (u) => {
+  await ctx.models.User.updateOne({ _id: u._id }, { mustChangePassword: false });
+  return ctx.loginWeb(u);
+};
 const policyAdmin = (policies, extra = {}) => login({ role: 'admin', employeeId: `E-${uniq()}`, policyManaged: true, policies, ...extra });
 
 /** A valid create-user body for each role used here (password = the test password, so the account can sign in). */
@@ -68,7 +73,7 @@ test('1/11. No Additional Policies keeps the role access exactly as before and s
     const u = await stored(b.email);
     assert.deepEqual(u.policies, []);
     assert.equal(u.policyManaged, false);
-    const hod = await ctx.loginWeb(u);
+    const hod = await signInCreated(u);
     // The HOD dashboard and role routes still work; no admin module was added.
     assert.equal((await req('GET', '/dashboard', hod)).status, 200);
     assert.equal((await req('GET', '/admin/users', hod)).status, 403);
@@ -95,7 +100,7 @@ test('2/12. Super Admin adds policies at creation: re-auth protected, effective,
 
   // Effective on the new account, and still there after signing in again.
   for (let i = 0; i < 2; i += 1) {
-    const hod = await ctx.loginWeb(u);
+    const hod = await signInCreated(u);
     assert.equal((await req('GET', '/admin/security/logs', hod)).status, 200);
     const mine = await req('GET', '/admin/my-policies', hod);
     assert.equal(mine.status, 200);
@@ -208,8 +213,8 @@ test('9. Individual grants affect only the intended account', async () => {
   const withoutB = body('hod', { policyMode: 'none' });
   assert.equal((await req('POST', '/admin/users', sa, withB)).status, 201);
   assert.equal((await req('POST', '/admin/users', sa, withoutB)).status, 201);
-  const a = await ctx.loginWeb(await stored(withB.email));
-  const b = await ctx.loginWeb(await stored(withoutB.email));
+  const a = await signInCreated(await stored(withB.email));
+  const b = await signInCreated(await stored(withoutB.email));
   assert.equal((await req('GET', '/admin/security/logs', a)).status, 200);
   assert.equal((await req('GET', '/admin/security/logs', b)).status, 403);
 });

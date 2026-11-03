@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startServer } from './helpers.js';
 import { clock } from '../src/utils/clock.js';
-import { addDays, toDay } from '../src/utils/dates.js';
+import { addDays, dayKey, toDay } from '../src/utils/dates.js';
 
 /**
  * A gate pass "from" date is a campus calendar day, stored as UTC midnight
@@ -13,7 +13,8 @@ let ctx;
 let security;
 let hosteler;
 const realNow = clock.now;
-const AT_2AM_IST = new Date('2026-10-10T02:00:00+05:30');
+// Today, so the passes below are not swept up as expired by the real-time expiry job.
+const AT_2AM_IST = new Date(`${dayKey(toDay(new Date()))}T02:00:00+05:30`);
 
 async function approvedPass(fromDay, code) {
   return ctx.models.GatePass.create({

@@ -2,7 +2,7 @@ import SwiftUI
 import VEXONKit
 
 // Terms and Conditions / Privacy Policy / About the App — the same documents
-// and acceptance record as the web and Android apps (server/src/services/legal.js).
+// as the web and Android apps (server/src/services/legal.js).
 
 /// The profile's "About the App" section: exactly the three entries in `Legal.aboutEntries`.
 struct AboutTheAppSection: View {
@@ -60,14 +60,12 @@ struct PolicyDocumentView: View {
 private struct PolicyLoader<Content: View>: View {
     let policy: Legal.Policy
     @Binding var state: LoadState<PolicyDocument>
-    /// Changing it loads the document again (e.g. after a newer version was published).
-    var reloadID = 0
     @ViewBuilder let content: (PolicyDocument) -> Content
     @Environment(AppModel.self) private var app
 
     var body: some View {
         LoadStateView(state: state, retry: load) { doc in content(doc) }
-            .task(id: reloadID) { await load() }
+            .task { await load() }
     }
 
     private func load() async {
@@ -117,138 +115,5 @@ struct AboutAppView: View {
             }
         }
         .navigationTitle("About the App")
-    }
-}
-
-/// Shown by RootView instead of the app while the server says the current
-/// Terms must be accepted. The box is never ticked for the user; the server
-/// records the acceptance and enforces it on every API.
-struct TermsAcceptanceView: View {
-    @Environment(AppModel.self) private var app
-    @State private var state: LoadState<PolicyDocument> = .idle
-    @State private var agreed = false
-    @State private var declined = false
-    @State private var showPrivacy = false
-    @State private var accepting = false
-    @State private var signingOut = false
-    @State private var errorMessage: String?
-    @State private var reloadID = 0
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if declined { declinedView } else { acceptView }
-            }
-            .navigationTitle("Terms and Conditions")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .sheet(isPresented: $showPrivacy) {
-            NavigationStack {
-                PolicyView(policy: .privacy)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showPrivacy = false } } }
-            }
-        }
-        .alert("Could not record your acceptance", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
-    }
-
-    private var updated: Bool { app.user?.legal?.termsAcceptedVersion != nil }
-
-    private var acceptView: some View {
-        PolicyLoader(policy: .terms, state: $state, reloadID: reloadID) { doc in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(updated
-                         ? "The Terms and Conditions have been updated. Please read and accept the new version to keep using \(Legal.appName)."
-                         : "Before you start, please read and accept the Terms and Conditions. Acceptance is required to use \(Legal.appName).")
-                    PolicyDocumentView(document: doc)
-                        .padding()
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-                    Button("Read the Privacy Policy") { showPrivacy = true }
-                    Text("The Privacy Policy explains how your information is used. Accepting the Terms does not, by itself, give consent to every kind of processing described there.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Toggle(isOn: $agreed) { Text(Legal.checkboxLabel).font(.body.weight(.semibold)) }
-                        .toggleStyle(CheckboxToggleStyle())
-                        .accessibilityIdentifier("terms.agree")
-                    Button {
-                        Task { await accept(doc) }
-                    } label: {
-                        if accepting { ProgressView().frame(maxWidth: .infinity) } else { Text("Accept and continue").frame(maxWidth: .infinity) }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(!agreed || accepting)
-                    .accessibilityIdentifier("terms.accept")
-                    if !agreed {
-                        Text("Tick the box above to continue.").font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-                    }
-                    Button("Decline") { declined = true }
-                        .frame(maxWidth: .infinity)
-                }
-                .padding()
-            }
-        }
-    }
-
-    private var declinedView: some View {
-        VStack(spacing: 16) {
-            Text("You have not accepted the Terms").font(.title3.bold()).multilineTextAlignment(.center)
-            Text("\(Legal.appName) can only be used after accepting its Terms and Conditions. Your account and your information are not changed or deleted — you can come back and accept at any time, or sign out now.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Button("Review the Terms again") { declined = false }
-                .buttonStyle(.bordered)
-            Button(role: .destructive) {
-                signingOut = true
-                Task { await app.signOut() }
-            } label: {
-                if signingOut { ProgressView() } else { Text("Sign out") }
-            }
-            .disabled(signingOut)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func accept(_ doc: PolicyDocument) async {
-        guard agreed else { return }
-        accepting = true
-        defer { accepting = false }
-        do {
-            try await app.acceptTerms(version: doc.version)
-        } catch {
-            let e = APIError.wrap(error)
-            if Legal.isVersionChanged(e) {
-                agreed = false
-                reloadID += 1 // load the new version
-                errorMessage = "The Terms were just updated. Please read the new version before accepting."
-            } else if e != .cancelled {
-                errorMessage = e.userMessage
-            }
-        }
-    }
-}
-
-/// A checkbox (iOS has no built-in one); announced as a toggle by VoiceOver.
-private struct CheckboxToggleStyle: ToggleStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        Button {
-            configuration.isOn.toggle()
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
-                    .font(.title3)
-                    .foregroundStyle(configuration.isOn ? Theme.primary : .secondary)
-                    .accessibilityHidden(true)
-                configuration.label.multilineTextAlignment(.leading)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(configuration.isOn ? [.isSelected] : [])
-        .accessibilityValue(configuration.isOn ? "Checked" : "Not checked")
     }
 }

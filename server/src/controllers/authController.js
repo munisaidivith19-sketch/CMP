@@ -123,8 +123,8 @@ async function issueSession(req, res, user, existingSession) {
   const refreshToken = signRefreshToken(user, session._id, jti);
   const fresh = await User.findById(user._id).populate('clubs', 'name slug logo');
   // The client uses idleTimeoutSec only for its own timer; the server enforces regardless.
-  // `user.legal` tells every client whether the Terms must be accepted first.
-  const body = { accessToken: signAccessToken(user, session._id), user: await withLegal(fresh, { enforced: isNativeClient(req) }), idleTimeoutSec: session.idleTimeoutMs ? session.idleTimeoutMs / 1000 : null };
+  // `user.legal` tells the Gate Scanner whether the Terms must be accepted first; the other apps never ask.
+  const body = { accessToken: signAccessToken(user, session._id), user: await withLegal(fresh, { enforced: isGateDesktopClient(req) }), idleTimeoutSec: session.idleTimeoutMs ? session.idleTimeoutMs / 1000 : null };
 
   if (isNativeClient(req)) {
     body.refreshToken = refreshToken;
@@ -506,7 +506,7 @@ export const recordActivity = asyncHandler(async (req, res) => {
 
 export const me = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id).populate('clubs', 'name slug logo');
-  res.json(await withLegal(user, { enforced: req.sessionClient !== 'web' }));
+  res.json(await withLegal(user, { enforced: req.sessionClient === 'gate_desktop' }));
 });
 
 export const changePassword = asyncHandler(async (req, res) => {

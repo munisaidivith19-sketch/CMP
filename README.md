@@ -313,7 +313,7 @@ Students keep a project portfolio in the **Skill Wallet**, with team invitations
 
 ### Terms and Conditions & Privacy Policy
 
-Anyone can read the Terms and Conditions and the Privacy Policy at `/terms` and `/privacy-policy`, with no sign-in needed. On the web, Android and iOS, the profile has an **About the App** section with three entries: About the App, Terms and Conditions and Privacy Policy. Mobile app users must accept the current Terms version when they sign in; the web app does not ask. The server enforces this on every API for mobile sessions (`403 TERMS_ACCEPTANCE_REQUIRED`). Each acceptance is stored on the server as an append-only record tied to the exact version accepted. Policy versions are published from `server/src/legal/registry.js` and cannot be changed after publication. The policy text contains placeholders the College must complete before go-live. Details: [docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md).
+Anyone can read the Terms and Conditions and the Privacy Policy at `/terms` and `/privacy-policy`, with no sign-in needed. On the web, Android and iOS, the profile has an **About the App** section with three entries: About the App, Terms and Conditions and Privacy Policy. The web, Android and iOS apps do not ask for acceptance. Only the Windows Gate Scanner does: the server enforces it for those sessions (`403 TERMS_ACCEPTANCE_REQUIRED`) and stores each acceptance as an append-only record tied to the exact version accepted. Policy versions are published from `server/src/legal/registry.js` and cannot be changed after publication. The policy text contains placeholders the College must complete before go-live. Details: [docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md).
 
 ### Gate Scanner for Windows (`gate-scanner/`)
 

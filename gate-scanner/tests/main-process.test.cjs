@@ -201,7 +201,7 @@ test('error classification covers the server codes and network failures', () => 
 });
 
 test('configuration: production is https only; machine override needs https; dev may use localhost', () => {
-  assert.equal(resolveApiBaseUrl({ packaged: true, env: {}, machineConfig: null }).url, 'https://jnnedu.tech');
+  assert.equal(resolveApiBaseUrl({ packaged: true, env: {}, machineConfig: null }).url, 'https://jnn.onrender.com');
   assert.equal(resolveApiBaseUrl({ packaged: true, env: { GATE_SCANNER_API_URL: 'http://localhost:5000' }, machineConfig: null }).source, 'built-in', 'env ignored when packaged');
   assert.equal(resolveApiBaseUrl({ packaged: false, env: { GATE_SCANNER_API_URL: 'http://localhost:5000' } }).url, 'http://localhost:5000');
   assert.equal(resolveApiBaseUrl({ packaged: true, env: {}, machineConfig: { apiBaseUrl: 'https://gate.jnn.edu.in/some/path' } }).url, 'https://gate.jnn.edu.in');
@@ -220,6 +220,8 @@ test('settings are validated and persisted; unknown keys dropped', () => {
   assert.equal(s.serialBaudRate, 115200);
   assert.equal(s.evil, undefined);
   assert.equal(s.alwaysOnTop, false);
+  assert.equal(s.startWithWindows, true, 'starts with Windows unless switched off');
+  assert.equal(sanitiseSettings({ startWithWindows: false }).startWithWindows, false);
   const dir = tmp();
   createSettingsStore(dir).set({ gateName: 'North Gate' });
   assert.equal(createSettingsStore(dir).get().gateName, 'North Gate');

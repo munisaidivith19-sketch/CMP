@@ -25,7 +25,7 @@ const staff = (role, extra = {}) => login({ role, name: `${role} ${uniq()}`, emp
 const kid = (department = 'CSE') => ctx.createUser({ name: `Kid ${uniq()}`, department, section: 'A', rollNo: `K${uniq()}`.toUpperCase() });
 const studentBody = (extra = {}) => {
   const id = uniq();
-  return { role: 'student', name: `New ${id}`, email: `s.${id}@test.edu`, password: 'Welcome123', rollNo: `R${id}`.toUpperCase(), department: 'CSE', year: 3, section: 'A', stayType: 'hosteler', parentPhone: '9111111111', ...extra };
+  return { role: 'student', name: `New ${id}`, email: `s.${id}@test.edu`, password: 'Welcome@123', rollNo: `R${id}`.toUpperCase(), department: 'CSE', year: 3, section: 'A', stayType: 'hosteler', parentPhone: '9111111111', ...extra };
 };
 // One password re-entry covers the Super Admin's 5-minute window (re-auth is rate-limited).
 async function grant(who, target, policies) {
@@ -164,7 +164,7 @@ test('Admins assign staff policies only within their own authority', async () =>
   assert.equal(view.status, 200);
   assert.equal(view.body.kind, 'staff');
   assert.ok(view.body.cap.every((p) => ['user_management', 'staff_management'].includes(p.module)));
-  assert.ok(!Object.keys(view.body.catalogue).includes('attendance'), 'staff catalogue only');
+  assert.ok(!Object.keys(view.body.catalogue).includes('staff_attendance'), 'staff catalogue only');
 
   // Admins without user_management.policies, and legacy Admins, cannot assign.
   const noPol = await login({ role: 'admin', employeeId: `A${uniq()}`, policyManaged: true, policies: [{ module: 'staff_management', actions: ['edit', 'view'] }] });

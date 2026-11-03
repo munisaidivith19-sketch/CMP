@@ -293,7 +293,7 @@ export const createUser = asyncHandler(async (req, res) => {
   // account and its additional policies are one document, written once.
   const policies = validateCreationPolicies(req, { role, department: data.department, policyMode: req.body.policyMode, policies: req.body.policies });
   const user = await User.create({
-    name: req.body.name, title: req.body.title, gender: req.body.gender, email, password: req.body.password, role, ...data,
+    name: req.body.name, title: req.body.title, gender: req.body.gender, email, password: req.body.password, role, ...data, mustChangePassword: true,
     ...(policies.length ? { policies } : {}),
   });
 

@@ -13,12 +13,6 @@ public enum API {
         Endpoint(.get, "/legal/policies/\(policy.rawValue)", authenticated: false)
     }
 
-    /// Always recorded for the signed-in account; the body names no user.
-    public static func acceptTerms(version: Int) -> Endpoint<LegalStatus> {
-        struct Body: Encodable, Sendable { let policyId: String; let version: Int; let agreed: Bool }
-        return Endpoint(.post, "/legal/accept", body: Body(policyId: Legal.Policy.terms.rawValue, version: version, agreed: true))
-    }
-
     // MARK: Attendance
     /// `semester`: only that semester's subjects (nil = every semester).
     public static func myAttendance(range: AttendanceRange, semester: Int? = nil) -> Endpoint<AttendanceSummary> {

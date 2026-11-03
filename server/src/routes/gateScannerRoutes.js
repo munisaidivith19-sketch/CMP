@@ -28,6 +28,7 @@ const rangeRules = [
 
 router.get('/session', scanner.session);
 router.get('/dashboard', scanner.dashboard);
+router.get('/outside', scanner.outside);
 router.post(
   '/scans',
   gateScanLimiter,

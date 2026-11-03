@@ -1,3 +1,4 @@
+import { withPasswordRules } from '../utils/passwordPolicy.js';
 import { Router } from 'express';
 import { body, query } from 'express-validator';
 import { authorize } from '../middleware/auth.js';
@@ -25,17 +26,7 @@ import { RANGES } from '../services/soc/detections.js';
 const router = Router();
 router.use(authorize(SUPER_ADMIN_ROLE));
 
-const password = (field) =>
-  body(field)
-    .isString()
-    .isLength({ min: 10, max: 72 })
-    .withMessage('Temporary password must be 10–72 characters')
-    .matches(/[A-Za-z]/)
-    .withMessage('Password must contain a letter')
-    .matches(/\d/)
-    .withMessage('Password must contain a number')
-    .matches(/[^A-Za-z0-9]/)
-    .withMessage('Password must contain a symbol');
+const password = (field) => withPasswordRules(body(field), 10);
 const profileRules = (create) => [
   (create ? body('name') : body('name').optional()).isString().trim().isLength({ min: 2, max: 80 }).withMessage('Name must be 2–80 characters'),
   body('title').optional({ values: 'falsy' }).isIn(TITLES).withMessage('Choose Ms, Mr or Dr'),

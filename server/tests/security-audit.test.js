@@ -213,7 +213,7 @@ test('F9: alumni event and profile links must be http(s) — no javascript: URLs
 
 test('F10: public self-registration is disabled — accounts come from the administrator', async () => {
   const res = await ctx.request('POST', '/auth/register', {
-    body: { name: 'Intruder', email: 'intruder@jnn.edu.in', password: 'Password123', department: 'CSE', year: 3, rollNo: 'A1' },
+    body: { name: 'Intruder', email: 'intruder@jnn.edu.in', password: 'Password@123', department: 'CSE', year: 3, rollNo: 'A1' },
   });
   assert.equal(res.status, 403);
   assert.equal(await ctx.models.User.exists({ email: 'intruder@jnn.edu.in' }), null);

@@ -3,15 +3,18 @@ import { createRoot } from 'react-dom/client';
 // The web portal's stylesheet and fonts: same look as the J.N.N Campus Connect site.
 import '../../client/src/index.css';
 import App from './App.jsx';
+import { applyTheme, readTheme } from './lib/theme.js';
+import ErrorBoundary from './ErrorBoundary.jsx';
 
-// Follow the Windows light / dark setting, like the portal does.
+// Saved choice (Light / Dark), otherwise follow the Windows light / dark setting.
 const dark = window.matchMedia('(prefers-color-scheme: dark)');
-const applyTheme = () => document.documentElement.classList.toggle('dark', dark.matches);
-applyTheme();
-dark.addEventListener('change', applyTheme);
+applyTheme(readTheme());
+dark.addEventListener('change', () => applyTheme(readTheme()));
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );

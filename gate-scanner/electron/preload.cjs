@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('gate', {
   api: {
     session: invoke('api:session'),
     dashboard: invoke('api:dashboard'),
+    outside: invoke('api:outside'),
     history: invoke('api:history'),
     attempts: invoke('api:attempts'),
     scan: invoke('api:scan'),

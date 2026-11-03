@@ -1,3 +1,4 @@
+import { withPasswordRules } from '../utils/passwordPolicy.js';
 import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import { protect, authorize } from '../middleware/auth.js';
@@ -147,15 +148,7 @@ const router = Router();
 const STUDENT_ROLES = ['student', 'club_admin'];
 
 // ── Reusable validators ────────────────────────────────────────────
-const password = (field) =>
-  body(field)
-    .isString()
-    .isLength({ min: 8, max: 72 })
-    .withMessage('Password must be 8–72 characters')
-    .matches(/[A-Za-z]/)
-    .withMessage('Password must contain a letter')
-    .matches(/\d/)
-    .withMessage('Password must contain a number');
+const password = (field) => withPasswordRules(body(field));
 
 const tagArray = (field) =>
   body(field)
@@ -338,7 +331,7 @@ router.use(gateDesktopScope);
 router.use(platformGate);
 // A temporary password must be replaced before anything else.
 router.use(passwordChangeGate);
-// The current Terms and Conditions must be accepted before anything else.
+// Gate Scanner sessions must accept the current Terms and Conditions before anything else.
 router.use(termsGate);
 // Staff accounts with additional policies: mark admin routes they were granted.
 router.use(staffGrantGuard);

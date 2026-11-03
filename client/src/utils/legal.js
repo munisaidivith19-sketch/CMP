@@ -1,8 +1,6 @@
 /**
- * Terms / Privacy Policy helpers shared by the routes, the acceptance screen
- * and the profile. Free of React so they run under node --test. The server
- * decides whether the Terms must be accepted (user.legal / a 403 with
- * TERMS_ACCEPTANCE_REQUIRED); nothing here is a security boundary.
+ * Terms / Privacy Policy helpers shared by the routes and the profile. Free of
+ * React so they run under node --test.
  */
 
 export const APP_NAME = 'J.N.N Campus Connect';
@@ -22,7 +20,7 @@ export const ABOUT_ENTRIES = [
   { key: 'privacy', label: 'Privacy Policy', to: PRIVACY_PATH },
 ];
 
-/** Public pages that never need a session or an acceptance. */
+/** Public pages that never need a session. */
 export const PUBLIC_LEGAL_PATHS = [ABOUT_PATH, TERMS_PATH, PRIVACY_PATH];
 
 /** "22 October 2026" — effective dates are calendar dates (UTC). */

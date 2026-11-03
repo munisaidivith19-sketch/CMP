@@ -154,7 +154,7 @@ after(async () => {
 
 test('Faculty create/update stores the exact in-charge year and semester, and refuses invalid ones', async () => {
   const base = {
-    role: 'faculty', name: 'New In-Charge', password: 'Welcome123', department: CY, section: 'A',
+    role: 'faculty', name: 'New In-Charge', password: 'Welcome@123', department: CY, section: 'A',
     teachingYears: [3, 4], teachingSections: ['A'], phone: '9333',
   };
   const ok = await ctx.request('POST', '/admin/users', {
@@ -187,7 +187,7 @@ test('Faculty create/update stores the exact in-charge year and semester, and re
   const student = await ctx.request('POST', '/admin/users', {
     token: admin.token,
     body: {
-      role: 'student', name: 'Sneaky', email: 'sneaky@test.edu', password: 'Welcome123', rollNo: 'SN1', department: CY,
+      role: 'student', name: 'Sneaky', email: 'sneaky@test.edu', password: 'Welcome@123', rollNo: 'SN1', department: CY,
       year: 3, section: 'A', semester: 5, stayType: 'hosteler', parentPhone: '9811111111', inChargeYear: 3, inChargeSemester: 5,
     },
   });

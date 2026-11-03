@@ -63,13 +63,13 @@ export const TERMS_REQUIRED_BODY = {
 };
 
 /**
- * The current Terms version must have been accepted (services/legal.js) before
- * any other API is used, whatever the client. Answered directly rather than as
- * an ApiError so routine refusals are not recorded as SOC authorization errors.
+ * A Gate Scanner session must have accepted the current Terms version
+ * (services/legal.js) before any other API is used. Answered directly rather
+ * than as an ApiError so routine refusals are not recorded as SOC authorization errors.
  */
 export const termsGate = asyncHandler(async (req, res, next) => {
-  // Mobile apps only: the web app does not ask for acceptance (the client comes from the server-side session row).
-  if (req.sessionClient === 'web') return next();
+  // The web, Android and iOS apps never ask: they show the Terms in the profile (the client comes from the server-side session row).
+  if (req.sessionClient !== 'gate_desktop') return next();
   const path = req.path.replace(/\/+$/, '') || '/';
   if (TERMS_OPEN.some((re) => re.test(path))) return next();
   if (!(await termsAcceptanceRequired(req.user?._id))) return next();

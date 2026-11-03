@@ -1,3 +1,4 @@
+import { passwordProblem } from '../../utils/password';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
@@ -174,8 +175,7 @@ function ChangePassword({ open, onClose }) {
           error={errors.newPassword}
           {...register('newPassword', {
             required: 'Required',
-            minLength: { value: 8, message: 'At least 8 characters' },
-            validate: (v) => (/[A-Za-z]/.test(v) && /\d/.test(v)) || 'Include a letter and a number',
+            validate: (v) => passwordProblem(v) || true,
           })}
         />
         <Input label="Confirm" type="password" error={errors.confirm} {...register('confirm', { validate: (v) => v === watch('newPassword') || 'Passwords do not match' })} />

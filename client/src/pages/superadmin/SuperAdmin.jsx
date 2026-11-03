@@ -192,7 +192,7 @@ function CreateAdminModal({ guard, onClose }) {
         <Input label="Email (sign-in)" type="email" value={form.email} onChange={set('email')} />
         <Input label="Employee ID" value={form.employeeId} onChange={set('employeeId')} />
         <Input label="Phone (optional)" value={form.phone} onChange={set('phone')} />
-        <Input label="Temporary password" type="password" autoComplete="new-password" hint="10+ characters with a letter, number and symbol. Never stored or shown again." value={form.password} onChange={set('password')} className="sm:col-span-2" />
+        <Input label="Temporary password" type="password" autoComplete="new-password" hint="10+ characters with a capital letter, a small letter, a number and a symbol. Never stored or shown again." value={form.password} onChange={set('password')} className="sm:col-span-2" />
       </div>
       <p className="mb-1 mt-5 text-sm font-extrabold">Dashboards this Admin can see and use</p>
       <p className="mb-3 text-xs muted">Grouped like the Admin's sidebar. Unticked modules are hidden from the Admin and their pages and API are refused.</p>

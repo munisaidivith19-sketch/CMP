@@ -1,3 +1,4 @@
+import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useForm } from 'react-hook-form';
@@ -53,15 +54,12 @@ function ChangePasswordCard() {
           label="New password"
           type="password"
           autoComplete="new-password"
-          hint="8–72 characters, at least one letter and one number"
+          hint={PASSWORD_HINT}
           error={errors.newPassword}
           {...register('newPassword', {
             required: 'Required',
-            minLength: { value: 8, message: 'At least 8 characters' },
-            maxLength: { value: 72, message: 'At most 72 characters' },
             validate: {
-              letter: (v) => /[A-Za-z]/.test(v) || 'Include a letter',
-              number: (v) => /\d/.test(v) || 'Include a number',
+              strong: (v) => passwordProblem(v) || true,
               different: (v) => v !== watch('currentPassword') || 'Choose a different password',
             },
           })}

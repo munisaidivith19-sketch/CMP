@@ -94,23 +94,10 @@ final class AppModel {
         if case .signedIn = phase { phase = .signedIn(me) }
     }
 
-    // MARK: - Terms and Conditions
-
-    /// The server refused a request until the current Terms are accepted: RootView shows the acceptance screen.
-    func markTermsRequired() {
-        guard case .signedIn(let user) = phase, !user.termsAcceptanceRequired else { return }
-        let updated = user.replacingLegal((user.legal ?? LegalStatus(termsRequired: true)).markedRequired)
-        phase = .signedIn(updated)
-        Task { await client.updateCurrentUser(updated) }
-    }
-
-    /// Record acceptance of `version` for the signed-in account (the server takes the account from the session).
-    func acceptTerms(version: Int) async throws {
-        let legal = try await client.send(API.acceptTerms(version: version))
-        guard case .signedIn(let user) = phase else { return }
-        let updated = user.replacingLegal(legal)
-        await client.updateCurrentUser(updated)
-        phase = .signedIn(updated)
+    /// Change the password. A new account's forced change ends here: RootView shows the app again.
+    func changePassword(current: String, new: String) async throws {
+        let user = try await client.changePassword(current: current, new: new)
+        if case .signedIn = phase { phase = .signedIn(user) }
     }
 
     // MARK: - Server address
@@ -176,7 +163,6 @@ final class AppModel {
                 switch event {
                 case .expired: self.sessionExpired()
                 case .reachability(let online): if self.isOnline != online { self.isOnline = online }
-                case .termsRequired: self.markTermsRequired()
                 }
             }
         }

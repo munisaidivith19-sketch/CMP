@@ -1,3 +1,4 @@
+import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
 import { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
@@ -47,8 +48,9 @@ export default function AlumniClaim() {
       toast.error('Missing invitation token');
       return;
     }
-    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-      toast.error('Password must be at least 8 characters and contain both a letter and a number');
+    const weak = passwordProblem(password);
+    if (weak) {
+      toast.error(`${weak}. ${PASSWORD_HINT}`);
       return;
     }
     if (password !== confirmPassword) {

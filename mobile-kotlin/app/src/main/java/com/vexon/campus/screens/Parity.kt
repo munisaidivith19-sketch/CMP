@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.vexon.campus.core.Api
+import com.vexon.campus.core.PasswordRule
 import com.vexon.campus.core.Fmt
 import com.vexon.campus.core.Omit
 import com.vexon.campus.core.ServerConfig
@@ -476,7 +477,7 @@ fun isClassInCharge(user: JsonElement?): Boolean =
     user.role == "faculty" && user["section"].text != null && user["inChargeYear"].text != null && user["inChargeSemester"].text != null
 
 private fun digits10(v: String) = v.filter { it.isDigit() }.takeLast(10)
-private fun strongPassword(p: String) = p.length in 8..72 && p.any { it.isLetter() } && p.any { it.isDigit() }
+private fun strongPassword(p: String) = PasswordRule.problem(p) == null
 
 @Composable
 private fun ChoiceRow(label: String, options: List<Pair<String, String>>, value: String, onChange: (String) -> Unit) {
@@ -503,7 +504,7 @@ private fun AddStudentSheet(onClose: () -> Unit) {
             name.trim().length < 2 -> "Enter the student’s name"
             !Regex("^\\S+@\\S+\\.\\S+$").matches(email.trim()) -> "Enter a valid college email"
             rollNo.isBlank() -> "Roll number is required"
-            !strongPassword(password) -> "Password: 8–72 characters with a letter and a number"
+            !strongPassword(password) -> "Password: ${PasswordRule.HINT}"
             stayType.isEmpty() -> "Select hosteler or day scholar"
             digits10(parentPhone).length != 10 -> "Parent's mobile must be 10 digits"
             phone.isNotBlank() && digits10(phone).length != 10 -> "Student mobile must be 10 digits"
@@ -517,7 +518,7 @@ private fun AddStudentSheet(onClose: () -> Unit) {
                 "rollNo" to rollNo.trim(), "password" to password, "stayType" to stayType, "parentPhone" to parentPhone,
                 "phone" to (phone.ifBlank { null } ?: Omit),
             ))
-            Dialogs.alert("Student added", "Share the password with the student — they can change it after signing in.")
+            Dialogs.alert("Student added", "Share the password with the student — they must choose their own the first time they sign in.")
             onClose()
         }
     }
@@ -526,7 +527,7 @@ private fun AddStudentSheet(onClose: () -> Unit) {
         Input(name, { name = it }, label = "Full name", maxLength = 80)
         Input(email, { email = it }, label = "College email", keyboardType = KeyboardType.Email)
         Input(rollNo, { rollNo = it.uppercase() }, label = "Roll number", maxLength = 30)
-        Input(password, { password = it }, label = "Password", password = true, hint = "8+ characters with a letter and a number")
+        Input(password, { password = it }, label = "Password", password = true, hint = PasswordRule.HINT)
         ChoiceRow("Stay", listOf("hosteler" to "Hosteler", "day_scholar" to "Day scholar"), stayType) { stayType = it }
         Input(parentPhone, { parentPhone = it }, label = "Parent's mobile", keyboardType = KeyboardType.Phone, maxLength = 14, hint = "Gate pass OTPs go to this number")
         Input(phone, { phone = it }, label = "Student mobile (optional)", keyboardType = KeyboardType.Phone, maxLength = 14)
@@ -573,7 +574,7 @@ private fun ResetPasswordSheet(student: JsonElement, onClose: () -> Unit) {
     var confirm by remember { mutableStateOf("") }
     val reset = rememberMutation()
     fun submit() {
-        if (!strongPassword(pw)) { Dialogs.alert("Password: 8–72 characters with a letter and a number"); return }
+        if (!strongPassword(pw)) { Dialogs.alert("Password: ${PasswordRule.HINT}"); return }
         if (pw != confirm) { Dialogs.alert("Passwords do not match"); return }
         reset.launch(onError = { Dialogs.alert("Could not reset", errMsg(it)) }) {
             Api.resetUserPassword(student.id.orEmpty(), jsonOf("newPassword" to pw, "confirmPassword" to confirm))

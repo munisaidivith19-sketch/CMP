@@ -99,6 +99,7 @@ export const createClassStudent = asyncHandler(async (req, res) => {
     name: req.body.name,
     email,
     password: req.body.password,
+    mustChangePassword: true, // the Class In-Charge set it: the student chooses their own at first sign-in
     role: 'student',
     ...pick(req.body, CLASS_STUDENT_INPUT),
     ...scope,

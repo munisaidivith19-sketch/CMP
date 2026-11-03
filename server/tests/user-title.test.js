@@ -15,7 +15,7 @@ after(async () => {
 });
 
 const create = (body) => ctx.request('POST', '/admin/users', { token: admin.token, body });
-const staff = (o) => ({ password: 'Welcome123', employeeId: `T-${o.email}`, ...o });
+const staff = (o) => ({ password: 'Welcome@123', employeeId: `T-${o.email}`, ...o });
 
 test('admin stores the title and gender chosen at login creation', async () => {
   const hod = await create(staff({ role: 'hod', name: 'Mohan Babu', title: 'Dr', gender: 'male', email: 'mohan@test.edu', department: 'CSE' }));

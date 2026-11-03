@@ -51,7 +51,7 @@ test('admin creates student / faculty / HOD / principal logins with role-specifi
   const student = await ctx.request('POST', '/admin/users', {
     token: admin.token,
     body: {
-      role: 'student', name: 'New Student', email: 'new.student@test.edu', password: 'Welcome123',
+      role: 'student', name: 'New Student', email: 'new.student@test.edu', password: 'Welcome@123',
       rollNo: '23CS099', year: 2, semester: 3, department: 'CSE', section: 'b', stayType: 'hosteler', phone: '9000000000', parentPhone: '9111111111',
     },
   });
@@ -63,25 +63,25 @@ test('admin creates student / faculty / HOD / principal logins with role-specifi
   assert.equal(student.body.password, undefined);
 
   // The college email is the username.
-  const login = await ctx.request('POST', '/auth/login', { body: { email: 'new.student@test.edu', password: 'Welcome123' } });
+  const login = await ctx.request('POST', '/auth/login', { body: { email: 'new.student@test.edu', password: 'Welcome@123' } });
   assert.equal(login.status, 200);
 
   const missingParent = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'student', name: 'X Y', email: 'x@test.edu', password: 'Welcome123', rollNo: '1', year: 1, department: 'CSE', stayType: 'day_scholar' },
+    body: { role: 'student', name: 'X Y', email: 'x@test.edu', password: 'Welcome@123', rollNo: '1', year: 1, department: 'CSE', stayType: 'day_scholar' },
   });
   assert.equal(missingParent.status, 422);
 
   const badStay = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'student', name: 'X Y', email: 'x2@test.edu', password: 'Welcome123', rollNo: '1', year: 1, department: 'CSE', stayType: 'tent', parentPhone: '999999' },
+    body: { role: 'student', name: 'X Y', email: 'x2@test.edu', password: 'Welcome@123', rollNo: '1', year: 1, department: 'CSE', stayType: 'tent', parentPhone: '999999' },
   });
   assert.equal(badStay.status, 422);
 
   const fac = await ctx.request('POST', '/admin/users', {
     token: admin.token,
     body: {
-      role: 'faculty', name: 'New Fac', email: 'new.fac@test.edu', password: 'Welcome123', employeeId: 'E-100', department: 'CSE', section: 'A', phone: '9222',
+      role: 'faculty', name: 'New Fac', email: 'new.fac@test.edu', password: 'Welcome@123', employeeId: 'E-100', department: 'CSE', section: 'A', phone: '9222',
       teachingYears: [3, 2], teachingSections: ['b', 'A'],
     },
   });
@@ -90,19 +90,19 @@ test('admin creates student / faculty / HOD / principal logins with role-specifi
   assert.deepEqual(fac.body.teachingSections, ['A', 'B'], 'multiple sections handled, normalised');
   const dupEmp = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'hod', name: 'Dup', email: 'dup@test.edu', password: 'Welcome123', employeeId: 'E-100', department: 'IT' },
+    body: { role: 'hod', name: 'Dup', email: 'dup@test.edu', password: 'Welcome@123', employeeId: 'E-100', department: 'IT' },
   });
   assert.equal(dupEmp.status, 409);
 
   const noEmp = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'hod', name: 'No Emp', email: 'noemp@test.edu', password: 'Welcome123', department: 'IT' },
+    body: { role: 'hod', name: 'No Emp', email: 'noemp@test.edu', password: 'Welcome@123', department: 'IT' },
   });
   assert.equal(noEmp.status, 422);
 
   const pr = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'principal', name: 'New Principal', email: 'principal2@test.edu', password: 'Welcome123', employeeId: 'E-P2', phone: '9333' },
+    body: { role: 'principal', name: 'New Principal', email: 'principal2@test.edu', password: 'Welcome@123', employeeId: 'E-P2', phone: '9333' },
   });
   assert.equal(pr.status, 201, 'principal needs no department');
 

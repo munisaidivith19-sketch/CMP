@@ -81,8 +81,8 @@ async function hasAccepted(userId, required) {
 }
 
 /**
- * Must this user accept the Terms before using the app? False when no Terms
- * version requiring acceptance has been published.
+ * Has this user yet to accept the Terms? Only the Gate Scanner acts on it. False
+ * when no Terms version requiring acceptance has been published.
  */
 export async function termsAcceptanceRequired(userId) {
   const { required } = (await current()).terms;
@@ -150,7 +150,7 @@ export async function acceptTerms({ user, version, sessionId }) {
   } catch (err) {
     if (err?.code !== 11000) throw err; // already accepted (double click, two devices): fine
   }
-  return legalStatus(user._id, { enforced: client !== 'web' });
+  return legalStatus(user._id, { enforced: client === 'gate_desktop' });
 }
 
 /* ── Publishing (start-up sync from legal/registry.js) ──────────── */

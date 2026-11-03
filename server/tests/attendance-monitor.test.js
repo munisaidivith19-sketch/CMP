@@ -132,7 +132,7 @@ test('the Office role is read-only and confined to attendance', async () => {
 test('admins can create Office accounts', async () => {
   const res = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'office', title: 'Ms', gender: 'female', name: 'Office Two', email: 'office.two@test.edu', password: 'Welcome123', employeeId: 'O2' },
+    body: { role: 'office', title: 'Ms', gender: 'female', name: 'Office Two', email: 'office.two@test.edu', password: 'Welcome@123', employeeId: 'O2' },
   });
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.equal(res.body.role, 'office');

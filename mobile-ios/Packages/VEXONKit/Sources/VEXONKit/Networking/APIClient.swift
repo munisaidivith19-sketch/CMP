@@ -9,8 +9,6 @@ public enum SessionEvent: Sendable, Equatable {
     case expired
     /// Connectivity changed: true after any HTTP answer, false after a network failure.
     case reachability(Bool)
-    /// The server refused a request until the current Terms are accepted.
-    case termsRequired
 }
 
 /// Outcome of exchanging the stored refresh token.
@@ -167,6 +165,14 @@ public actor APIClient {
         clearSession()
     }
 
+    /// Change this account's password. The answer is a rotated session for this device.
+    public func changePassword(current: String, new: String) async throws -> User {
+        struct Body: Encodable, Sendable { let currentPassword: String; let newPassword: String }
+        let payload = try await send(Endpoint<SessionPayload>(.post, "/auth/change-password", body: Body(currentPassword: current, newPassword: new)))
+        adopt(payload)
+        return payload.user
+    }
+
     public func updateCurrentUser(_ user: User) {
         currentUser = user
     }
@@ -259,10 +265,7 @@ public actor APIClient {
         log.log(.debug, "\(Redactor.describe(method: endpoint.method.rawValue, url: url)) → \(status) (\(ms) ms)")
 
         guard (200..<300).contains(status) else {
-            let error = APIError.from(status: status, body: data)
-            // The Terms gate: the app shows the acceptance screen.
-            if Legal.isTermsRequired(error) { eventContinuation.yield(.termsRequired) }
-            throw error
+            throw APIError.from(status: status, body: data)
         }
         if T.self == EmptyResponse.self, let empty = EmptyResponse() as? T { return empty }
         do {

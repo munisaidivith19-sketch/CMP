@@ -136,7 +136,7 @@ test('Hostel overview: warden sees counts and lists; a student is refused', asyn
 
 test('Class In-Charge: add a student, edit from the detail record, reset the password', async () => {
   const created = await call(u.faculty, 'POST', '/class-students', {
-    name: 'New Student', email: 'new.student@test.edu', rollNo: 'mp003', password: 'Welcome123', title: 'Mr', gender: 'male', stayType: 'hosteler', parentPhone: '9000000003',
+    name: 'New Student', email: 'new.student@test.edu', rollNo: 'mp003', password: 'Welcome@123', title: 'Mr', gender: 'male', stayType: 'hosteler', parentPhone: '9000000003',
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const id = created.body._id;
@@ -148,12 +148,12 @@ test('Class In-Charge: add a student, edit from the detail record, reset the pas
   const edited = await call(u.faculty, 'PATCH', `/class-students/${id}`, { parentPhone: '9000000004', phone: '', stayType: 'day_scholar' });
   assert.equal(edited.status, 200, JSON.stringify(edited.body));
   assert.equal((await call(u.faculty, 'GET', `/class-students/${id}`)).body.stayType, 'day_scholar');
-  const reset = await call(u.faculty, 'POST', `/users/${id}/reset-password`, { newPassword: 'Changed123', confirmPassword: 'Changed123' });
+  const reset = await call(u.faculty, 'POST', `/users/${id}/reset-password`, { newPassword: 'Changed@123', confirmPassword: 'Changed@123' });
   assert.equal(reset.status, 200, JSON.stringify(reset.body));
   // Another class's faculty cannot touch this student.
   const other = await make('faculty', { department: 'CSE', section: 'B', inChargeYear: 3, inChargeSemester: 5, employeeId: 'MP-F2' });
   assert.ok([403, 404].includes((await call(other, 'GET', `/class-students/${id}`)).status));
-  assert.equal((await call(other, 'POST', `/users/${id}/reset-password`, { newPassword: 'Changed123', confirmPassword: 'Changed123' })).status, 403);
+  assert.equal((await call(other, 'POST', `/users/${id}/reset-password`, { newPassword: 'Changed@123', confirmPassword: 'Changed@123' })).status, 403);
 });
 
 test('Announcements from the app: HOD posts inside their scope only; principal pins; author deletes', async () => {
@@ -220,7 +220,7 @@ test('Kotlin app: HOD uploads a study material (PDF, no size field) and deletes 
 });
 
 test('Class In-Charge (app): student and parent mobile cannot be the same number', async () => {
-  const body = { name: 'Same Phone', email: 'same.phone@test.edu', rollNo: 'MP009', password: 'Welcome123', title: 'Ms', gender: 'female', stayType: 'hosteler', parentPhone: '9000000099', phone: '+91 90000 00099' };
+  const body = { name: 'Same Phone', email: 'same.phone@test.edu', rollNo: 'MP009', password: 'Welcome@123', title: 'Ms', gender: 'female', stayType: 'hosteler', parentPhone: '9000000099', phone: '+91 90000 00099' };
   const res = await call(u.faculty, 'POST', '/class-students', body);
   assert.equal(res.status, 422);
   assert.match(JSON.stringify(res.body), /cannot be the same/);

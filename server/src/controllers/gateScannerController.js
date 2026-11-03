@@ -293,7 +293,10 @@ export const dashboard = asyncHandler(async (req, res) => {
     GateScanEvent.find({ guard: req.user._id, state: 'done' }).sort({ createdAt: -1 }).limit(10).select('_id').lean(),
   ]);
   // Only current, active student accounts count towards the population.
-  const outside = outsideIds.length ? await User.countDocuments({ _id: { $in: outsideIds }, role: { $in: STUDENT_ROLES }, isActive: true }) : 0;
+  const counted = outsideIds.length ? await User.distinct('_id', { _id: { $in: outsideIds }, role: { $in: STUDENT_ROLES }, isActive: true }) : [];
+  const outside = counted.length;
+  const countedIds = new Set(counted.map(String));
+  const overdue = overdueIds.filter((id) => countedIds.has(String(id))).length;
   const byOutcome = Object.fromEntries(mine.map((m) => [m._id, m.n]));
   res.set('Cache-Control', 'no-store');
   res.json({
@@ -301,11 +304,43 @@ export const dashboard = asyncHandler(async (req, res) => {
     date: dayKey(day),
     timezone: env.timezone,
     presenceBasis: 'gate_pass',
-    population: { totalStudents, outsideOnPass: outside, notOnActivePass: Math.max(0, totalStudents - outside), overdue: overdueIds.length },
+    population: { totalStudents, outsideOnPass: outside, notOnActivePass: Math.max(0, totalStudents - outside), overdue },
     today: { outEvents, inEvents },
     myScansToday: { success: byOutcome.success || 0, rejected: byOutcome.rejected || 0, duplicate: byOutcome.duplicate || 0 },
     recent: await Promise.all(recent.map((r) => scanView(r))),
   });
+});
+
+/**
+ * GET /gate-scanner/outside — the students counted as "outside on a gate pass"
+ * on the dashboard: each active student once, with the pass that took them out.
+ */
+export const outside = asyncHandler(async (_req, res) => {
+  await expireGatePasses();
+  const limitMs = Date.now() - OVERDUE_AFTER_MS;
+  const passes = await GatePass.find({ status: 'active', actualExit: { $ne: null } })
+    .sort({ actualExit: -1 })
+    .limit(2000)
+    .select('student passType dayScholarOuting actualExit toDate')
+    .populate('student', `${STUDENT_VIEW_FIELDS} role isActive`)
+    .lean();
+  const seen = new Set();
+  const items = [];
+  for (const p of passes) {
+    const s = p.student;
+    if (!s || s.isActive !== true || !STUDENT_ROLES.includes(s.role) || seen.has(String(s._id))) continue;
+    seen.add(String(s._id));
+    items.push({
+      passRef: passRef(p._id),
+      passType: p.dayScholarOuting ? 'outing' : p.passType,
+      student: pickStudent(s),
+      exitedAt: p.actualExit,
+      dueBack: p.toDate,
+      overdue: p.toDate ? new Date(p.toDate).getTime() < limitMs : false,
+    });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ generatedAt: new Date(), total: items.length, overdue: items.filter((i) => i.overdue).length, items });
 });
 
 /** today / yesterday / week (Mon–today) / month (1st–today) / custom → inclusive campus days. */

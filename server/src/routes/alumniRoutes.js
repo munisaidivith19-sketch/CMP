@@ -1,3 +1,4 @@
+import { withPasswordRules } from '../utils/passwordPolicy.js';
 import { Router } from 'express';
 import { body, query } from 'express-validator';
 import { authorize } from '../middleware/auth.js';
@@ -33,14 +34,7 @@ alumniPublicRouter.get('/:token', authLimiter, alumniImport.getPublicClaim);
 alumniPublicRouter.post(
   '/:token',
   authLimiter,
-  body('password')
-    .isString()
-    .isLength({ min: 8, max: 72 })
-    .withMessage('Password must be 8–72 characters')
-    .matches(/[A-Za-z]/)
-    .withMessage('Password must contain a letter')
-    .matches(/\d/)
-    .withMessage('Password must contain a number'),
+  withPasswordRules(body('password')),
   body('accept').isBoolean().withMessage('You must accept the invitation'),
   validate,
   alumniImport.submitPublicClaim

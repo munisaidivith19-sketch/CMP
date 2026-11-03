@@ -56,7 +56,7 @@ test('Super Admin APIs: unauthenticated → 401; admin, faculty, HOD and student
 
 test('a frontend-supplied role cannot create or promote an Admin or Super Admin', async () => {
   for (const role of ['super_admin', 'admin']) {
-    const create = await req('POST', '/admin/users', legacyAdmin, { role, name: 'Sneaky', email: `sneaky.${role}@test.edu`, password: 'Welcome123', employeeId: `X-${role}` });
+    const create = await req('POST', '/admin/users', legacyAdmin, { role, name: 'Sneaky', email: `sneaky.${role}@test.edu`, password: 'Welcome@123', employeeId: `X-${role}` });
     assert.equal(create.status, 422, role);
     assert.equal(await ctx.models.User.exists({ email: `sneaky.${role}@test.edu` }), null);
     const promote = await req('PATCH', `/admin/users/${faculty.u._id}`, legacyAdmin, { role });
@@ -190,13 +190,13 @@ test('ordinary Admins cannot edit, delete or reset Admin / Super Admin accounts'
   for (const target of [other, sa.u]) {
     assert.equal((await req('PATCH', `/admin/users/${target._id}`, legacyAdmin, { name: 'Hijacked' })).status, 403);
     assert.equal((await req('DELETE', `/admin/users/${target._id}`, legacyAdmin)).status, 403);
-    assert.equal((await req('POST', `/users/${target._id}/reset-password`, legacyAdmin, { newPassword: 'Hijack123', confirmPassword: 'Hijack123' })).status, 403);
+    assert.equal((await req('POST', `/users/${target._id}/reset-password`, legacyAdmin, { newPassword: 'Hijack@123', confirmPassword: 'Hijack@123' })).status, 403);
   }
   assert.ok(await ctx.models.User.exists({ _id: sa.u._id, role: 'super_admin', isActive: true }));
 });
 
 test('Super Admin creates accounts of every ordinary and staff role, never Admin / Super Admin there', async () => {
-  const mk = (role, extra) => req('POST', '/admin/users', sa, { role, name: `New ${role}`, email: `sa.${role}@test.edu`, password: 'Welcome123', ...extra });
+  const mk = (role, extra) => req('POST', '/admin/users', sa, { role, name: `New ${role}`, email: `sa.${role}@test.edu`, password: 'Welcome@123', ...extra });
   assert.equal((await mk('student', { rollNo: 'SA-S1', department: 'CSE', year: 3, section: 'A', stayType: 'hosteler', parentPhone: '9111111112' })).status, 201);
   assert.equal((await mk('faculty', { employeeId: 'SA-F1', department: 'CSE', teachingYears: [3], teachingSections: ['A'] })).status, 201);
   assert.equal((await mk('principal', { employeeId: 'SA-P1' })).status, 201);
@@ -239,7 +239,7 @@ test('read policy permits reads only; no create, update, suspend, export or othe
   assert.equal(list.status, 200);
   assert.ok(list.body.items.length > 0);
   assert.ok(list.body.items.every((u) => ['student', 'club_admin', 'alumni'].includes(u.role)), 'only accounts this policy covers');
-  assert.equal((await req('POST', '/admin/users', reader, { role: 'student', name: 'New', email: 'new.kid@test.edu', password: 'Welcome123', rollNo: 'NK1', department: 'CSE', year: 3, section: 'A', stayType: 'hosteler', parentPhone: '9111111111' })).status, 403);
+  assert.equal((await req('POST', '/admin/users', reader, { role: 'student', name: 'New', email: 'new.kid@test.edu', password: 'Welcome@123', rollNo: 'NK1', department: 'CSE', year: 3, section: 'A', stayType: 'hosteler', parentPhone: '9111111111' })).status, 403);
   assert.equal((await req('PATCH', `/admin/users/${cseStudent._id}`, reader, { isActive: false })).status, 403);
   assert.equal((await req('PATCH', `/admin/users/${cseStudent._id}`, reader, { name: 'Renamed Kid' })).status, 403);
   assert.equal((await req('DELETE', `/admin/users/${cseStudent._id}`, reader)).status, 403);

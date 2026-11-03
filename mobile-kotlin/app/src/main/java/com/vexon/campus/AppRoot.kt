@@ -38,9 +38,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vexon.campus.core.get
+import com.vexon.campus.core.bool
 import com.vexon.campus.core.Auth
 import com.vexon.campus.core.Connection
-import com.vexon.campus.core.Legal
 import com.vexon.campus.core.QueryClient
 import com.vexon.campus.core.RefreshResult
 import com.vexon.campus.core.Realtime
@@ -49,10 +50,10 @@ import com.vexon.campus.core.id
 import com.vexon.campus.nav.Nav
 import com.vexon.campus.push.NotificationGate
 import com.vexon.campus.push.Push
+import com.vexon.campus.screens.PasswordChangeRequiredScreen
 import com.vexon.campus.screens.NotificationsRequiredScreen
 import com.vexon.campus.screens.OfflineLaunch
 import com.vexon.campus.screens.RouteContent
-import com.vexon.campus.screens.TermsAcceptanceScreen
 import com.vexon.campus.ui.C
 import com.vexon.campus.ui.DialogHost
 import com.vexon.campus.ui.InAppBanner
@@ -113,10 +114,9 @@ fun AppRoot() {
     // Notifications are mandatory once signed in; sign-in itself is never blocked.
     val notifications by NotificationGate.status.collectAsState()
     val notificationsOn = notifications == NotificationGate.Status.Granted
-    // The current Terms and Conditions come first; the server refuses every
-    // other API until they are accepted (core/Legal.kt).
-    val termsPending = userId != null && Legal.termsRequired(auth.user)
-    val blocked = userId != null && (termsPending || !notificationsOn)
+    // A new account chooses its own password first; the server refuses every other API until then.
+    val passwordPending = userId != null && auth.user["mustChangePassword"].bool
+    val blocked = userId != null && (passwordPending || !notificationsOn)
 
     // Signed in ↔ out swaps the whole stack (the RN `(app)` group redirect).
     LaunchedEffect(userId) {
@@ -168,7 +168,7 @@ fun AppRoot() {
         // Back from the gate leaves the app (system default); the stack in Nav is kept for later.
         when {
             !blocked -> StackHost()
-            termsPending -> TermsAcceptanceScreen()
+            passwordPending -> PasswordChangeRequiredScreen()
             else -> notifications?.let { NotificationsRequiredScreen(it) }
         }
         ConnectionBanner(signedIn = userId != null)

@@ -11,7 +11,6 @@ import Bus from '../models/Bus.js';
 import { busFilter, canViewBus, viewerScope } from '../services/transport/access.js';
 import { platformAllows } from '../services/platformState.js';
 import { attachSocketMonitor } from '../services/soc/monitors.js';
-import { termsAcceptanceRequired } from '../services/legal.js';
 
 let io = null;
 
@@ -73,11 +72,6 @@ export function initSocket(httpServer) {
     const { role } = socket.data;
     socket.join([`user:${userId}`, `session:${sessionId}`, roleRoom]);
 
-    // Like the REST termsGate: no chat, discussion or bus rooms until the
-    // current Terms are accepted. Checked at each join (cached per user), so
-    // accepting takes effect without reconnecting.
-    const termsPending = () => (socket.data.client === 'web' ? Promise.resolve(false) : termsAcceptanceRequired(userId).catch(() => true));
-
     const count = (online.get(userId) || 0) + 1;
     online.set(userId, count);
     if (count === 1) broadcastPresence(userId, true);
@@ -96,7 +90,6 @@ export function initSocket(httpServer) {
     // ── Discussions (public threads; hidden ones only for moderators) ──
     socket.on('discussion:join', async (id, cb) => {
       if (!mongoose.isValidObjectId(id)) return ack(cb, { ok: false });
-      if (await termsPending()) return ack(cb, { ok: false, error: 'terms_required' });
       const d = await Discussion.findById(id).select('isHidden').lean().catch(() => null);
       if (!d || (d.isHidden && !['admin', 'faculty', 'hod', 'principal'].includes(role))) return ack(cb, { ok: false });
       socket.join(`discussion:${id}`);
@@ -112,7 +105,6 @@ export function initSocket(httpServer) {
     // after a reconnect (rooms do not survive a new connection). ──
     socket.on('transport:subscribe', async (busId, cb) => {
       try {
-        if (await termsPending()) return ack(cb, { ok: false, error: 'terms_required' });
         const scope = await viewerScope(userId);
         if (!scope) return ack(cb, { ok: false, error: 'forbidden' });
         if (busId && busId !== 'all') {
@@ -144,7 +136,6 @@ export function initSocket(httpServer) {
     // ── Chat: a room is joined only after membership is checked in MongoDB ──
     socket.on('chat:join', async (conversationId, cb) => {
       if (!mongoose.isValidObjectId(conversationId)) return ack(cb, { ok: false, error: 'invalid' });
-      if (await termsPending()) return ack(cb, { ok: false, error: 'terms_required' });
       if (!(await canUseConversation(userId, conversationId))) return ack(cb, { ok: false, error: 'forbidden' });
       socket.join(`chat:${conversationId}`);
       return ack(cb, { ok: true });
@@ -165,7 +156,6 @@ export function initSocket(httpServer) {
     socket.on('chat:read', async (data = {}, cb) => {
       const { conversationId } = data;
       if (!mongoose.isValidObjectId(conversationId)) return ack(cb, { ok: false });
-      if (await termsPending()) return ack(cb, { ok: false });
       if (!(await canUseConversation(userId, conversationId))) return ack(cb, { ok: false });
       const ok = await markConversationRead(userId, conversationId).catch(() => false);
       return ack(cb, { ok });

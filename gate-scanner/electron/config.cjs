@@ -53,6 +53,7 @@ const DEFAULT_SETTINGS = {
   serialBaudRate: 9600,
   serialPortHint: null, // { usbVendorId, usbProductId } of the last port chosen
   alwaysOnTop: false,
+  startWithWindows: true, // open the Gate Scanner when this PC signs in to Windows
 };
 
 const LIMITS = { maxKeyGapMs: [15, 250], serialBaudRate: [1200, 921600] };
@@ -71,6 +72,7 @@ function sanitiseSettings(input = {}) {
     out.serialPortHint = { usbVendorId: input.serialPortHint.usbVendorId, usbProductId: input.serialPortHint.usbProductId };
   }
   out.alwaysOnTop = input.alwaysOnTop === true;
+  out.startWithWindows = input.startWithWindows !== false;
   return out;
 }
 

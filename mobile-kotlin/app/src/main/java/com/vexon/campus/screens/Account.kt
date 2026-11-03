@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.vexon.campus.core.Api
+import com.vexon.campus.core.PasswordRule
 import com.vexon.campus.core.ApiException
 import com.vexon.campus.core.Auth
 import com.vexon.campus.core.Fmt
@@ -44,6 +46,7 @@ import com.vexon.campus.core.text
 import com.vexon.campus.ui.ACADEMIC_YEARS
 import com.vexon.campus.ui.Avatar
 import com.vexon.campus.ui.Badge
+import com.vexon.campus.ui.Body
 import com.vexon.campus.ui.Button
 import com.vexon.campus.ui.C
 import com.vexon.campus.ui.Card
@@ -71,6 +74,7 @@ import com.vexon.campus.ui.Variant
 import com.vexon.campus.ui.YEAR_LABELS
 import com.vexon.campus.ui.semestersOfYear
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 
@@ -84,11 +88,11 @@ private fun ChangePassword() {
     var confirm by remember { mutableStateOf("") }
     Card(Wide, gap = 12.dp) {
         Input(current, { current = it }, label = "Current password", password = true, keyboardType = KeyboardType.Password)
-        Input(next, { next = it }, label = "New password", password = true, keyboardType = KeyboardType.Password, hint = "8–72 characters, a letter and a number")
+        Input(next, { next = it }, label = "New password", password = true, keyboardType = KeyboardType.Password, hint = PasswordRule.HINT)
         Input(confirm, { confirm = it }, label = "Confirm new password", password = true, keyboardType = KeyboardType.Password)
         Button("Update password", {
             when {
-                next.length < 8 || !next.any { it.isLetter() } || !next.any { it.isDigit() } -> Dialogs.alert("Weak password", "Use 8+ characters with a letter and a number.")
+                PasswordRule.problem(next) != null -> Dialogs.alert("Weak password", "${PasswordRule.problem(next)} Use ${PasswordRule.HINT}.")
                 next != confirm -> Dialogs.alert("Passwords do not match")
                 else -> change.launch(onError = { Dialogs.alert("Could not change password", errMsg(it)) }) {
                     val session = Api.changePassword(jsonOf("currentPassword" to current, "newPassword" to next))
@@ -186,7 +190,7 @@ private val TEXT_FIELDS = mapOf(
     "email" to TextSpec("College email (username)", KeyboardType.Email, "name@jnn.edu.in"),
     "phone" to TextSpec("Mobile", KeyboardType.Phone, maxLength = 20),
     "parentPhone" to TextSpec("Parent mobile", KeyboardType.Phone, maxLength = 20),
-    "password" to TextSpec("Set password", hint = "At least 8 characters with a letter and a number"),
+    "password" to TextSpec("Set password", hint = PasswordRule.HINT),
 )
 
 /**
@@ -411,5 +415,25 @@ fun ChatRequestsScreen() {
             Button("Reject request", { act(r.id.orEmpty(), "reject", reason.trim()) }, Wide, variant = Variant.Danger, loading = review.isLoading)
             Button("Cancel", { rejecting = null }, Wide, variant = Variant.Ghost)
         }
+    }
+}
+
+/**
+ * Shown by AppRoot instead of the app until a new account (or one given a
+ * temporary password) has chosen its own password. The server refuses every
+ * other API until then.
+ */
+@Composable
+fun PasswordChangeRequiredScreen() {
+    val scope = rememberCoroutineScope()
+    var signingOut by remember { mutableStateOf(false) }
+    Screen {
+        Header("Choose your password", titleMaxLines = 2)
+        Body("You signed in with a password someone else set. Choose your own password to continue.")
+        ChangePassword()
+        Button("Sign out", {
+            signingOut = true
+            scope.launch { try { signOutThisDevice() } finally { signingOut = false } }
+        }, variant = Variant.Ghost, loading = signingOut)
     }
 }

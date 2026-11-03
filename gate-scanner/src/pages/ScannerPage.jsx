@@ -112,7 +112,7 @@ function ResultPanel({ job, scanner }) {
         <p className="mt-5 text-lg muted">{job.label}</p>
       )}
       <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm muted">
-        <span>Scanned {fmtTime(job.receivedAt)}</span>
+        <span>Scanned {fmtTime(scannedAt(job))}</span>
         {job.result?.recordedAt && <span>Recorded {fmtTime(job.result.recordedAt)}</span>}
         <span>Source: {job.source === 'manual' ? 'typed code' : job.source === 'serial' ? 'USB serial scanner' : 'keyboard-mode scanner'}</span>
       </div>
@@ -126,6 +126,9 @@ function ResultPanel({ job, scanner }) {
   );
 }
 
+// The server's time once it has answered, so a slow PC clock cannot disagree with "Recorded" or the dashboard.
+const scannedAt = (job) => job.result?.receivedAt || job.receivedAt;
+
 function RecentRow({ job, onRecheck }) {
   const [tone, label] = STATE_BADGE[job.state] || ['neutral', job.state];
   const student = job.result?.student;
@@ -134,7 +137,7 @@ function RecentRow({ job, onRecheck }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold">{student?.name || job.label}</p>
         <p className="truncate text-xs muted">
-          {fmtTime(job.receivedAt)}
+          {fmtTime(scannedAt(job))}
           {job.result?.code ? ` · ${job.result.code.replace(/_/g, ' ').toLowerCase()}` : job.error?.kind ? ` · ${job.error.kind.replace(/_/g, ' ')}` : ''}
         </p>
       </div>

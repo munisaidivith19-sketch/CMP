@@ -50,9 +50,23 @@ export function StatusDot({ tone = 'neutral', label, detail }) {
   );
 }
 
-export function Stat({ icon: Icon, label, value, hint, tone = 'primary' }) {
+export function Stat({ icon: Icon, label, value, hint, tone = 'primary', onClick }) {
+  const press = onClick
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick,
+        onKeyDown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        },
+        'aria-label': `${label}: ${value ?? 'no data'}. Show details`,
+      }
+    : {};
   return (
-    <Card className="flex items-start gap-4">
+    <Card className={cn('flex items-start gap-4', onClick && 'cursor-pointer transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500')} {...press}>
       <span className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl', toneClass(tone))}>
         <Icon className="h-6 w-6" aria-hidden />
       </span>

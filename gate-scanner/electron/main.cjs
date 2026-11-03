@@ -41,6 +41,20 @@ function identityHeaders() {
   };
 }
 
+/** Open at Windows sign-in (installed builds only: a dev run must never register itself). */
+function applyStartup(s) {
+  if (!app.isPackaged) return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: s.startWithWindows, path: process.execPath });
+  } catch (err) {
+    diag?.record({ event: 'startup_setting_failed', message: String(err?.message || err).slice(0, 120) });
+  }
+}
+
+// An unexpected error must never close the scanner or leave a blank window.
+process.on('uncaughtException', (err) => diag?.record({ event: 'main_error', message: String(err?.stack || err).slice(0, 400) }));
+process.on('unhandledRejection', (err) => diag?.record({ event: 'main_rejection', message: String(err?.stack || err).slice(0, 400) }));
+
 function createWindow() {
   const s = settings.get();
   win = new BrowserWindow({
@@ -70,6 +84,19 @@ function createWindow() {
   // The window shows the bundled page only: no navigation, no new windows.
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // A crashed or frozen page is reloaded; the saved session and queued scans are restored by the page.
+  win.webContents.on('render-process-gone', (_e, d) => {
+    diag?.record({ event: 'renderer_gone', reason: d.reason });
+    if (d.reason !== 'clean-exit' && win && !win.isDestroyed()) win.reload();
+  });
+  win.on('unresponsive', () => {
+    diag?.record({ event: 'window_unresponsive' });
+    setTimeout(() => win && !win.isDestroyed() && win.reload(), 8000).unref?.();
+  });
+  win.webContents.on('did-fail-load', () => {
+    diag?.record({ event: 'load_failed' });
+    setTimeout(() => win && !win.isDestroyed() && win.loadFile(path.join(__dirname, '..', 'dist', 'index.html')), 2000);
+  });
   win.on('focus', () => send('window:focus', true));
   win.on('blur', () => send('window:focus', false));
 }
@@ -127,6 +154,7 @@ function registerIpc() {
 
   handle('api:session', () => api.request('GET', '/gate-scanner/session'));
   handle('api:dashboard', () => api.request('GET', '/gate-scanner/dashboard'));
+  handle('api:outside', () => api.request('GET', '/gate-scanner/outside'));
   handle('api:history', (params) => api.request('GET', `/gate-scanner/history?${historyQuery(params)}`));
   handle('api:attempts', (params) => api.request('GET', `/gate-scanner/attempts?${historyQuery(params, { outcome: true })}`));
   handle('api:scan', ({ scanId, payload, source, kind } = {}) => {
@@ -156,6 +184,7 @@ function registerIpc() {
   handle('settings:set', (patch) => {
     const next = settings.set(patch && typeof patch === 'object' ? patch : {});
     if (win) win.setAlwaysOnTop(next.alwaysOnTop);
+    applyStartup(next);
     diag.record({ event: 'settings_changed', scannerMode: next.scannerMode, terminator: next.terminator });
     return next;
   });
@@ -190,6 +219,7 @@ app.whenReady().then(() => {
   diag.record({ event: 'app_start', version: VERSION, apiSource: api_base.source, secureStorage: credentials.available() });
   configureSession();
   registerIpc();
+  applyStartup(settings.get());
   createWindow();
 });
 

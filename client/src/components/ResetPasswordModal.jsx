@@ -1,3 +1,4 @@
+import { PASSWORD_HINT, suggestPassword } from '../utils/password';
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff, KeyRound } from 'lucide-react';
@@ -6,13 +7,6 @@ import { Button } from './ui/primitives';
 import { Modal } from './ui/Modal';
 import { Input } from './ui/form';
 import { errMsg, displayName } from '../utils/format';
-
-/** Letters + digits, no look-alike characters — the server enforces the real rules. */
-export function suggestPassword() {
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
-  const pick = (n, set) => Array.from(crypto.getRandomValues(new Uint32Array(n)), (x) => set[x % set.length]).join('');
-  return `${pick(6, letters)}${pick(3, '23456789')}`;
-}
 
 const EMPTY = { newPassword: '', confirmPassword: '', reason: '' };
 
@@ -73,7 +67,7 @@ export default function ResetPasswordModal({ user, onClose }) {
             label="New password"
             type={show ? 'text' : 'password'}
             autoComplete="new-password"
-            hint="At least 8 characters with a letter and a number."
+            hint={PASSWORD_HINT}
             className="min-w-0 flex-1"
             value={v.newPassword}
             onChange={set('newPassword')}

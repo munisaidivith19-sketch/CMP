@@ -28,23 +28,35 @@ const entry = (policyId, version, file, extra = {}) => ({ policyId, version, fil
 const publish = (...entries) => legal.syncPolicyVersions({ registry: entries, readContent, log: { warn() {} } });
 
 const MOBILE = { 'x-client-platform': 'mobile', 'user-agent': 'okhttp/4.12.0' };
+const DESKTOP = { 'x-client-platform': 'gate-desktop', 'x-device-name': 'Main Gate PC', 'x-gate-name': 'Main Gate', 'user-agent': 'VEXONGateScanner/1.0.0 (Windows NT 10.0)' };
 
-// The Terms gate applies to the mobile apps; the web app is never asked.
-async function student() {
-  const u = await ctx.createUser({ role: 'student', department: 'CSE', section: 'A' });
-  return { u, ...(await ctx.loginMobile(u)) };
+// The Terms gate applies to the Gate Scanner only; the web, Android and iOS apps are never asked.
+let guardSeq = 0;
+async function loginGuard(u) {
+  const res = await ctx.request('POST', '/auth/login', { body: { email: u.email, password: PASSWORD }, headers: DESKTOP });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  return { token: res.body.accessToken, refreshToken: res.body.refreshToken, user: res.body.user };
+}
+async function guard(extra = {}) {
+  guardSeq += 1;
+  const u = await ctx.createUser({ role: 'security', employeeId: `LP-${guardSeq}`, ...extra });
+  return { u, ...(await loginGuard(u)) };
 }
 async function webStudent() {
   const u = await ctx.createUser({ role: 'student', department: 'CSE', section: 'A' });
   return { u, ...(await ctx.loginWeb(u)) };
 }
-const accept = (s, body) => ctx.request('POST', '/legal/accept', { token: s.token, headers: MOBILE, body });
-const dashboard = (s) => ctx.request('GET', '/dashboard', { token: s.token, headers: s.cookie ? undefined : MOBILE });
+async function mobileStudent() {
+  const u = await ctx.createUser({ role: 'student', department: 'CSE', section: 'A' });
+  return { u, ...(await ctx.loginMobile(u)) };
+}
+const accept = (s, body) => ctx.request('POST', '/legal/accept', { token: s.token, headers: DESKTOP, body });
+const dashboard = (s) => ctx.request('GET', '/gate-scanner/dashboard', { token: s.token, headers: DESKTOP });
 
 // ── Before anything is published ───────────────────────────────────
 
 test('no published Terms: nobody is gated and the public documents are 404', async () => {
-  const s = await student();
+  const s = await guard();
   assert.equal(s.user.legal.termsRequired, false);
   assert.equal(s.user.legal.termsVersion, null);
   assert.equal((await dashboard(s)).status, 200);
@@ -118,8 +130,8 @@ test('public documents stay readable during maintenance', async () => {
 
 // ── The gate ───────────────────────────────────────────────────────
 
-test('first sign-in on mobile: user.legal says acceptance is required and protected APIs refuse', async () => {
-  const s = await student();
+test('first sign-in on the Gate Scanner: user.legal says acceptance is required and protected APIs refuse', async () => {
+  const s = await guard();
   assert.equal(s.user.legal.termsRequired, true);
   assert.equal(s.user.legal.termsVersion, 1);
   assert.equal(s.user.legal.termsAcceptedVersion, null);
@@ -128,25 +140,45 @@ test('first sign-in on mobile: user.legal says acceptance is required and protec
   const res = await dashboard(s);
   assert.equal(res.status, 403);
   assert.equal(res.body.code, 'TERMS_ACCEPTANCE_REQUIRED');
-  for (const path of ['/announcements', '/users', '/attendance/my', '/notifications', '/chat/conversations', '/super-admin/accounts']) {
-    assert.equal((await ctx.request('GET', path, { token: s.token })).body?.code, 'TERMS_ACCEPTANCE_REQUIRED', path);
-  }
 
-  // Open while gated: identity, status, sessions, the documents, sign-out.
-  assert.equal((await ctx.request('GET', '/auth/me', { token: s.token })).body.legal.termsRequired, true);
-  assert.equal((await ctx.request('GET', '/legal/status', { token: s.token })).body.termsRequired, true);
-  assert.equal((await ctx.request('GET', '/auth/sessions', { token: s.token })).status, 200);
+  // Open while gated: identity, status, the documents.
+  assert.equal((await ctx.request('GET', '/auth/me', { token: s.token, headers: DESKTOP })).body.legal.termsRequired, true);
+  assert.equal((await ctx.request('GET', '/legal/status', { token: s.token, headers: DESKTOP })).body.termsRequired, true);
   assert.equal((await ctx.request('GET', '/legal/policies/terms', { token: s.token })).status, 200);
 
-  const mobileUser = await ctx.createUser({ role: 'faculty', department: 'CSE' });
-  const m = await ctx.loginMobile(mobileUser);
-  assert.equal(m.user.legal.termsRequired, true);
-  const mres = await ctx.request('GET', '/dashboard', { token: m.token });
-  assert.equal(mres.body.code, 'TERMS_ACCEPTANCE_REQUIRED');
   // A refreshed (existing) session is still gated: the token is not the record.
-  const refreshed = await ctx.request('POST', '/auth/refresh', { body: { refreshToken: m.refreshToken }, headers: { 'x-client-platform': 'mobile', 'user-agent': 'okhttp/4.12.0' } });
+  const refreshed = await ctx.request('POST', '/auth/refresh', { body: { refreshToken: s.refreshToken }, headers: DESKTOP });
   assert.equal(refreshed.status, 200);
   assert.equal(refreshed.body.user.legal.termsRequired, true);
+});
+
+test('the Android and iOS apps are never asked: mobile sessions are not gated and legal.termsRequired is false', async () => {
+  const m = await mobileStudent();
+  assert.equal(m.user.legal.termsRequired, false);
+  assert.equal(m.user.legal.termsVersion, 1, 'the documents are still versioned for display');
+  const headers = MOBILE;
+  assert.equal((await ctx.request('GET', '/dashboard', { token: m.token, headers })).status, 200);
+  assert.equal((await ctx.request('GET', '/auth/me', { token: m.token, headers })).body.legal.termsRequired, false);
+  assert.equal((await ctx.request('GET', '/legal/status', { token: m.token, headers })).body.termsRequired, false);
+  const refreshed = await ctx.request('POST', '/auth/refresh', { body: { refreshToken: m.refreshToken }, headers });
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.body.user.legal.termsRequired, false);
+  assert.equal(await ctx.models.PolicyAcceptance.countDocuments({ user: m.u._id }), 0);
+
+  for (const role of ['faculty', 'principal', 'hod']) {
+    const u = await ctx.createUser({ role, department: role === 'hod' || role === 'faculty' ? 'CSE' : undefined });
+    const s = await ctx.loginMobile(u);
+    assert.notEqual((await ctx.request('GET', '/dashboard', { token: s.token, headers })).body?.code, 'TERMS_ACCEPTANCE_REQUIRED', role);
+  }
+
+  const socket = ioClient(ctx.base, { transports: ['websocket'], auth: { token: m.token }, reconnection: false, forceNew: true });
+  try {
+    await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('connect_error', reject); });
+    const emit = (ev, arg) => new Promise((resolve) => socket.emit(ev, arg, resolve));
+    const id = '64b000000000000000000001';
+    assert.notEqual((await emit('chat:join', id)).error, 'terms_required');
+    assert.notEqual((await emit('transport:subscribe', 'all')).error, 'terms_required');
+  } finally { socket.disconnect(); }
 });
 
 test('the web app is never asked: web sessions are not gated and legal.termsRequired is false', async () => {
@@ -165,16 +197,8 @@ test('the web app is never asked: web sessions are not gated and legal.termsRequ
   assert.equal(await ctx.models.PolicyAcceptance.countDocuments({ user: w.u._id }), 0);
 });
 
-test('every role is gated on mobile, including admins', async () => {
-  for (const role of ['faculty', 'principal', 'hod']) {
-    const u = await ctx.createUser({ role, department: role === 'hod' || role === 'faculty' ? 'CSE' : undefined });
-    const s = { u, ...(await ctx.loginMobile(u)) };
-    assert.equal((await dashboard(s)).body.code, 'TERMS_ACCEPTANCE_REQUIRED', role);
-  }
-});
-
 test('acceptance input is validated and requires a signed-in user', async () => {
-  const s = await student();
+  const s = await guard();
   assert.equal((await ctx.request('POST', '/legal/accept', { body: { policyId: 'terms', version: 1, agreed: true } })).status, 401);
   assert.equal((await accept(s, { policyId: 'terms', version: 1 })).status, 422, 'agreed is required');
   assert.equal((await accept(s, { policyId: 'terms', version: 1, agreed: 'true' })).status, 422, 'agreed must be literally true');
@@ -189,8 +213,8 @@ test('acceptance input is validated and requires a signed-in user', async () => 
 });
 
 test('accepting unlocks the account, records the exact version server-side, and cannot target another user', async () => {
-  const s = await student();
-  const other = await student();
+  const s = await guard();
+  const other = await guard();
   const before = Date.now();
   const res = await accept(s, { policyId: 'terms', version: 1, agreed: true, user: String(other.u._id), userId: String(other.u._id), acceptedAt: '2000-01-01' });
   assert.equal(res.status, 200);
@@ -210,18 +234,18 @@ test('accepting unlocks the account, records the exact version server-side, and 
   assert.equal(rec.method, 'checkbox');
   assert.match(rec.consentText, /read and agree/);
   assert.equal(rec.privacyVersionShown, 1);
-  assert.equal(rec.client, 'mobile');
+  assert.equal(rec.client, 'gate_desktop');
   assert.ok(rec.acceptedAt.getTime() >= before - 1000, 'server time, not the client-sent date');
   for (const k of ['password', 'token', 'accessToken', 'refreshToken', 'ip']) assert.equal(rec[k], undefined, k);
 
   // The next sign-in does not ask again.
-  const again = await ctx.loginMobile(s.u);
+  const again = await loginGuard(s.u);
   assert.equal(again.user.legal.termsRequired, false);
 });
 
 test('accepting twice, or concurrently from two devices, keeps one record', async () => {
-  const s = await student();
-  const s2 = { u: s.u, ...(await ctx.loginMobile(s.u)) };
+  const s = await guard();
+  const s2 = { u: s.u, ...(await loginGuard(s.u)) };
   const results = await Promise.all([
     accept(s, { policyId: 'terms', version: 1, agreed: true }),
     accept(s2, { policyId: 'terms', version: 1, agreed: true }),
@@ -231,64 +255,22 @@ test('accepting twice, or concurrently from two devices, keeps one record', asyn
   assert.equal(await ctx.models.PolicyAcceptance.countDocuments({ user: s.u._id }), 1);
 });
 
-test('mobile acceptance records the mobile client', async () => {
-  const u = await ctx.createUser({ role: 'student', department: 'CSE', section: 'A' });
-  const m = await ctx.loginMobile(u);
-  const headers = { 'x-client-platform': 'mobile', 'user-agent': 'okhttp/4.12.0' };
-  const res = await ctx.request('POST', '/legal/accept', { token: m.token, headers, body: { policyId: 'terms', version: 1, agreed: true } });
-  assert.equal(res.status, 200);
-  assert.equal((await ctx.models.PolicyAcceptance.findOne({ user: u._id }).lean()).client, 'mobile');
-  assert.equal((await ctx.request('GET', '/dashboard', { token: m.token, headers })).status, 200);
-});
+test('sign-out still works while acceptance is pending, and a temporary password comes first', async () => {
+  const s = await guard();
+  assert.equal((await ctx.request('POST', '/auth/logout', { headers: DESKTOP, body: { refreshToken: s.refreshToken } })).status, 200);
 
-test('sign-out and password change still work while acceptance is pending', async () => {
-  const s = await student();
-  assert.equal((await ctx.request('POST', '/auth/logout', { headers: MOBILE, body: { refreshToken: s.refreshToken } })).status, 200);
-
-  const u = await ctx.createUser({ role: 'student', department: 'CSE', section: 'A', mustChangePassword: true });
-  const t = await ctx.loginMobile(u);
-  // The temporary password comes first, then the Terms.
+  const t = await guard({ mustChangePassword: true });
   assert.equal((await dashboard(t)).body.code, 'PASSWORD_CHANGE_REQUIRED');
-  const changed = await ctx.request('POST', '/auth/change-password', {
-    token: t.token,
-    headers: MOBILE,
-    body: { currentPassword: PASSWORD, newPassword: 'NewPassw0rd!' },
-  });
-  assert.equal(changed.status, 200);
-  assert.equal(changed.body.user.legal.termsRequired, true);
-  assert.equal((await ctx.request('GET', '/dashboard', { token: changed.body.accessToken })).body.code, 'TERMS_ACCEPTANCE_REQUIRED');
-});
-
-test('sockets: chat, discussion and bus rooms are refused until the Terms are accepted', async () => {
-  const s = await student();
-  const socket = ioClient(ctx.base, { transports: ['websocket'], auth: { token: s.token }, reconnection: false, forceNew: true });
-  try {
-    await new Promise((resolve, reject) => {
-      socket.once('connect', resolve);
-      socket.once('connect_error', reject);
-    });
-    const emit = (ev, arg) => new Promise((resolve) => socket.emit(ev, arg, resolve));
-    const id = '64b000000000000000000001';
-    assert.equal((await emit('chat:join', id)).error, 'terms_required');
-    assert.equal((await emit('discussion:join', id)).error, 'terms_required');
-    assert.equal((await emit('transport:subscribe', 'all')).error, 'terms_required');
-
-    await accept(s, { policyId: 'terms', version: 1, agreed: true });
-    // Same connection: now decided by the room's own rules.
-    assert.notEqual((await emit('chat:join', id)).error, 'terms_required');
-  } finally {
-    socket.disconnect();
-  }
 });
 
 // ── Versioning ─────────────────────────────────────────────────────
 
 test('a material Terms update (requiresAcceptance) asks everyone again; a minor one does not', async () => {
-  const s = await student();
+  const s = await guard();
   assert.equal((await accept(s, { policyId: 'terms', version: 1, agreed: true })).status, 200);
 
   await publish(entry('terms', 1, 'terms-a.md'), entry('terms', 2, 'terms-b.md', { requiresAcceptance: true }));
-  const me = await ctx.request('GET', '/auth/me', { token: s.token });
+  const me = await ctx.request('GET', '/auth/me', { token: s.token, headers: DESKTOP });
   assert.equal(me.body.legal.termsRequired, true);
   assert.equal(me.body.legal.termsVersion, 2);
   assert.equal(me.body.legal.termsAcceptedVersion, 1);
@@ -303,7 +285,7 @@ test('a material Terms update (requiresAcceptance) asks everyone again; a minor 
 
   // v3: a correction that does not require renewed acceptance.
   await publish(entry('terms', 3, 'terms-c.md', { requiresAcceptance: false }));
-  const after3 = await ctx.request('GET', '/auth/me', { token: s.token });
+  const after3 = await ctx.request('GET', '/auth/me', { token: s.token, headers: DESKTOP });
   assert.equal(after3.body.legal.termsVersion, 3);
   assert.equal(after3.body.legal.termsRequired, false, 'acceptance of v2 still satisfies v3');
   assert.equal((await dashboard(s)).status, 200);
@@ -311,10 +293,10 @@ test('a material Terms update (requiresAcceptance) asks everyone again; a minor 
 });
 
 test('a Privacy Policy update is independent and never gates anyone', async () => {
-  const s = await student();
+  const s = await guard();
   await accept(s, { policyId: 'terms', version: 3, agreed: true });
   await publish(entry('privacy', 2, 'privacy-b.md', { requiresAcceptance: true }));
-  const me = await ctx.request('GET', '/auth/me', { token: s.token });
+  const me = await ctx.request('GET', '/auth/me', { token: s.token, headers: DESKTOP });
   assert.equal(me.body.legal.privacyVersion, 2);
   assert.equal(me.body.legal.termsVersion, 3);
   assert.equal(me.body.legal.termsRequired, false);
@@ -323,7 +305,7 @@ test('a Privacy Policy update is independent and never gates anyone', async () =
 });
 
 test('drafts and future versions are never current, public or acceptable', async () => {
-  const s = await student();
+  const s = await guard();
   await accept(s, { policyId: 'terms', version: 3, agreed: true });
   await publish(
     entry('terms', 4, 'terms-draft.md', { status: 'draft', requiresAcceptance: true }),
@@ -392,11 +374,11 @@ test('stored versions and acceptance records cannot be altered or deleted throug
 });
 
 test('no API exposes acceptance history', async () => {
-  const s = await student();
+  const s = await guard();
   for (const path of ['/legal/acceptances', '/legal/history', '/legal/status/history', '/users/me/acceptances']) {
     const res = await ctx.request('GET', path, { token: s.token });
     assert.ok([403, 404].includes(res.status), `${path} → ${res.status}`);
   }
-  const status = await ctx.request('GET', '/legal/status', { token: s.token });
+  const status = await ctx.request('GET', '/legal/status', { token: s.token, headers: DESKTOP });
   assert.deepEqual(Object.keys(status.body).sort(), ['privacyVersion', 'termsAcceptedVersion', 'termsRequired', 'termsVersion']);
 });

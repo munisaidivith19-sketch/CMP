@@ -50,9 +50,8 @@ object Api {
     suspend fun registerPushToken(token: String) = post("/auth/push-token", jsonOf("token" to token))
     suspend fun updateMe(body: JsonElement) = put("/users/me", body, "Me", "User")
 
-    // ── Terms and Conditions / Privacy Policy (public documents; acceptance is for the signed-in user) ──
+    // ── Terms and Conditions / Privacy Policy (public documents) ──
     @Composable fun legalPolicy(policyId: String) = get("/legal/policies/${keyword(policyId)}", "LegalPolicy")
-    suspend fun acceptTerms(version: Int) = post("/legal/accept", jsonOf("policyId" to Legal.TERMS, "version" to version, "agreed" to true))
 
     // ── Study materials + JNN Study Assistant ──
     @Composable fun studyMaterials(params: Params? = null) = get("/study-materials", "StudyMaterial", params = params)

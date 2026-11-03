@@ -116,10 +116,10 @@ test('email password reset is disabled: both endpoints answer 410 and never touc
   const token = crypto.randomBytes(32).toString('base64url');
   const hash = crypto.createHash('sha256').update(token).digest('hex');
   await ctx.models.User.updateOne({ _id: user._id }, { resetTokenHash: hash, resetTokenExpires: new Date(Date.now() + 60000) });
-  const reset = await ctx.request('POST', '/auth/reset-password', { body: { token, password: 'BrandNew123' } });
+  const reset = await ctx.request('POST', '/auth/reset-password', { body: { token, password: 'BrandNew@123' } });
   assert.equal(reset.status, 410);
   assert.equal((await ctx.request('GET', '/auth/me', { token: web.token })).status, 200, 'sessions untouched');
-  const login = await ctx.request('POST', '/auth/login', { body: { email: user.email, password: 'BrandNew123' } });
+  const login = await ctx.request('POST', '/auth/login', { body: { email: user.email, password: 'BrandNew@123' } });
   assert.equal(login.status, 401, 'password unchanged');
 });
 
@@ -129,7 +129,7 @@ test('change password keeps this device and signs out the others', async () => {
   const phone = await ctx.loginMobile(user);
   const res = await ctx.request('POST', '/auth/change-password', {
     token: web.token,
-    body: { currentPassword: 'Password@123', newPassword: 'Changed123' },
+    body: { currentPassword: 'Password@123', newPassword: 'Changed@123' },
   });
   assert.equal(res.status, 200);
   assert.equal((await ctx.request('GET', '/auth/me', { token: res.body.accessToken })).status, 200);

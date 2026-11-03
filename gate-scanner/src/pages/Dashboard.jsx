@@ -3,6 +3,7 @@ import { AlarmClock, CheckCircle2, DoorOpen, LogIn, LogOut, RefreshCw, Users, XC
 import { useScanner } from '../hooks/useScanner.jsx';
 import { explainProblem, SCAN_CODES } from '../lib/explain.js';
 import { Badge, Button, Card, Spinner, Stat, StatusDot, fmtTime } from '../ui.jsx';
+import StatDetail from './StatDetail.jsx';
 
 const REFRESH_MS = 20000;
 const OUTCOME_TONE = { success: 'success', rejected: 'error', duplicate: 'warning' };
@@ -13,6 +14,7 @@ export default function Dashboard({ connection, guard, settings }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState(null);
   const { reportFailure } = connection;
 
   const load = useCallback(async () => {
@@ -54,10 +56,10 @@ export default function Dashboard({ connection, guard, settings }) {
       ) : data ? (
         <>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
-            <Stat icon={DoorOpen} tone="primary" label="Outside on a gate pass" value={p.outsideOnPass} hint={`Each student counted once · ${p.overdue} overdue`} />
-            <Stat icon={Users} tone="neutral" label="Not on an active gate pass" value={p.notOnActivePass} hint={`of ${p.totalStudents} active students`} />
-            <Stat icon={LogOut} tone="warning" label="OUT events today" value={data.today.outEvents} hint="Every recorded exit" />
-            <Stat icon={LogIn} tone="success" label="IN events today" value={data.today.inEvents} hint="Every recorded return" />
+            <Stat icon={DoorOpen} tone="primary" label="Outside on a gate pass" value={p.outsideOnPass} hint={`Each student counted once · ${p.overdue} overdue`} onClick={() => setDetail('outside')} />
+            <Stat icon={Users} tone="neutral" label="Not on an active gate pass" value={p.notOnActivePass} hint={`of ${p.totalStudents} active students`} onClick={() => setDetail('notOnPass')} />
+            <Stat icon={LogOut} tone="warning" label="OUT events today" value={data.today.outEvents} hint="Every recorded exit" onClick={() => setDetail('out')} />
+            <Stat icon={LogIn} tone="success" label="IN events today" value={data.today.inEvents} hint="Every recorded return" onClick={() => setDetail('in')} />
           </div>
           <p className="text-xs muted">
             Counts come from approved gate passes only: “outside” means an exit was recorded and the return has not been. Students who leave without a gate pass (for example day scholars going home) are not tracked by these records, so “not on an active gate pass” is not a head count of who is physically on campus.
@@ -98,6 +100,7 @@ export default function Dashboard({ connection, guard, settings }) {
           </div>
         </>
       ) : null}
+      {detail && <StatDetail kind={detail} population={p} onClose={() => setDetail(null)} />}
     </div>
   );
 }

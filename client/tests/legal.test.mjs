@@ -1,5 +1,5 @@
 // Terms and Conditions / Privacy Policy on the web: profile entries and public pages.
-// The web app does not ask for acceptance (only the mobile apps do).
+// The web app does not ask for acceptance and the sign-in page does not mention the policies.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
@@ -27,6 +27,10 @@ test('the policy pages are public routes and the web has no acceptance screen or
   assert.match(app, /<Route path=\{PRIVACY_PATH\} element=\{<PolicyPage policyId="privacy" \/>\} \/>/);
   assert.doesNotMatch(app, /AcceptTerms|accept-terms|needsTermsAcceptance/);
   assert.equal(existsSync(new URL('../src/pages/legal/AcceptTerms.jsx', import.meta.url)), false);
+});
+
+test('the sign-in page does not show the Terms or the Privacy Policy', () => {
+  assert.doesNotMatch(src('pages/auth/Login.jsx'), /TERMS_PATH|PRIVACY_PATH|Terms and Conditions|Privacy Policy/);
 });
 
 test('policy text is rendered by the safe Markdown component, never as HTML', () => {

@@ -1,3 +1,4 @@
+import { PASSWORD_HINT, suggestPassword } from '../utils/password';
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react';
@@ -53,12 +54,6 @@ const GENDERS = [
   { value: 'female', label: 'Female' },
 ];
 const NUMERIC = new Set(['year', 'inChargeYear', 'inChargeSemester']);
-
-function suggestPassword() {
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
-  const pick = (n, set) => Array.from(crypto.getRandomValues(new Uint32Array(n)), (x) => set[x % set.length]).join('');
-  return `${pick(6, letters)}${pick(3, '23456789')}`;
-}
 
 export default function CreateUserModal({ open, onClose }) {
   const me = useSelector(selectUser);
@@ -311,7 +306,7 @@ const normalizeDigits = (val) => {
               label="Set password"
               type={show ? 'text' : 'password'}
               autoComplete="new-password"
-              hint="At least 8 characters with a letter and a number."
+              hint={PASSWORD_HINT}
               className="flex-1"
               {...common}
             />
@@ -344,7 +339,7 @@ const normalizeDigits = (val) => {
         onClose={onClose}
         size="lg"
         title="Create login"
-      subtitle="The college email is the username. Share the password with the user — they can change it after signing in."
+      subtitle="The college email is the username. Share the password with the user — they must choose their own the first time they sign in."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

@@ -969,8 +969,12 @@ export async function confirmExit(req, passId, code) {
 
   logActivity(req, 'gate_pass.out', { entityType: 'gate_pass', entityId: pass._id });
   passSecurity(req, 'GATE_PASS_EXIT_CONFIRMED', updated);
-  const exitNotice = await returnSvc.notifyExited({ pass: updated, student: updated.student, exitedAt: updated.actualExit });
-  logActivity(req, exitNotice.parentSent ? 'gate_pass.parent_exit_notified' : 'gate_pass.parent_exit_notice_failed', { entityType: 'gate_pass', entityId: updated._id });
+  // The parent's SMS is slow (an outside service) and cannot change the result, so the gate
+  // is answered first and the message is sent in the background; its outcome is still logged.
+  returnSvc
+    .notifyExited({ pass: updated, student: updated.student, exitedAt: updated.actualExit })
+    .then((exitNotice) => logActivity(req, exitNotice.parentSent ? 'gate_pass.parent_exit_notified' : 'gate_pass.parent_exit_notice_failed', { entityType: 'gate_pass', entityId: updated._id }))
+    .catch((err) => console.error('[gate-pass] parent exit notice failed:', err.message));
   logActivity(req, 'gate_pass.code_consumed', { entityType: 'gate_pass', entityId: pass._id });
   notifyUsers(
     [pass.student],
@@ -1023,7 +1027,8 @@ export async function confirmReturn(req, passId, credential) {
   logActivity(req, 'gate_pass.in', { entityType: 'gate_pass', entityId: updated._id });
   passSecurity(req, 'GATE_PASS_RETURN_CONFIRMED', updated);
   publish(updated);
-  await returnSvc.notifyReturned({ pass: updated, student: updated.student, returnedAt: now });
+  // Class faculty are told after the gate has its answer (same reason as the exit SMS).
+  returnSvc.notifyReturned({ pass: updated, student: updated.student, returnedAt: now }).catch((err) => console.error('[gate-pass] return notice failed:', err.message));
   return updated;
 }
 

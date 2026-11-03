@@ -5,7 +5,8 @@ import { useCreateClassStudentMutation, useGetClassStudentQuery, useGetClassStud
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select } from '../../components/ui/form';
-import ResetPasswordModal, { suggestPassword } from '../../components/ResetPasswordModal';
+import ResetPasswordModal from '../../components/ResetPasswordModal';
+import { PASSWORD_HINT, suggestPassword } from '../../utils/password';
 import RestrictionPopupModal from '../../components/RestrictionPopupModal';
 import { ACADEMIC_YEARS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, timeAgo, displayName } from '../../utils/format';
@@ -213,7 +214,7 @@ function CreateStudentModal({ open, scope, onClose }) {
         onClose={onClose}
         size="lg"
         title="Create student"
-        subtitle="The college email is the username. Share the password with the student — they can change it after signing in."
+        subtitle="The college email is the username. Share the password with the student — they must choose their own the first time they sign in."
         footer={
           <>
             <Button variant="ghost" onClick={onClose}>
@@ -258,7 +259,7 @@ function CreateStudentModal({ open, scope, onClose }) {
               label="Set password"
               type={show ? 'text' : 'password'}
               autoComplete="new-password"
-              hint="At least 8 characters with a letter and a number."
+              hint={PASSWORD_HINT}
               className="min-w-0 flex-1"
               required
               value={v.password}

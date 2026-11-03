@@ -84,7 +84,7 @@ test('Class today: faculty without a class get none; HOD, student and anonymous 
 
 const newStudent = (over = {}) => {
   n += 1;
-  return { name: `Form Student ${n}`, email: `form${n}@jnn.edu.in`, password: 'Welcome123', rollNo: `F${n}`, stayType: 'hosteler', title: 'Ms', gender: 'female', parentPhone: '9876543210', ...over };
+  return { name: `Form Student ${n}`, email: `form${n}@jnn.edu.in`, password: 'Welcome@123', rollNo: `F${n}`, stayType: 'hosteler', title: 'Ms', gender: 'female', parentPhone: '9876543210', ...over };
 };
 
 test('Create student: title + gender are required, Mr/Ms only, and must agree', async () => {

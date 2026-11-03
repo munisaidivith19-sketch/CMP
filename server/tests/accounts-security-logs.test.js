@@ -61,7 +61,7 @@ after(async () => {
 
 const newStudentBody = (over = {}) => {
   n += 1;
-  return { name: `New Student ${n}`, email: `new${n}@jnn.edu.in`, password: 'Welcome123', rollNo: `23cse2${n}`, stayType: 'day_scholar', title: 'Mr', gender: 'male', parentPhone: '+91 98765 43210', ...over };
+  return { name: `New Student ${n}`, email: `new${n}@jnn.edu.in`, password: 'Welcome@123', rollNo: `23cse2${n}`, stayType: 'day_scholar', title: 'Mr', gender: 'male', parentPhone: '+91 98765 43210', ...over };
 };
 
 // ── Faculty (Class In-Charge) student creation ──────────────────────
@@ -167,12 +167,12 @@ test('Class In-Charge resets their student’s password without the old one; ses
   const web = await ctx.loginWeb(s);
   const phone = await ctx.loginMobile(s);
 
-  const mismatch = await req('POST', `/users/${s._id}/reset-password`, cic, { newPassword: 'Fresh1234', confirmPassword: 'Fresh12345' });
+  const mismatch = await req('POST', `/users/${s._id}/reset-password`, cic, { newPassword: 'Fresh@1234', confirmPassword: 'Fresh@12345' });
   assert.equal(mismatch.status, 422);
   const weak = await req('POST', `/users/${s._id}/reset-password`, cic, { newPassword: 'short', confirmPassword: 'short' });
   assert.equal(weak.status, 422);
 
-  const res = await req('POST', `/users/${s._id}/reset-password`, cic, { newPassword: 'Fresh1234', confirmPassword: 'Fresh1234', reason: 'Forgot password' });
+  const res = await req('POST', `/users/${s._id}/reset-password`, cic, { newPassword: 'Fresh@1234', confirmPassword: 'Fresh@1234', reason: 'Forgot password' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.sessionsRevoked, 2);
   assert.equal(res.headers.get('cache-control'), 'no-store');
@@ -182,7 +182,7 @@ test('Class In-Charge resets their student’s password without the old one; ses
   const refresh = await ctx.request('POST', '/auth/refresh', { body: { refreshToken: phone.refreshToken }, headers: { 'x-client-platform': 'mobile' } });
   assert.equal(refresh.status, 401, 'refresh token dead');
   assert.equal((await ctx.request('POST', '/auth/login', { body: { email: s.email, password: PASSWORD } })).status, 401, 'old password gone');
-  assert.equal((await ctx.request('POST', '/auth/login', { body: { email: s.email, password: 'Fresh1234' } })).status, 200);
+  assert.equal((await ctx.request('POST', '/auth/login', { body: { email: s.email, password: 'Fresh@1234' } })).status, 200);
 
   await settle();
   const [log] = await logs({ event: 'PASSWORD_RESET', targetUser: s._id });
@@ -195,12 +195,12 @@ test('Class In-Charge resets their student’s password without the old one; ses
   assert.ok(log.ip && log.device && log.os && log.browser);
   assert.equal((await logs({ event: 'FORCED_LOGOUT', targetUser: s._id })).length, 1);
   const all = JSON.stringify(await ctx.models.SecurityLog.find({}).lean());
-  assert.ok(!all.includes('Fresh1234') && !all.includes(PASSWORD), 'no password value in any security record');
+  assert.ok(!all.includes('Fresh@1234') && !all.includes(PASSWORD), 'no password value in any security record');
   assert.ok(!/\$2[aby]\$/.test(all), 'no password hash in any security record');
 });
 
 test('faculty cannot reset passwords outside their class or for staff; other roles get 403', async () => {
-  const body = { newPassword: 'Hijack1234', confirmPassword: 'Hijack1234' };
+  const body = { newPassword: 'Hijack@1234', confirmPassword: 'Hijack@1234' };
   const targets = [studentB.u, otherYear.u, plainFaculty.u, hod.u, principal.u, admin.u, cicOther.u];
   for (const t of targets) assert.equal((await req('POST', `/users/${t._id}/reset-password`, cic, body)).status, 403, `${t.name}`);
   // Not a Class In-Charge at all.
@@ -211,19 +211,19 @@ test('faculty cannot reset passwords outside their class or for staff; other rol
     assert.equal((await req('POST', `/users/${studentA.u._id}/reset-password`, nonAdmins[role], body)).status, 403, role);
   }
   // Nothing changed.
-  assert.equal((await ctx.request('POST', '/auth/login', { body: { email: studentA.u.email, password: 'Hijack1234' } })).status, 401);
+  assert.equal((await ctx.request('POST', '/auth/login', { body: { email: studentA.u.email, password: 'Hijack@1234' } })).status, 401);
   assert.equal((await req('GET', '/auth/me', studentA)).status, 200, 'victim session intact');
   await settle();
   assert.ok((await logs({ event: 'PASSWORD_RESET_FAILED' })).length >= targets.length + 10);
 });
 
 test('Admin resets any non-admin password; not their own and not another admin’s', async () => {
-  const body = { newPassword: 'AdminSet123', confirmPassword: 'AdminSet123' };
+  const body = { newPassword: 'AdminSet@123', confirmPassword: 'AdminSet@123' };
   const f = await ctx.createUser({ role: 'faculty', department: 'CSE' });
   const fWeb = await ctx.loginWeb(f);
   assert.equal((await req('POST', `/users/${f._id}/reset-password`, admin, body)).status, 200);
   assert.equal((await req('GET', '/auth/me', fWeb)).status, 401);
-  assert.equal((await ctx.request('POST', '/auth/login', { body: { email: f.email, password: 'AdminSet123' } })).status, 200);
+  assert.equal((await ctx.request('POST', '/auth/login', { body: { email: f.email, password: 'AdminSet@123' } })).status, 200);
 
   const s = await ctx.createUser({ department: 'ECE', section: 'C', year: 1, semester: 1 });
   assert.equal((await req('POST', `/users/${s._id}/reset-password`, admin, body)).status, 200, 'college-wide');
@@ -241,11 +241,11 @@ test('Admin resets any non-admin password; not their own and not another admin�
 test('self password change still requires the current password, and is logged (faculty included)', async () => {
   const f = await ctx.createUser({ role: 'faculty', department: 'CSE' });
   const web = await ctx.loginWeb(f);
-  const wrong = await req('POST', '/auth/change-password', web, { currentPassword: 'Nope12345', newPassword: 'Changed123' });
+  const wrong = await req('POST', '/auth/change-password', web, { currentPassword: 'Nope12345', newPassword: 'Changed@123' });
   assert.equal(wrong.status, 400);
-  const missing = await req('POST', '/auth/change-password', web, { newPassword: 'Changed123' });
+  const missing = await req('POST', '/auth/change-password', web, { newPassword: 'Changed@123' });
   assert.equal(missing.status, 422);
-  const ok = await req('POST', '/auth/change-password', web, { currentPassword: PASSWORD, newPassword: 'Changed123' });
+  const ok = await req('POST', '/auth/change-password', web, { currentPassword: PASSWORD, newPassword: 'Changed@123' });
   assert.equal(ok.status, 200);
   await settle();
   const records = await logs({ event: 'PASSWORD_CHANGED', targetUser: f._id });
@@ -286,7 +286,7 @@ test('a client cannot forge the actor, role or timestamp of a security record', 
   const before = Date.now();
   await req('POST', '/auth/change-password', studentB, {
     currentPassword: 'definitely-wrong1',
-    newPassword: 'Another123',
+    newPassword: 'Another@123',
     actor: admin.u._id,
     actorRole: 'admin',
     createdAt: '2001-01-01T00:00:00Z',

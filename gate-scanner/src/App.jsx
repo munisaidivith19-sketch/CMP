@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, History as HistoryIcon, LayoutDashboard, LogOut, ScanLine, ShieldCheck, Stethoscope, Usb, UserRoundCog, X } from 'lucide-react';
+import { Activity, History as HistoryIcon, LayoutDashboard, LogOut, Monitor, Moon, ScanLine, ShieldCheck, Stethoscope, Sun, Usb, UserRoundCog, X } from 'lucide-react';
+import { applyTheme, readTheme, saveTheme } from './lib/theme.js';
 import { useConnection } from './hooks/useConnection.js';
 import { ScannerProvider, useScanner } from './hooks/useScanner.jsx';
 import { explainProblem } from './lib/explain.js';
@@ -173,6 +174,7 @@ function Shell({ info, guard, settings, saveSettings, onTerms, onSignedOut }) {
               <p className="truncate text-sm font-bold" title={guard?.name}>{guard?.name}</p>
               <p className="text-xs muted">Security · {settings.gateName || 'Gate not named'}</p>
             </div>
+            <ThemeSwitch />
             <GuardActions guard={guard} onSignedOut={onSignedOut} />
           </div>
         </aside>
@@ -250,6 +252,40 @@ function GuardActions({ guard, onSignedOut }) {
       <Button variant="ghost" icon={LogOut} className="w-full justify-start" onClick={() => setConfirm('manual')}>
         Sign out
       </Button>
+    </div>
+  );
+}
+
+const THEME_OPTIONS = [
+  { id: 'light', label: 'Light', icon: Sun },
+  { id: 'system', label: 'System', icon: Monitor },
+  { id: 'dark', label: 'Dark', icon: Moon },
+];
+
+/** Light / System / Dark, remembered on this PC. */
+function ThemeSwitch() {
+  const [choice, setChoice] = useState(readTheme);
+  const pick = (id) => {
+    setChoice(id);
+    saveTheme(id);
+    applyTheme(id);
+  };
+  return (
+    <div role="radiogroup" aria-label="Colour theme" className="flex gap-1 rounded-2xl bg-white/60 p-1 dark:bg-white/5">
+      {THEME_OPTIONS.map(({ id, label, icon: Icon }) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={choice === id}
+          title={label}
+          onClick={() => pick(id)}
+          className={cn('flex flex-1 items-center justify-center gap-1 rounded-xl px-2 py-1.5 text-xs font-semibold', choice === id ? 'nav-link-active' : 'nav-link')}
+        >
+          <Icon className="h-4 w-4" aria-hidden />
+          <span className="sr-only">{label}</span>
+        </button>
+      ))}
     </div>
   );
 }

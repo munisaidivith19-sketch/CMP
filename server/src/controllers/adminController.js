@@ -492,8 +492,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, 'User not found');
   // Admin / Super Admin accounts: Super Admin only (deactivate, never delete).
   if (!moduleForRole(user.role)) requirePolicy(req, null, null, null, user);
-  // No module policy grants deletion: only legacy (unrestricted) admins delete.
-  if (isPolicyManaged(req.user)) requirePolicy(req, null, null, null, user);
+  requirePolicy(req, moduleForRole(user.role), 'delete', user.department, user);
 
   const live = await Session.find({ user: user._id, revokedAt: null }).distinct('_id');
   if (live.length) {

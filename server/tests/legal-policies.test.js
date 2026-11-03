@@ -64,7 +64,7 @@ test('no published Terms: nobody is gated and the public documents are 404', asy
   assert.equal((await accept(s, { policyId: 'terms', version: 1, agreed: true })).status, 404);
 });
 
-test('the shipped registry syncs: one published Terms and one Privacy Policy, idempotently', async () => {
+test('the shipped registry syncs: every published Terms and Privacy Policy version, idempotently', async () => {
   // Read-only check in a throw-away collection state: sync, inspect, then remove.
   const first = await legal.syncPolicyVersions();
   assert.equal(first.inserted, POLICY_REGISTRY.length);
@@ -72,7 +72,7 @@ test('the shipped registry syncs: one published Terms and one Privacy Policy, id
   assert.equal(again.inserted, 0);
   assert.equal(again.unchanged, POLICY_REGISTRY.length);
   const docs = await ctx.models.PolicyVersion.find().lean();
-  assert.deepEqual(docs.map((d) => d.policyId).sort(), ['privacy', 'terms']);
+  assert.deepEqual(docs.map((d) => `${d.policyId} v${d.version}`).sort(), ['privacy v1', 'privacy v2', 'terms v1', 'terms v2']);
   for (const d of docs) {
     assert.equal(d.status, 'published');
     assert.match(d.contentHash, /^[a-f0-9]{64}$/);

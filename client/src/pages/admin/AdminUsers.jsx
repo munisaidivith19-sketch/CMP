@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { Ban, CheckCircle2, Download, KeyRound, Pencil, Search, ShieldCheck, Trash2, UserCog, UserPlus } from 'lucide-react';
+import { Ban, CheckCircle2, Download, KeyRound, MoreHorizontal, Pencil, Search, ShieldCheck, Trash2, UserCog, UserPlus } from 'lucide-react';
 import { useDeleteAdminUserMutation, useGetAdminUsersQuery, useUpdateAdminUserMutation } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, PageLoader, Pagination, Tabs } from '../../components/ui/primitives';
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
@@ -14,7 +15,7 @@ import RestrictionPopupModal from '../../components/RestrictionPopupModal';
 import FacultyRoleAssignmentsTab from './FacultyRoleAssignmentsTab';
 import { RolePoliciesTab } from './AdminPoliciesTab';
 import { useGetMyPoliciesQuery } from '../../services/superAdmin';
-import { STAFF_GRANT_ROLES, allowedRoles, holdsGrant } from '../../utils/delegation';
+import { STAFF_GRANT_ROLES, allowedRoles, holdsGrant, moduleForRole } from '../../utils/delegation';
 import UserPoliciesModal from '../../components/UserPoliciesModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
@@ -33,6 +34,65 @@ const normalizeDigits = (val) => {
   if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
   return digits;
 };
+
+/** One "Actions" dropdown per row; the menu is fixed-positioned so the table's scroll area never clips it. */
+function RowActions({ items, label }) {
+  const [pos, setPos] = useState(null);
+  const list = items.filter(Boolean);
+
+  useEffect(() => {
+    if (!pos) return undefined;
+    const close = () => setPos(null);
+    const onKey = (e) => e.key === 'Escape' && close();
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pos]);
+
+  if (!list.length) return null;
+  const toggle = (e) => {
+    if (pos) return setPos(null);
+    const r = e.currentTarget.getBoundingClientRect();
+    const up = window.innerHeight - r.bottom < list.length * 40 + 16;
+    setPos({ right: window.innerWidth - r.right, ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+  };
+
+  return (
+    <>
+      <Button size="sm" variant="outline" icon={MoreHorizontal} onClick={toggle} aria-label={label} aria-haspopup="menu" aria-expanded={Boolean(pos)}>
+        Actions
+      </Button>
+      {pos &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[1000]" onClick={() => setPos(null)} />
+            <div role="menu" style={pos} className="fixed z-[1001] min-w-[11rem] overflow-hidden rounded-xl border border-white/10 bg-[#1b1b3a] p-1 text-left text-white shadow-xl">
+              {list.map(({ key, label: text, icon: Icon, danger, onClick }) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setPos(null);
+                    onClick();
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-white/10 ${danger ? 'text-red-400' : ''}`}
+                >
+                  <Icon size={15} /> {text}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
+    </>
+  );
+}
 
 /** The form's values for a user; every text field is a string, never undefined. */
 const classFormValues = (user) => ({
@@ -286,6 +346,8 @@ export default function AdminUsers() {
   const can = (action) => !viaGrant || ['user_management', 'staff_management'].some((m) => holdsGrant(myPolicies, m, action));
   const canCreate = !viaGrant || allowedRoles(myPolicies, 'create').length > 0;
   const canExport = !viaGrant || holdsGrant(myPolicies, 'user_management', 'export');
+  // Delete: legacy admins always can; policy-managed admins need the delete action; staff grants cannot.
+  const canDelete = (u) => !viaGrant && (!myPolicies?.policyManaged || holdsGrant(myPolicies, moduleForRole(u.role), 'delete'));
   // Who may open the per-user Policies dialog for staff accounts.
   const canGrantStaff = me?.role === 'super_admin' || Boolean(myPolicies?.policyManaged && myPolicies?.delegation?.canAssignPolicies);
   const [policyUser, setPolicyUser] = useState(null);
@@ -467,37 +529,18 @@ export default function AdminUsers() {
                       </td>
                       <td className="px-5 py-3 text-right">
                         {!self && (
-                          <div className="inline-flex items-center gap-2">
-                            {can('edit') && (
-                              <Button size="sm" variant="outline" icon={Pencil} onClick={() => setClassEdit(u)}>
-                                Edit
-                              </Button>
-                            )}
-                            {canGrantStaff && STAFF_GRANT_ROLES.includes(u.role) && (
-                              <Button size="sm" variant="outline" icon={ShieldCheck} onClick={() => setPolicyUser(u)} title="Add access on top of this account's role">
-                                Policies
-                              </Button>
-                            )}
-                            {u.role !== 'admin' && can('edit') && (
-                              <Button size="sm" variant="outline" icon={KeyRound} onClick={() => setResetting(u)}>
-                                Reset password
-                              </Button>
-                            )}
-                            {!can('suspend') ? null : u.isActive ? (
-                              <Button size="sm" variant="danger" icon={Ban} onClick={() => setPending(u)}>
-                                Suspend
-                              </Button>
-                            ) : (
-                              <Button size="sm" variant="success" icon={CheckCircle2} onClick={() => apply(u._id, { isActive: true }, 'Account reactivated')}>
-                                Reactivate
-                              </Button>
-                            )}
-                            {!viaGrant && (
-                              <Button size="sm" variant="danger" icon={Trash2} onClick={() => setDeleting(u)}>
-                                Delete
-                              </Button>
-                            )}
-                          </div>
+                          <RowActions
+                            label={`Actions for ${displayName(u)}`}
+                            items={[
+                              can('edit') && { key: 'edit', label: 'Edit', icon: Pencil, onClick: () => setClassEdit(u) },
+                              canGrantStaff && STAFF_GRANT_ROLES.includes(u.role) && { key: 'policies', label: 'Policies', icon: ShieldCheck, onClick: () => setPolicyUser(u) },
+                              u.role !== 'admin' && can('edit') && { key: 'reset', label: 'Reset password', icon: KeyRound, onClick: () => setResetting(u) },
+                              can('suspend') && (u.isActive
+                                ? { key: 'suspend', label: 'Suspend', icon: Ban, danger: true, onClick: () => setPending(u) }
+                                : { key: 'reactivate', label: 'Reactivate', icon: CheckCircle2, onClick: () => apply(u._id, { isActive: true }, 'Account reactivated') }),
+                              canDelete(u) && { key: 'delete', label: 'Delete', icon: Trash2, danger: true, onClick: () => setDeleting(u) },
+                            ]}
+                          />
                         )}
                       </td>
                     </tr>

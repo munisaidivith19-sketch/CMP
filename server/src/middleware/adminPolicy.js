@@ -92,6 +92,7 @@ const RULES = [
   [/^\/admin\/users$/, ['POST'], anyOf(either('create', 'user_management', 'staff_management'))],
   [/^\/admin\/users\/[^/]+\/policies$/, ['GET', 'PUT'], [['user_management', 'policies']]],
   [/^\/admin\/users\/[^/]+$/, ['PATCH'], anyOf([...either('edit', 'user_management', 'staff_management'), ...either('suspend', 'user_management', 'staff_management'), ['user_management', 'roles']])],
+  [/^\/admin\/users\/[^/]+$/, ['DELETE'], anyOf(either('delete', 'user_management', 'staff_management'))],
   [/^\/users\/[^/]+\/reset-password$/, ['POST'], anyOf(either('edit', 'user_management', 'staff_management'))],
   [/^\/admin\/role-assignments\//, READ, [['staff_management', 'view']]],
   // Department-scoped staff managers may only assign within their department;

@@ -52,4 +52,26 @@ export const POLICY_REGISTRY = [
     file: 'privacy-v1.md',
     changeSummary: 'First published version.',
   },
+  // Version 2 (3 November 2026): the Technical Provider's role, no institutional fee,
+  // data control, retention, breach handling and the other sections the College asked for.
+  // Terms stay at "no re-acceptance": only Gate Scanner sessions accept Terms, and
+  // those guards have already accepted version 1.
+  {
+    policyId: 'terms',
+    version: 2,
+    status: 'published',
+    effectiveAt: '2026-11-03T00:00:00.000Z',
+    requiresAcceptance: false,
+    file: 'terms-v2.md',
+    changeSummary: 'Rewritten: the role of the Technical Provider, the responsibilities of the College, no institutional fee, data control, liability and governing law.',
+  },
+  {
+    policyId: 'privacy',
+    version: 2,
+    status: 'published',
+    effectiveAt: '2026-11-03T00:00:00.000Z',
+    requiresAcceptance: false,
+    file: 'privacy-v2.md',
+    changeSummary: 'Rewritten: who is responsible for personal data, information processed, retention, security incidents, user rights and information about children.',
+  },
 ];

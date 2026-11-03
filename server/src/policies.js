@@ -8,8 +8,8 @@ import { ADMIN_MODULES, ADMIN_MODULE_KEYS } from './constants/adminModules.js';
  *   - `view` never implies a write,
  *   - a write (create / edit / …) never implies export, cancel, policy
  *     administration or any other action,
- *   - there is no "delete" action anywhere: historical records and audit logs
- *     cannot be removed through a module policy.
+ *   - "delete" is only available where safe: user_management and staff_management
+ *     (never for audit logs or club history).
  *
  * `scopes` are the data scopes the module actually enforces today. A scope is
  * only offered where the server filters by it (see controllers/adminController.js
@@ -58,6 +58,7 @@ export const POLICY_CATALOGUE = {
       create: 'Create staff accounts',
       edit: 'Edit staff profile fields, class in-charge and HOD assignments, reset staff passwords',
       suspend: 'Suspend or reactivate staff accounts',
+      delete: 'Permanently delete staff accounts',
     },
   },
   events: {
@@ -89,6 +90,7 @@ export const POLICY_CATALOGUE = {
       create: 'Create ordinary (student / alumni) accounts',
       edit: 'Edit permitted profile fields and reset passwords',
       suspend: 'Suspend or reactivate accounts',
+      delete: 'Permanently delete student or alumni accounts',
       roles: 'Change an account between ordinary and staff roles (never Admin or Super Admin)',
       policies: 'Assign or revoke module policies of other Admins — only policies this Admin holds',
       export: 'Download the profiles PDF',

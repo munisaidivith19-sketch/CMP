@@ -19,6 +19,8 @@ const { Schema } = mongoose;
  */
 export const AUDIT_ACTIONS = [
   'SUPER_ADMIN_REAUTH',
+  'STUDENTS_PROMOTED',
+  'PROMOTION_UNDONE',
   'ADMIN_CREATED',
   'ADMIN_UPDATED',
   'ADMIN_ACTIVATED',

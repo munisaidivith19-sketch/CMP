@@ -274,6 +274,8 @@ export const resetUserPassword = asyncHandler(async (req, res) => {
   }
 
   target.password = req.body.newPassword;
+  // Whoever reset it knows it: an ordinary user chooses their own at next sign-in. (Admin and Super Admin accounts are never reset here.)
+  if (target.role !== 'admin' && target.role !== 'super_admin') target.mustChangePassword = true;
   target.tokenVersion = (target.tokenVersion || 0) + 1;
   target.failedLogins = 0;
   target.lockUntil = undefined;

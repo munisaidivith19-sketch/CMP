@@ -81,6 +81,16 @@ test('a student added by their Class In-Charge is asked too', async () => {
   assert.equal((await signIn(email)).body.user.mustChangePassword, true);
 });
 
+test('a password reset by an Admin makes the user choose their own at next sign-in', async () => {
+  const u = await ctx.createUser({ role: 'student', department: 'CSE', section: 'A', rollNo: `PR${Date.now().toString(36)}` });
+  assert.equal((await signIn(u.email, PASSWORD)).body.user.mustChangePassword, false);
+  const reset = await ctx.request('POST', `/users/${u._id}/reset-password`, { token: admin.token, body: { newPassword: 'Reset@12345', confirmPassword: 'Reset@12345' } });
+  assert.equal(reset.status, 200, JSON.stringify(reset.body));
+  const again = await signIn(u.email, 'Reset@12345');
+  assert.equal(again.body.user.mustChangePassword, true);
+  assert.equal((await probe(again.body.accessToken)).body.code, 'PASSWORD_CHANGE_REQUIRED');
+});
+
 test('existing accounts are not affected: an old weak password still signs in and is not forced to change', async () => {
   const u = await ctx.createUser({ role: 'student', department: 'CSE', section: 'A', password: 'oldpass12' });
   const res = await ctx.request('POST', '/auth/login', { body: { email: u.email, password: 'oldpass12' }, headers: MOBILE });

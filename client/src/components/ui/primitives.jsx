@@ -76,12 +76,12 @@ const BADGES = {
 };
 
 const ON_DARK_BADGES = {
-  primary: 'bg-primary-500/30 text-primary-100 border border-primary-400/40 backdrop-blur-md',
-  success: 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/40 backdrop-blur-md',
-  warning: 'bg-amber-500/30 text-amber-100 border border-amber-400/40 backdrop-blur-md',
-  danger: 'bg-rose-500/30 text-rose-100 border border-rose-400/40 backdrop-blur-md',
-  info: 'bg-sky-500/30 text-sky-100 border border-sky-400/40 backdrop-blur-md',
-  neutral: 'bg-white/20 text-white border border-white/30 backdrop-blur-md',
+  primary: 'bg-primary-500/30 text-primary-100 border border-primary-400/40',
+  success: 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/40',
+  warning: 'bg-amber-500/30 text-amber-100 border border-amber-400/40',
+  danger: 'bg-rose-500/30 text-rose-100 border border-rose-400/40',
+  info: 'bg-sky-500/30 text-sky-100 border border-sky-400/40',
+  neutral: 'bg-white/20 text-white border border-white/30',
 };
 
 export function Badge({ color = 'primary', className, children, icon: Icon, onDark = false }) {
@@ -105,7 +105,7 @@ export function CategoryBadge({ category, className, onDark = false }) {
     <span
       className={cn(
         'inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold capitalize',
-        onDark ? style.onDark || 'bg-white/20 text-white border border-white/30 backdrop-blur-md' : style.soft,
+        onDark ? style.onDark || 'bg-white/20 text-white border border-white/30' : style.soft,
         className
       )}
     >

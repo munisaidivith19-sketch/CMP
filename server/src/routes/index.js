@@ -1,4 +1,5 @@
 import { withPasswordRules } from '../utils/passwordPolicy.js';
+import * as promotions from '../controllers/promotionController.js';
 import { Router } from 'express';
 import { body, query, param } from 'express-validator';
 import { protect, authorize } from '../middleware/auth.js';
@@ -2244,6 +2245,27 @@ router.patch('/complaints/:id/cancel', idParam('id'), validate, complaints.cance
 router.get('/analytics/student', ...rangeQuery, validate, analytics.studentAnalytics);
 router.get('/analytics/faculty', authorize(...STAFF_VIEW), ...rangeQuery, validate, analytics.facultyAnalytics);
 router.get('/analytics/department', authorize(...STAFF_VIEW), ...rangeQuery, validate, analytics.departmentAnalytics);
+// Semester promotion: the Principal only.
+const promotionRules = [
+  body('scope.kind').isIn(['student', 'section', 'year', 'department', 'college']).withMessage('Choose who to promote'),
+  body('scope.department').optional({ values: 'falsy' }).isString().isLength({ max: 80 }),
+  body('scope.year').optional({ values: 'falsy' }).isInt({ min: 1, max: 4 }),
+  body('scope.section').optional({ values: 'falsy' }).isString().isLength({ max: 10 }),
+  body('scope.rollNos').optional().isArray({ max: 500 }),
+  body('scope.rollNos.*').isString().isLength({ max: 30 }),
+  body('holdBack').optional().isArray(),
+  body('holdBack.*').isMongoId(),
+  body('moves').optional().isArray(),
+  body('moves.*.student').isMongoId(),
+  body('moves.*.semester').isInt({ min: 1, max: 8 }).withMessage('Semester must be 1 to 8'),
+];
+const promotionPassword = body('password').isString().notEmpty().withMessage('Enter your password');
+router.post('/promotions/preview', authorize('principal'), ...promotionRules, validate, promotions.previewPromotion);
+router.get('/promotions', authorize('principal'), promotions.listPromotions);
+router.get('/promotions/:id', authorize('principal'), idParam('id'), promotions.getPromotion);
+router.post('/promotions', authorize('principal'), writeLimiter, ...promotionRules, promotionPassword, validate, promotions.applyPromotion);
+router.post('/promotions/:id/undo', authorize('principal'), writeLimiter, idParam('id'), promotionPassword, validate, promotions.undoPromotion);
+
 router.get('/analytics/college', authorize('admin', 'principal'), ...rangeQuery, validate, analytics.collegeAnalytics);
 router.get('/analytics/gate', authorize(...STAFF_VIEW), ...rangeQuery, validate, analytics.gateAnalytics);
 router.get('/analytics/club/:id', param('id').isString().isLength({ min: 1, max: 80 }), ...rangeQuery, validate, analytics.clubAnalytics);

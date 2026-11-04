@@ -14,9 +14,9 @@ import { useIdleSession } from './useIdleSession';
 export function Backdrop() {
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-      <div className="absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full bg-primary-300/50 blur-[110px] animate-float dark:bg-primary-300/30" />
-      <div className="absolute -right-32 top-1/4 h-[460px] w-[460px] rounded-full bg-fuchsia-300/40 blur-[110px] animate-float-slow dark:bg-amber-200/25" />
-      <div className="absolute -bottom-40 left-1/3 h-[520px] w-[520px] rounded-full bg-sky-300/40 blur-[120px] animate-float dark:bg-rose-200/20" />
+      <div className="absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full bg-primary-300/50 blur-[80px] dark:bg-primary-300/30" />
+      <div className="absolute -right-32 top-1/4 h-[460px] w-[460px] rounded-full bg-fuchsia-300/40 blur-[80px] dark:bg-amber-200/25" />
+      <div className="absolute -bottom-40 left-1/3 h-[520px] w-[520px] rounded-full bg-sky-300/40 blur-[80px] dark:bg-rose-200/20" />
       <div className="absolute inset-0 bg-[radial-gradient(rgba(108,93,211,0.08)_1px,transparent_1px)] [background-size:22px_22px] dark:bg-[radial-gradient(rgba(160,120,60,0.07)_1px,transparent_1px)]" />
     </div>
   );

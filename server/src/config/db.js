@@ -1,5 +1,14 @@
+import dns from 'node:dns';
 import mongoose from 'mongoose';
 import { env } from './env.js';
+
+// Fix for Windows / ISP DNS resolvers failing on MongoDB Atlas SRV lookups
+try {
+  if (dns.setDefaultResultOrder) dns.setDefaultResultOrder('ipv4first');
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch {
+  // Keep system DNS if setting custom servers is unsupported
+}
 
 mongoose.set('strictQuery', true);
 
@@ -17,7 +26,7 @@ export async function connectDB(
     try {
       await connect(uri);
       const { host, port, name } = mongoose.connection;
-      console.log(`[db] MongoDB connected (${env.dbTarget}) → ${host}:${port}/${name}`);
+      console.log(`[db] MongoDB connected (${env.dbTarget}) â†’ ${host}:${port}/${name}`);
       // Build declared indexes (text + compound) so search/filter queries use them.
       await Promise.all(Object.values(mongoose.models).map((m) => m.syncIndexes()));
       return;

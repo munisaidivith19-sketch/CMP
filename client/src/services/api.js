@@ -355,6 +355,11 @@ export const api = createApi({
     }),
 
     // ── Admin ─────────────────────────────────────────
+    getPromotions: b.query({ query: (params) => ({ url: '/promotions', params }), providesTags: ['Admin'] }),
+    getPromotion: b.query({ query: (id) => `/promotions/${id}`, providesTags: ['Admin'] }),
+    previewPromotion: b.mutation({ query: (body) => ({ url: '/promotions/preview', method: 'POST', body }) }),
+    applyPromotion: b.mutation({ query: (body) => ({ url: '/promotions', method: 'POST', body }), invalidatesTags: ['Admin', 'User'] }),
+    undoPromotion: b.mutation({ query: ({ id, ...body }) => ({ url: `/promotions/${id}/undo`, method: 'POST', body }), invalidatesTags: ['Admin', 'User'] }),
     getAnalytics: b.query({ query: () => '/admin/analytics', providesTags: ['Admin'] }),
     getAdminUsers: b.query({ query: (params) => ({ url: '/admin/users', params }), providesTags: ['Admin'] }),
     updateAdminUser: b.mutation({
@@ -1373,4 +1378,9 @@ export const {
   useCreateSOSAlertMutation,
   useAckSOSAlertMutation,
   useResolveSOSAlertMutation,
+  useGetPromotionsQuery,
+  useGetPromotionQuery,
+  usePreviewPromotionMutation,
+  useApplyPromotionMutation,
+  useUndoPromotionMutation,
 } = api;

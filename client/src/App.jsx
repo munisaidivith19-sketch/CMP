@@ -48,6 +48,7 @@ const AdminActivity = lazy(() => import('./pages/admin/AdminActivity'));
 const AdminAcademics = lazy(() => import('./pages/admin/AdminAcademics'));
 const AttendanceDashboard = lazy(() => import('./pages/admin/AttendanceDashboard'));
 const AdminChatRequests = lazy(() => import('./pages/admin/AdminChatRequests'));
+const Promotions = lazy(() => import('./pages/principal/Promotions'));
 const SecurityLogs = lazy(() => import('./pages/admin/SecurityLogs'));
 const ClassStudents = lazy(() => import('./pages/class/ClassStudents'));
 const Security = lazy(() => import('./pages/settings/Security'));
@@ -300,6 +301,7 @@ export default function App() {
             <Route path="admin/academics" element={<RequireAuth roles={['admin', 'hod']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
             <Route path="admin/chat-requests" element={<RequireAuth roles={['admin', 'principal']}><AdminChatRequests /></RequireAuth>} />
+            <Route path="principal/promotions" element={<RequireAuth roles={['principal']}><Promotions /></RequireAuth>} />
             <Route path="dev/otp" element={<RequireAuth roles={['admin']}><DevOtpPortal /></RequireAuth>} />
             <Route path="settings/security" element={<Security />} />
             <Route path="chat" element={<Chat />} />

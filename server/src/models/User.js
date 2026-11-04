@@ -43,6 +43,8 @@ const userSchema = new Schema(
     // Assigned by an administrator (never self-assigned by students).
     section: { type: String, trim: true, uppercase: true, maxlength: 10, index: true },
     semester: { type: Number, min: 1, max: 12 },
+    // Set when a promotion past the final semester makes this student an alumnus.
+    graduatedAt: Date,
     // Faculty only: the years/sections they are cleared to teach. An upper bound
     // on timetable assignment — actual permissions come from TimetableSlot rows.
     teachingYears: { type: [{ type: Number, min: 1, max: 4 }], default: undefined },

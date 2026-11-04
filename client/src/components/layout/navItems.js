@@ -91,6 +91,7 @@ export const ADMIN = [
   { to: '/admin/users', label: 'Users', icon: UserCog, roles: ['admin'] },
   // Admin approves faculty groups; the principal approves HOD groups.
   { to: '/admin/chat-requests', label: 'Group requests', icon: UsersRound, roles: ['admin', 'principal'], badge: 'groups' },
+  { to: '/principal/promotions', label: 'Promotions', icon: GraduationCap, roles: ['principal'] },
   { to: '/admin/clubs', label: 'Club approvals', icon: BadgeCheck, roles: ['admin'] },
   { to: '/admin/academics', label: 'Academics', icon: BookOpenCheck, roles: ['admin', 'hod'] },
   { to: '/admin/activity', label: 'Activity log', icon: Activity, roles: ['admin'] },

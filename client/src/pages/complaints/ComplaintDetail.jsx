@@ -22,7 +22,7 @@ import { Avatar, Button, Card, CardHeader, ErrorState, PageHeader, Skeleton } fr
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Select, Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtClassDay, timeAgo, titleCase, displayName } from '../../utils/format';
+import { errMsg, safeHref, fmtClassDay, timeAgo, titleCase, displayName } from '../../utils/format';
 import { COMPLAINT_CATEGORY_LABELS, ROLE_LABELS } from '../../utils/constants';
 
 const sameId = (a, b) => Boolean(a && b) && String(a?._id || a) === String(b?._id || b);
@@ -148,7 +148,7 @@ export default function ComplaintDetail() {
             <p className="label">Supporting files</p>
             <div className="flex flex-wrap gap-2">
               {complaint.attachments.map((a) => (
-                <a key={a.url} href={a.url} target="_blank" rel="noreferrer" className="chip">
+                <a key={a.url} href={safeHref(a.url)} target="_blank" rel="noreferrer" className="chip">
                   <FileText className="h-3.5 w-3.5" /> {a.name || 'File'}
                 </a>
               ))}

@@ -11,6 +11,7 @@ import Bus from '../models/Bus.js';
 import { busFilter, canViewBus, viewerScope } from '../services/transport/access.js';
 import { platformAllows } from '../services/platformState.js';
 import { attachSocketMonitor } from '../services/soc/monitors.js';
+import { forceHttpsEnabled, isSecureRawRequest } from '../middleware/https.js';
 
 let io = null;
 
@@ -39,10 +40,14 @@ async function broadcastPresence(userId, isOnline) {
 const ack = (cb, payload) => (typeof cb === 'function' ? cb(payload) : undefined);
 
 export function initSocket(httpServer) {
+  const forceHttps = forceHttpsEnabled();
   io = new Server(httpServer, {
     // CORS only constrains browsers; the Android app is a native client and is
     // admitted by the same token check below.
     cors: { origin: env.clientUrls, credentials: true },
+    // The socket bypasses Express, so HTTPS enforcement is repeated here: a
+    // plain-HTTP handshake (its access token in cleartext) is refused.
+    allowRequest: (req, cb) => cb(null, !forceHttps || isSecureRawRequest(req)),
   });
   attachSocketMonitor(io);
 

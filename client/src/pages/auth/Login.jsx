@@ -127,19 +127,19 @@ export default function Login() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
         {/* Active Lockout Banner with Live Monospace Countdown */}
         {lockout.isLocked && (
-          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/[0.08] p-4 text-center">
-            <div className="flex items-center justify-center gap-2 text-rose-600 dark:text-rose-400">
-              <ShieldAlert className="h-5 w-5" />
-              <p className="font-bold text-sm">Account Temporarily Locked</p>
+          <div className="rounded-2xl border border-white/45 bg-white/10 p-4 text-center backdrop-blur-sm">
+            <div className="flex items-center justify-center gap-2">
+              <ShieldAlert className="auth-red h-6 w-6" />
+              <p className="auth-red text-lg font-extrabold">Account Temporarily Locked</p>
             </div>
-            <p className="mt-1 text-xs muted">
+            <p className="mt-1 text-sm font-semibold text-white">
               Too many consecutive failed sign-in attempts. For your security, please wait:
             </p>
-            <div className="mt-3 flex items-center justify-center gap-2 font-mono text-3xl font-extrabold tracking-wider text-rose-600 dark:text-rose-400">
+            <div className="mt-3 flex items-center justify-center gap-2 font-mono text-3xl font-extrabold tracking-wider text-white">
               <Clock className="h-6 w-6 animate-pulse" />
               <span>{formatCountdown(lockout.secondsLeft)}</span>
             </div>
-            <p className="mt-3 border-t border-rose-500/20 pt-2.5 text-xs font-semibold text-ink-soft dark:text-ink-muted">{PASSWORD_HELP}</p>
+            <p className="mt-3 border-t border-white/30 pt-2.5 text-sm font-bold text-white">{PASSWORD_HELP}</p>
           </div>
         )}
 
@@ -153,6 +153,8 @@ export default function Login() {
           </div>
         )}
 
+        {!lockout.isLocked && (
+          <>
         <Input
           label="Email"
           type="email"
@@ -203,6 +205,8 @@ export default function Login() {
         >
           {lockout.isLocked ? `Locked (${formatCountdown(lockout.secondsLeft)})` : 'Sign in'}
         </Button>
+          </>
+        )}
       </form>
     </AuthShell>
   );

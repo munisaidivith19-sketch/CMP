@@ -228,4 +228,19 @@ struct ChatThreadModelTests {
         model.handle(other)
         #expect(model.messages.map(\.id) == ["a", "b"])
     }
+
+    @Test("Messages sent in the same millisecond keep one stable order across merges")
+    func sameTimestampIsStable() throws {
+        let model = ChatThreadModel(conversationId: "c1")
+        func message(_ id: String) throws -> ChatMessage {
+            try VEXONJSON.decoder().decode(ChatMessage.self, from: Data("""
+            {"_id":"\(id)","conversation":"c1","sender":{"_id":"u2","name":"Test Friend"},"body":"m\(id)","createdAt":"2026-10-16T08:00:10.000Z"}
+            """.utf8))
+        }
+        model.merge([try message("m3"), try message("m1"), try message("m2")])
+        let first = model.messages.map(\.id)
+        for _ in 0..<20 { model.merge([try message("m2")]) } // refetch copies arriving again and again
+        #expect(first == ["m1", "m2", "m3"])
+        #expect(model.messages.map(\.id) == first)
+    }
 }

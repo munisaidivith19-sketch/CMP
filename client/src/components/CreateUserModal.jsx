@@ -180,8 +180,11 @@ const normalizeDigits = (val) => {
       // A Super Admin adding policies confirms its password first (server: REAUTH_REQUIRED).
       const user = await guard(() => create(body).unwrap());
       const summary = custom ? policySummary(user.policies, access.catalogue) : [];
+      const made = user.restored
+        ? `Deleted account restored: ${displayName(user)} is back as ${ROLE_LABELS[user.role] || user.role} with all previous data — username: ${user.email}. Sign in with the new password.`
+        : `${ROLE_LABELS[role]} login created for ${displayName(user)} — username: ${user.email}.`;
       toast.success(
-        `${ROLE_LABELS[role]} login created for ${displayName(user)} — username: ${user.email}. ${summary.length ? `Additional policies: ${summary.join(' · ')}` : 'Role permissions only, no additional policies.'}`,
+        user.restored ? made : `${made} ${summary.length ? `Additional policies: ${summary.join(' · ')}` : 'Role permissions only, no additional policies.'}`,
         { duration: 8000 }
       );
       // Keep the class details so the next student of the same class is quick to add.

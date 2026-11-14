@@ -220,7 +220,8 @@ public actor APIClient {
         do {
             return try await perform(endpoint, token: accessToken)
         } catch APIError.unauthorized(let body) {
-            if Self.noRefreshPaths.contains(where: endpoint.path.hasPrefix) { throw APIError.unauthorized(body) }
+            // Exact match: "/auth/login-history" is an ordinary signed-in request.
+            if Self.noRefreshPaths.contains(endpoint.path) { throw APIError.unauthorized(body) }
             switch await refreshSession() {
             case .refreshed:
                 return try await perform(endpoint, token: accessToken)
@@ -256,7 +257,11 @@ public actor APIClient {
             if error.isConnectivity { eventContinuation.yield(.reachability(false)) }
             log.log(.warning, "\(Redactor.describe(method: endpoint.method.rawValue, url: url)) failed: \(Redactor.redact(String(describing: error)))")
             throw error
+        } catch is CancellationError {
+            // The caller went away (screen closed, newer search): not a connectivity problem.
+            throw APIError.cancelled
         } catch {
+            if Task.isCancelled { throw APIError.cancelled }
             eventContinuation.yield(.reachability(false))
             throw APIError.network
         }

@@ -72,12 +72,14 @@ export const CAMPUS = [
   { to: '/skill-wallet', label: 'Skill Wallet', icon: Wallet, end: true, excludeRoles: ROLES.filter((r) => !SW_STUDENT_ROLES.includes(r)) },
   { to: '/skill-wallet/gallery', label: 'Innovation Gallery', icon: Sparkles, excludeRoles: ROLES.filter((r) => !SW_COLLEGE_ROLES.includes(r)) },
   { to: '/skill-wallet/review', label: 'Skill Wallet Review', icon: ClipboardList, excludeRoles: ROLES.filter((r) => !SW_STAFF_ROLES.includes(r)) },
-  { to: '/attendance', label: 'Attendance', icon: ClipboardCheck },
-  { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen },
+  // The warden has no attendance or gate-pass scope (the server answers 403).
+  { to: '/attendance', label: 'Attendance', icon: ClipboardCheck, excludeRoles: ['warden'] },
+  { to: '/gate-pass', label: 'Gate pass', icon: DoorOpen, excludeRoles: ['warden'] },
   // Admin, principal, dean, AO, chairman and warden only; the server enforces the same.
   { to: '/hostel', label: 'Hostel', icon: BedDouble, excludeRoles: ROLES.filter((r) => !HOSTEL_ROLES.includes(r)) },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
-  { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning },
+  // Grievances are filed by students only; the server refuses a club admin's account.
+  { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning, excludeRoles: ['club_admin'] },
   { to: '/alumni', label: 'Alumni Network', icon: GraduationCap, excludeRoles: ['warden', 'security'] },
   { to: '/sos', label: 'Emergency SOS', icon: AlertOctagon, excludeRoles: ['student', 'club_admin'] },
   { to: '/analytics', label: 'Insights', icon: LineChart },

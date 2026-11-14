@@ -145,7 +145,9 @@ final class TripSharingService: NSObject, CLLocationManagerDelegate {
         guard !batch.isEmpty else { return }
         do {
             _ = try await client.send(API.postTripLocations(tripId: tripId, fixes: batch))
-            buffer.confirm(count: batch.count)
+            // By identity: an overlapping flush (stop() during the 5 s tick) or fixes that
+            // overflowed the queue meanwhile must not remove positions that were never sent.
+            buffer.confirm(batch)
             queued = buffer.pending.count
             lastSentAt = Date()
             problem = nil

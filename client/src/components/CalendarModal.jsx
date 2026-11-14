@@ -32,6 +32,7 @@ export default function CalendarModal({ open, onClose }) {
       open={open}
       onClose={onClose}
       size="lg"
+      solid
       title={
         <span className="flex items-center gap-2">
           Campus calendar {isFetching && <Spinner className="h-4 w-4" />}

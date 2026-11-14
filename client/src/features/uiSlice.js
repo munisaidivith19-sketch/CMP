@@ -7,7 +7,7 @@ function readTheme() {
   } catch {
     /* storage unavailable */
   }
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return 'dark'; // dark by default until the user picks light
 }
 
 const uiSlice = createSlice({

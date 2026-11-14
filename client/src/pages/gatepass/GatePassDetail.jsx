@@ -9,7 +9,7 @@ import { Avatar, Button, Card, CardHeader, ErrorState, PageHeader, Skeleton } fr
 import { Modal } from '../../components/ui/Modal';
 import { Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtClassDay, fmtDateTime, titleCase, displayName } from '../../utils/format';
+import { errMsg, safeHref, fmtClassDay, fmtDateTime, titleCase, displayName } from '../../utils/format';
 import { GATE_PASS_REGARDING } from '../../utils/constants';
 import { PassQr, PassTimeline, ReviewCard, canReviewPass, isOuting, passStatusLabel } from './GatePass';
 import { AUTHORITY_LABELS, EmergencyBadge, EmergencyDetails, isEmergency } from './EmergencyGatePass';
@@ -177,7 +177,7 @@ export default function GatePassDetail() {
                   <div>
                     <dt className="label">Attachment</dt>
                     <dd>
-                      <a href={pass.supportingDocument.url} target="_blank" rel="noreferrer" className="break-all font-semibold text-primary-600 hover:underline">
+                      <a href={safeHref(pass.supportingDocument.url)} target="_blank" rel="noreferrer" className="break-all font-semibold text-primary-600 hover:underline">
                         {pass.supportingDocument.name || 'Attachment'}
                       </a>
                     </dd>

@@ -574,8 +574,8 @@ export default function AdminUsers() {
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
         title={`Delete ${displayName(deleting)}?`}
-        text="This permanently removes the account from the database. This cannot be undone."
-        confirmText="Delete permanently"
+        text="They are signed out and the account disappears from the app. For the next 15 days it can be restored: create an account again with the same email and it comes back exactly as it was, with its role and all of its data (attendance, gate passes, Skill Wallet and more). After 15 days it is deleted for good."
+        confirmText="Delete account"
         loading={deletingSaving}
         onConfirm={async () => {
           try {

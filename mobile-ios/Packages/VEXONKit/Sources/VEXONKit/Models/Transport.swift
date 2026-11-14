@@ -207,9 +207,28 @@ public struct BusDetail: Decodable, Sendable {
     public let journey: TripJourney?
     /// The route the bus is actually following when it differs from `route` (a separate return route).
     public let journeyRoute: BusRoute?
+    /// Set only while the bus is off its route (nil from older servers too).
+    public let detour: BusDetour?
 
     /// The route to draw on the map.
     public var mapRoute: BusRoute? { journeyRoute ?? route }
+}
+
+/// A bus away from its route: the server's ROAD path back to it (`status`
+/// "ok"), or why there is none yet ("pending" / "unavailable") — in which case
+/// the map draws no line to the bus at all.
+public struct BusDetour: Decodable, Sendable, Equatable {
+    public let status: String
+    public let reason: String?
+    /// `[lng, lat]` pairs (GeoJSON order), from the bus to where it rejoins the route.
+    public let geometry: [[Double]]?
+    public let distanceM: Int?
+    public let offsetM: Int?
+
+    public var path: [BusMath.LatLng] {
+        guard status == "ok", let geometry else { return [] }
+        return geometry.compactMap { $0.count >= 2 ? BusMath.LatLng(lat: $0[1], lng: $0[0]) : nil }
+    }
 }
 
 /// A journey ETA from the server (`stopEtas`). When `status` is not "ok", `reason`

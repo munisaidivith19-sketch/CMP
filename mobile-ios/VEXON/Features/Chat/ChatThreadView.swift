@@ -49,7 +49,8 @@ final class ChatThreadModel {
     func merge(_ incoming: [ChatMessage]) {
         var byId = Dictionary(messages.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
         for m in incoming { byId[m.id] = m }
-        messages = byId.values.sorted { $0.createdAt < $1.createdAt }
+        // Ties (same timestamp) are broken by id, so the order never flips between merges.
+        messages = byId.values.sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }
     }
 
     func handle(_ event: RealtimeEvent) {

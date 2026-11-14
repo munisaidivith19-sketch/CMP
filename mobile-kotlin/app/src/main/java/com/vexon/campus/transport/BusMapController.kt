@@ -61,7 +61,7 @@ class BusMapController(
         style.addImage("bus-live", BusIcon.bitmap(BusIcon.LIVE, px))
         style.addImage("bus-stale", BusIcon.bitmap(BusIcon.STALE, px))
         style.addImage("bus-offline", BusIcon.bitmap(BusIcon.OFFLINE, px))
-        listOf("me-accuracy", "route-remaining", "route-travelled", "stops", "buses", "me").forEach { style.addSource(GeoJsonSource(it, FeatureCollection.fromFeatures(emptyList()))) }
+        listOf("me-accuracy", "route-remaining", "route-travelled", "route-detour", "stops", "buses", "me").forEach { style.addSource(GeoJsonSource(it, FeatureCollection.fromFeatures(emptyList()))) }
         // The area the viewer's position is accurate to.
         style.addLayer(FillLayer("me-accuracy", "me-accuracy").withProperties(
             PropertyFactory.fillColor(Color.parseColor("#2563EB")), PropertyFactory.fillOpacity(0.12f), PropertyFactory.fillOutlineColor(Color.parseColor("#2563EB")),
@@ -71,6 +71,11 @@ class BusMapController(
         ))
         style.addLayer(LineLayer("route-remaining", "route-remaining").withProperties(
             PropertyFactory.lineColor(Color.parseColor("#6C5DD3")), PropertyFactory.lineWidth(5f), PropertyFactory.lineOpacity(0.85f),
+            PropertyFactory.lineCap(Property.LINE_CAP_ROUND), PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
+        ))
+        // Off route: the ROAD path from the bus back to its route (server-routed, never a straight line).
+        style.addLayer(LineLayer("route-detour", "route-detour").withProperties(
+            PropertyFactory.lineColor(Color.parseColor("#D97706")), PropertyFactory.lineWidth(5f), PropertyFactory.lineOpacity(0.9f),
             PropertyFactory.lineCap(Property.LINE_CAP_ROUND), PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND),
         ))
         style.addLayer(CircleLayer("stops", "stops").withProperties(
@@ -165,12 +170,14 @@ class BusMapController(
 
     data class StopView(val id: String, val name: String, val lat: Double, val lng: Double, val selected: Boolean, val passed: Boolean)
 
-    fun setRoute(path: List<BusMath.LatLng>, travelled: List<BusMath.LatLng>, stops: List<StopView>) {
+    /** [detour]: the road path back to the route while the bus is off it (BusMath.detourAhead), else empty. */
+    fun setRoute(path: List<BusMath.LatLng>, travelled: List<BusMath.LatLng>, stops: List<StopView>, detour: List<BusMath.LatLng> = emptyList()) {
         fun line(pts: List<BusMath.LatLng>) =
             if (pts.size >= 2) FeatureCollection.fromFeature(Feature.fromGeometry(LineString.fromLngLats(pts.map { Point.fromLngLat(it.lng, it.lat) })))
             else FeatureCollection.fromFeatures(emptyList())
         style.getSourceAs<GeoJsonSource>("route-remaining")?.setGeoJson(line(path))
         style.getSourceAs<GeoJsonSource>("route-travelled")?.setGeoJson(line(travelled))
+        style.getSourceAs<GeoJsonSource>("route-detour")?.setGeoJson(line(detour))
         style.getSourceAs<GeoJsonSource>("stops")?.setGeoJson(FeatureCollection.fromFeatures(stops.map { s ->
             Feature.fromGeometry(Point.fromLngLat(s.lng, s.lat)).apply {
                 addStringProperty("id", s.id)

@@ -188,8 +188,12 @@ export function resetRoutingState() {
   lastCallAt = 0;
 }
 
-function spaced(fn, minIntervalMs) {
-  if (pending >= MAX_QUEUE) return Promise.reject(new RoutingError('busy', 'The routing service is busy. Try again in a few seconds.', 503));
+// Detour paths (a bus away from its route) are background work: they never
+// take more than this share of the queue, so managers' route generation keeps room.
+const DETOUR_MAX_PENDING = 2;
+
+function spaced(fn, minIntervalMs, maxPending = MAX_QUEUE) {
+  if (pending >= maxPending) return Promise.reject(new RoutingError('busy', 'The routing service is busy. Try again in a few seconds.', 503));
   pending += 1;
   const run = queue.then(async () => {
     const wait = lastCallAt + minIntervalMs - Date.now();
@@ -203,9 +207,8 @@ function spaced(fn, minIntervalMs) {
   });
 }
 
-/** Road geometry through `stops` (in travel order) from the configured OSRM server. */
-export async function generateRoadGeometry(rawStops) {
-  const cfg = routingConfig();
+/** The configured OSRM base URL, or a RoutingError when routing is not (properly) configured. */
+function routingBase(cfg) {
   if (!cfg.baseUrl) throw new RoutingError('disabled', 'Road route generation is not configured on this server (ROUTING_OSRM_URL).', 503);
   let base;
   try {
@@ -214,29 +217,65 @@ export async function generateRoadGeometry(rawStops) {
   } catch {
     throw new RoutingError('disabled', 'Road route generation is misconfigured on this server (ROUTING_OSRM_URL).', 503);
   }
-  const stops = normalizeStops(rawStops);
-  const path = stops.map((s) => `${s.lng.toFixed(6)},${s.lat.toFixed(6)}`).join(';');
-  const url = `${base.origin}${base.pathname.replace(/\/+$/, '')}/route/v1/${cfg.profile}/${path}?overview=full&geometries=geojson&steps=false&alternatives=false`;
+  return `${base.origin}${base.pathname.replace(/\/+$/, '')}`;
+}
 
+/** The OSRM /route URL through `points` (in order). */
+function routeUrl(base, cfg, points) {
+  const path = points.map((s) => `${s.lng.toFixed(6)},${s.lat.toFixed(6)}`).join(';');
+  return `${base}/route/v1/${cfg.profile}/${path}?overview=full&geometries=geojson&steps=false&alternatives=false`;
+}
+
+/** One OSRM request: the parsed JSON answer (also for OSRM's 400 + code answers), else a RoutingError. */
+async function callOsrm(url, cfg) {
+  let res;
+  try {
+    res = await fetchImpl(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(cfg.timeoutMs), redirect: 'error' });
+  } catch (err) {
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') throw new RoutingError('timeout', 'The routing service did not answer in time. Try again.', 504);
+    throw new RoutingError('unavailable', 'The routing service could not be reached. Try again later.', 502);
+  }
+  if (res.status === 429) throw new RoutingError('rate_limited', 'The routing service is rate-limiting requests. Wait a minute and try again.', 503);
+  const text = await res.text().catch(() => '');
+  if (text.length > MAX_RESPONSE_BYTES) throw new RoutingError('bad_response', 'The routing service returned too much data', 502);
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = null;
+  }
+  // OSRM answers 400 with a JSON code (NoRoute, NoSegment, …) for routing problems.
+  if (!res.ok && !(res.status === 400 && data?.code)) throw new RoutingError('unavailable', `The routing service failed (HTTP ${res.status}). Try again later.`, 502);
+  return data;
+}
+
+/** Road geometry through `stops` (in travel order) from the configured OSRM server. */
+export async function generateRoadGeometry(rawStops) {
+  const cfg = routingConfig();
+  const base = routingBase(cfg);
+  const stops = normalizeStops(rawStops);
+  const url = routeUrl(base, cfg, stops);
+  return spaced(async () => ({ ...parseOsrmRoute(await callOsrm(url, cfg), stops, cfg), stops: stops.map(({ lat, lng, sequence }) => ({ lat, lng, sequence })) }), cfg.minIntervalMs);
+}
+
+/**
+ * The road path from `from` (a bus that left its route) to `to` (where it
+ * rejoins the route): { geometry: [[lng, lat], …], distanceM, durationS }.
+ * Same provider and checks as route generation — both ends must snap to a
+ * road close by — but lower priority (busy → RoutingError 'busy' at once).
+ */
+export async function roadPathBetween(from, to) {
+  const cfg = routingConfig();
+  const base = routingBase(cfg);
+  const ends = [from, to].map((p, i) => {
+    const lat = Number(p?.lat);
+    const lng = Number(p?.lng);
+    if (!validLatLng(lat, lng)) throw new RoutingError('invalid_stops', 'Invalid latitude / longitude', 422, { stopIndex: i });
+    return { lat, lng, name: i ? 'route' : 'bus' };
+  });
+  const url = routeUrl(base, cfg, ends);
   return spaced(async () => {
-    let res;
-    try {
-      res = await fetchImpl(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(cfg.timeoutMs), redirect: 'error' });
-    } catch (err) {
-      if (err?.name === 'TimeoutError' || err?.name === 'AbortError') throw new RoutingError('timeout', 'The routing service did not answer in time. Try again.', 504);
-      throw new RoutingError('unavailable', 'The routing service could not be reached. Try again later.', 502);
-    }
-    if (res.status === 429) throw new RoutingError('rate_limited', 'The routing service is rate-limiting requests. Wait a minute and try again.', 503);
-    const text = await res.text().catch(() => '');
-    if (text.length > MAX_RESPONSE_BYTES) throw new RoutingError('bad_response', 'The routing service returned too much data', 502);
-    let data = null;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = null;
-    }
-    // OSRM answers 400 with a JSON code (NoRoute, NoSegment, …) for routing problems.
-    if (!res.ok && !(res.status === 400 && data?.code)) throw new RoutingError('unavailable', `The routing service failed (HTTP ${res.status}). Try again later.`, 502);
-    return { ...parseOsrmRoute(data, stops, cfg), stops: stops.map(({ lat, lng, sequence }) => ({ lat, lng, sequence })) };
-  }, cfg.minIntervalMs);
+    const { geometry, distanceM, durationS } = parseOsrmRoute(await callOsrm(url, cfg), ends, cfg);
+    return { geometry, distanceM, durationS, provider: ROUTING_PROVIDER };
+  }, cfg.minIntervalMs, DETOUR_MAX_PENDING);
 }

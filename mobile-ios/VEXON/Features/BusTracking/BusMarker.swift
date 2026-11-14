@@ -229,7 +229,9 @@ final class StudentDotView: MLNAnnotationView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
-/// Route line parts: travelled (faded) vs remaining (solid).
+/// Route line parts: travelled (faded) vs remaining (solid), and — while the bus
+/// is off its route — the road path back to it (orange).
 final class RoutePolyline: MLNPolyline {
     var travelled = false
+    var detour = false
 }

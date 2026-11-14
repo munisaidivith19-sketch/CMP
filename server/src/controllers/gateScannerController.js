@@ -413,8 +413,8 @@ export const history = asyncHandler(async (req, res) => {
           { $skip: skip },
           { $limit: limit },
           // let + pipeline (not localField + pipeline) so this runs on MongoDB 4.x too.
-          { $lookup: { from: 'users', let: { id: '$student' }, pipeline: [{ $match: { $expr: { $eq: ['$_id', '$$id'] } } }, { $project: { name: 1, rollNo: 1, avatar: 1, department: 1, year: 1, section: 1 } }], as: 'student' } },
-          { $lookup: { from: 'users', let: { id: '$events.by' }, pipeline: [{ $match: { $expr: { $eq: ['$_id', '$$id'] } } }, { $project: { name: 1 } }], as: 'guard' } },
+          { $lookup: { from: 'users', let: { id: '$student' }, pipeline: [{ $match: { deletedAt: null, $expr: { $eq: ['$_id', '$$id'] } } }, { $project: { name: 1, rollNo: 1, avatar: 1, department: 1, year: 1, section: 1 } }], as: 'student' } },
+          { $lookup: { from: 'users', let: { id: '$events.by' }, pipeline: [{ $match: { deletedAt: null, $expr: { $eq: ['$_id', '$$id'] } } }, { $project: { name: 1 } }], as: 'guard' } },
           {
             $lookup: {
               from: 'gatescanevents',

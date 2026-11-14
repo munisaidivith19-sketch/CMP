@@ -7,12 +7,13 @@ export default function AuthShell({ title, subtitle, children }) {
   const theme = useSelector((s) => s.ui.theme);
 
   return (
-    <div className="relative flex min-h-screen min-h-[100dvh] items-center justify-center p-4">
+    <div className="fixed inset-0 overflow-y-auto overscroll-contain">
       <div
         className="auth-bg fixed inset-0"
         aria-hidden="true"
       />
       <div className="fixed inset-0 bg-slate-900/40 dark:bg-slate-950/65" aria-hidden="true" />
+      <div className="relative mx-auto flex min-h-full items-center justify-center p-4">
       <div className="relative grid w-full max-w-lg overflow-hidden rounded-[36px] auth-glass animate-scale-in">
         <div className="relative p-7 sm:p-10">
           <div className="absolute top-6 right-6">
@@ -36,6 +37,7 @@ export default function AuthShell({ title, subtitle, children }) {
           <p className="mt-1 text-sm font-semibold text-white/90">{subtitle}</p>
           <div className="mt-7">{children}</div>
         </div>
+      </div>
       </div>
     </div>
   );

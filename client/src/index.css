@@ -93,10 +93,12 @@
     @apply btn h-10 w-10 rounded-2xl p-0;
   }
   /* Buttons floating on a map: opaque, bordered and high-contrast over any tiles (light or dark). */
+  /* Buttons floating on the map: small dark cards (the bus label's navy) that
+     stay readable over any map colour, in light and dark theme alike. */
   .btn-map {
-    @apply border border-slate-300 bg-white text-ink shadow-md hover:bg-slate-100 active:bg-slate-200
-      focus-visible:ring-primary-500/60
-      dark:border-white/25 dark:bg-[#1b1d3a] dark:text-white dark:hover:bg-[#2a2d55] dark:active:bg-[#34386a];
+    @apply border border-white/15 bg-[#1b1d3a] font-semibold text-white shadow-lg shadow-black/25
+      hover:bg-[#2a2d55] active:bg-[#34386a] focus-visible:ring-primary-300/70
+      dark:border-white/25;
   }
 
   /* ── Form controls ──────────────────────────────── */
@@ -338,3 +340,5 @@
 @media (max-aspect-ratio: 9/16) {
   .auth-bg { background-position: 34% 62%; }
 }
+.auth-glass .auth-red,
+.auth-glass svg.auth-red { color: #ef4444 !important; }

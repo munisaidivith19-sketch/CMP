@@ -1,9 +1,8 @@
-# CampusConnect — College Community Portal
-### by VEXON TEAM
+# J.N.N Campus Connect
 
-A full-stack **MERN** platform (MongoDB · Express · React · Node.js) that brings a college's announcements, clubs, events, discussions and people into one place, with real-time notifications, role-based access and an admin analytics panel.
+**CampusConnect platform, built by VEXON Team**
 
-The UI is a **glassmorphism** take on a modern education admin dashboard. It uses frosted-glass cards, soft gradient backdrops, rounded 28–32 px corners, smooth easing, animated pill buttons and a light and dark theme.
+A full-stack campus management platform for a college. It covers academics, attendance, timetables, gate passes, communication, clubs and events, transport, student portfolios and alumni, and runs on the web, Android, iOS and a Windows gate-scanner desktop app. Every client talks to one Node.js/Express API backed by MongoDB, with real-time updates over Socket.IO.
 
 | Dark mode | Analytics | Mobile app |
 |---|---|---|
@@ -11,41 +10,163 @@ The UI is a **glassmorphism** take on a modern education admin dashboard. It use
 
 ---
 
-## 1. Quick start (local MongoDB Community Server)
+## Contents
+
+1. [Platform overview](#1-platform-overview)
+2. [Architecture](#2-architecture)
+3. [Tech stack](#3-tech-stack)
+4. [Features](#4-features)
+5. [Roles and access control](#5-roles-and-access-control)
+6. [Local development](#6-local-development)
+7. [Configuration](#7-configuration)
+8. [Production deployment](#8-production-deployment)
+9. [Operations runbook](#9-operations-runbook)
+10. [Security](#10-security)
+11. [Testing and CI](#11-testing-and-ci)
+12. [Project structure](#12-project-structure)
+13. [API overview](#13-api-overview)
+14. [Module reference](#14-module-reference)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Further documentation](#16-further-documentation)
+
+---
+
+## 1. Platform overview
+
+| Component | Path | Stack | Status |
+|---|---|---|---|
+| **API server** | [server/](server/) | Node.js 18.18+, Express 4, Mongoose 8, Socket.IO 4 | Production |
+| **Web app** | [client/](client/) | React 18, Vite 7, Redux Toolkit / RTK Query, Tailwind CSS | Production (served by the API in production) |
+| **Android app (native)** | [mobile-kotlin/](mobile-kotlin/) | Kotlin, Jetpack Compose | Production: release builds target `https://jnn.onrender.com` |
+| **Android app (Expo)** | [mobile/](mobile/) | React Native, Expo SDK 57 | The original Android client; the Kotlin app is a rewrite of it |
+| **iOS app** | [mobile-ios/](mobile-ios/) | Swift 6, SwiftUI, iOS 17+ | **Not production-ready.** It has not been compiled yet; see its README |
+| **Gate Scanner (Windows)** | [gate-scanner/](gate-scanner/) | Electron | Production (Security accounts only) |
+
+All clients use the same API, database, roles and Socket.IO server. **The server enforces every permission.** When a client hides a button, that only changes what the user sees.
+
+---
+
+## 2. Architecture
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    W[Web app<br/>React SPA]
+    A[Android<br/>Kotlin / Expo]
+    I[iOS<br/>SwiftUI]
+    G[Gate Scanner<br/>Electron]
+  end
+  subgraph API["API server (single Node process)"]
+    R[REST /api<br/>auth · RBAC · validation]
+    S[Socket.IO<br/>change signals + chat]
+    J[Background jobs<br/>expiry sweeps · digests · keep-alive]
+  end
+  W & A & I & G -->|HTTPS| R
+  W & A & I -->|WSS| S
+  R --> M[(MongoDB<br/>Atlas or self-hosted)]
+  S --> M
+  J --> M
+  R -.optional.-> X[Cloudinary · FCM · Groq · SMS gateway · OSRM]
+```
+
+- **Reads and writes go through REST.** Socket.IO only pushes "something changed" signals and chat traffic: `client → REST → auth/validation → MongoDB → Socket.IO event → authorised clients`.
+- In production, **Express serves the built web app (`client/dist`) and the API from one origin and one port**, so there is no separate frontend host and no CORS setup.
+- Sockets authenticate with the access token **and** a live session. Revoking a session disconnects its sockets.
+
+---
+
+## 3. Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, Redux Toolkit + RTK Query, React Hook Form, React Router, Tailwind CSS, Recharts, MapLibre GL, lucide-react, socket.io-client |
+| Backend | Node.js (ESM), Express, Socket.IO, express-validator, Multer, sharp, helmet, compression |
+| Database | MongoDB via Mongoose: text, compound and TTL indexes, aggregation pipelines |
+| Auth | JWT (15-minute access token, held in memory) plus a rotating per-device refresh token; bcrypt password hashing |
+| Files | Local disk (`server/uploads`) or **Cloudinary**. Private Skill Wallet files go on disk or in MongoDB and are served through signed URLs |
+| Integrations (optional) | Cloudinary, Firebase Cloud Messaging, Expo push, Groq (AI study assistant), college SMS gateway, OSRM routing, SMTP |
+| Mobile / desktop | Kotlin + Jetpack Compose, React Native / Expo, SwiftUI, Electron |
+| CI / security | GitHub Actions: tests, npm audit, gitleaks secret scan, bundle secret scan, weekly OWASP ZAP baseline scan |
+
+---
+
+## 4. Features
+
+| Area | Highlights |
+|---|---|
+| **Community** | Announcements with audience targeting, pinning and attachments. Clubs with a join-request workflow and per-club admins. Events with registration limits, an automatic waitlist, attendance and CSV export. Discussion forum with live replies. Global full-text search |
+| **Academics** | Smart timetable with clash checks and HOD editing. Student attendance with subject-wise trends, corrections and low-attendance warnings. Faculty attendance (auto-marked from class attendance). OD/leave requests. Exams. Study materials. Student promotions |
+| **Campus safety** | Digital gate pass: request, approval, parent OTP, single-use QR, exit and return, and a GPS check on return. SOS alerts. Complaints. Lost & found |
+| **Communication** | Private and group chat, encrypted at rest, with typing indicators, read receipts and online status. Real-time notifications. Push notifications through FCM or Expo |
+| **Transport** | Live bus tracking on a map, routes and stops, ETAs, stop arrival detection, trip history, a staff-phone GPS source and an HMAC-signed tracker webhook |
+| **Growth** | Student achievements. Skill Wallet: projects, NPTEL certificates, team invitations and rubric reviews. Innovation Gallery. Alumni network with jobs, events and mentorship. AI Study Assistant (Groq) |
+| **Administration** | User management, admin policies (deny by default), Super Admin console, Security & Logs, audit trail, analytics dashboards, moderation queue, SOC / error tracking, emergency platform mode |
+
+Details for the more complex modules are in [Module reference](#14-module-reference).
+
+---
+
+## 5. Roles and access control
+
+Roles are defined in [server/src/constants.js](server/src/constants.js): `student`, `club_admin`, `faculty`, `hod`, `principal`, `admin`, `security`, `dean`, `ao`, `chairman`, `warden`, `alumni`, `coe`, `office`, `transport` and `super_admin`.
+
+- **Super Admin** can only be created with `server/scripts/create-super-admin.mjs`. No API creates or promotes one. See [docs/SUPER_ADMIN.md](docs/SUPER_ADMIN.md).
+- **Admins** are created by the Super Admin. Policy-managed admins can use only the modules and actions ticked in their policies (deny by default).
+- **College-wide academic visibility** is limited to `admin`, `principal`, `chairman`, `dean` and `ao`. Everyone else sees only their own department (HOD), their own teaching assignments (faculty) or their own class (student).
+- **Confined roles** (`coe`, `office`, `super_admin` and others) go through a deny-by-default route guard.
+- Club-admin rights apply **per club**. Accounts are created by admins or Class In-Charges. Public self-sign-up is off unless `ALLOW_SELF_SIGNUP=true`.
+
+| Action | Student | Club admin* | Faculty | Admin |
+|---|:-:|:-:|:-:|:-:|
+| Join clubs, register for events, discuss, report content | ✅ | ✅ | ✅ | ✅ |
+| Request a new club | ✅ | ✅ | ✅ | creates directly |
+| Manage *own* club (members, requests, events, club announcements) | – | ✅ | as advisor | ✅ |
+| College-wide events and announcements | – | – | ✅ | ✅ |
+| Moderate discussions and reports, view analytics | – | – | ✅ | ✅ |
+| Manage users and roles, approve clubs, suspend accounts, view the audit log | – | – | – | ✅ |
+
+\*per club (`club.admins`)
+
+---
+
+## 6. Local development
 
 ### Prerequisites
+
 | Tool | Version |
 |---|---|
-| Node.js | **18.18+** (20 LTS or 22 recommended) |
-| MongoDB Community Server | **6.0+** (uses `$lookup` pipelines, which need 5.0 or later) |
+| Node.js | **18.18+** (20 LTS recommended; CI uses 20) |
+| MongoDB Community Server | **6.0+** (CI uses `mongo:7`) |
+| Python 3 | Only for the error-catalogue check in CI |
+| JDK 17 + Android SDK 36 | Only for the Android apps |
 
-Make sure the MongoDB service is running:
+Start MongoDB:
 
-- **Windows:** it's installed as a service ("MongoDB Server"). Check with `services.msc`, or run `net start MongoDB` in an admin terminal.
-- **macOS (Homebrew):** `brew services start mongodb-community`
+- **Windows:** the "MongoDB Server" service. Run `net start MongoDB` in an admin terminal.
+- **macOS:** `brew services start mongodb-community`
 - **Linux:** `sudo systemctl start mongod`
 
-### Run it
+### Run
 
 ```bash
-# 1. Install dependencies for root, server and client
+# 1. Install root, server and client dependencies
 npm run install:all
 
 # 2. Configure the API
 cp server/.env.example server/.env        # Windows: copy server\.env.example server\.env
-#    → set JWT_ACCESS_SECRET and JWT_REFRESH_SECRET to long random strings
-#    → MONGO_URI defaults to mongodb://127.0.0.1:27017/campusconnect
+#    Keep DB_TARGET=local for development (see the warning below)
 
-# 3. Load demo data (wipes the campusconnect database)
+# 3. Load demo data. This WIPES the configured database
 npm run seed
 
-# 4. Start API (port 5000) + React (port 5173) together
+# 4. Start the API (http://localhost:5000) and the web app (http://localhost:5173)
 npm run dev
 ```
 
-Open **http://localhost:5173**.
+> **Warning: check `DB_TARGET` before you run anything.** `server/.env` can hold both a local and an Atlas connection string. `DB_TARGET` selects which one is used. If `.env` says `DB_TARGET=atlas`, local runs, seeds and scripts hit the real database. Override it for one command with `DB_TARGET=local npm run dev`. **Never run `npm run seed` against production.** The seed script wipes the database and has no production guard.
 
-### Demo accounts (password `Password@123`)
+### Demo accounts (seed data only, password `Password@123`)
+
 | Role | Email |
 |---|---|
 | Admin | admin@campus.edu |
@@ -56,315 +177,427 @@ Open **http://localhost:5173**.
 | Club admin | clubadmin@campus.edu |
 | Student | student@campus.edu |
 
-The login page no longer has demo-account shortcuts or student self-sign-up: type the credentials above (seed data only), or have an admin create the account.
+These accounts exist only in seeded databases. Do not create them in production.
 
-### Production / single-server mode
+### Useful scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | API (nodemon) and Vite dev server together |
+| `npm run build` | Builds the web app into `client/dist` |
+| `npm start` | Starts the API. Serves `client/dist` when `NODE_ENV=production` |
+| `npm test` | Server integration and security tests (database `cmp_test`) |
+| `npm run seed:academic --prefix server` | Adds demo academic data without wiping the database |
+| `npm run seed:alumni --prefix server` | Adds demo alumni users |
+| `npm run migrate:academic --prefix server` | Academic-year migration |
+| `npm run migrate:break-periods --prefix server [-- --apply]` | Renumbers legacy break periods (dry run unless you pass `--apply`) |
+| `npm run verify:bundle` | Scans the built client bundle for leaked secrets |
+
+---
+
+## 7. Configuration
+
+All server configuration comes from environment variables, read in [server/src/config/env.js](server/src/config/env.js). [server/.env.example](server/.env.example) is the complete, commented reference. **Never commit a real `.env`.**
+
+### Required in production
+
+The server **refuses to start** in production if any secret is missing or still set to a `replace_with…` placeholder.
+
+| Variable | Purpose |
+|---|---|
+| `NODE_ENV=production` | Enables production behaviour: secret checks, HTTPS enforcement, serving `client/dist` |
+| `MONGO_URI` (or `MONGO_URI_ATLAS` with `DB_TARGET=atlas`) | MongoDB connection string |
+| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | Token signing keys. Use two different random values of 48+ bytes each |
+| `CHAT_ENCRYPTION_KEY` | AES-256-GCM key material for chat messages. **Changing it makes existing messages unreadable**, so back it up |
+| `CLIENT_URL` | Allowed browser origins, comma-separated. Must match the public URL exactly for CORS and the Socket.IO origin check |
+| `APP_URL` | Public `https://` URL of the app. HTTPS redirects go here |
+| `TRUST_PROXY=1` | Set when behind a reverse proxy (Render, Nginx) so rate limits see the real client IP |
+
+Generate a secret:
+
 ```bash
-npm run build          # builds client/dist
-NODE_ENV=production npm start
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
-Express serves the built React app and the API from **one port (5000)**, which is ideal for a campus server. Put it behind Nginx with HTTPS and set `TRUST_PROXY=1` in `.env`.
 
-> Chat, attendance, timetable, gate pass, lost & found, advanced analytics, account security and the **Vexon Android app** are documented in [section 8](#8-campus-features-realtime--android-app).
+### Strongly recommended in production
 
----
-
-## 2. Tech stack
-
-| Layer | Technology |
+| Variable | Why |
 |---|---|
-| Frontend | React 18, Vite, **Redux Toolkit** + RTK Query, **React Hook Form**, React Router, Tailwind CSS, Recharts, lucide-react, socket.io-client |
-| Backend | Node.js, **Express**, **Socket.io**, express-validator, Multer |
-| Database | **MongoDB** via Mongoose (text indexes, compound indexes, aggregation pipelines, TTL indexes) |
-| Auth | **JWT** (15-min access token + rotating httpOnly refresh cookie), **bcrypt** (12 rounds) |
-| Files | Multer, stored locally in `server/uploads`, with optional **Cloudinary** (set the 3 `CLOUDINARY_*` vars) |
-| Security | helmet (CSP), CORS allow-list, rate limiting, NoSQL-injection sanitising, magic-byte upload validation, account lockout, audit log |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads survive redeploys. Without these, files go to local disk, which Render wipes on every deploy |
+| `SKILL_WALLET_ASSET_URL_SECRET` | A separate signing key for private-file URLs (otherwise one is derived from the access-token secret) |
+| `APP_TIMEZONE` | Campus time zone for attendance, digests and the keep-alive window (default `Asia/Kolkata`) |
+| `BACKUP_STATUS_FILE` | Lets the Super Admin console show backup status (see [Backups](#backups)) |
+| `SOC_ENVIRONMENT` | Label on recorded errors, e.g. `production` or `staging` |
+
+### Optional integrations
+
+| Feature | Variables | When unset |
+|---|---|---|
+| Parent OTP by SMS | `OTP_SMS_ENABLED`, `OTP_PROVIDER`, `SMS_API_KEY`, `SMS_SENDER_ID`, `SMS_OTP_TEMPLATE_ID`, `SMS_EXIT_TEMPLATE_ID`, `SMS_API_URL`, `SMS_ALLOW_INSECURE_HTTP` | OTPs are still generated and verified. Admins read them in Security & Logs → OTP |
+| Android push | `FCM_SERVICE_ACCOUNT` or `FCM_SERVICE_ACCOUNT_FILE`, `EXPO_ACCESS_TOKEN` | No push. In-app notifications and live updates still work |
+| AI Study Assistant | `GROQ_API_KEY`, `GROQ_MODEL`, `AI_*` limits | Only the assistant is disabled |
+| Bus tracking | `MAP_STYLE_URL`, `MAP_CSP_ORIGINS`, `TRACKER_WEBHOOK_SECRET`, `ROUTING_OSRM_URL`, `TRANSPORT_*`, `GPS_*`, `TRIP_*`, `ETA_*` | Defaults to OpenFreeMap. The tracker webhook is off |
+| Email (SMTP) | `SMTP_*` | Not needed. Email password reset is retired |
+| Gate-pass geofence | `COLLEGE_LATITUDE`, `COLLEGE_LONGITUDE`, `LOCATION_*`, `RETURN_CREDENTIAL_MINUTES` | Defaults to the J.N.N campus coordinates |
+| Emergency override | `PLATFORM_MODE_OVERRIDE=normal` | Break-glass setting: forces normal operation whatever emergency mode is stored |
+
+Client-side and mobile builds contain **no secrets**. CI checks the built bundle for secrets with `scripts/verify-bundle.mjs`.
 
 ---
 
-## 3. Features vs. the problem statement
+## 8. Production deployment
 
-| Requirement | Where |
+### Pre-launch checklist
+
+- [ ] `NODE_ENV=production`, and all [required variables](#required-in-production) set as real secrets in the host's secret store, not in files
+- [ ] HTTPS in front of the app, with `APP_URL` and `CLIENT_URL` set to the exact public `https://` origin
+- [ ] `FORCE_HTTPS` left on (the default in production), `TRUST_PROXY=1` behind a proxy
+- [ ] MongoDB: a dedicated database user with least privilege, network access restricted where the host allows it, automated backups enabled and a restore tested
+- [ ] Cloudinary configured if the host's disk is not persistent
+- [ ] A Super Admin provisioned with `create-super-admin.mjs`, and **no seed/demo accounts** in the production database
+- [ ] The placeholders in the Terms and Conditions and Privacy Policy completed by the College ([docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md))
+- [ ] SMS gateway credentials set if `OTP_SMS_ENABLED=true`. Use an `https://` vendor endpoint where one exists
+- [ ] `CHAT_ENCRYPTION_KEY` stored in a password manager or vault (losing it loses all chat history)
+- [ ] The health check at `GET /api/health` is monitored
+- [ ] The latest CI run on `main` passed: tests, audit, secret scan, build
+
+### Option A: Render (current deployment)
+
+[render.yaml](render.yaml) is a Render Blueprint that defines the `jnn-api` web service. A single service builds the client and serves both the web app and the API.
+
+1. **Database:** create a MongoDB Atlas cluster and a database user. Under Network Access, allow `0.0.0.0/0` (Render has no static outbound IP), then copy the `mongodb+srv://…` string.
+2. **Service:** Render Dashboard → **New → Blueprint** → select this repository. Render generates `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` and `CHAT_ENCRYPTION_KEY` automatically.
+3. When prompted, fill in the `sync: false` values: `MONGO_URI`, `CLOUDINARY_*`, `SMS_*`, `GROQ_API_KEY`, `FCM_SERVICE_ACCOUNT` and `TRACKER_WEBHOOK_SECRET`.
+4. If Render adds a suffix to the service name, update `CLIENT_URL` and `APP_URL` to the real URL and redeploy. A mismatch blocks realtime (Socket.IO) connections.
+5. Render runs `healthCheckPath: /api/health`. The build command is `npm ci && cd ../client && npm ci --include=dev && npm run build`.
+
+**Free-plan behaviour:** the service sleeps after 15 minutes idle. [.github/workflows/keep-alive.yml](.github/workflows/keep-alive.yml) wakes it at about 05:30 IST, and the server then pings itself every 14 minutes until 22:00 IST (`server/src/utils/keepAlive.js`). For real production traffic, use a paid instance so the service doesn't sleep or restart cold.
+
+### Option B: VPS (Ubuntu + Nginx)
+
+Step-by-step guides: [docs/VPS_Deployment_Guide.pdf](docs/VPS_Deployment_Guide.pdf) and [docs/VEXON_VPS_Setup_Guide_Ubuntu24.pdf](docs/VEXON_VPS_Setup_Guide_Ubuntu24.pdf). In short:
+
+```bash
+git clone <repo> /opt/campusconnect && cd /opt/campusconnect
+npm ci --prefix server --omit=dev
+npm ci --prefix client --include=dev && npm run build --prefix client
+cp server/.env.example server/.env   # fill in production values; chmod 600 server/.env
+```
+
+Run it as a **systemd service** under a non-root user:
+
+```ini
+# /etc/systemd/system/campusconnect.service
+[Unit]
+Description=CampusConnect API
+After=network.target
+
+[Service]
+User=campus
+WorkingDirectory=/opt/campusconnect/server
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Nginx terminates TLS and proxies to port 5000. WebSocket upgrade headers are required for Socket.IO:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name campus.example.edu;
+    # ssl_certificate / ssl_certificate_key: e.g. from certbot
+
+    client_max_body_size 10m;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 75s;
+    }
+}
+```
+
+Set `TRUST_PROXY=1`. The server handles `SIGTERM` and `SIGINT` and shuts down gracefully, so `systemctl restart` is safe.
+
+> **Scaling note:** the API runs as a **single process**. Socket.IO rooms, rate-limit counters and background jobs (expiry sweeps, digests, gate-code queue) are in-process. Do not run several instances behind a load balancer unless you first add a shared Socket.IO adapter and shared rate-limit store, and make the background jobs run on only one instance.
+
+### Mobile and desktop releases
+
+| App | Build | Notes |
+|---|---|---|
+| Android (Kotlin) | `cd mobile-kotlin && ./gradlew assembleRelease` | Signed only with the release keystore (`vexon.release.*` Gradle properties or `VEXON_RELEASE_*` env vars). Never falls back to the debug key. Backend URL: `vexon.apiUrl`, default `https://jnn.onrender.com`. Details: [mobile-kotlin/README.md](mobile-kotlin/README.md) |
+| Android (Expo) | `cd mobile && eas build -p android --profile preview` | Set `EXPO_PUBLIC_API_URL` in `eas.json`. Push needs FCM v1 credentials (`eas credentials`) |
+| iOS | Xcode 16 on macOS | Not production-ready. See [mobile-ios/README.md](mobile-ios/README.md) |
+| Gate Scanner | `cd gate-scanner && npm run dist` | Produces `release/JNN-Gate-Scanner-Setup-<version>.exe`. See [docs/GATE_SCANNER.md](docs/GATE_SCANNER.md) |
+
+Users can repoint either Android app at a different server from the login screen (**Server → Test & save**) without rebuilding. Production builds must use **HTTPS**. Plain HTTP is accepted only when the configured URL is `http://` (for a campus LAN).
+
+---
+
+## 9. Operations runbook
+
+### Health and monitoring
+
+- `GET /api/health` returns `{ "status": "ok", "time": "…" }`. Point your uptime monitor at it.
+- **SOC / error tracking:** server errors are captured into MongoDB and shown in the Super Admin console with diagnostics and fix verification (`SOC_*` variables). See [docs/SOC.md](docs/SOC.md).
+- Every API request carries a correlation ID, and request metrics are recorded.
+- **Security & Logs** (Admin) and the audit log record sign-ins, session and password events, admin actions and gate-pass security events. Passwords, hashes, tokens and OTP values are never recorded. The audit trail is kept for 180 days (TTL index).
+
+### Backups
+
+**The app does not run backups itself.** Schedule them yourself, for example with Atlas automated backups or a `mongodump` cron job:
+
+```bash
+mongodump --uri="$MONGO_URI" --gzip --archive=/backups/campus-$(date +%F).gz
+```
+
+After each run, have the job write a status file and point `BACKUP_STATUS_FILE` at it, so the Super Admin console can show backup health:
+
+```json
+{ "lastBackupAt": "2026-11-07T00:30:00Z", "lastVerifiedAt": "2026-11-07T00:45:00Z", "lastResult": "ok" }
+```
+
+Also back up the secrets (`CHAT_ENCRYPTION_KEY` especially), local `uploads/` and `private-uploads/` if you use disk storage, and test a restore regularly.
+
+### Common tasks
+
+| Task | Command / location |
 |---|---|
-| Auth + roles (Student, Club Admin, Faculty, Admin) | `server/src/controllers/authController.js`, `middleware/auth.js` (`protect`, `authorize`) |
-| Student profiles: academics, department, interests, skills, achievements, extracurriculars | `/profile` → *Edit profile* (RHF `useFieldArray` for achievements) |
-| Announcements with audience targeting (everyone, department, year, club), priority, deadlines, attachments, pinning | `/announcements` |
-| Club profiles, member management, **join-request → approve** workflow, promote or demote club admins | `/clubs/:slug` → *Members* / *Requests* tabs |
-| New club **requests with admin approval** | `/admin/clubs` |
-| Events with registration, **participation limits and an automatic waitlist**, registration deadline, attendance marking, CSV export | `/events`, `/events/:id` |
-| Event discovery by **category, date range, club and interests ("For you")** | `/events` filter bar |
-| Discussion forum with replies, upvotes, sorting (latest, top, unanswered) and **live replies** | `/discussions` |
-| Reporting and **moderation queue** (dismiss, hide, warn, delete, suspend) and an **auto-flagging content filter** | `/admin/reports` |
-| **Real-time notifications** (Socket.io, toast and bell) | `utils/notify.js`, `AppLayout.jsx` |
-| Secure file uploads (posters, logos, avatars, PDF attachments) | `utils/storage.js`, `POST /api/uploads` |
-| Global search across clubs, students, events, announcements and discussions | top bar → `/search` (MongoDB **text indexes**, ranked by relevance) |
-| Admin panel: users, roles, suspension, clubs, reports | `/admin/*` |
-| Analytics dashboards (participation trend, categories, top events and clubs, departments, attendance rate, daily activity) | `/admin` (MongoDB **aggregation pipelines**) |
-| Activity tracking and audit log | `models/Activity.js`, `/admin/activity` |
+| Create or reset the Super Admin | `cd server && SUPER_ADMIN_EMAIL=… SUPER_ADMIN_NAME="…" SUPER_ADMIN_PASSWORD='…' node scripts/create-super-admin.mjs [--reset-password] [--force-change]` |
+| Show or force the platform mode | `node server/scripts/platform-mode.mjs [normal]`, or set `PLATFORM_MODE_OVERRIDE=normal` (break-glass) |
+| Emergency mode / recovery | Super Admin console. See [docs/SUPER_ADMIN.md](docs/SUPER_ADMIN.md) |
+| Reset a user's password | The student's Class In-Charge or an Admin: `POST /api/users/:id/reset-password`. This signs the user out on every device |
+| Data migrations | `npm run migrate:* --prefix server`. Run a dry run first and back up before `--apply`. The break-period fix also runs automatically at startup and is safe to repeat |
+| Realtime smoke test | `node server/scripts/realtime-smoke.mjs` against a running server |
 
-### Role permissions
-| Action | Student | Club admin* | Faculty | Admin |
-|---|:-:|:-:|:-:|:-:|
-| Join clubs, register for events, discuss, report | ✅ | ✅ | ✅ | ✅ |
-| Request a new club | ✅ | ✅ | ✅ | creates directly |
-| Manage *own* club (members, requests, events, club announcements) | – | ✅ | as advisor | ✅ |
-| College-wide events and announcements (all, department, year) | – | – | ✅ | ✅ |
-| Moderate discussions and reports, view analytics | – | – | ✅ | ✅ |
-| Manage users and roles, approve clubs, suspend, audit log | – | – | – | ✅ |
+All scripts connect to the database selected by `server/.env` (`DB_TARGET`). Set it explicitly when you run them.
 
-\*Club-admin rights are **per club** (`club.admins`), so a student who admins one club can't manage others. Public sign-up always creates a **student**. Higher roles are granted only by an admin.
+### Rotating secrets
+
+| Secret | Effect of rotating |
+|---|---|
+| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | All users are signed out |
+| `CHAT_ENCRYPTION_KEY` | **Existing chat messages become unreadable.** Do not rotate without a re-encryption plan |
+| `SKILL_WALLET_ASSET_URL_SECRET` | Outstanding signed file URLs expire immediately |
+| `TRACKER_WEBHOOK_SECRET`, `SMS_*`, `GROQ_API_KEY`, `CLOUDINARY_*`, `FCM_*` | Update the value and restart. No user impact |
+
+If a secret leaks into git, **rotate it first**, then purge it from history (`git filter-repo`). Deleting the file in a new commit is not enough.
 
 ---
 
-## 4. Security design (cyber-security highlights)
+## 10. Security
 
-- **Short-lived JWT access tokens** (15 min) are kept in memory only, never in localStorage, so XSS can't steal a long-lived token.
-- **Per-device sessions with refresh token rotation.** Web clients use an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`; the Android app keeps its refresh token in encrypted SecureStore. Every refresh token names its `Session` row and rotates on use; replaying an old one revokes that session (theft detection). Access tokens are bound to the session too, so **logout signs out only that device**, users can sign out any/all other devices, and password change/reset, role change or suspension revoke sessions immediately — including their live sockets.
-- **Brute-force protection:** a 5-failure account lockout (15 min) plus an IP rate limit on auth routes. Sign-in errors use the same generic message for unknown emails and wrong passwords, which prevents user enumeration.
-- **RBAC** is enforced on every route on the server. The UI hiding buttons is cosmetic only.
-- **Mass-assignment protection:** controllers whitelist writable fields with `pick()`, so users can't set their own `role`.
-- **NoSQL injection:** `express-mongo-sanitize` strips `$` and `.` keys, and every regex search input is escaped and length-capped.
-- **Input validation** runs on every write endpoint (`express-validator`) and again on the client (React Hook Form).
-- **Upload hardening:** files are validated by **magic bytes** (`file-type`), not by the extension or client MIME type. The server enforces a size limit, stores files under random UUID names, and serves them with `X-Content-Type-Options: nosniff` and a restrictive CSP.
-- **HTTP hardening:** helmet CSP, `x-powered-by` removed, a CORS allow-list and JSON body size limits.
-- **Privacy:** email and phone are visible only to the profile owner, faculty and admins.
-- **Audit trail:** logins, content changes and admin actions are recorded with the IP address and kept for 180 days (TTL index).
+- **Tokens:** access tokens last 15 minutes and are held in memory only (never in `localStorage`). Web clients keep the refresh token in an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`. Mobile apps keep it in encrypted device storage, and the Gate Scanner in Windows DPAPI.
+- **Per-device sessions:** refresh tokens rotate on every use, and replaying an old one revokes that session (theft detection). A user can sign out one device or all other devices. Password change or reset, a role change or a suspension revokes sessions and their live sockets immediately.
+- **Idle timeout:** most web sessions end after **2 minutes** without activity, and the server enforces this. Chairman, security, admin and principal web sessions, and all mobile sessions, use a 7-day idle rule.
+- **Brute force:** a 5-failure account lockout (15 minutes), IP rate limits on auth routes and generic sign-in errors (no user enumeration). Passwords must follow the password rule, and a password change is required at first login.
+- **Request hardening:** helmet with a strict CSP, an origin and CSRF guard, a CORS allow-list, JSON body size limits, `x-powered-by` removed, HTTPS redirect and HSTS in production.
+- **Input:** `express-validator` on every write, mass-assignment whitelisting, NoSQL operator sanitising, escaped and length-capped regex search, and an `http(s)`-only rule for user-supplied links.
+- **Uploads:** checked by magic bytes, not by extension. Size limits and per-user daily quotas, random UUID file names, `nosniff`, and no path traversal. Certificate images are re-encoded on the server. Private files are served only through short-lived signed URLs.
+- **Data:** chat messages are encrypted at rest (AES-256-GCM). Contact details are visible only to the owner and authorised staff. Gate-pass OTPs go only to the parent number on record. The gate-pass QR is an opaque code that contains no student data.
+- **Supply chain:** dependencies are audited and GitHub Actions are pinned to commit SHAs. gitleaks scans the full git history, and the built bundle is scanned for secrets.
+
+Security reviews and fixes are documented in [docs/security/](docs/security/) and [docs/recent-features/SECURITY_AUDIT_AND_BUGFIX_REPORT.md](docs/recent-features/SECURITY_AUDIT_AND_BUGFIX_REPORT.md). **Report vulnerabilities privately to the maintainers, not in a public issue.**
 
 ---
 
-## 5. Project structure
+## 11. Testing and CI
+
+```bash
+npm test --prefix server                       # integration + security tests (uses the cmp_test database)
+npm test --prefix client                       # client unit tests
+cd gate-scanner && npm test                    # gate scanner unit tests
+cd mobile-kotlin && ./gradlew testDebugUnitTest
+node server/scripts/realtime-smoke.mjs         # against a RUNNING server: web ↔ Android chat round-trip
+```
+
+Server tests use `TEST_MONGO_URI` (default `mongodb://127.0.0.1:27017/cmp_test`) and never touch the development or production database.
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| [ci.yml](.github/workflows/ci.yml) | Pull requests, pushes to `main` | `npm audit` (high and above) for server and client, server tests against a disposable MongoDB 7, client build, error-catalogue validation, bundle secret scan |
+| [secret-scan.yml](.github/workflows/secret-scan.yml) | Pull requests, pushes to `main` | gitleaks over the full git history |
+| [zap-baseline.yml](.github/workflows/zap-baseline.yml) | Weekly | Passive OWASP ZAP scan of **staging** (`ZAP_STAGING_URL` secret; skipped if unset) |
+| [keep-alive.yml](.github/workflows/keep-alive.yml) | Daily, about 05:30 IST | Wakes the Render free instance |
+
+Don't merge to `main` unless CI passes.
+
+---
+
+## 12. Project structure
 
 ```
-campusconnect/
-├── package.json                # root scripts (install:all, seed, dev, build, start)
-├── server/
-│   ├── .env.example
+.
+├── package.json            # root scripts: install:all, dev, build, start, seed, test
+├── render.yaml             # Render Blueprint (production service definition)
+├── server/                 # Express API + Socket.IO
+│   ├── .env.example        # full configuration reference
+│   ├── scripts/            # super admin, platform mode, migrations, smoke test, bus simulator
+│   ├── tests/              # node:test integration + security suites
 │   └── src/
-│       ├── server.js           # HTTP + Socket.io bootstrap
-│       ├── app.js              # Express app, security middleware, static hosting
-│       ├── config/             # env, db, socket
-│       ├── models/             # User, Club, Event, Announcement, Discussion, Report, Notification, Activity
-│       ├── controllers/        # business logic per module
-│       ├── routes/index.js     # all REST routes + validation rules
-│       ├── middleware/         # auth/RBAC, validation, rate limits, errors
-│       ├── utils/              # notify, storage, moderation, permissions, visibility, tokens
-│       └── seed/seed.js        # demo data
-└── client/
-    └── src/
-        ├── app/store.js        # Redux store
-        ├── services/api.js     # RTK Query API slice (auto token refresh)
-        ├── services/socket.js  # Socket.io client
-        ├── features/           # auth + ui slices
-        ├── components/         # layout (Sidebar, Topbar), ui kit (glass primitives, forms, modal), charts
-        └── pages/              # dashboard, events, clubs, announcements, discussions, people, admin
+│       ├── server.js       # HTTP + Socket.IO bootstrap, graceful shutdown
+│       ├── app.js          # security middleware, /api routes, static hosting of client/dist
+│       ├── config/         # env, db, socket
+│       ├── routes/         # REST routes + validation (index, skill wallet, alumni, super admin, gate scanner)
+│       ├── controllers/    # business logic per module
+│       ├── models/         # Mongoose schemas
+│       ├── middleware/     # auth/RBAC, policy guards, rate limits, CSRF, errors
+│       ├── services/       # timetable, attendance, transport, OTP, AI, …
+│       ├── legal/          # versioned Terms / Privacy policy registry
+│       └── seed/           # demo data (development only)
+├── client/                 # React web app (Vite)
+│   └── src/ app/ services/ features/ components/ pages/ utils/
+├── mobile-kotlin/          # native Android app
+├── mobile/                 # Expo / React Native Android app
+├── mobile-ios/             # native iOS app (not production-ready)
+├── gate-scanner/           # Windows Electron gate-scanner app
+├── error_handling/         # error catalogue, diagnostics and tests
+├── scripts/verify-bundle.mjs
+├── docs/                   # feature, security, deployment and developer docs
+└── .github/workflows/      # CI, secret scan, ZAP, keep-alive
 ```
 
-## 6. REST API overview
+---
 
-All routes are prefixed with `/api`. Every route except register, login, refresh and logout requires `Authorization: Bearer <accessToken>`.
+## 13. API overview
 
-| Module | Endpoints |
+All routes are prefixed with `/api`. Every route except the public ones (health, login, refresh, logout, legal pages, the public gallery, alumni claim) requires `Authorization: Bearer <accessToken>`. Mobile clients also send `X-Client-Platform: mobile` and pass the refresh token in the request body.
+
+| Module | Endpoints (main ones) |
 |---|---|
-| Auth | `POST /auth/register` · `POST /auth/login` · `POST /auth/refresh` · `POST /auth/logout` · `GET /auth/me` · `POST /auth/change-password` |
+| Health | `GET /health` |
+| Auth | `POST /auth/login` · `POST /auth/refresh` · `POST /auth/logout` · `GET /auth/me` · `POST /auth/change-password` · `POST /auth/activity` · sessions and login history |
 | Dashboard / search | `GET /dashboard` · `GET /search?q=&type=` |
-| Users | `GET /users` · `GET /users/:id` · `PUT /users/me` · `PUT /users/me/avatar` |
-| Clubs | `GET/POST /clubs` · `GET/PUT/DELETE /clubs/:id` · `PATCH /clubs/:id/review` · `POST/DELETE /clubs/:id/join` · `POST /clubs/:id/leave` · `GET /clubs/:id/requests` · `POST /clubs/:id/requests/:userId/approve\|reject` · `DELETE /clubs/:id/members/:userId` · `PATCH /clubs/:id/members/:userId/role` |
-| Events | `GET/POST /events` · `GET/PUT/DELETE /events/:id` · `POST/DELETE /events/:id/register` · `GET /events/:id/participants` · `PATCH /events/:id/attendance/:userId` |
+| Users | `GET /users` · `GET /users/:id` · `PUT /users/me` · `PUT /users/me/avatar` · `POST /users/:id/reset-password` |
+| Clubs | `GET/POST /clubs` · `GET/PUT/DELETE /clubs/:id` · join, leave, requests, members, roles |
+| Events | `GET/POST /events` · `GET/PUT/DELETE /events/:id` · registration, participants, attendance |
 | Announcements | `GET/POST /announcements` · `PUT/DELETE /announcements/:id` · `PATCH /announcements/:id/pin` |
-| Discussions | `GET/POST /discussions` · `GET/PUT/DELETE /discussions/:id` · `POST /discussions/:id/replies` · `DELETE /discussions/:id/replies/:replyId` · `POST /discussions/:id/upvote` · `POST /discussions/:id/replies/:replyId/upvote` · `PATCH /discussions/:id/moderate/lock\|pin\|hide` |
-| Reports | `POST /reports` · `GET /reports` · `PATCH /reports/:id` |
-| Notifications | `GET /notifications` · `PATCH /notifications/:id/read` · `PATCH /notifications/read-all` · `DELETE /notifications/:id` |
+| Discussions | `GET/POST /discussions` · replies, upvotes, moderation |
+| Academics | `/attendance/*` · `/timetable` · `/subjects` · OD/leave · exams · study materials |
+| Campus | `/gate-pass/*` · `/gate-scanner/*` · `/lost-found/*` · complaints · SOS |
+| Communication | `/chat/*` · `/notifications/*` |
+| Transport | `/transport/*` · `GET /transport/config` · `POST /transport/tracker/locations` (HMAC-signed) |
+| Growth | `/achievements/*` · `/skill-wallet/*` · `/alumni/*` · `/mentorship/*` |
+| Analytics | `/analytics/*` · `/admin/analytics` |
+| Admin | `/admin/*` · `/super-admin/*` |
 | Uploads | `POST /uploads?kind=image\|document` (multipart field `file`) |
-| Admin | `GET /admin/analytics` · `GET /admin/users` · `PATCH /admin/users/:id` · `GET /admin/activity` |
 
-**Socket.io events:** `notification` (server → user room), `discussion:reply` (server → discussion room), `discussion:join` and `discussion:leave` (client → server).
-
----
-
-## 7. Troubleshooting
-
-| Problem | Fix |
-|---|---|
-| `Could not connect to MongoDB` | Start the MongoDB service and check `MONGO_URI` in `server/.env`. |
-| Port 5000 is already in use (common on macOS: AirPlay) | Set `PORT=5050` in `server/.env` and run the client with `VITE_API_PROXY=http://localhost:5050 npm run dev --prefix client`. |
-| Uploads fail with 415 | Only JPG, PNG, WEBP and GIF (plus PDF for attachments) are allowed, max 5 MB. |
+**Socket.IO:** `notification` (to a user's room), chat events, `discussion:reply`, and id-only change broadcasts such as `announcement:changed` and `event:changed`. Clients re-read the data through REST under their own permissions.
 
 ---
 
-## 8. Campus features, real-time & Android app
+## 14. Module reference
 
-### What was added on top of the existing portal
+### Chat, attendance, gate pass and other campus modules
+
 | Feature | Web | Android | Backend |
 |---|---|---|---|
-| **Chat**: private + group chats, live delivery, typing, online/last seen, read receipts, unread counts, reply, delete, search | `/chat` | Chat tab | `/api/chat/*` + Socket.io |
-| **Attendance**: student view (overall = Σ present ÷ Σ conducted, subject-wise, daily/weekly/monthly trend, history, correction requests, low-attendance warning); faculty console (roster from timetable, mark/edit within 7 days, history, low attendance, corrections, class overview) | `/attendance` | Attendance (student view) | `/api/attendance/*` |
-| **Smart timetable**: today/next class, week grid, staff lookup by section, Master Timetable and Faculty Availability for HODs, **HOD Edit Timetable** (see below), admin CRUD with section/faculty/room clash checks | `/timetable`, `/admin/academics` | Timetable | `/api/timetable`, `/api/subjects` |
-| **Digital gate pass**: request, cancel, approve/reject, owner-only QR (opaque 60-bit code, no student data), verify → exit → return (single use), expiry sweep, revoke, overdue tracking | `/gate-pass` | Gate pass (request + QR) | `/api/gate-pass/*` |
-| **Lost & found**: report with photo, search/filters, possible-match suggestions (never an ownership claim), staff linking/handover, owner close/withdraw | `/lost-found` | Lost & found | `/api/lost-found/*` |
-| **Advanced analytics** (day/week/month/semester/custom): student, faculty classes, department/section, college, club, gate | `/analytics`, club “Insights” tab | Home tiles | `/api/analytics/*` |
-| **Student achievements**: Principal/HOD post achievements for students (HOD: own department only), with images, featured posts, congratulations, student hide-requests, soft-delete + admin restore, stats and PDF export; read-only for everyone except warden/security | `/achievements`, dashboard, profile | – | `/api/achievements/*` |
-| **Account security**: change password, authorized password reset by the Class In-Charge (own students) or Admin, per-device sessions, sign out one/other devices, login history (incl. failures), new-device alerts | `/settings/security`, `/class/students`, `/admin/users` | Login, Security | `/api/auth/*`, `/api/users/:id/reset-password` |
+| **Chat**: private and group chats, live delivery, typing, online/last seen, read receipts, unread counts, reply, delete, search | `/chat` | Chat tab | `/api/chat/*` + Socket.IO |
+| **Attendance**: student view (overall = Σ present ÷ Σ conducted; subject-wise; trends; history; correction requests; low-attendance warning). Faculty console (roster from timetable, mark or edit within 7 days, history, corrections, class overview) | `/attendance` | Attendance | `/api/attendance/*` |
+| **Smart timetable**: today and next class, week grid, staff lookup, Master Timetable, Faculty Availability, HOD editing, admin CRUD with clash checks | `/timetable`, `/admin/academics` | Timetable | `/api/timetable`, `/api/subjects` |
+| **Digital gate pass**: request, cancel, approve or reject, owner-only QR (opaque 60-bit code), verify → exit → return (single use), expiry sweep, revoke, overdue tracking | `/gate-pass` | Gate pass | `/api/gate-pass/*` |
+| **Lost & found**: report with photo, search, possible-match suggestions, staff handover | `/lost-found` | Lost & found | `/api/lost-found/*` |
+| **Analytics** (day, week, month, semester or custom range) for students, faculty classes, departments, the college, clubs and the gate | `/analytics` | Home tiles | `/api/analytics/*` |
+| **Achievements**: Principal or HOD posts them, with images, featured posts, congratulations, hide requests, soft delete and restore, PDF export | `/achievements` | – | `/api/achievements/*` |
+| **Account security**: change password, authorised resets, per-device sessions, login history, new-device alerts | `/settings/security` | Login, Security | `/api/auth/*` |
 
-Students are placed in a class by an admin (**User management → click the department cell** to set department, year, section, semester, roll no). Subjects and timetables are managed at **Administration → Academics**.
+An admin places a student in a class from **User management → department cell**. Subjects and timetables are managed at **Administration → Academics**.
 
 ### Timetable editing (HOD)
-HOD → **Timetable** → **Edit Timetable**:
 
-1. Choose **Year**, **Section** and **Semester**. The **Department** is always the HOD's own assigned department; it is shown but cannot be changed.
-   - A branch HOD can choose **2nd–4th year** only.
-   - The **Science & Humanities HOD** owns 1st year for every branch, so they choose the **Department** instead and the year is fixed to **1st Year**.
-2. The class's weekly grid opens. Add, edit or delete periods and breaks with the **+** buttons in empty cells, **Add period**, or the pencil and bin icons on each slot.
+HOD → **Timetable** → **Edit Timetable**: choose Year, Section and Semester. The Department is fixed to the HOD's own department. A branch HOD can edit 2nd–4th year only. The **Science & Humanities HOD** owns 1st year for every branch. The server enforces the same scope on every read and write ([timetableController.js](server/src/controllers/timetableController.js)).
 
-The server enforces the same scope on every read and write (`server/src/controllers/timetableController.js`). Sending another department, another HOD's slot id or a 1st-year class (for a branch HOD) is refused, whatever the browser sends.
+### Period numbering: breaks are not periods
 
-### Period numbering — breaks are not periods
-- Only classes are periods: **P1, P2, P3…** in time order. A break (lunch, recess) is shown by its name only and never takes a period number. A class after a break continues the count, so the day reads P1 P2 P3 [Lunch] P4 P5.
-- When a class is added, its period number is suggested from the start time. The server rejects a duplicate number on the same day, or a number out of time order.
-- A genuine free period keeps its gap: if a class has no P2 on a day, its P3 stays P3.
-- Internally a break is stored under a spare, hidden key (12, 11, …) to satisfy the timetable's unique index. That number is never shown.
-- **Old data:** class days saved while a break still took a number (P1 P2 P3 [Break P4] P5) are renumbered to P1 P2 P3 [Break] P4. This runs automatically when the server starts and is safe to repeat. To run it by hand:
-  ```bash
-  npm run migrate:break-periods --prefix server              # dry run: shows what would change
-  npm run migrate:break-periods --prefix server -- --apply   # writes the changes
-  ```
-  Attendance already taken is not touched. Each class session keeps the period number it was held under.
-
-Rules: `server/src/services/timetablePeriods.js`.
+Only classes are numbered (P1, P2, P3…). Breaks show by name and never take a period number, so a day reads P1 P2 P3 [Lunch] P4 P5. The server rejects duplicate or out-of-order numbers. A genuine free period keeps its gap. Legacy data is renumbered automatically at startup, or by hand with `npm run migrate:break-periods --prefix server [-- --apply]`. Attendance already taken is not changed. Rules: [timetablePeriods.js](server/src/services/timetablePeriods.js).
 
 ### Faculty attendance from class attendance
-- The first time a faculty member takes attendance in **their own scheduled class today**, they are marked **present for the whole day**. Later periods that day change nothing. An HOD who teaches their own period is covered too.
-- The faculty member sees *"You are marked present for today"*. On the HOD's faculty attendance screen the row reads *"Auto-marked present · took attendance in P1 (CS501 · A)"*.
-- It **never overwrites** a status an HOD or admin has already recorded (present, absent or leave). The HOD can still change an automatic mark, which then counts as a manual one.
-- Nobody is auto-marked when an admin corrects someone else's class, when an HOD edits another faculty member's class, or when attendance is entered for a past date.
 
-Rules: `server/src/services/facultyPresence.js`. The record carries `source: 'auto' | 'manual'` (`server/src/models/FacultyAttendance.js`).
+The first time faculty take attendance in their own scheduled class on a day, they are marked **present for the whole day**. This never overwrites a status set by an HOD or admin, and it doesn't apply to past dates or to edits of someone else's class. Rules: [facultyPresence.js](server/src/services/facultyPresence.js). Each record has `source: 'auto' | 'manual'`.
 
 ### Web idle-session timeout
-Web sessions end after **2 minutes without user activity** (pointer, key, scroll, touch). The browser reports activity to `POST /api/auth/activity` at most every 30 s; the **server is the authority** (the same check runs in the REST middleware, the Socket.IO handshake and the refresh endpoint, and a 30 s sweep disconnects idle sockets). Ordinary API calls, polling and token refresh never extend a session. Logging out or timing out in one tab signs out every tab (`client/src/services/sessionSync.js`). Chairman, security, admin and principal web sessions, and all mobile sessions, keep the previous 7-day idle rule. The rule lives in `server/src/utils/sessionIdle.js`.
 
-### Security hardening notes
-- User-supplied links shown as `<a href>` must pass `assertHttpUrl` (`server/src/utils/http.js`): only absolute `http(s)` URLs, so `javascript:` / `data:` links are rejected.
-- Stored-file lookups accept only a generated bare name (`uuid.ext`), which blocks path traversal.
-- Gate pass: the registered parent number is always used; a client-supplied `parentPhone` is ignored.
-- `/api/attendance/corrections` is limited to students (own records) and attendance staff.
-
-### Development data
-`npm run seed` now also loads **clearly-separated demo academic data** (`server/src/seed/academic.js`): sections for the demo students, six CSE-A classmates, five CSE semester-5 subjects, a weekly timetable and four weeks of attendance. To add it to an existing database without wiping anything:
-```bash
-npm run seed:academic --prefix server
-```
-
-### Real-time model
-REST does all reads/writes; Socket.io only pushes “something changed” signals and chat traffic:
-`client → REST → auth/validation → MongoDB → Socket.io event → authorised clients`.
-Sockets authenticate with the access token **and a live session**; chat rooms are joined only after a MongoDB membership check; revoking a session disconnects its sockets. Broadcast events for public data (`announcement:changed`, `event:changed`, …) carry only an id, so every client re-reads through REST with its own permissions.
+The browser reports activity to `POST /api/auth/activity` at most every 30 seconds. The server is the authority: the REST middleware, the Socket.IO handshake and the refresh endpoint all check idle time, and a 30-second sweep disconnects idle sockets. Ordinary API calls never extend a session. Logging out in one tab signs out every tab ([sessionSync.js](client/src/services/sessionSync.js)). Rule: [sessionIdle.js](server/src/utils/sessionIdle.js).
 
 ### Password reset and Security & Logs
-Email password reset is retired (`/api/auth/forgot-password` and `/api/auth/reset-password` answer `410`). A forgotten password is reset without the old one by the student's **Class In-Charge** (own class only — department, year, section and semester from their account) or an **Admin** (any non-admin account) via `POST /api/users/:id/reset-password`; the user is then signed out on every device. A Class In-Charge also creates student logins for their own class at **Students** (`/class/students`).
 
-**Admin → Security & Logs** (`/admin/security`, Admin only on the server) records authentication, session, password, user-management, scope, OTP and gate-pass security events (append-only; never passwords, hashes, tokens or OTP values), with a separate **OTP** tab showing every generated parent OTP as its own card. SMS is off by default (`OTP_SMS_ENABLED=false`): OTPs are generated, stored (hashed for verification, server-encrypted for the admin view) and verified normally but not sent. To enable SMS later set `OTP_SMS_ENABLED=true`, `OTP_PROVIDER=college_sms` and the `SMS_*` secrets, and connect the vendor API in `server/src/services/otp/providers/collegeSmsProvider.js`; OTPs only ever go to the student's registered parent mobile from the database.
-
-### Android app (`mobile/`, React Native + Expo SDK 57)
-Uses the **same backend, database, roles and Socket.io server** as the web app. The refresh token is stored in the device’s encrypted SecureStore and sent in the request body (`X-Client-Platform: mobile`); everything else is identical to the web client.
-
-```bash
-cd mobile
-npm install
-cp .env.example .env        # set EXPO_PUBLIC_API_URL=http://<your-PC-LAN-IP>:5000 for a phone on the same Wi-Fi
-npx expo start              # scan the QR with Expo Go, or press "a" for an Android emulator
-```
-In development the app falls back to the machine running `expo start` on port 5000 if `EXPO_PUBLIC_API_URL` is empty. It never defaults to `localhost`.
-
-**Building the APK** (EAS Build; profiles in `mobile/eas.json`):
-```bash
-npm install -g eas-cli
-cd mobile
-eas login                   # Expo account (free)
-eas init                    # creates the project; put the printed id in EAS_PROJECT_ID
-# edit eas.json → "preview".env.EXPO_PUBLIC_API_URL = your deployed server, e.g. https://vexon.your-college.edu
-eas build -p android --profile preview      # cloud build → downloadable .apk
-# or, with Android SDK + JDK 17 installed locally:
-eas build -p android --profile preview --local
-```
-Push notifications on a standalone APK additionally need Firebase (FCM v1) credentials uploaded with `eas credentials` and `GOOGLE_SERVICES_JSON` pointing to `google-services.json`. Plain-HTTP servers are allowed only when `EXPO_PUBLIC_API_URL` is `http://` (campus LAN); use HTTPS in production.
-
-**Using the app over the internet (mobile data, any Wi-Fi, no laptop involved):** the phone needs a *public* address for the API — a LAN IP only works on the same Wi-Fi, and `localhost` never works on a phone at all.
-
-1. **Database — MongoDB Atlas** (free tier, 512 MB): create a cluster at [mongodb.com/atlas](https://www.mongodb.com/atlas) → Database Access (create a user) → Network Access (Allow access from anywhere, `0.0.0.0/0`, since Render's IP isn't static) → Connect → copy the `mongodb+srv://...` connection string.
-2. **API — Render**, using the `render.yaml` at the repo root (a "Blueprint"): on [dashboard.render.com](https://dashboard.render.com) → New → Blueprint → pick this repo. Render reads `render.yaml` and creates the `vexon-api` web service itself — JWT secrets and the chat encryption key are generated for you. You only need to fill in `MONGO_URI` (from step 1) when prompted, and optionally `CLOUDINARY_*` (see below). First deploy takes a few minutes; the resulting URL looks like `https://vexon-api.onrender.com`. The free plan sleeps after 15 minutes idle — the first request after that takes ~30s to wake it, then it's instant.
-3. **Uploaded photos surviving restarts:** Render's own disk is wiped on every deploy/restart. The server already supports [Cloudinary](https://cloudinary.com) (free tier) as a drop-in replacement — sign up, copy your Cloud name / API key / API secret into the Render service's environment variables, and uploads switch to Cloudinary automatically (no code change, no redeploy needed beyond setting the vars).
-4. **The APK:** either build it with the Render URL baked in (`eas.json` → `preview.env.EXPO_PUBLIC_API_URL` → your `https://vexon-api.onrender.com`, then `eas build -p android --profile preview`), **or** build once with no URL set and instead open the app's login screen → tap **Server** → enter the address → **Test & save**. The address is then stored on the phone itself, so the same APK can be repointed at a new server later without rebuilding.
-5. Install the resulting `.apk` on the phone (Settings → allow installs from your browser/file manager) and sign in — it now works over Jio/Airtel/any network, with your laptop not needed at all once deployed.
-
-For a *temporary* demo without deploying anything, an HTTPS tunnel to your running laptop works too (e.g. `cloudflared tunnel --url http://localhost:5000`) — but that only works while the tunnel and your laptop's dev server stay running, and anyone with the link can reach it, so use it briefly and not for real use.
-
-Reliability on mobile networks: every request has a 20 s timeout, reads retry automatically on network errors (writes never do, so nothing is saved twice), screens refetch when the app returns to the foreground or the connection comes back, an "Offline — reconnecting…" banner shows while the server is unreachable, a launch without internet keeps you signed in with a **Try again** screen, and a screen that crashes shows a recoverable error page instead of closing the app.
-
-### Tests
-```bash
-npm test --prefix server                     # integration + security tests (637 at last run; uses the separate cmp_test database)
-npm test --prefix client                     # client unit tests (idle-session tracker)
-node server/scripts/realtime-smoke.mjs       # against a RUNNING server: web ↔ Android chat round-trip
-```
+Email password reset is retired: `/api/auth/forgot-password` and `/api/auth/reset-password` return `410`. A student's **Class In-Charge** (own class only) or an **Admin** resets the password, and the user is signed out everywhere. **Admin → Security & Logs** (`/admin/security`) is an append-only record of security events, with an **OTP** tab that shows each parent OTP. To turn on SMS delivery, set `OTP_SMS_ENABLED=true`, `OTP_PROVIDER=college_sms` and the `SMS_*` values (adapter: `server/src/services/otp/providers/collegeSmsProvider.js`).
 
 ### Skill Wallet
 
-Students keep a project portfolio in the **Skill Wallet**, with team invitations by roll number, NPTEL certificates and profile links. NPTEL certificates are verified manually by staff, and every certificate image is re-encoded to WebP on the server. Faculty review projects against a versioned rubric, and IIC coordinators run **Innovation Management**. The **Innovation Gallery** (`/gallery`) shows only projects the owner has explicitly published, as college-only or public; projects are private by default and approval never publishes. Files are stored privately and served through short-lived signed URLs. Android supports viewing and creating projects and answering invitations. Full design, permissions, API, environment variables and limitations: [docs/SKILL_WALLET.md](docs/SKILL_WALLET.md).
+Students keep a project portfolio with team invitations, NPTEL certificates (verified manually, re-encoded to WebP) and profile links. Faculty review projects against a versioned rubric. The **Innovation Gallery** (`/gallery`) shows only projects the owner has explicitly published. Projects are private by default. See [docs/SKILL_WALLET.md](docs/SKILL_WALLET.md).
 
-### Terms and Conditions & Privacy Policy
+### Terms and Conditions and Privacy Policy
 
-Anyone can read the Terms and Conditions and the Privacy Policy at `/terms` and `/privacy-policy`, with no sign-in needed. On the web, Android and iOS, the profile has an **About the App** section with three entries: About the App, Terms and Conditions and Privacy Policy. The web, Android and iOS apps do not ask for acceptance. Only the Windows Gate Scanner does: the server enforces it for those sessions (`403 TERMS_ACCEPTANCE_REQUIRED`) and stores each acceptance as an append-only record tied to the exact version accepted. Policy versions are published from `server/src/legal/registry.js` and cannot be changed after publication. The policy text contains placeholders the College must complete before go-live. Details: [docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md).
+The policies are public at `/terms` and `/privacy-policy`. Only the Windows Gate Scanner requires acceptance (`403 TERMS_ACCEPTANCE_REQUIRED`), and each acceptance is stored append-only against the exact policy version. Versions are published from [server/src/legal/registry.js](server/src/legal/registry.js) and are immutable. See [docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md).
 
-### Gate Scanner for Windows (`gate-scanner/`)
+### Gate Scanner for Windows
 
-Security staff can record gate-pass exits and returns from a Windows PC with a USB or Bluetooth QR scanner (keyboard mode) or a USB virtual COM scanner. The app is an Electron desktop app that only Security accounts can use. Its session type is `gate_desktop`, which can reach only `/api/gate-scanner`. The sign-in is saved encrypted with Windows DPAPI. Exits and returns go through the same server code as the web Security screen, and success is shown only after the server commits. Every scan is idempotent, and the dashboard and history are built from the gate-pass records. Web, Android and iOS are unchanged. Build the installer with `cd gate-scanner && npm run dist`. Details: [docs/GATE_SCANNER.md](docs/GATE_SCANNER.md).
+An Electron app for Security staff, used with USB or Bluetooth QR scanners in keyboard mode, or USB virtual-COM scanners. Its session type is `gate_desktop`, which can reach only `/api/gate-scanner`. Exits and returns run through the same server code as the web Security screen. Every scan is idempotent. See [docs/GATE_SCANNER.md](docs/GATE_SCANNER.md).
 
-## 9. College bus tracking
+### College bus tracking
 
-Live bus map on the web (**Bus Tracking**) and in the Android app (**Campus → Bus Tracking**).
-Every bus is drawn as a **bus-shaped icon** with its number and route above it, at its
-**latest valid GPS position** and that position's age (live / old / offline) — a bus with
-no accepted position is not drawn at all. Selecting a bus shows its route, stops, progress
-and the ETA to the selected stop; "My location" reads your position **once**, on request.
+A live bus map on the web (**Bus Tracking**) and in the Android app. Each bus is drawn at its latest valid GPS position with an age label (live, old or offline). Selecting a bus shows its route, stops, progress and ETA. **Admin** and **`transport`** users manage buses, routes, stops and rider assignments. `TRANSPORT_STUDENT_VISIBILITY` is `all` or `assigned`.
 
-**Roles.** Students and staff with transport access view buses (`TRANSPORT_STUDENT_VISIBILITY=all`
-lets every student see every bus; `assigned` limits students to their assigned route / bus).
-**Admin** and the new **`transport`** role manage buses, routes, stops and rider assignments
-(web: *Bus Tracking → Manage buses*). Staff listed on a bus can share its location from the
-Android app during a trip they start.
+Every fix passes one validated ingestion path ([ingest.js](server/src/services/transport/ingest.js)): coordinates, age, accuracy, speed, implied jumps, ordering and rate are all checked.
 
-**Map provider.** `MAP_STYLE_URL` (default OpenFreeMap — free, no key, see
-<https://openfreemap.org> for terms). To use a keyed provider, put its *public* client key in
-the style URL and add any other tile / glyph host to `MAP_CSP_ORIGINS`. Both apps read the
-style URL from `GET /api/transport/config`, so the provider is changed in one place.
-
-**GPS sources.** Every position goes through one validated ingestion path
-(`server/src/services/transport/ingest.js`): coordinates, fix age, future time, accuracy,
-speed, implied jump, ordering and rate are checked; rejected fixes change nothing.
-
-1. *Staff phone (fallback, built in):* *Bus Tracking → Start &lt;bus&gt;* starts a trip and a
-   foreground location service with a persistent notification; it stops when the trip ends,
-   is stopped by a manager, or times out (`TRIP_IDLE_MINUTES`, `TRIP_MAX_HOURS`). No background
-   location permission is requested.
-2. *Vehicle GPS tracker (connect later):* no tracker API was available, so none is assumed.
-   Point the tracker vendor's push / forwarding feature (or a small gateway) at
-   `POST /api/transport/tracker/locations`, enabled by setting `TRACKER_WEBHOOK_SECRET`:
+1. **Staff phone:** *Bus Tracking → Start <bus>* starts a trip with a foreground location service. It ends when the trip ends, when a manager stops it, or on timeout (`TRIP_IDLE_MINUTES`, `TRIP_MAX_HOURS`). The app never requests background location permission.
+2. **Vehicle GPS tracker:** point the vendor's push feature at `POST /api/transport/tracker/locations`. This is enabled by `TRACKER_WEBHOOK_SECRET`.
    ```
    X-Tracker-Timestamp: <unix ms, within 5 minutes>
    X-Tracker-Signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw JSON body>")>
-   { "deviceId": "<the bus's Tracker device ID>",
+   { "deviceId": "<Tracker device ID>",
      "fixes": [ { "lat": 13.0, "lng": 80.0, "timestamp": 1760000000000,
                   "accuracy": 8, "speed": 9.2, "heading": 270 } ] }
    ```
-   Set the bus's GPS source to *Vehicle GPS tracker* and its *Tracker device ID* to the id the
-   tracker sends.
 
-**Testing with synthetic GPS (development only).** `node server/scripts/simulate-bus.mjs --device SIM-TEST-1 --route "<route>"`
-drives a tracker-type test bus along its route through the real webhook. Every position it
-sends is made up and labelled `[SYNTHETIC]`; it refuses to run with `NODE_ENV=production`.
+The map style comes from `MAP_STYLE_URL` (default OpenFreeMap, no key needed). Add any extra tile hosts to `MAP_CSP_ORIGINS`. For road-following routes, **self-host OSRM in production**: the public demo server is for fair use only. `node server/scripts/simulate-bus.mjs` drives a test bus with synthetic GPS and refuses to run in production.
 
-```bash
-npm test --prefix server     # includes tests/transport.test.js (synthetic coordinates only)
-npm test --prefix client     # includes tests/busGeo.test.mjs
-cd mobile-kotlin && ./gradlew testDebugUnitTest   # includes BusMathTest
-```
+---
+
+## 15. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `Could not connect to MongoDB` | Start MongoDB and check `MONGO_URI` / `DB_TARGET` in `server/.env` |
+| `DB_TARGET=atlas but MONGO_URI_ATLAS is not set` | Set `MONGO_URI_ATLAS`, or switch back to `DB_TARGET=local` |
+| `Missing required environment variable: …` at startup | Production secrets are required. See [Required in production](#required-in-production) |
+| Port 5000 already in use (on macOS, often AirPlay) | Set `PORT=5050` and run the client with `VITE_API_PROXY=http://localhost:5050 npm run dev --prefix client` |
+| Realtime updates don't arrive in production | `CLIENT_URL` must match the public origin exactly, and the proxy must forward WebSocket `Upgrade` headers |
+| Every request redirects, or writes fail with HTTPS errors | `APP_URL` must be `https://…`. Behind a proxy, set `TRUST_PROXY=1` and forward `X-Forwarded-Proto` |
+| Uploaded photos disappear after a deploy | The host disk isn't persistent. Configure `CLOUDINARY_*` |
+| Uploads fail with 415 | Allowed types are JPG, PNG, WEBP and GIF (plus PDF for attachments), up to `MAX_UPLOAD_MB` (default 5 MB) |
+| "Send OTP" fails with "not configured yet" | `OTP_SMS_ENABLED=true` but the `SMS_*` values are missing |
+| First request takes about 30 seconds on Render | The free instance was asleep. See [keep-alive](#option-a-render-current-deployment) |
+| Electron starts as plain Node in the VS Code terminal | Run `unset ELECTRON_RUN_AS_NODE` before `npm run dev` in `gate-scanner/` |
+
+A detailed error catalogue is in [error_handling/](error_handling/) and [docs/developer-handbook/](docs/developer-handbook/).
+
+---
+
+## 16. Further documentation
+
+| Document | Topic |
+|---|---|
+| [docs/SUPER_ADMIN.md](docs/SUPER_ADMIN.md) | Super Admin, admin policies, emergency and recovery modes, backup status |
+| [docs/SOC.md](docs/SOC.md) | Error capture, diagnostics, fix verification |
+| [docs/SKILL_WALLET.md](docs/SKILL_WALLET.md) | Skill Wallet design, permissions, API |
+| [docs/GATE_SCANNER.md](docs/GATE_SCANNER.md) | Gate Scanner architecture, setup, update and rollback |
+| [docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md) | Terms and Privacy Policy versioning |
+| [docs/security/](docs/security/) | Security reports and audit fixes |
+| [docs/developer-handbook/](docs/developer-handbook/) | Developer handbook, deployment and maintenance guides |
+| [mobile-kotlin/README.md](mobile-kotlin/README.md) · [mobile-ios/README.md](mobile-ios/README.md) · [gate-scanner/README.md](gate-scanner/README.md) | Client-specific setup |
+
+---
+
+**License:** this is a private repository, and no open-source license is granted. © VEXON Team.

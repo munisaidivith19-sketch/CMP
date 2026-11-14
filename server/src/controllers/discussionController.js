@@ -57,7 +57,7 @@ export const listDiscussions = asyncHandler(async (req, res) => {
               localField: 'author',
               foreignField: '_id',
               as: 'author',
-              pipeline: [{ $project: { name: 1, avatar: 1, role: 1, department: 1 } }],
+              pipeline: [{ $match: { deletedAt: null } }, { $project: { name: 1, avatar: 1, role: 1, department: 1 } }],
             },
           },
           { $unwind: '$author' },

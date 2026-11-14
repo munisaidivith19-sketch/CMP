@@ -47,9 +47,12 @@ after(async () => {
 });
 
 /** Run `fn(base)` against a fresh app instance built in production mode. */
-async function withProdApp(fn) {
+// Production settings over a local plain-HTTP socket. HTTPS enforcement is
+// off unless asked for (forceHttps): these checks are about headers and
+// cookies, not transport; force-https.test.js covers the redirect itself.
+async function withProdApp(fn, { forceHttps = false } = {}) {
   env.isProd = true;
-  const server = http.createServer(createApp());
+  const server = http.createServer(createApp({ forceHttps }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     return await fn(`http://127.0.0.1:${server.address().port}`);
@@ -78,13 +81,28 @@ const cookieNamed = (res, name) => cookiesOf(res).find((c) => c.startsWith(`${na
 
 // ── Layer 1: encryption in transit ─────────────────────────────────
 
-test('L1.1 HSTS: production sends max-age=31536000; includeSubDomains — development does not', async () => {
+test('L1.1 HSTS: production sends it (two years when HTTPS is enforced) — development does not', async () => {
   const dev = await fetch(`${ctx.base}/api/health`);
   assert.equal(dev.headers.get('strict-transport-security'), null, 'no HSTS on a plain-HTTP dev server');
   await withProdApp(async (base) => {
     const res = await fetch(`${base}/api/health`);
     assert.equal(res.headers.get('strict-transport-security'), 'max-age=31536000; includeSubDomains');
   });
+  await withProdApp(
+    async (base) => {
+      // /api/health stays reachable over plain HTTP for the platform probe.
+      const res = await fetch(`${base}/api/health`);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('strict-transport-security'), 'max-age=63072000; includeSubDomains');
+      assert.match(res.headers.get('content-security-policy'), /upgrade-insecure-requests/);
+      const json = { 'content-type': 'application/json' };
+      const write = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: json, body: '{}' });
+      assert.equal(write.status, 403, 'a plain-HTTP write is refused');
+      const viaTls = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { ...json, 'x-forwarded-proto': 'https' }, body: '{}' });
+      assert.notEqual(viaTls.status, 403, 'the same write through the TLS proxy is processed');
+    },
+    { forceHttps: true }
+  );
 });
 
 test('L1.2 SMS gateway: https by default; production refuses to send over plain http', async () => {

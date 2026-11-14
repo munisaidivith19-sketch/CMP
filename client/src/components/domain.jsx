@@ -10,7 +10,7 @@ import { Select, Textarea } from './ui/form';
 import { useCancelRegistrationMutation, useCreateReportMutation, useRegisterEventMutation } from '../services/api';
 import { selectUser } from '../features/authSlice';
 import { catStyle, REPORT_REASONS, ROLE_LABELS, STUDENT_ROLES, YEAR_LABELS } from '../utils/constants';
-import { errMsg, friendlyDay, fmtTime, timeAgo, displayName } from '../utils/format';
+import { errMsg, safeHref, friendlyDay, fmtTime, timeAgo, displayName } from '../utils/format';
 
 /* ── Event registration button ──────────────────────────────────── */
 export function RegisterButton({ event, size = 'md', className }) {
@@ -226,7 +226,7 @@ export function AnnouncementItem({ a, compact, actions, onOpen }) {
               </Badge>
             )}
             {a.attachments?.map((f) => (
-              <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" className="chip" onClick={(e) => e.stopPropagation()}>
+              <a key={f.url} href={safeHref(f.url)} target="_blank" rel="noopener noreferrer" className="chip" onClick={(e) => e.stopPropagation()}>
                 📎 {f.name || 'Attachment'}
               </a>
             ))}
@@ -265,7 +265,7 @@ export function AnnouncementDetail({ a, onClose }) {
           )}
         </div>
         {a.image && (
-          <a href={a.image} target="_blank" rel="noopener noreferrer" className="block" title="Open the full-size image">
+          <a href={safeHref(a.image)} target="_blank" rel="noopener noreferrer" className="block" title="Open the full-size image">
             <FullImage src={a.image} className="flex max-h-[70vh] justify-center rounded-3xl" />
           </a>
         )}
@@ -273,7 +273,7 @@ export function AnnouncementDetail({ a, onClose }) {
         {a.attachments?.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {a.attachments.map((f) => (
-              <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" className="chip">
+              <a key={f.url} href={safeHref(f.url)} target="_blank" rel="noopener noreferrer" className="chip">
                 📎 {f.name || 'Attachment'}
               </a>
             ))}

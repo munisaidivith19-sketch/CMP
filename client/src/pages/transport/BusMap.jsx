@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { BUS_ICON_SIZE, createBusMarkerElement, updateBusMarkerElement } from './busMarker';
-import { DEFAULT_VIEW, accuracyCircle, boundsOf, busStatus, easeOut, lerpPosition, remainingPath, routeLine, stopFeatures } from './busGeo';
+import { DEFAULT_VIEW, accuracyCircle, boundsOf, busStatus, easeOut, lerpPosition, routeAhead, routeLine, stopFeatures } from './busGeo';
 import { accuracyBounds, showsDot, syncUserMarker } from './myLocation';
 
 // The worker is bundled to a same-origin file (strict CSP: no blob:, no remote script).
@@ -19,8 +19,9 @@ const COMPACT_BELOW_ZOOM = 12;
  * between valid fixes; the student's position is a separate blue dot.
  *
  * `fit` = { kind: 'all' | 'bus' | 'student' | 'both', nonce } re-centres on demand.
+ * `detour` = the server's road path back to the route when the selected bus is off it (busGeo.routeAhead).
  */
-export default function BusMap({ styleUrl, attribution, thresholds, buses, locations, selectedId, onSelect, route, travelled, selectedStopId, onSelectStop, student, fit, onMapError }) {
+export default function BusMap({ styleUrl, attribution, thresholds, buses, locations, selectedId, onSelect, route, travelled, detour, selectedStopId, onSelectStop, student, fit, onMapError }) {
   const container = useRef(null);
   const map = useRef(null);
   const markers = useRef(new Map()); // busId → { marker, el, pos, frame }
@@ -47,6 +48,7 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       loaded = true;
       m.addSource('route-remaining', { type: 'geojson', data: EMPTY });
       m.addSource('route-travelled', { type: 'geojson', data: EMPTY });
+      m.addSource('route-detour', { type: 'geojson', data: EMPTY });
       m.addSource('stops', { type: 'geojson', data: EMPTY });
       // The area the viewer's position is accurate to (drawn under everything).
       m.addSource('me-accuracy', { type: 'geojson', data: EMPTY });
@@ -55,6 +57,8 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       m.addLayer({ id: 'route-remaining', type: 'line', source: 'route-remaining', filter: ['!', ['get', 'approx']], paint: { 'line-color': '#6c5dd3', 'line-width': 5, 'line-opacity': 0.85 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
       // No road geometry: straight stop-to-stop lines, dashed so they never pass for roads.
       m.addLayer({ id: 'route-approx', type: 'line', source: 'route-remaining', filter: ['get', 'approx'], paint: { 'line-color': '#6c5dd3', 'line-width': 3, 'line-opacity': 0.7, 'line-dasharray': [2, 2] } });
+      // Off route: the ROAD path from the bus back to its route (server-routed, never a straight line).
+      m.addLayer({ id: 'route-detour', type: 'line', source: 'route-detour', paint: { 'line-color': '#d97706', 'line-width': 5, 'line-opacity': 0.9 }, layout: { 'line-cap': 'round', 'line-join': 'round' } });
       m.addLayer({
         id: 'stops',
         type: 'circle',
@@ -151,10 +155,12 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
     if (!m || !ready) return;
     const { points: path, exact } = route ? routeLine(route) : { points: [], exact: true };
     const pos = selectedId ? locations[selectedId] || buses.find((b) => String(b._id) === String(selectedId))?.location : null;
-    m.getSource('route-remaining')?.setData(path.length >= 2 ? line(remainingPath(path, pos), { approx: !exact }) : EMPTY);
+    const ahead = routeAhead(path, pos, detour);
+    m.getSource('route-remaining')?.setData(ahead.route.length >= 2 ? line(ahead.route, { approx: !exact }) : EMPTY);
+    m.getSource('route-detour')?.setData(ahead.detour.length >= 2 ? line(ahead.detour) : EMPTY);
     m.getSource('route-travelled')?.setData(travelled?.length >= 2 ? line(travelled) : EMPTY);
     m.getSource('stops')?.setData(stopFeatures(route?.stops, { selectedStopId, passed: route?.passedSequences }));
-  }, [ready, route, travelled, selectedStopId, selectedId, locations, buses]);
+  }, [ready, route, travelled, detour, selectedStopId, selectedId, locations, buses]);
 
   // The student's own position — a blue dot, only when they asked for it.
   useEffect(() => {
@@ -198,13 +204,19 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
   }, [fit]);
 
   const approximate = Boolean(route?.stops?.length >= 2 && !routeLine(route).exact);
+  const offRoute = Boolean(route && selectedId && detour);
   return (
     <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" role="application" aria-label="Live bus map" />
-      {approximate && (
-        <p className="pointer-events-none absolute left-2 top-2 z-10 max-w-[70%] rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow" role="status">
-          Approximate path — straight lines between stops, not the road
-        </p>
+      {(approximate || offRoute) && (
+        <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[70%] flex-col items-start gap-1" role="status">
+          {approximate && <p className="rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow">Approximate path — straight lines between stops, not the road</p>}
+          {offRoute && (
+            <p className="rounded-lg bg-amber-50/95 px-2 py-1 text-[11px] font-semibold text-amber-800 shadow">
+              {detour.status === 'ok' ? 'Bus is off its route — orange line is the road back to the route' : 'Bus is off its route — road path back not available yet'}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import { STUDENT_ROLES } from '../utils/academicScope.js';
 import { normalizePhoneDigits, yearOfSemester } from '../constants.js';
 import { revokeSessions } from './authController.js';
 import { adminAllows, isStaffGrantee, moduleForRole } from '../policies.js';
+import { assertIdentifiersFree, createOrRestoreUser, findDeletedAccount, graceLabel } from '../services/userRestore.js';
 
 /**
  * Student accounts managed by a faculty Class In-Charge, and authorized
@@ -82,7 +83,19 @@ export const createClassStudent = asyncHandler(async (req, res) => {
 
   const email = String(req.body.email).toLowerCase().trim();
   if (await User.exists({ email })) throw new ApiError(409, 'An account with this email already exists');
-  if (req.body.rollNo) {
+  // A student of this class deleted within the restore window (15 days) comes back exactly
+  // as they were, with all their records (only the new password is used).
+  // Any other deleted account is outside a Class In-Charge's reach.
+  const prior = await findDeletedAccount(email);
+  if (prior) {
+    const old = prior.user;
+    const ownStudent = STUDENT_ROLES.includes(prior.role) && (!old || inScope(scope, old));
+    if (!ownStudent) {
+      throw new ApiError(409, `This email belongs to an account deleted less than ${graceLabel()} ago that is not a student of your class. Ask an Admin to restore it by creating the same email.`);
+    }
+  }
+  await assertIdentifiersFree(prior, { rollNo: req.body.rollNo });
+  if (!prior?.user && req.body.rollNo) {
     const rawRoll = String(req.body.rollNo).trim();
     const dupeRoll = await User.exists({ rollNo: { $regex: new RegExp(`^${rawRoll.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
     if (dupeRoll) throw new ApiError(409, 'That register number is already in use by another student');
@@ -95,7 +108,7 @@ export const createClassStudent = asyncHandler(async (req, res) => {
     }
   }
 
-  const user = await User.create({
+  const { user, restored } = await createOrRestoreUser(prior, {
     name: req.body.name,
     email,
     password: req.body.password,
@@ -105,12 +118,16 @@ export const createClassStudent = asyncHandler(async (req, res) => {
     ...scope,
   });
 
-  logActivity(req, 'class.student_create', { entityType: 'user', entityId: user._id, summary: `student: ${user.email}` });
+  logActivity(req, restored ? 'class.student_restore' : 'class.student_create', {
+    entityType: 'user',
+    entityId: user._id,
+    summary: `student: ${user.email}${restored ? ' (restored with previous records)' : ''}`,
+  });
   logSecurity(req, 'USER_CREATED', {
     target: user,
     entityType: 'user',
     entityId: user._id,
-    details: { role: 'student', via: 'class_in_charge', ...scope },
+    details: { role: 'student', via: 'class_in_charge', ...scope, ...(restored ? { restored: true } : {}) },
   });
   notifyUsers([user._id], {
     type: 'system',
@@ -118,7 +135,7 @@ export const createClassStudent = asyncHandler(async (req, res) => {
     message: `Sign in with ${user.email} using the password your Class In-Charge gave you.`,
   }, { push: false });
 
-  res.status(201).json(await User.findById(user._id).select(CLASS_STUDENT_FIELDS).lean());
+  res.status(201).json({ ...(await User.findById(user._id).select(CLASS_STUDENT_FIELDS).lean()), restored });
 });
 
 // What a Class In-Charge may change on a student of their class. Department is

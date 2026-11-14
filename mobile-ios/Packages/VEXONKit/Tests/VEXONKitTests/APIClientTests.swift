@@ -105,7 +105,8 @@ struct APIClientTests {
         #expect(transport.count(path: "/api/auth/refresh") == 1)
     }
 
-    @Test("A rejected refresh token signs out: token cleared and .expired emitted")
+    // The event stream never finishes: without a limit a missing .expired would hang the run.
+    @Test("A rejected refresh token signs out: token cleared and .expired emitted", .timeLimit(.minutes(1)))
     func expiredSession() async throws {
         let store = MemorySecureStore([SecureStoreKey.refreshToken: "revoked"])
         let transport = MockTransport { _ in (Fixtures.json(#"{"message":"Your session has ended"}"#), 401) }

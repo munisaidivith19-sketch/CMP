@@ -17,6 +17,7 @@ import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
 import { pick } from '../utils/http.js';
 import { logSecurity } from '../utils/securityLog.js';
+import { assertIdentifiersFree, createOrRestoreUser, findDeletedAccount, purgeTimeFrom } from '../services/userRestore.js';
 
 // Security-relevant snapshots of an account, for before/after audit records.
 const SCOPE_KEYS = ['department', 'year', 'section', 'semester'];
@@ -271,16 +272,30 @@ export const createUser = asyncHandler(async (req, res) => {
   requireRoleLimit(req, 'create', role);
   const email = String(req.body.email).toLowerCase().trim();
   if (await User.exists({ email })) throw new ApiError(409, 'An account with this email already exists');
-  if (req.body.employeeId) {
+  // An account with this email deleted within the restore window (15 days) comes back
+  // exactly as it was — its own role, details and records — whatever the form
+  // says (only the new password is used). The admin must be allowed to create
+  // that old role in its old department.
+  const prior = await findDeletedAccount(email);
+  if (prior?.role && prior.role !== role) {
+    if (!ADMIN_ASSIGNABLE_ROLES.includes(prior.role)) requirePolicy(req, null);
+    requirePolicy(req, moduleForRole(prior.role), 'create', prior.user?.department ?? req.body.department);
+    requireRoleLimit(req, 'create', prior.role);
+  } else if (prior?.user && prior.user.department !== req.body.department) {
+    requirePolicy(req, moduleForRole(role), 'create', prior.user.department);
+  }
+  await assertIdentifiersFree(prior, { rollNo: req.body.rollNo, employeeId: req.body.employeeId });
+  const restoring = Boolean(prior?.user);
+  if (!restoring && req.body.employeeId) {
     const dupe = await User.exists({ employeeId: String(req.body.employeeId).trim() });
     if (dupe) throw new ApiError(409, 'That employee ID is already in use');
   }
-  if (req.body.rollNo) {
+  if (!restoring && req.body.rollNo) {
     const rollNo = String(req.body.rollNo).trim();
     const dupeRoll = await User.exists({ rollNo: { $regex: new RegExp(`^${rollNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
     if (dupeRoll) throw new ApiError(409, 'That register number is already in use by another student');
   }
-  if (req.body.phone && req.body.parentPhone) {
+  if (!restoring && req.body.phone && req.body.parentPhone) {
     const p1 = normalizePhoneDigits(req.body.phone);
     const p2 = normalizePhoneDigits(req.body.parentPhone);
     if (p1 && p2 && p1 === p2) {
@@ -291,19 +306,24 @@ export const createUser = asyncHandler(async (req, res) => {
   const data = pick(req.body, CREATE_FIELDS[role] || []);
   // Policy Assignment: validated in full before the account exists. The
   // account and its additional policies are one document, written once.
-  const policies = validateCreationPolicies(req, { role, department: data.department, policyMode: req.body.policyMode, policies: req.body.policies });
-  const user = await User.create({
+  // A restored account gets no additional policies from the form.
+  const policies = restoring ? [] : validateCreationPolicies(req, { role, department: data.department, policyMode: req.body.policyMode, policies: req.body.policies });
+  const { user, restored } = await createOrRestoreUser(prior, {
     name: req.body.name, title: req.body.title, gender: req.body.gender, email, password: req.body.password, role, ...data, mustChangePassword: true,
     ...(policies.length ? { policies } : {}),
   });
 
-  logActivity(req, 'admin.user_create', { entityType: 'user', entityId: user._id, summary: `${role}: ${user.email}` });
+  logActivity(req, restored ? 'admin.user_restore' : 'admin.user_create', {
+    entityType: 'user',
+    entityId: user._id,
+    summary: `${user.role}: ${user.email}${restored ? ' (restored with previous records)' : ''}`,
+  });
   if (policies.length) await auditCreationPolicies(req, user, policies);
   logSecurity(req, 'USER_CREATED', {
     target: user,
     entityType: 'user',
     entityId: user._id,
-    details: { role, ...snapshot(user, ['department', 'year', 'section', 'semester']), via: 'admin' },
+    details: { role: user.role, ...snapshot(user, ['department', 'year', 'section', 'semester']), via: 'admin', ...(restored ? { restored: true } : {}) },
   });
   notifyUsers([user._id], {
     type: 'system',
@@ -311,7 +331,7 @@ export const createUser = asyncHandler(async (req, res) => {
     message: `Sign in with ${user.email} using the password your administrator gave you.`,
   }, { push: false });
 
-  res.status(201).json(user);
+  res.status(201).json({ ...user.toJSON(), restored });
 });
 
 export const updateUser = asyncHandler(async (req, res) => {
@@ -502,10 +522,23 @@ export const deleteUser = asyncHandler(async (req, res) => {
   }
 
   const { name, email, role } = user;
-  await user.deleteOne();
+  // Soft delete: the account disappears from the app, but it and every record
+  // linked to it are kept for the restore window (15 days). Creating the same
+  // email again within it restores it all; after it the account is removed
+  // for good (services/userRestore.js → purgeDeletedUsers).
+  const deletedAt = new Date();
+  const purgeAt = purgeTimeFrom(deletedAt);
+  await User.updateOne(
+    { _id: user._id },
+    {
+      $set: { isActive: false, deletedAt, purgeAt, deletedBy: req.user._id },
+      $unset: { pushTokens: 1 },
+      $inc: { tokenVersion: 1 },
+    }
+  );
 
   logActivity(req, 'admin.user_delete', { entityType: 'user', entityId: req.params.id, summary: `${role}: ${email} (${name})` });
-  logSecurity(req, 'USER_DELETED', { target: { _id: req.params.id, role }, entityType: 'user', entityId: req.params.id, details: { name, email } });
+  logSecurity(req, 'USER_DELETED', { target: { _id: req.params.id, role }, entityType: 'user', entityId: req.params.id, details: { name, email, purgeAt } });
   res.status(204).end();
 });
 

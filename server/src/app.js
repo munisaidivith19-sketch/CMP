@@ -18,6 +18,7 @@ import { transportConfig } from './services/transport/config.js';
 import { correlationId } from './services/soc/monitors.js';
 import { requestMetrics } from './services/soc/metrics.js';
 import { captureRateLimited } from './middleware/error.js';
+import { forceHttpsEnabled, httpsOnly, trustProxySetting } from './middleware/https.js';
 
 /**
  * Origins the bus map may load its style, tiles, glyphs and sprites from: the
@@ -45,35 +46,23 @@ function mapCspOrigins() {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CLIENT_DIST = path.resolve(__dirname, '../../client/dist');
 
-/**
- * How many reverse-proxy hops to trust for X-Forwarded-For, so req.ip (rate
- * limits, sign-in lockouts, audit logs) is the real visitor and not the proxy.
- * TRUST_PROXY=<hops> sets it (1 = Render; 2 = Cloudflare in front of Render),
- * TRUST_PROXY=false turns it off. Unset: 1 in production — the app is always
- * deployed behind a proxy there, and trusting none would make every visitor
- * share the proxy's IP (one attacker could lock everyone out) — and off in
- * development, where a client could otherwise spoof its IP with the header.
- * A hop count, never `true`: trusting every hop lets a client pick its own IP.
- */
-export function trustProxySetting(raw = process.env.TRUST_PROXY, isProd = env.isProd) {
-  const v = String(raw ?? '').trim().toLowerCase();
-  if (v === 'false' || v === '0' || v === 'off') return false;
-  const hops = Number.parseInt(v, 10);
-  if (Number.isInteger(hops) && hops > 0) return Math.min(hops, 5);
-  return isProd ? 1 : false;
-}
+// Lives in middleware/https.js (socket.js needs it without importing the app).
+export { trustProxySetting };
 
 // SPA routes never contain a dot; anything that looks like a file path and is
 // not a real built asset (/.env, /server/src/app.js, /render.yaml, *.map) is a
 // plain 404 — never the backend file, and not index.html either.
 const looksLikeFile = (p) => p.split('/').some((seg) => seg.includes('.'));
 
-export function createApp() {
+export function createApp({ forceHttps = forceHttpsEnabled() } = {}) {
   const app = express();
   const mapOrigins = mapCspOrigins();
   const CLIENT_DIST =process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : DEFAULT_CLIENT_DIST;
   app.disable('x-powered-by');
   app.set('trust proxy', trustProxySetting());
+
+  // Plain HTTP never reaches the app when HTTPS is enforced (production default).
+  app.use(httpsOnly(forceHttps));
 
   // Enterprise Security Headers
   app.use(
@@ -82,9 +71,14 @@ export function createApp() {
       crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
       dnsPrefetchControl: { allow: false },
-      // HTTPS only, for a year, subdomains included — production only, so a
-      // plain-HTTP campus/dev server is never pinned to HTTPS by accident.
-      strictTransportSecurity: env.isProd ? { maxAge: 31536000, includeSubDomains: true } : false,
+      // HTTPS only, subdomains included: two years when HTTPS is enforced,
+      // otherwise one year in production — never in development, so a
+      // plain-HTTP campus/dev server is not pinned to HTTPS by accident.
+      strictTransportSecurity: forceHttps
+        ? { maxAge: 63072000, includeSubDomains: true }
+        : env.isProd
+          ? { maxAge: 31536000, includeSubDomains: true }
+          : false,
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
@@ -94,8 +88,9 @@ export function createApp() {
           'connect-src': ["'self'", 'ws:', 'wss:', ...mapOrigins],
           // MapLibre's CSP build runs its worker from our own origin.
           'worker-src': ["'self'", 'blob:'],
-          // Allow plain-HTTP hosting on a local campus server (enable when behind HTTPS).
-          'upgrade-insecure-requests': null,
+          // Every sub-resource over HTTPS when it is enforced; off only for a
+          // plain-HTTP campus server (FORCE_HTTPS=false).
+          'upgrade-insecure-requests': forceHttps ? [] : null,
         },
       },
     })

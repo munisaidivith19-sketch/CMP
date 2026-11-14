@@ -128,6 +128,26 @@ public enum BusMath {
         let cut = lerp(path[i - 1], path[i], t)
         return (Array(path[0..<i]) + [cut], [cut] + Array(path[i...]))
     }
+
+    /// The server's road path back to the route for a bus that is off it, from
+    /// the vertex nearest the bus's current position on — the same rule as the
+    /// web and Android maps. Fewer than two points (no path, pending,
+    /// unavailable) → nothing to draw: never a straight line from the bus to the route.
+    public static func detourAhead(_ road: [LatLng], bus: LatLng?) -> [LatLng] {
+        guard road.count >= 2 else { return [] }
+        guard let bus else { return road }
+        let k = cos(bus.lat * .pi / 180)
+        var best = 0
+        var bestD = Double.infinity
+        for (i, p) in road.enumerated() {
+            let dLat = p.lat - bus.lat
+            let dLng = (p.lng - bus.lng) * k
+            let d = dLat * dLat + dLng * dLng
+            if d < bestD { bestD = d; best = i }
+        }
+        let ahead = Array(road[best...])
+        return ahead.count >= 2 ? ahead : []
+    }
 }
 
 /// Validation of a fix before it is shown on the map. The server already

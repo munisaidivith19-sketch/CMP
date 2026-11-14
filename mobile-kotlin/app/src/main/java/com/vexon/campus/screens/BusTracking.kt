@@ -200,11 +200,16 @@ fun BusTrackingScreen(route: Route) {
         })
     }
     val d = detail.data
-    LaunchedEffect(controller, d, selected) {
+    val selectedLive = live[selected]
+    LaunchedEffect(controller, d, selected, selectedLive) {
         val c = controller ?: return@LaunchedEffect
         // The route the bus is actually following (a separate return route, when it has one).
         val r = if (selected.isEmpty()) null else d["journeyRoute"] ?: d["route"]
-        val geometry = r["geometry"].list.mapNotNull { pt -> val lng = pt[0].dbl; val lat = pt[1].dbl; if (lat != null && lng != null) BusMath.LatLng(lat, lng) else null }
+        fun lngLat(pts: List<JsonElement>) = pts.mapNotNull { pt -> val lng = pt[0].dbl; val lat = pt[1].dbl; if (lat != null && lng != null) BusMath.LatLng(lat, lng) else null }
+        val geometry = lngLat(r["geometry"].list)
+        // Off route: the server's ROAD path back to the route, from where the bus is now.
+        val busNow = buses.firstOrNull { it.id == selected }?.let { pos(locOf(it)) }
+        val detour = if (selected.isEmpty() || d["detour"]["status"].str != "ok") emptyList() else BusMath.detourAhead(lngLat(d["detour"]["geometry"].list), busNow)
         val stops = r["stops"].list
         val path = geometry.ifEmpty { stops.mapNotNull { s -> pos(s) } }
         val journeyStops = d["journey"]["stops"].list.map(::stopOf)
@@ -215,6 +220,7 @@ fun BusTrackingScreen(route: Route) {
             path,
             d["travelled"].list.mapNotNull { pos(it) },
             stops.map { s -> BusMapController.StopView(s.id.orEmpty(), "${s["sequence"].str}. ${s["name"].str}", s["lat"].dbl ?: 0.0, s["lng"].dbl ?: 0.0, s.id == selStop, (s["sequence"].int ?: 0) in passed) },
+            detour,
         )
     }
     LaunchedEffect(controller, me) { controller?.setStudent(me?.pos, me?.accuracy) }
@@ -290,6 +296,9 @@ fun BusTrackingScreen(route: Route) {
                 }
                 Column(Modifier.fillMaxWidth().weight(0.45f).verticalScroll(rememberScrollState()).padding(16.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (!Realtime.connected) Small("Live updates paused — reconnecting. Positions refresh when you are back online.", color = C.amberText)
+                    if (selected.isNotEmpty()) d["detour"]["status"].str?.let { st ->
+                        Small(if (st == "ok") "This bus is off its route — the orange line is the road back to it." else "This bus is off its route — the road path back is not available yet.", color = C.amberText)
+                    }
                     locMessage?.let { msg ->
                         Small(msg, color = if (msg.startsWith("Location found")) C.muted else C.amberText)
                         when {

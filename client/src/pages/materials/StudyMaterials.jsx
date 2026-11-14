@@ -7,7 +7,7 @@ import { selectUser } from '../../features/authSlice';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS, STUDY_MATERIAL_STATUS_ROLES } from '../../utils/constants';
-import { errMsg, fmtClassDay, titleCase, displayName } from '../../utils/format';
+import { errMsg, safeHref, fmtClassDay, titleCase, displayName } from '../../utils/format';
 import UploadMaterialModal from './UploadMaterialModal';
 import MaterialStatusModal from './MaterialStatusModal';
 import StudyAssistant from '../../components/StudyAssistant';
@@ -39,7 +39,7 @@ function MaterialCard({ material, canManage, onEdit, onDelete }) {
             {displayName(material.uploadedBy)} · {fmtClassDay(material.createdAt, 'dd MMM yyyy')}
           </span>
         </div>
-        <a href={material.file?.url} target="_blank" rel="noreferrer" className="btn btn-outline ml-auto !py-1.5 !text-xs">
+        <a href={safeHref(material.file?.url)} target="_blank" rel="noreferrer" className="btn btn-outline ml-auto !py-1.5 !text-xs">
           <Download className="h-3.5 w-3.5" /> {material.file?.name || 'Download'}
           {material.file?.size ? ` · ${fmtSize(material.file.size)}` : ''}
         </a>

@@ -112,6 +112,11 @@ private struct BusTrackingScreen: View {
                     route: model.detail.value?.mapRoute,
                     fraction: JourneyFormat.mapFraction(model.detail.value),
                     passed: JourneyFormat.mapPassed(model.detail.value),
+                    // Off route: the server's road path back, from where the bus is now.
+                    detour: BusMath.detourAhead(
+                        model.detail.value?.detour?.path ?? [],
+                        bus: model.buses.first { $0.id == model.selectedBusId }?.location.map { BusMath.LatLng(lat: $0.lat, lng: $0.lng) }
+                    ),
                     selectedStopId: model.selectedStopId,
                     student: locator.coordinate,
                     command: command,
@@ -151,6 +156,11 @@ private struct BusTrackingScreen: View {
         }
         if let mapError {
             Banner(icon: "map", text: mapError, color: Theme.danger)
+        }
+        if model.selectedBusId != nil, let detour = model.detail.value?.detour {
+            Banner(icon: "arrow.triangle.turn.up.right.diamond",
+                   text: detour.status == "ok" ? "This bus is off its route — the orange line is the road back to it." : "This bus is off its route — the road path back is not available yet.",
+                   color: Theme.warning)
         }
         if model.buses.isEmpty {
             Banner(icon: "bus", text: "No buses are available to you right now.", color: .secondary)

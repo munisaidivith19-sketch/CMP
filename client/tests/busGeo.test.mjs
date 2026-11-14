@@ -1,7 +1,45 @@
 // Bus-map helpers. TEST DATA ONLY: synthetic coordinates near 13.000 N, 80.000 E.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accuracyCircle, accuracyText, agoText, boundsOf, etaText, freshnessOf, lerpPosition, reliableHeading, remainingPath, shortestTurn } from '../src/pages/transport/busGeo.js';
+import { accuracyCircle, accuracyText, agoText, boundsOf, etaText, freshnessOf, lerpPosition, reliableHeading, remainingPath, routeAhead, shortestTurn } from '../src/pages/transport/busGeo.js';
+
+// ── Off route: the road path back, never a straight line (SYNTHETIC coordinates) ──
+const LINE = [{ lat: 13.0, lng: 80.0 }, { lat: 13.01, lng: 80.0 }, { lat: 13.02, lng: 80.0 }];
+const OFF_BUS = { lat: 13.01, lng: 80.005 }; // ~540 m east of the route
+
+test('on its route the line ahead starts at the bus, as before', () => {
+  const a = routeAhead(LINE, { lat: 13.011, lng: 80 }, null);
+  assert.deepEqual(a.route, remainingPath(LINE, { lat: 13.011, lng: 80 }));
+  assert.deepEqual(a.detour, []);
+  assert.equal(a.offRoute, false);
+});
+
+test('off route with a road path: the road back, then the route from where it rejoins', () => {
+  const road = [[80.005, 13.01], [80.004, 13.012], [80.001, 13.011], [80.0, 13.01]];
+  const a = routeAhead(LINE, OFF_BUS, { status: 'ok', geometry: road });
+  assert.equal(a.offRoute, true);
+  assert.deepEqual(a.detour, road.map(([lng, lat]) => ({ lat, lng })));
+  // The route part starts at the rejoin point (on the route), not at the off-route bus.
+  assert.deepEqual(a.route[0], { lat: 13.01, lng: 80.0 });
+  assert.ok(a.route.every((p) => p.lng === 80.0), 'no point of the route line is off the route');
+});
+
+test('off route without a road path: no line reaches the bus at all', () => {
+  for (const detour of [{ status: 'pending' }, { status: 'unavailable', reason: 'x' }, { status: 'ok', geometry: [[80, 13]] }]) {
+    const a = routeAhead(LINE, OFF_BUS, detour);
+    assert.equal(a.offRoute, true);
+    assert.deepEqual(a.detour, []);
+    assert.ok(!a.route.some((p) => p.lng === OFF_BUS.lng && p.lat === OFF_BUS.lat), JSON.stringify(detour));
+    assert.ok(a.route.every((p) => p.lng === 80.0));
+  }
+});
+
+test('the road path is drawn from the bus’s current place on it, not from where it was first asked', () => {
+  const road = [[80.005, 13.01], [80.004, 13.012], [80.001, 13.011], [80.0, 13.01]];
+  const a = routeAhead(LINE, { lat: 13.0119, lng: 80.0041 }, { status: 'ok', geometry: road });
+  assert.deepEqual(a.detour[0], { lat: 13.012, lng: 80.004 });
+  assert.equal(a.detour.length, 3);
+});
 
 test('accuracy label and area are shown exactly as the device reported them', () => {
   assert.equal(accuracyText(400), '± 400 m');

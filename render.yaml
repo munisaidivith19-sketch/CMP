@@ -21,6 +21,10 @@ services:
       # makes rate limiting see the real visitor IP instead of Render's.
       - key: TRUST_PROXY
         value: "1"
+      # HTTPS only: plain-HTTP page loads are redirected to APP_URL, plain-HTTP
+      # writes and socket handshakes are refused, and HSTS is sent for two years.
+      - key: FORCE_HTTPS
+        value: "true"
       # Paste your MongoDB Atlas connection string in Render's dashboard when it
       # asks (never here — this file is pushed to GitHub, so secrets don't belong in it).
       - key: MONGO_URI

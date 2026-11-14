@@ -127,6 +127,13 @@ const userSchema = new Schema(
 
     // Security
     isActive: { type: Boolean, default: true },
+    // Soft delete: a deleted account keeps its _id (and every record linked to
+    // it) but is invisible to the app — see the query filter below. Until
+    // purgeAt (15 days later by default) creating an account again with the same
+    // email restores it; after that it is removed for good (services/userRestore.js).
+    deletedAt: { type: Date, default: null, index: true },
+    deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    purgeAt: { type: Date, index: { sparse: true } },
     tokenVersion: { type: Number, default: 0, select: false },
     failedLogins: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, select: false },
@@ -217,6 +224,28 @@ userSchema.pre(['find', 'findOne', 'findOneAndUpdate'], function includeTitle(ne
   next();
 });
 
+/**
+ * Deleted accounts are hidden from every query — sign-in, lists, search,
+ * counts, populate(), updates — exactly as if the document were gone. A query
+ * that names `deletedAt` itself, or sets the `withDeleted` option, sees them.
+ */
+const SOFT_DELETE_OPS = [
+  'find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace',
+  'countDocuments', 'distinct', 'updateOne', 'updateMany', 'replaceOne', 'deleteOne', 'deleteMany',
+];
+userSchema.pre(SOFT_DELETE_OPS, { document: false, query: true }, function hideDeleted(next) {
+  if (!this.getOptions().withDeleted && this.getFilter().deletedAt === undefined) this.where({ deletedAt: null });
+  next();
+});
+userSchema.pre('aggregate', function hideDeletedAggregate(next) {
+  const pipeline = this.pipeline();
+  const first = pipeline[0] && Object.keys(pipeline[0])[0];
+  if (!this.options?.withDeleted && !['$geoNear', '$search', '$searchMeta', '$vectorSearch'].includes(first)) {
+    pipeline.unshift({ $match: { deletedAt: null } });
+  }
+  next();
+});
+
 userSchema.pre('save', async function hashPassword(next) {
   if (!this.isModified('password')) return next();
   this.password = await bcrypt.hash(this.password, 12);
@@ -237,6 +266,9 @@ userSchema.set('toJSON', {
     delete ret.resetTokenHash;
     delete ret.resetTokenExpires;
     delete ret.pushTokens;
+    delete ret.deletedAt;
+    delete ret.deletedBy;
+    delete ret.purgeAt;
     return ret;
   },
 });

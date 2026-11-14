@@ -156,6 +156,7 @@ const tagArray = (field) =>
     .optional()
     .isArray({ max: 25 })
     .withMessage(`${field} must be a list (max 25)`)
+    .bail() // a string, number or null is a 422, never a crash in the sanitizer
     .customSanitizer((arr) => arr.map((s) => String(s).trim().toLowerCase().slice(0, 40)).filter(Boolean));
 
 /** Phone numbers: digits with optional +, spaces, dashes and brackets — never free text. */

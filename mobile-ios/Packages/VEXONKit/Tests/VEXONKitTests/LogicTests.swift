@@ -68,6 +68,18 @@ struct BusMathTests {
         #expect(BusMath.split(path: path, fraction: nil).remaining == path)
     }
 
+    @Test("Off route: the road path back is drawn from the bus on — never a straight line")
+    func detourAhead() {
+        // SYNTHETIC road from an off-route bus back to its route.
+        let road = [BusMath.LatLng(lat: 13.01, lng: 80.005), BusMath.LatLng(lat: 13.012, lng: 80.004),
+                    BusMath.LatLng(lat: 13.011, lng: 80.001), BusMath.LatLng(lat: 13.01, lng: 80.0)]
+        #expect(BusMath.detourAhead(road, bus: BusMath.LatLng(lat: 13.01, lng: 80.005)) == road)
+        #expect(BusMath.detourAhead(road, bus: BusMath.LatLng(lat: 13.0119, lng: 80.0041)) == Array(road.dropFirst()))
+        #expect(BusMath.detourAhead([], bus: road[0]).isEmpty)
+        #expect(BusMath.detourAhead(Array(road.prefix(1)), bus: road[0]).isEmpty)
+        #expect(BusMath.detourAhead(road, bus: BusMath.LatLng(lat: 13.01, lng: 80.0)).isEmpty, "bus already back on the route")
+    }
+
     @Test("Bounds ignore invalid points (0,0 / out of range)")
     func bounds() {
         let b = BusMath.bounds([BusMath.LatLng(lat: 12, lng: 77), BusMath.LatLng(lat: 0, lng: 0), BusMath.LatLng(lat: 13, lng: 78)])

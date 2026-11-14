@@ -22,15 +22,20 @@ public struct SilentLogSink: LogSink {
 public enum Redactor {
     private static let patterns: [(NSRegularExpression, String)] = {
         let raw: [(String, String)] = [
-            // Bearer / JWT-looking tokens.
+            // Authorization values of any scheme (Basic, Token, …) and Bearer / JWT-looking tokens.
+            (#"(?i)(authorization["']?\s*[:=]\s*["']?)([A-Za-z]+)\s+[^\s"',;]+"#, "$1$2 [REDACTED]"),
             (#"(?i)bearer\s+[A-Za-z0-9\-._~+/]+=*"#, "Bearer [REDACTED]"),
             (#"eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}"#, "[JWT]"),
-            // "token":"...", "password":"...", "refreshToken":"..."
-            (#"(?i)"(access_?token|refresh_?token|token|password|otp|secret)"\s*:\s*"[^"]*""#, "\"$1\":\"[REDACTED]\""),
+            // Any JSON key that names a secret: "password", "newPassword", "refreshToken",
+            // "pushToken", "clientSecret", "otp" … — string values (escaped quotes included) or numbers.
+            (#"(?i)"([A-Za-z_]*(?:token|password|passwd|secret)[A-Za-z_]*|otp)"\s*:\s*(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?)"#, "\"$1\":\"[REDACTED]\""),
+            // Secrets in a URL query (?token=…, &refresh_token=…).
+            (#"(?i)([?&](?:[A-Za-z_]*token|password|otp|code|secret)=)[^&\s"']+"#, "$1[REDACTED]"),
             // Email addresses.
             (#"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#, "[EMAIL]"),
-            // Phone numbers (10+ digits, optional +country code).
-            (#"\+?\d[\d\s-]{8,}\d"#, "[PHONE]"),
+            // Phone numbers: 10–12 digits (optional +country code, spaces or dashes), standing
+            // alone — so ids ("65f0…01"), dates ("2026-10-16") and epoch-ms timestamps survive.
+            (#"(?<![\w+-])\+?\d(?:[ -]?\d){9,11}(?![\w-])"#, "[PHONE]"),
         ]
         return raw.compactMap { pattern, template in
             (try? NSRegularExpression(pattern: pattern)).map { ($0, template) }

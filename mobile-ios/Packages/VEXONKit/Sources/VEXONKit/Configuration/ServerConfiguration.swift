@@ -68,7 +68,8 @@ public struct ServerConfiguration: Sendable, Equatable {
     /// Turn a server-relative upload path ("/uploads/x.png") into a full URL.
     public func assetURL(_ path: String?) -> URL? {
         guard let path, !path.isEmpty else { return nil }
-        if path.hasPrefix("https://") || path.hasPrefix("http://") { return URL(string: path) }
+        let lower = path.lowercased()
+        if lower.hasPrefix("https://") || lower.hasPrefix("http://") { return URL(string: path) }
         guard let base = baseURL else { return nil }
         return URL(string: base.absoluteString + (path.hasPrefix("/") ? path : "/" + path))
     }
@@ -83,7 +84,9 @@ public struct ServerConfiguration: Sendable, Equatable {
         guard let url = URL(string: text),
               let scheme = url.scheme?.lowercased(),
               let host = url.host, !host.isEmpty,
-              url.query == nil, url.fragment == nil
+              url.query == nil, url.fragment == nil,
+              // "https://user:pass@host" would send credentials with every request.
+              url.user == nil, url.password == nil
         else { return .failure(.invalid) }
         switch scheme {
         case "https": return .success(url)

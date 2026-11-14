@@ -150,4 +150,17 @@ class BusMathTest {
         assertEquals(80.27, BusMath.DEFAULT_CENTER.lng, 0.05)
         assertTrue(BusMath.DEFAULT_ZOOM in 10.0..12.0)
     }
+
+    @Test
+    fun offRouteDrawsTheRoadPathFromTheBusNeverAStraightLine() {
+        // SYNTHETIC road from an off-route bus back to its route.
+        val road = listOf(LatLng(13.01, 80.005), LatLng(13.012, 80.004), LatLng(13.011, 80.001), LatLng(13.01, 80.0))
+        assertEquals(road, BusMath.detourAhead(road, LatLng(13.01, 80.005)))
+        // The bus moved along the road: the part behind it is dropped.
+        assertEquals(road.drop(1), BusMath.detourAhead(road, LatLng(13.0119, 80.0041)))
+        // No road path (pending / unavailable / one point) or the bus already back: nothing drawn.
+        assertTrue(BusMath.detourAhead(emptyList(), LatLng(13.01, 80.005)).isEmpty())
+        assertTrue(BusMath.detourAhead(road.take(1), LatLng(13.01, 80.005)).isEmpty())
+        assertTrue(BusMath.detourAhead(road, LatLng(13.01, 80.0)).isEmpty())
+    }
 }

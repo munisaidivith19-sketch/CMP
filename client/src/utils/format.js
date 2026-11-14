@@ -1,4 +1,5 @@
 import { format, formatDistanceToNowStrict, isSameDay, isToday, isTomorrow } from 'date-fns';
+import { safeMessage } from '../services/safeError.js';
 
 export const fmtDate = (d, pattern = 'dd MMM yyyy') => (d ? format(new Date(d), pattern) : '');
 export const fmtTime = (d) => (d ? format(new Date(d), 'h:mm a') : '');
@@ -32,9 +33,9 @@ export const initials = (name = '') =>
 
 export const titleCase = (s = '') => s.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-/** Extract a readable message from an RTK Query error. */
+/** Extract a readable message from an RTK Query error (never backend internals). */
 export const errMsg = (err, fallback = 'Something went wrong') =>
-  err?.data?.message || err?.error || (err?.status === 'FETCH_ERROR' ? 'Cannot reach the server' : fallback);
+  err?.status === 'FETCH_ERROR' ? 'Cannot reach the server' : safeMessage(err?.data?.message, safeMessage(err?.error, fallback));
 
 /** Convert a Date to the value format <input type="datetime-local"> expects. */
 export const toLocalInput = (d) => (d ? format(new Date(d), "yyyy-MM-dd'T'HH:mm") : '');

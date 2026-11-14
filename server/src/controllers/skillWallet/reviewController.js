@@ -15,6 +15,7 @@ import {
   canReviewProject,
   isAnyCoordinator,
   isCoordinator,
+  isReviewerEligible,
   reviewerQueueFilter,
   sameId,
   verifierQueueFilter,
@@ -38,7 +39,10 @@ import { SKILL_WALLET_DESIGNATION_GRANTORS, SW_REVIEW_DECISIONS, SW_REVIEW_STATU
 export const myReviewerRoles = asyncHandler(async (req, res) => {
   const actor = req.swActor;
   res.json({
-    canReviewProjects: Boolean(reviewerQueueFilter(actor)),
+    // Only someone who can be assigned a project (or a coordinator) has projects to
+    // review; for any other staff role the queue is always empty or refused (a
+    // confined COE / Office account), so the workspace must not offer the tab.
+    canReviewProjects: Boolean(reviewerQueueFilter(actor)) && (isReviewerEligible(req.user) || isAnyCoordinator(actor)),
     canVerifyCertificates: Boolean(verifierQueueFilter(actor)),
     isCoordinator: isAnyCoordinator(actor),
     canManageDesignations: SKILL_WALLET_DESIGNATION_GRANTORS.includes(req.user.role),

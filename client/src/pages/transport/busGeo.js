@@ -196,14 +196,44 @@ export function routeSummary(distanceM, durationS) {
 export function remainingPath(points, pos) {
   if (!points?.length) return [];
   if (!pos) return points;
+  return [pos, ...points.slice(nearestIndex(points, pos) + 1)];
+}
+
+/** Index of the vertex nearest `pos` (local equirectangular distance). */
+function nearestIndex(points, pos) {
   let best = 0;
   let bestD = Infinity;
+  const k = Math.cos((pos.lat * Math.PI) / 180);
   points.forEach((p, i) => {
-    const d = (p.lat - pos.lat) ** 2 + ((p.lng - pos.lng) * Math.cos((pos.lat * Math.PI) / 180)) ** 2;
+    const d = (p.lat - pos.lat) ** 2 + ((p.lng - pos.lng) * k) ** 2;
     if (d < bestD) {
       bestD = d;
       best = i;
     }
   });
-  return [pos, ...points.slice(best + 1)];
+  return best;
+}
+
+const validPair = (p) => Array.isArray(p) && p.length >= 2 && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1]));
+
+/**
+ * What the map draws ahead of the selected bus, from the server's `detour`
+ * (GET /transport/buses/:id):
+ *  - on its route (`detour` null): the route from the bus on;
+ *  - off route with a road path (`status: 'ok'`): that ROAD path from the bus,
+ *    then the route on from where the path rejoins it;
+ *  - off route without one (pending / unavailable): the route from its point
+ *    nearest the bus and NO line to the bus — never a straight line across
+ *    buildings that would pass for a road.
+ * Returns { route: [{lat,lng}…], detour: [{lat,lng}…], offRoute }.
+ */
+export function routeAhead(points, pos, detour) {
+  if (!points?.length) return { route: [], detour: [], offRoute: false };
+  if (!pos || !detour) return { route: remainingPath(points, pos), detour: [], offRoute: false };
+  const road = detour.status === 'ok' && Array.isArray(detour.geometry) ? detour.geometry.filter(validPair).map(([lng, lat]) => ({ lat: Number(lat), lng: Number(lng) })) : [];
+  if (road.length >= 2) {
+    const ahead = road.slice(nearestIndex(road, pos));
+    return { route: remainingPath(points, road[road.length - 1]), detour: ahead.length >= 2 ? ahead : [], offRoute: true };
+  }
+  return { route: points.slice(nearestIndex(points, pos)), detour: [], offRoute: true };
 }

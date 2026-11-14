@@ -71,7 +71,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="glass-strong absolute right-0 z-50 mt-3 w-[min(92vw,380px)] overflow-hidden rounded-3xl animate-scale-in">
+        <div className="glass-strong absolute right-0 z-50 mt-3 w-[min(92vw,380px)] overflow-hidden rounded-3xl !bg-white/95 !backdrop-blur-xl dark:!bg-ink/95 animate-scale-in">
           <div className="flex items-center justify-between px-5 pb-2 pt-4">
             <p className="font-bold">Notifications</p>
             {unread > 0 && (
@@ -87,7 +87,7 @@ export default function NotificationBell() {
                 key={n._id}
                 onClick={() => openItem(n)}
                 className={cn(
-                  'flex w-full items-start gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-white/70 dark:hover:bg-white/5',
+                  'flex w-full items-start gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-primary-500/10 dark:hover:bg-white/10',
                   !n.read && 'bg-primary-500/[0.06]'
                 )}
               >
@@ -101,7 +101,7 @@ export default function NotificationBell() {
               </button>
             ))}
           </div>
-          <Link to="/notifications" onClick={() => setOpen(false)} className="block border-t border-white/60 py-3 text-center text-xs font-bold text-primary-600 hover:bg-white/50 dark:border-white/10 dark:text-primary-300">
+          <Link to="/notifications" onClick={() => setOpen(false)} className="block border-t border-black/5 py-3 text-center text-xs font-bold text-primary-600 hover:bg-primary-500/10 dark:border-white/10 dark:text-primary-300">
             View all notifications
           </Link>
         </div>

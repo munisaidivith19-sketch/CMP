@@ -26,7 +26,8 @@ after(async () => {
 
 async function withProdApp(fn) {
   env.isProd = true;
-  const server = http.createServer(createApp());
+  // Production cookies over a local plain-HTTP socket: HTTPS enforcement off.
+  const server = http.createServer(createApp({ forceHttps: false }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     return await fn(`http://127.0.0.1:${server.address().port}`);

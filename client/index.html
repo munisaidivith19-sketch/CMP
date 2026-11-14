@@ -8,19 +8,8 @@
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/logo.jpeg" />
     <title>J.N.N CAMPUS CONNECT</title>
-    <script>
-      (function() {
-        try {
-          var saved = localStorage.getItem('cc-theme');
-          var isDark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          if (isDark) {
-            document.documentElement.classList.add('dark');
-          } else {
-            document.documentElement.classList.remove('dark');
-          }
-        } catch (e) {}
-      })();
-    </script>
+    <!-- Saved theme, applied before render. A file, not inline: the CSP blocks inline scripts. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

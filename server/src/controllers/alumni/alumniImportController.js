@@ -14,6 +14,7 @@ import { hashToken, newJti, refreshExpiry, signAccessToken, signRefreshToken, se
 import { parseDevice } from '../authController.js';
 import { env } from '../../config/env.js';
 import { DEPARTMENTS } from '../../constants.js';
+import { createOrRestoreUser, findDeletedAccount } from '../../services/userRestore.js';
 
 const PUBLIC_USER_FIELDS = 'name email role department year avatar phone designation employeeId rollNo';
 
@@ -301,7 +302,8 @@ export const listInvites = asyncHandler(async (req, res) => {
   if (status) filter.status = status;
   if (user.role === 'hod') filter.department = user.department;
 
-  if (search && search.trim()) {
+  // ?search[]=a or ?search[x]=y arrive as an array / object: only a string is searched.
+  if (typeof search === 'string' && search.trim()) {
     const q = escapeRegex(search.trim());
     filter.$or = [{ name: new RegExp(q, 'i') }, { email: new RegExp(q, 'i') }, { company: new RegExp(q, 'i') }];
   }
@@ -434,8 +436,11 @@ export const submitPublicClaim = asyncHandler(async (req, res) => {
     throw new ApiError(409, 'An account with this email already exists. Please log in.');
   }
 
-  // Create User
-  const newUser = await User.create({
+  // Create the user — or, when this email belongs to an account deleted less
+  // than 15 days ago (the restore window), stop that deletion and bring the account back exactly
+  // as it was, with its role and records (services/userRestore.js).
+  const prior = await findDeletedAccount(invite.email);
+  const { user: newUser } = await createOrRestoreUser(prior, {
     name: invite.name,
     email: invite.email,
     password,
@@ -445,17 +450,23 @@ export const submitPublicClaim = asyncHandler(async (req, res) => {
     isActive: true,
   });
 
-  // Create Profile
-  const profile = await AlumniProfile.create({
-    user: newUser._id,
-    gradYear: invite.gradYear,
-    company: invite.company,
-    designation: invite.designation,
-    location: invite.location,
-    source: 'import',
-    isVerified: env.alumni.autoVerifyImported,
-    showInDirectory: true,
-  });
+  // Create the profile. A restored account keeps its own profile as it was;
+  // one restored under another role gets none.
+  let profile = null;
+  if (newUser.role === 'alumni') {
+    profile =
+      (await AlumniProfile.findOne({ user: newUser._id })) ||
+      (await AlumniProfile.create({
+        user: newUser._id,
+        gradYear: invite.gradYear,
+        company: invite.company,
+        designation: invite.designation,
+        location: invite.location,
+        source: 'import',
+        isVerified: env.alumni.autoVerifyImported,
+        showInDirectory: true,
+      }));
+  }
 
   invite.status = 'claimed';
   invite.user = newUser._id;
@@ -463,7 +474,7 @@ export const submitPublicClaim = asyncHandler(async (req, res) => {
   await invite.save();
 
   // Auto-join batch and dept chapters if enabled and profile is verified
-  if (profile.isVerified && env.alumni.chapterAutojoin) {
+  if (profile?.isVerified && env.alumni.chapterAutojoin) {
     const matchingChapters = await Chapter.find({
       $or: [
         { type: 'batch', gradYear: profile.gradYear },
@@ -472,12 +483,13 @@ export const submitPublicClaim = asyncHandler(async (req, res) => {
       archived: false,
     });
     for (const ch of matchingChapters) {
-      await ChapterMember.updateOne(
+      const joined = await ChapterMember.updateOne(
         { chapter: ch._id, user: newUser._id },
         { $setOnInsert: { role: 'member', status: 'active' } },
         { upsert: true }
       );
-      await Chapter.updateOne({ _id: ch._id }, { $inc: { memberCount: 1 } });
+      // A restored account may already be a member: count new members only.
+      if (joined.upsertedCount) await Chapter.updateOne({ _id: ch._id }, { $inc: { memberCount: 1 } });
     }
   }
 

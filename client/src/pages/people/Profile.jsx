@@ -33,7 +33,7 @@ import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, ErrorState, Pag
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select, TagInput, Textarea } from '../../components/ui/form';
 import { ReportButton } from '../../components/domain';
-import { ROLE_LABELS } from '../../utils/constants';
+import { ACHIEVEMENT_BLOCKED_ROLES, ROLE_LABELS } from '../../utils/constants';
 import { errMsg, fmtDate, friendlyDay, displayName } from '../../utils/format';
 
 function EditProfile({ open, onClose, user }) {
@@ -195,7 +195,8 @@ export default function Profile() {
   const [pwd, setPwd] = useState(false);
   const fileRef = useRef(null);
   const { data: user, isLoading, error, refetch } = useGetUserQuery(id);
-  const { data: verifiedAchievements } = useGetStudentAchievementsQuery(id, { skip: !id });
+  // Roles without the Achievements module get a 403 from this API: not asked.
+  const { data: verifiedAchievements } = useGetStudentAchievementsQuery(id, { skip: !id || ACHIEVEMENT_BLOCKED_ROLES.includes(me?.role) });
   const [uploadAvatar, { isLoading: uploading }] = useUploadAvatarMutation();
 
   useEffect(() => {

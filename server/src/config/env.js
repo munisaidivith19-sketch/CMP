@@ -72,6 +72,10 @@ export const env = {
   // Optional: Expo push access token (only needed if "enhanced push security" is on).
   expoAccessToken: process.env.EXPO_ACCESS_TOKEN || '',
   passwordResetMinutes: Number(process.env.PASSWORD_RESET_MINUTES) || 15,
+  // A deleted account can be restored (by creating the same email again) for
+  // this long — 15 days by default; after it, the account is removed for good
+  // (services/userRestore.js). USER_DELETE_GRACE_HOURS, when set, wins.
+  userDeleteGraceHours: Number(process.env.USER_DELETE_GRACE_HOURS) || (Number(process.env.USER_DELETE_GRACE_DAYS) || 15) * 24,
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
     apiKey: process.env.CLOUDINARY_API_KEY || '',

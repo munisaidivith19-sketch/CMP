@@ -178,6 +178,22 @@ object BusMath {
     fun accuracyFrame(center: LatLng, accuracyMeters: Float, minMeters: Double = 60.0): List<LatLng> =
         circle(center, maxOf(accuracyMeters.toDouble(), minMeters), steps = 8)
 
+    /**
+     * The server's road path back to the route for a bus that is off it
+     * (`detour.geometry`, [lng, lat] pairs), from the vertex nearest the bus's
+     * current position on — the same rule as the web map (busGeo.routeAhead).
+     * Fewer than two points (no path, pending, unavailable) → nothing to draw:
+     * never a straight line from the bus to the route.
+     */
+    fun detourAhead(geometry: List<LatLng>, bus: LatLng?): List<LatLng> {
+        if (geometry.size < 2) return emptyList()
+        if (bus == null) return geometry
+        val k = Math.cos(Math.toRadians(bus.lat))
+        val i = geometry.indices.minBy { j -> val dLat = geometry[j].lat - bus.lat; val dLng = (geometry[j].lng - bus.lng) * k; dLat * dLat + dLng * dLng }
+        val ahead = geometry.drop(i)
+        return if (ahead.size >= 2) ahead else emptyList()
+    }
+
     /** The marker label: bus number above the route name. */
     fun markerLabel(number: String, route: String?): String = if (route.isNullOrBlank()) number else "$number\n$route"
 

@@ -43,7 +43,7 @@ import { Avatar, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, P
 import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Input, Select, Textarea } from '../../components/ui/form';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtClassDay, timeAgo, titleCase, todayKey, displayName } from '../../utils/format';
+import { errMsg, safeHref, fmtClassDay, timeAgo, titleCase, todayKey, displayName } from '../../utils/format';
 import { fmtStamp as fmtMoment } from '../../utils/format';
 import { GATE_PASS_REGARDING, INDIAN_STATES, STUDENT_ROLES } from '../../utils/constants';
 import { ParentVerification } from './ParentVerification';
@@ -71,7 +71,7 @@ const destinationLine = (d) => (d ? [d.area, d.district, d.state].filter(Boolean
 function Attachment({ doc }) {
   if (!doc?.url) return null;
   return (
-    <a href={doc.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-xs font-semibold text-primary-600 hover:underline">
+    <a href={safeHref(doc.url)} target="_blank" rel="noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1.5 text-xs font-semibold text-primary-600 hover:underline">
       <FileText className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{doc.name || 'Attachment'}</span>
     </a>

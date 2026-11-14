@@ -14,6 +14,9 @@ process.env.SMTP_HOST = '';
 // in-memory test provider unless a test switches SMS on itself.
 process.env.OTP_SMS_ENABLED = 'false';
 process.env.SMS_API_KEY = '';
+// Never call a real road-routing server (bus detours, route generation): tests
+// that need one set their own URL and mock the HTTP client.
+process.env.ROUTING_OSRM_URL = '';
 
 const { default: mongoose } = await import('mongoose');
 const { connectDB } = await import('../src/config/db.js');

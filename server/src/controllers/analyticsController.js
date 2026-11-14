@@ -222,7 +222,7 @@ export const facultyAnalytics = asyncHandler(async (req, res) => {
       { $group: { _id: { student: '$student', subject: '$subject' }, total: { $sum: 1 }, present: presentExpr } },
       { $addFields: { pct: pct('$present', '$total') } },
       { $match: { pct: { $lt: LOW_ATTENDANCE_THRESHOLD } } },
-      { $lookup: { from: 'users', localField: '_id.student', foreignField: '_id', as: 'studentInfo', pipeline: [{ $project: { name: 1, rollNo: 1, section: 1, avatar: 1 } }] } },
+      { $lookup: { from: 'users', localField: '_id.student', foreignField: '_id', as: 'studentInfo', pipeline: [{ $match: { deletedAt: null } }, { $project: { name: 1, rollNo: 1, section: 1, avatar: 1 } }] } },
       { $unwind: '$studentInfo' },
       { $lookup: { from: 'subjects', localField: '_id.subject', foreignField: '_id', as: 'subjectInfo', pipeline: [{ $project: { name: 1, code: 1 } }] } },
       { $unwind: '$subjectInfo' },

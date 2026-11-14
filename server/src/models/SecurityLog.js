@@ -33,6 +33,7 @@ export const SECURITY_EVENTS = [
   'USER_ENABLED',
   'USER_DISABLED',
   'USER_DELETED',
+  'USER_PURGED',
   'ROLE_CHANGED',
   // Module policies (policy-managed admins)
   'POLICIES_CHANGED',

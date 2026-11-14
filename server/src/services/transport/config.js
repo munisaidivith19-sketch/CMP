@@ -55,6 +55,15 @@ export function transportConfig() {
     // Reports: minimum trips before averages are shown; on-time tolerance.
     reportMinTrips: num('TRANSPORT_REPORT_MIN_TRIPS', 3, 1, 100),
     onTimeMinutes: num('TRANSPORT_ON_TIME_MINUTES', 5, 0, 60),
+    // A bus farther than this from its route line (and than its GPS accuracy)
+    // is "off route": the map shows the ROAD path back to the route (OSRM,
+    // services/transport/detour.js) instead of a straight line. The path is
+    // re-requested only after the bus moved this far, or when it is this old.
+    detourMinM: num('ROUTE_DETOUR_MIN_M', 75, 20, 2000),
+    detourRefreshM: num('ROUTE_DETOUR_REFRESH_M', 150, 20, 5000),
+    detourMaxAgeSeconds: num('ROUTE_DETOUR_MAX_AGE_SECONDS', 300, 30, 3600),
+    // How long a bus-detail request waits for a new road path before answering without it.
+    detourWaitMs: num('ROUTE_DETOUR_WAIT_MS', 2500, 0, 15000),
     // Inbound vehicle-tracker webhook (disabled unless a secret is set).
     trackerSecret: process.env.TRACKER_WEBHOOK_SECRET || '',
   };

@@ -4,6 +4,7 @@ import { setMaintenance } from '../features/uiSlice';
 import { broadcastSession, markIdleLogout } from './sessionSync';
 import { isCsrfRejection, readCsrfToken } from './csrfCookie';
 import { apiErrorKind, reportClientError } from './errorReporter';
+import { sanitizeApiError } from './safeError.js';
 
 /** The double-submit CSRF token; every cookie-carrying write must echo it in X-CSRF-Token. */
 export function getCsrfCookie() {
@@ -105,6 +106,8 @@ const baseQueryWithReauth = async (args, api, extra) => {
       correlationId: result.meta?.response?.headers?.get?.('x-request-id') || undefined,
     });
   }
+  // Pages show err.data.message as-is: strip anything that is backend internals.
+  if (result.error) result = { ...result, error: sanitizeApiError(result.error) };
   return result;
 };
 

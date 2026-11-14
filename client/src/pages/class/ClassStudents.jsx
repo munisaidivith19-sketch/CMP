@@ -166,7 +166,12 @@ function CreateStudentModal({ open, scope, onClose }) {
     const body = Object.fromEntries(Object.entries(v).map(([k, val]) => [k, String(val).trim()]).filter(([, val]) => val));
     try {
       const user = await create(body).unwrap();
-      toast.success(`Student login created for ${displayName(user)} — username: ${user.email}`, { duration: 6000 });
+      toast.success(
+        user.restored
+          ? `Student account restored for ${displayName(user)} with all previous data — username: ${user.email}`
+          : `Student login created for ${displayName(user)} — username: ${user.email}`,
+        { duration: 6000 }
+      );
       setV(EMPTY);
       setErrors({});
       setShow(false);

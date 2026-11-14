@@ -297,7 +297,8 @@ export const listAlumniDirectory = asyncHandler(async (req, res) => {
     userFilter.department = viewer.department;
   }
 
-  if (search && search.trim()) {
+  // ?search[]=a or ?search[x]=y arrive as an array / object: only a string is searched.
+  if (typeof search === 'string' && search.trim()) {
     const q = escapeRegex(search.trim());
     // Search by name only. Matching email addresses would let anyone probe a
     // hidden email ("is x@y.com an alumnus?") through the result count. An

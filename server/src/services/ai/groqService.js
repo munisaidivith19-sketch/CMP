@@ -55,6 +55,8 @@ export class AIServiceError extends Error {
     this.name = 'AIServiceError';
     this.category = category;
     this.status = STATUS[category] || 503;
+    // The message is one of SAFE_MESSAGES, written for the user.
+    this.expose = true;
     // Kept off the enumerable props so it never ends up in a JSON response.
     Object.defineProperty(this, 'upstreamStatus', { value: cause?.status, enumerable: false });
   }

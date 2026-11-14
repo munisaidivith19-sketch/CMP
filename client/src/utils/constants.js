@@ -280,7 +280,8 @@ export const VIEW_ALUMNI_ANALYTICS = ['admin', 'hod', 'principal', 'chairman', '
 /** Only these roles can post. An HOD is limited to their own department (the server enforces it). */
 export const ACHIEVEMENT_POST_ROLES = ['principal', 'hod'];
 export const ACHIEVEMENT_STATS_ROLES = ['principal', 'hod', 'admin'];
-export const ACHIEVEMENT_BLOCKED_ROLES = ['warden', 'security'];
+// Must match server/src/constants.js ACHIEVEMENT_BLOCKED_ROLES (their API answers 403).
+export const ACHIEVEMENT_BLOCKED_ROLES = ['warden', 'security', 'coe', 'office', 'transport', 'super_admin'];
 export const ACHIEVEMENT_ROLES = ROLES.filter((r) => !ACHIEVEMENT_BLOCKED_ROLES.includes(r));
 
 export const ACHIEVEMENT_CATEGORIES = [

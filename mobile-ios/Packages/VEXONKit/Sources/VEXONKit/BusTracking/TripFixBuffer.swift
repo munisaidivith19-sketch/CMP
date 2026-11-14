@@ -56,7 +56,18 @@ public struct TripFixBuffer: Sendable {
         return pending.prefix(maxBatch).map(\.fix)
     }
 
-    /// Remove a batch after the server answered (accepted or rejected — either way it is done).
+    /// Remove an uploaded batch after the server answered (accepted or rejected — either way it is done).
+    ///
+    /// Removes exactly the fixes that were sent, wherever they are now: fixes queued
+    /// while the upload was in flight may have pushed the batch out of a full queue,
+    /// and a second overlapping upload may confirm the same batch again. Removing by
+    /// position would then drop positions that were never sent.
+    public mutating func confirm(_ batch: [OutgoingFix]) {
+        guard !batch.isEmpty else { return }
+        pending.removeAll { batch.contains($0.fix) }
+    }
+
+    /// Remove the oldest `count` fixes. Prefer `confirm(_:)`, which cannot drop unsent fixes.
     public mutating func confirm(count: Int) {
         pending.removeFirst(min(count, pending.count))
     }

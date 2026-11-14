@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Button, cn } from './primitives';
 
-export function Modal({ open, onClose, title, subtitle, children, footer, size = 'md' }) {
+export function Modal({ open, onClose, title, subtitle, children, footer, size = 'md', solid = false }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => e.key === 'Escape' && onClose?.();
@@ -25,7 +25,9 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
       <div
         className={cn(
           'glass-strong relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[32px] animate-scale-in sm:rounded-[32px]',
-          width
+          width,
+          // Near-opaque panel for content-dense dialogs (e.g. the calendar).
+          solid && '!bg-white/95 !backdrop-blur-xl dark:!bg-ink/95'
         )}
       >
         <div className="flex items-start justify-between gap-4 px-6 pb-2 pt-6">
@@ -40,7 +42,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
         <div className="overflow-y-auto px-6 py-4">{children}</div>
         {/* Wraps instead of overflowing: long button labels on a narrow phone
             drop to a second row rather than off the left edge. */}
-        {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-white/60 px-4 py-4 dark:border-white/10 sm:px-6">{footer}</div>}
+        {footer && <div className={cn('flex flex-wrap justify-end gap-2 border-t px-4 py-4 dark:border-white/10 sm:px-6', solid ? 'border-black/5' : 'border-white/60')}>{footer}</div>}
       </div>
     </div>,
     document.body

@@ -49,7 +49,7 @@ import {
   ACHIEVEMENT_LEVEL_LABELS,
   ACHIEVEMENT_POSITION_LABELS,
 } from '../../utils/constants';
-import { errMsg, fmtDate } from '../../utils/format';
+import { errMsg, fmtDate, safeHref } from '../../utils/format';
 
 export default function AchievementDetail() {
   const { id } = useParams();
@@ -265,10 +265,10 @@ export default function AchievementDetail() {
           </div>
 
           {/* External link if provided */}
-          {a.externalLink && (
+          {safeHref(a.externalLink) && (
             <div>
               <a
-                href={a.externalLink}
+                href={safeHref(a.externalLink)}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-2xl border border-primary-500/30 bg-primary-500/10 px-4 py-2 text-xs font-bold text-primary-700 hover:bg-primary-500/20 dark:text-primary-300"

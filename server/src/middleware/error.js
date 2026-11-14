@@ -3,33 +3,60 @@ import { env } from '../config/env.js';
 import { ApiError } from '../utils/http.js';
 import { captureError } from '../services/soc/capture.js';
 
+// Production never echoes the request line back (no route map for scanners).
 export const notFound = (req, res) => {
-  res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
+  res.status(404).json({ message: env.isProd ? 'Not found' : `Route not found: ${req.method} ${req.originalUrl}` });
 };
 
 // eslint-disable-next-line no-unused-vars
 export const errorHandler = (err, req, res, _next) => {
-  let status = err.status || 500;
+  let status = Number.isInteger(err.status) && err.status >= 400 && err.status <= 599 ? err.status : 500;
   let message = err.message || 'Something went wrong';
   let errors = err.errors;
+  // Text written for the user: an ApiError, a case mapped below, or an
+  // http-errors error marked safe to expose (body-parser). Anything else —
+  // a driver, SDK or library error — may carry internals (hosts, queries,
+  // upstream responses) and is never sent as-is in production.
+  let userFacing = err instanceof ApiError || err.expose === true;
 
-  if (err.name === 'CastError') {
+  if (err.type === 'entity.parse.failed') {
+    status = 400;
+    message = 'Malformed request body';
+    userFacing = true;
+  } else if (err.name === 'CastError') {
     status = 400;
     message = `Invalid ${err.path}`;
+    userFacing = true;
   } else if (err.name === 'ValidationError') {
     status = 422;
     errors = Object.values(err.errors).map((e) => ({ field: e.path, message: e.message }));
     message = errors[0]?.message || 'Validation failed';
+    userFacing = true;
   } else if (err.code === 11000) {
     status = 409;
     const field = Object.keys(err.keyValue || {})[0] || 'value';
     message = `That ${field} is already in use`;
+    errors = undefined;
+    userFacing = true;
   } else if (err instanceof multer.MulterError) {
     status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
     message = err.code === 'LIMIT_FILE_SIZE' ? `File too large (max ${env.maxUploadMb} MB)` : err.message;
+    userFacing = true;
   } else if (err.type === 'entity.too.large') {
     status = 413;
     message = 'Request body too large';
+    userFacing = true;
+  }
+
+  // An ApiError's message is written for the user (e.g. "The college SMS
+  // service is not configured yet") and says what to fix; any other error's
+  // text can expose internals and is masked in production. Its status may
+  // be an upstream service's (a 401 from an AI or SMS provider is not the
+  // visitor's session expiring), so it becomes a plain 500.
+  if (env.isProd && !userFacing) {
+    status = 500;
+    message = 'Internal server error';
+    errors = undefined;
   }
 
   // SOC: server faults and authorization refusals are recorded (redacted,
@@ -42,13 +69,10 @@ export const errorHandler = (err, req, res, _next) => {
   // A maintenance 503 is an expected, controlled response — not a server fault.
   if (status >= 500 && err.data?.code !== 'MAINTENANCE') {
     console.error('[error]', err);
-    // An ApiError's message is written for the user (e.g. "The college SMS
-    // service is not configured yet") and says what to fix; only unexpected
-    // errors, whose text can expose internals, are masked in production.
-    if (env.isProd && !(err instanceof ApiError)) message = 'Internal server error';
   }
 
-  const extra = err.data || (errors && !Array.isArray(errors) ? errors : null);
+  // Structured extras (codes, field lists) only from errors built for the client.
+  const extra = userFacing ? err.data || (errors && !Array.isArray(errors) ? errors : null) : null;
 
   if (req.id) res.set('X-Request-Id', req.id);
   res.status(status).json({

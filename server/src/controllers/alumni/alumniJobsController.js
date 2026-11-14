@@ -56,7 +56,8 @@ export const listJobs = asyncHandler(async (req, res) => {
   }
   if (skill) filter.skills = new RegExp(escapeRegex(skill), 'i');
 
-  if (search && search.trim()) {
+  // ?search[]=a or ?search[x]=y arrive as an array / object: only a string is searched.
+  if (typeof search === 'string' && search.trim()) {
     const q = escapeRegex(search.trim());
     const searchOr = [
       { title: new RegExp(q, 'i') },

@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { AlertOctagon, CalendarDays, Menu, Moon, Search, Sun } from 'lucide-react';
 import { selectUser } from '../../features/authSlice';
 import { setSidebar, toggleTheme } from '../../features/uiSlice';
-import { Avatar } from '../ui/primitives';
 import NotificationBell from './NotificationBell';
+import UserMenu from './UserMenu';
 import CalendarModal from '../CalendarModal';
 import SOSModal from '../sos/SOSModal';
-import { COE, ROLE_LABELS, SUPER_ADMIN } from '../../utils/constants';
-import { displayName } from '../../utils/format';
+import { COE, SUPER_ADMIN } from '../../utils/constants';
 import { useSocketConnected } from '../../services/socket';
 
 /**
@@ -107,13 +106,7 @@ export default function Topbar() {
       )}
       <NotificationBell />
 
-      <Link to="/profile" className="hidden items-center gap-3 rounded-2xl py-1 pl-1 pr-3 transition-colors hover:bg-white/60 dark:hover:bg-white/5 sm:flex">
-        <Avatar user={user} size="sm" />
-        <div className="hidden leading-tight xl:block">
-          <p className="text-sm font-bold">{displayName(user)}</p>
-          <p className="text-[11px] muted">{ROLE_LABELS[user?.role]}</p>
-        </div>
-      </Link>
+      <UserMenu />
     </header>
   );
 }

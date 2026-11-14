@@ -19,6 +19,7 @@ import { sweepOrphanAssets } from './services/skillWallet/assets.js';
 import { sweepPartialWrites } from './utils/privateStorage.js';
 import { sweepOrphanUploads } from './services/orphanUploads.js';
 import { syncPolicyVersions } from './services/legal.js';
+import { purgeDeletedUsers } from './services/userRestore.js';
 
 async function start() {
   // SOC: observe crashes (does not change Node's crash behaviour).
@@ -89,6 +90,13 @@ async function start() {
   registerJob('uploads.orphan_sweep', { intervalMs: 60 * 60 * 1000, description: 'Remove uploads never attached to a record' });
   const uploadSweep = setInterval(() => runJob('uploads.orphan_sweep', sweepOrphanUploads, { logTag: '[uploads] sweep' }), 60 * 60 * 1000);
   uploadSweep.unref();
+
+  // Deleted user accounts: restorable for 15 days (creating the same email again),
+  // then removed for good. Checked every 10 minutes and once at start-up.
+  registerJob('users.purge_deleted', { intervalMs: 10 * 60 * 1000, description: 'Remove deleted accounts whose 15-day restore window has ended' });
+  const purgeUsers = () => runJob('users.purge_deleted', purgeDeletedUsers, { logTag: '[users] purge' });
+  purgeUsers();
+  setInterval(purgeUsers, 10 * 60 * 1000).unref();
 
   server.listen(env.port, () => {
     console.log(`[api] CampusConnect API listening on http://localhost:${env.port}`);

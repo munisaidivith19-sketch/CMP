@@ -280,7 +280,7 @@ export default function SOSAlerts() {
       status: statusFilter || undefined,
       type: typeFilter || undefined,
     },
-    { pollingInterval: isResponder ? 10000 : undefined }
+    { skip: !isResponder, pollingInterval: isResponder ? 10000 : undefined }
   );
 
   const handleStatusChange = (val) => {
@@ -321,7 +321,7 @@ export default function SOSAlerts() {
       <SOSModal
         open={triggerOpen}
         onClose={() => setTriggerOpen(false)}
-        onSubmitted={() => refetch()}
+        onSubmitted={() => isResponder && refetch()} // a skipped query cannot be refetched
       />
 
       <ResolveAlertModal
@@ -392,10 +392,10 @@ export default function SOSAlerts() {
         </Card>
       )}
 
+      {/* The alert feed is for responders only (the API answers 403 to everyone else). */}
+      {isResponder && (
       <div>
-        <h2 className="mb-4 text-base font-extrabold text-ink dark:text-primary-50">
-          {isResponder ? 'Live Emergency Dispatch' : 'Your Past Emergency Alerts'}
-        </h2>
+        <h2 className="mb-4 text-base font-extrabold text-ink dark:text-primary-50">Live Emergency Dispatch</h2>
 
         {isLoading ? (
           <div className="space-y-4">
@@ -410,12 +410,8 @@ export default function SOSAlerts() {
         ) : items.length === 0 ? (
           <EmptyState
             icon={AlertOctagon}
-            title={isResponder ? 'No active emergency alerts' : 'No alerts submitted'}
-            text={
-              isResponder
-                ? 'All quiet on campus. Live alerts will appear here automatically.'
-                : 'You have not triggered any SOS alerts.'
-            }
+            title="No active emergency alerts"
+            text="All quiet on campus. Live alerts will appear here automatically."
           />
         ) : (
           <div className="space-y-4">
@@ -435,6 +431,7 @@ export default function SOSAlerts() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -68,7 +68,7 @@ export const getAlumniAnalytics = asyncHandler(async (req, res) => {
   // Distribution by department
   const byDepartment = await AlumniProfile.aggregate([
     { $match: { ...profileMatch, isVerified: true } },
-    { $lookup: { from: 'users', localField: 'user', foreignField: '_id', as: 'userInfo' } },
+    { $lookup: { from: 'users', localField: 'user', foreignField: '_id', as: 'userInfo', pipeline: [{ $match: { deletedAt: null } }] } },
     { $unwind: '$userInfo' },
     { $group: { _id: '$userInfo.department', count: { $sum: 1 } } },
     { $sort: { count: -1 } },

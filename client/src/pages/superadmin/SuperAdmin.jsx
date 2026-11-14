@@ -35,7 +35,7 @@ import { ROLE_LABELS } from '../../utils/constants';
 import { rolesSummary } from '../../utils/delegation';
 import { checkedModules } from '../../utils/adminModules';
 import { OtpTab } from '../admin/SecurityLogs';
-import { fmtDateTime } from '../../utils/format';
+import { fmtDateTime, safeHref } from '../../utils/format';
 
 /**
  * Super Admin console. Deliberately has no link to the Emergency Control
@@ -462,7 +462,7 @@ function ChatViewer({ id, onClose }) {
               <li key={m._id} className="rounded-2xl bg-white/40 p-3 text-sm dark:bg-white/5">
                 <p className="text-xs font-bold">{m.sender?.name || 'Unknown'} <span className="font-normal muted">· {ROLE_LABELS[m.sender?.role] || ''} · {fmtDateTime(m.createdAt)}{m.editedAt ? ' · edited' : ''}</span></p>
                 <p className="mt-1 whitespace-pre-wrap break-words">{m.deleted ? <span className="muted italic">Message deleted</span> : m.body}</p>
-                {m.attachment?.url && <a href={m.attachment.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-primary-600 underline">{m.attachment.name || 'Attachment'}</a>}
+                {m.attachment?.url && <a href={safeHref(m.attachment.url)} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-primary-600 underline">{m.attachment.name || 'Attachment'}</a>}
               </li>
             ))}
           </ul>

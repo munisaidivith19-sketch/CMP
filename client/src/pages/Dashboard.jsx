@@ -31,7 +31,7 @@ import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, EmptyState, Err
 import { AnnouncementDetail, AnnouncementItem } from '../components/domain';
 import { CategoryDonut, EngagementChart } from '../components/charts';
 import TodayStrip from '../components/TodayStrip';
-import { STAFF_VIEW, SUMMARY_VIEW, catStyle } from '../utils/constants';
+import { ACHIEVEMENT_BLOCKED_ROLES, STAFF_VIEW, SUMMARY_VIEW, catStyle } from '../utils/constants';
 import { friendlyDay, fmtTime, displayName } from '../utils/format';
 import AlumniDashboard from './alumni/AlumniDashboard';
 import AchievementCard from './achievements/AchievementCard';
@@ -250,7 +250,9 @@ export default function Dashboard() {
   // A policy-managed Admin: widgets only for its ticked modules (the others' API answers 403).
   const { data: account } = useGetAccountModulesQuery(undefined, { skip: user?.role !== 'admin', pollingInterval: 60000 });
   const hasModule = (key) => user?.role !== 'admin' || !isModuleRestricted(account) || account.modules.includes(key);
-  const { data: achievementsData } = useGetAchievementsDashboardQuery(undefined, { skip: isSecurity || isAlumni || !hasModule('achievements') });
+  const { data: achievementsData } = useGetAchievementsDashboardQuery(undefined, {
+    skip: isSecurity || isAlumni || ACHIEVEMENT_BLOCKED_ROLES.includes(user?.role) || !hasModule('achievements'),
+  });
   const [popover, setPopover] = useState(null);
   const [viewingAnn, setViewingAnn] = useState(null);
 

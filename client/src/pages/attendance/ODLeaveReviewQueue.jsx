@@ -37,7 +37,7 @@ import {
 } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { StatusBadge } from '../../components/insights';
-import { errMsg, fmtClassDay, fmtDateTime } from '../../utils/format';
+import { errMsg, safeHref, fmtClassDay, fmtDateTime } from '../../utils/format';
 
 export default function ODLeaveReviewQueue() {
   const me = useSelector(selectUser);
@@ -299,7 +299,7 @@ export default function ODLeaveReviewQueue() {
                 {req.document?.url && (
                   <div className="mt-2.5 flex items-center gap-2">
                     <a
-                      href={req.document.url}
+                      href={safeHref(req.document.url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100/90 dark:bg-white/10 px-2.5 py-1 text-xs font-medium text-primary-600 dark:text-primary-300 hover:underline"

@@ -26,6 +26,16 @@ function locationLogger() {
 
 const BusMap = lazy(() => import('./BusMap'));
 
+// Map-button icons in the colour of what they show: you (the blue dot), the bus (red), both (route purple).
+// Light shades: the buttons are dark cards (.btn-map) in both themes.
+const tinted = (Icon, color) => {
+  const Tinted = ({ className, ...p }) => <Icon {...p} className={cn(className, color)} />;
+  return Tinted;
+};
+const MyLocationIcon = tinted(LocateFixed, 'text-blue-400');
+const CentreBusIcon = tinted(Crosshair, 'text-red-400');
+const MeAndBusIcon = tinted(Maximize2, 'text-violet-400');
+
 const STATUS = {
   live: { label: 'Live', color: 'success' },
   stale: { label: 'Position is old', color: 'warning' },
@@ -211,6 +221,7 @@ export default function Transport() {
                 onSelect={(id) => select(id, null)}
                 route={mapRoute ? { ...mapRoute, passedSequences: passedSeq } : null}
                 travelled={detail?.travelled}
+                detour={detail?.detour || null}
                 selectedStopId={eta?.stop?._id || stopId}
                 onSelectStop={(id) => select(selectedId, id)}
                 student={student}
@@ -221,16 +232,16 @@ export default function Transport() {
           )}
           {/* Bottom-left, clear of the zoom controls (top-right) and the attribution (bottom-right). */}
           <div className="absolute bottom-3 left-3 right-24 flex flex-wrap gap-2">
-            <Button size="sm" variant="map" icon={LocateFixed} loading={locating} onClick={() => locate('student')} aria-label="Show my location">
+            <Button size="sm" variant="map" icon={MyLocationIcon} loading={locating} onClick={() => locate('student')} aria-label="Show my location">
               {locating ? 'Finding you…' : 'My location'}
             </Button>
             {student && (
-              <span className={cn('self-center rounded-full border px-2.5 py-1 text-[11px] font-bold shadow-md', myLoc.state === 'approximate' ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300 bg-white text-ink dark:border-white/25 dark:bg-[#1b1d3a] dark:text-white')}>
+              <span className={cn('self-center rounded-full border px-2.5 py-1 text-[11px] font-bold shadow-md', myLoc.state === 'approximate' ? 'border-amber-600 bg-amber-600 text-white' : 'border-white/15 bg-[#1b1d3a] text-white shadow-black/25 dark:border-white/25')}>
                 {myLoc.state === 'approximate' ? 'Approximate' : 'You'}: {accuracyText(student.accuracy)}
               </span>
             )}
-            {selected && <Button size="sm" variant="map" icon={Crosshair} onClick={() => setFit({ kind: 'bus', nonce: Date.now() })}>Centre bus</Button>}
-            {selected && <Button size="sm" variant="map" icon={Maximize2} onClick={() => (student ? setFit({ kind: 'both', nonce: Date.now() }) : locate('both'))}>Me + bus</Button>}
+            {selected && <Button size="sm" variant="map" icon={CentreBusIcon} onClick={() => setFit({ kind: 'bus', nonce: Date.now() })}>Centre bus</Button>}
+            {selected && <Button size="sm" variant="map" icon={MeAndBusIcon} onClick={() => (student ? setFit({ kind: 'both', nonce: Date.now() }) : locate('both'))}>Me + bus</Button>}
           </div>
         </Card>
 

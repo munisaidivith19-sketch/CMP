@@ -32,6 +32,7 @@ import { deviceKeyMatches, startTrip, stopTrip, tripApi } from '../services/tran
 import { cumulative, project, validLatLng } from '../services/transport/geo.js';
 import { generateRoadGeometry, MAX_GEOMETRY_POINTS, RoutingError, stopsKey } from '../services/transport/routing.js';
 import { journeyView, recordTripEnd } from '../services/transport/stopEvents.js';
+import { busDetour } from '../services/transport/detour.js';
 
 const isManager = (u) => TRANSPORT_MANAGE_ROLES.includes(u.role);
 const nowMinutes = () => {
@@ -127,6 +128,11 @@ export const getBus = asyncHandler(async (req, res) => {
   const path = trip ? await BusLocation.find({ trip: trip._id }).sort({ at: 1 }).limit(1000).select('lat lng at -_id').lean() : [];
   // A trip on a separately configured return route follows THAT route's stops and road line.
   const followed = trip?.route && route && !sameId(trip.route, route._id) ? await BusRoute.findById(trip.route).lean() : null;
+  // Off its route: the ROAD path back to the line the map draws (never a straight line).
+  const detour = await busDetour(bus, followed || route).catch((err) => {
+    console.error('[transport] detour failed:', err.message);
+    return null;
+  });
   res.set('Cache-Control', 'no-store');
   res.json({
     bus: busApi({ ...bus, route: route ? { _id: route._id, name: route.name, code: route.code } : null }, req.user, trip),
@@ -139,6 +145,9 @@ export const getBus = asyncHandler(async (req, res) => {
     // Server-recorded journey of the active trip (direction, next stops, actual times, ETAs).
     journey: trip ? await journeyView(trip, bus) : null,
     travelled: path,
+    // null = on its route. Otherwise { status: 'ok', geometry: [[lng, lat]…], distanceM, durationS, offsetM }
+    // or { status: 'pending' | 'unavailable', reason?, offsetM }: off route, no road path to draw.
+    detour,
     serverTime: new Date().toISOString(),
   });
 });

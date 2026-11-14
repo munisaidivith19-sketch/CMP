@@ -8,7 +8,7 @@ import { selectUser } from '../../features/authSlice';
 import { Badge, Button, Skeleton } from '../../components/ui/primitives';
 import { Input, Select, Textarea } from '../../components/ui/form';
 import { YEAR_LABELS } from '../../utils/constants';
-import { errMsg, fmtDateTime, timeAgo, todayKey } from '../../utils/format';
+import { errMsg, safeHref, fmtDateTime, timeAgo, todayKey } from '../../utils/format';
 
 export const AUTHORITY_LABELS = { principal: 'PRINCIPAL', ao: 'AO', dean: 'DEAN', chairman: 'CHAIRMAN' };
 const AUTHORITY_OPTIONS = Object.entries(AUTHORITY_LABELS).map(([value, label]) => ({ value, label }));
@@ -165,7 +165,7 @@ export function EmergencyDetails({ pass, compact = false }) {
         ))}
       </dl>
       {pass.supportingDocument?.url && (
-        <a href={pass.supportingDocument.url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 text-xs font-semibold text-primary-600 hover:underline">
+        <a href={safeHref(pass.supportingDocument.url)} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 text-xs font-semibold text-primary-600 hover:underline">
           <FileText className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{pass.supportingDocument.name || 'Supporting document'}</span>
         </a>

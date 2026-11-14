@@ -60,6 +60,21 @@ export function project(points, cum, p) {
   return best;
 }
 
+/** The point `along` metres along a polyline (clamped to its ends). */
+export function pointAt(points, cum, along) {
+  if (!points.length) return null;
+  if (!(along > 0)) return { lat: points[0].lat, lng: points[0].lng };
+  for (let i = 1; i < points.length; i += 1) {
+    if (cum[i] >= along) {
+      const seg = cum[i] - cum[i - 1];
+      const t = seg > 0 ? (along - cum[i - 1]) / seg : 0;
+      return { lat: points[i - 1].lat + t * (points[i].lat - points[i - 1].lat), lng: points[i - 1].lng + t * (points[i].lng - points[i - 1].lng) };
+    }
+  }
+  const last = points[points.length - 1];
+  return { lat: last.lat, lng: last.lng };
+}
+
 /** Distance along the path of each stop (projected), in stop order. */
 export function stopPositions(route, points, cum) {
   return (route.stops || []).map((s) => ({ stop: s, along: project(points, cum, { lat: s.lat, lng: s.lng }).along }));

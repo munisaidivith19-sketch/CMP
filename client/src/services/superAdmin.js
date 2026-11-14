@@ -1,4 +1,5 @@
 import { api } from './api';
+import { safeMessage } from './safeError.js';
 
 /**
  * Super Admin console + module policies. Every endpoint is authorized on the
@@ -135,4 +136,4 @@ export const {
 
 /** True when an RTK error is the server asking for a password re-entry. */
 export const needsReauth = (err) => err?.status === 403 && err?.data?.code === 'REAUTH_REQUIRED';
-export const errorMessage = (err, fallback = 'Something went wrong') => err?.data?.errors?.[0]?.msg || err?.data?.message || fallback;
+export const errorMessage = (err, fallback = 'Something went wrong') => safeMessage(err?.data?.errors?.[0]?.msg, safeMessage(err?.data?.message, fallback));

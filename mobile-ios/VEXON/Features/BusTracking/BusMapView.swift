@@ -26,6 +26,8 @@ struct BusMapView: UIViewRepresentable {
     let fraction: Double?
     /// Route stop sequences already behind the bus.
     let passed: Set<Int>
+    /// Off route: the server's road path back to the route (empty otherwise — never a straight line).
+    var detour: [BusMath.LatLng] = []
     let selectedStopId: String?
     let student: CLLocationCoordinate2D?
     let command: MapCommand?
@@ -146,7 +148,8 @@ struct BusMapView: UIViewRepresentable {
         }
 
         private func syncRoute(on map: MLNMapView) {
-            let key = parent.route.map { "\($0.id)|\(parent.fraction ?? -1)" }
+            let detourKey = parent.detour.first.map { "\($0.lat),\($0.lng),\(parent.detour.count)" } ?? "-"
+            let key = parent.route.map { "\($0.id)|\(parent.fraction ?? -1)|\(detourKey)" }
             guard key != routeKey else { return }
             let routeChanged = parent.route?.id != routeKey?.split(separator: "|").first.map(String.init)
             routeKey = key
@@ -163,6 +166,12 @@ struct BusMapView: UIViewRepresentable {
                 var coords = points.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng) }
                 let line = RoutePolyline(coordinates: &coords, count: UInt(coords.count))
                 line.travelled = travelled
+                routeLines.append(line)
+            }
+            if parent.detour.count >= 2 {
+                var coords = parent.detour.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng) }
+                let line = RoutePolyline(coordinates: &coords, count: UInt(coords.count))
+                line.detour = true
                 routeLines.append(line)
             }
             map.addAnnotations(routeLines)
@@ -329,7 +338,9 @@ struct BusMapView: UIViewRepresentable {
 
         nonisolated func mapView(_ mapView: MLNMapView, strokeColorForShapeAnnotation annotation: MLNShape) -> UIColor {
             MainActor.assumeIsolated {
-                (annotation as? RoutePolyline)?.travelled == true ? UIColor.systemGray : UIColor(red: 0.11, green: 0.44, blue: 0.92, alpha: 1)
+                let line = annotation as? RoutePolyline
+                if line?.detour == true { return UIColor(red: 0.85, green: 0.47, blue: 0.02, alpha: 1) }
+                return line?.travelled == true ? UIColor.systemGray : UIColor(red: 0.11, green: 0.44, blue: 0.92, alpha: 1)
             }
         }
 

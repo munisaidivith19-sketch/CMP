@@ -256,7 +256,8 @@ fun BusTrackingScreen(route: Route) {
 
     // The app draws edge-to-edge: keep the header (and the map below it) clear of the
     // status bar, camera cutout and side insets, like the shared Screen does for other pages.
-    Column(Modifier.fillMaxSize().background(C.bg).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+    com.vexon.campus.ui.AppBackdrop {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
         Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Header(
                 "Bus Tracking", "College buses at their latest GPS position", back = true, titleMaxLines = 2,
@@ -327,6 +328,7 @@ fun BusTrackingScreen(route: Route) {
                 }
             }
         }
+    }
     }
 }
 

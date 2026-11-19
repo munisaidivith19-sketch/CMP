@@ -18,8 +18,8 @@ struct NotificationRequiredView: View {
                 Image(systemName: "bell.slash.fill")
                     .font(.system(size: 32))
                     .foregroundStyle(Theme.primary)
-                    .frame(width: 72, height: 72)
-                    .background(Theme.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                    .frame(width: 84, height: 84)
+                    .glass(cornerRadius: 28, tint: Theme.primary)
                     .accessibilityHidden(true)
 
                 Text("Notifications Required")
@@ -29,6 +29,7 @@ struct NotificationRequiredView: View {
 
                 Text("Notifications are required to use JNN. Please enable notifications to continue using the app and receive important updates.")
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(state == .canRequest
                      ? "Tap Enable Notifications and choose Allow."
@@ -47,19 +48,20 @@ struct NotificationRequiredView: View {
                 Button {
                     Task { await enable() }
                 } label: {
-                    if busy { ProgressView() } else { Text("Enable Notifications").frame(maxWidth: .infinity) }
+                    if busy { ProgressView().tint(.white) } else { Text("Enable Notifications") }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .buttonStyle(.primary)
                 .disabled(busy || signingOut)
 
                 Button {
                     Task { await openSettings() }
                 } label: {
-                    Text("Open Settings").frame(maxWidth: .infinity)
+                    Text("Open Settings")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .glass(cornerRadius: 14, interactive: true)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
+                .buttonStyle(.pressable)
                 .disabled(signingOut)
 
                 Button("Sign out") {
@@ -70,14 +72,19 @@ struct NotificationRequiredView: View {
                     }
                 }
                 .disabled(signingOut)
+                .frame(minHeight: 44)
             }
-            .padding(28)
+            .padding(24)
+            .frosted(cornerRadius: 28)
+            .padding(20)
+            .entrance()
+            .animation(Motion.snappy, value: settingsFailed)
             .frame(maxWidth: 480)
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
         .defaultScrollAnchor(.center)
-        .background(Theme.background.ignoresSafeArea())
+        .screenBackground()
     }
 
     private func enable() async {

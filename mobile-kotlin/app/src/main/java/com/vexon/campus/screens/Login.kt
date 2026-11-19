@@ -13,6 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.vexon.campus.ui.entrance
+import com.vexon.campus.ui.glass
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
@@ -117,7 +122,9 @@ fun LoginScreen() {
         // Light/dark switch in the top-right corner, as on every other screen.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { ThemeToggle() }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Image(painterResource(R.drawable.jnn_logo), "JNN logo", Modifier.size(84.dp))
+            Box(Modifier.glass(androidx.compose.foundation.shape.CircleShape).padding(16.dp)) {
+                Image(painterResource(R.drawable.jnn_logo), "JNN logo", Modifier.size(72.dp))
+            }
             H1("Welcome back 👋")
             Small("Sign in with your college email to continue.", align = TextAlign.Center)
         }
@@ -154,17 +161,19 @@ fun LoginScreen() {
                 password, { password = it }, label = "Password", placeholder = "••••••••", error = passwordError,
                 keyboardType = KeyboardType.Password, password = !show, enabled = lockedInfo == null, imeAction = ImeAction.Go, onSubmit = ::submit,
                 trailing = {
-                    Icon(
-                        if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        if (show) "Hide password" else "Show password",
-                        Modifier.size(18.dp).clickable { show = !show }, tint = C.muted,
-                    )
+                    Box(Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape).clickable { show = !show }, contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (show) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                            if (show) "Hide password" else "Show password",
+                            Modifier.size(20.dp), tint = C.muted,
+                        )
+                    }
                 },
             )
             if (error.isNotEmpty() && lockedInfo == null) Small(error, color = C.danger)
             Button(if (lockedInfo != null) "Locked" else "Sign in", ::submit, Modifier.fillMaxWidth(), loading = login.isLoading, enabled = lockedInfo == null)
             // Passwords are reset by the Class In-Charge or an Admin — there is no email reset.
-            Small(PASSWORD_HELP, Modifier.align(Alignment.CenterHorizontally).padding(4.dp), C.muted)
+            Small(PASSWORD_HELP, Modifier.align(Alignment.CenterHorizontally).padding(4.dp), C.muted, TextAlign.Center)
         }
     }
 }
@@ -189,12 +198,13 @@ fun OfflineLaunch(onRetry: suspend () -> Unit, onSkip: () -> Unit) {
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize().background(C.bg)) {
         Backdrop()
+        // Scrolls when the text is large or the phone is small, so nothing is cut off.
         Column(
-            Modifier.fillMaxSize().statusBarsPadding().padding(28.dp),
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(28.dp).entrance(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
         ) {
-            Box(Modifier.size(72.dp).clip(RoundedCornerShape(26.dp)).background(C.primarySoft), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(76.dp).glass(RoundedCornerShape(26.dp)), contentAlignment = Alignment.Center) {
                 Icon(Icons.Rounded.CloudOff, null, Modifier.size(32.dp), tint = C.primary)
             }
             H2("Can’t reach JNN", align = TextAlign.Center)

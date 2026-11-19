@@ -39,9 +39,10 @@ function MaterialCard({ material, canManage, onEdit, onDelete }) {
             {displayName(material.uploadedBy)} · {fmtClassDay(material.createdAt, 'dd MMM yyyy')}
           </span>
         </div>
-        <a href={safeHref(material.file?.url)} target="_blank" rel="noreferrer" className="btn btn-outline ml-auto !py-1.5 !text-xs">
-          <Download className="h-3.5 w-3.5" /> {material.file?.name || 'Download'}
-          {material.file?.size ? ` · ${fmtSize(material.file.size)}` : ''}
+        <a href={safeHref(material.file?.url)} target="_blank" rel="noreferrer" title={material.file?.name} className="btn btn-outline ml-auto min-w-0 max-w-full !py-1.5 !text-xs">
+          <Download className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{material.file?.name || 'Download'}</span>
+          {material.file?.size ? <span className="shrink-0">· {fmtSize(material.file.size)}</span> : null}
         </a>
         {canManage && (
           <div className="flex gap-1">

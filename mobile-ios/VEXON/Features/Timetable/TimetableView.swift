@@ -17,7 +17,8 @@ struct TimetableView: View {
                 ForEach(schoolDays) { Text($0.short).tag($0) }
             }
             .pickerStyle(.segmented)
-            .padding()
+            .padding(.horizontal)
+            .padding(.vertical, 10)
 
             LoadStateView(
                 state: state,
@@ -31,10 +32,16 @@ struct TimetableView: View {
             ) { response in
                 List(response.byDay[day] ?? []) { slot in
                     TimetableRow(slot: slot, isToday: day == Weekday.of(Date()), showFaculty: FeatureAccess.isStudent(user.role))
+                        .glassCardRow()
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .id(day) // a new day is a new list: it cross-fades instead of morphing rows
+                .transition(.opacity)
             }
         }
+        .animation(Motion.smooth, value: day)
+        .screenBackground()
         .navigationTitle("Timetable")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -67,10 +74,10 @@ private struct TimetableRow: View {
 
     private var isNow: Bool {
         guard isToday else { return false }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX") // 24-hour even when the device uses 12-hour time
-        f.dateFormat = "HH:mm"
-        let now = f.string(from: Date())
+        // "HH:mm" on the 24-hour clock whatever the device's own time format is —
+        // without building a DateFormatter for every row on every redraw.
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        let now = String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
         return slot.startTime <= now && now < slot.endTime
     }
 
@@ -80,7 +87,9 @@ private struct TimetableRow: View {
                 Text(slot.startTime).font(.subheadline.monospacedDigit().weight(.semibold))
                 Text(slot.endTime).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            .frame(width: 56, alignment: .trailing)
+            // Wide enough for "00:00" at any text size, so the time never truncates.
+            .fixedSize()
+            .frame(minWidth: 56, alignment: .trailing)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(slot.title).font(.subheadline.weight(.semibold))
@@ -91,7 +100,6 @@ private struct TimetableRow: View {
                 }
             }
         }
-        .padding(.vertical, 4)
         .opacity(slot.isBreak == true ? 0.7 : 1)
         .accessibilityElement(children: .combine)
     }
@@ -122,7 +130,7 @@ struct ExamsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("\(exam.subjectCode) · \(exam.subjectName)").font(.subheadline.weight(.semibold))
-                        Spacer()
+                        Spacer(minLength: 8)
                         if exam.isCancelled { StatusPill(text: "Cancelled", color: Theme.danger) }
                     }
                     Text("\(exam.date.formatted(date: .complete, time: .omitted)) · \(exam.startTime)–\(exam.endTime)")
@@ -133,8 +141,12 @@ struct ExamsView: View {
                 }
                 .strikethrough(exam.isCancelled)
                 .accessibilityElement(children: .combine)
+                .glassCardRow()
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
+        .screenBackground()
         .navigationTitle("Exams")
         .refreshable { await load() }
         .task { await load() }

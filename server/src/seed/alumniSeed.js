@@ -211,7 +211,7 @@ export async function seedAlumniNetwork() {
         role: 'alumni',
         department: item.department,
         designation: item.designation,
-        year: item.gradYear,
+        // No `year`: User.year is the student's year of study (1-6); the graduation year lives on AlumniProfile.gradYear.
         bio: `${item.designation} at ${item.company}. Class of ${item.gradYear}. Passionate about giving back to junior students.`,
       });
       await user.save();
@@ -346,7 +346,7 @@ export async function seedAlumniNetwork() {
       slot: slot1._id,
       student: student._id,
       alumni: karthik._id,
-      startsAt: slot1.startsAt,
+      scheduledAt: slot1.startsAt,
       durationMin: 45,
       mode: 'video',
       meetingLink: slot1.meetingLink,
@@ -362,7 +362,7 @@ export async function seedAlumniNetwork() {
 
   // 5. Jobs & Applications
   const job1 = new AlumniJob({
-    poster: karthik._id,
+    postedBy: karthik._id,
     title: 'Software Engineer - Cloud Infrastructure',
     company: 'Google India',
     location: 'Bengaluru / Hybrid',
@@ -378,7 +378,7 @@ export async function seedAlumniNetwork() {
   await job1.save();
 
   const job2 = new AlumniJob({
-    poster: pooja._id,
+    postedBy: pooja._id,
     title: 'Hardware Verification Intern (Summer 2026)',
     company: 'Qualcomm',
     location: 'Hyderabad',
@@ -394,7 +394,7 @@ export async function seedAlumniNetwork() {
   await job2.save();
 
   const job3 = new AlumniJob({
-    poster: aravind._id,
+    postedBy: aravind._id,
     title: 'Applied AI & ML Research Engineer',
     company: 'Microsoft',
     location: 'Bengaluru',
@@ -411,7 +411,7 @@ export async function seedAlumniNetwork() {
   await job3.save();
 
   const job4 = new AlumniJob({
-    poster: seededUsers[4]._id, // Rohan
+    postedBy: seededUsers[4]._id, // Rohan
     title: 'Associate SOC Analyst',
     company: 'CrowdStrike',
     location: 'Pune',
@@ -429,6 +429,7 @@ export async function seedAlumniNetwork() {
   if (student) {
     const app1 = new JobApplication({
       job: job1._id,
+      poster: job1.postedBy,
       student: student._id,
       note: 'I have contributed to Apache Kafka and built distributed storage toy projects. Would love an internal referral!',
       referralRequested: true,
@@ -439,6 +440,7 @@ export async function seedAlumniNetwork() {
 
     const app2 = new JobApplication({
       job: job2._id,
+      poster: job2.postedBy,
       student: student._id,
       note: 'Top of class in VLSI and microcontrollers. Looking forward to verification work.',
       referralRequested: true,
@@ -450,7 +452,7 @@ export async function seedAlumniNetwork() {
 
   // 6. Alumni Events
   const event1 = new AlumniEvent({
-    organizer: admin ? admin._id : karthik._id,
+    createdBy: admin ? admin._id : karthik._id,
     title: 'Grand Annual Alumni Homecoming & Gala 2026',
     type: 'reunion',
     mode: 'in_person',
@@ -464,7 +466,7 @@ export async function seedAlumniNetwork() {
   await event1.save();
 
   const event2 = new AlumniEvent({
-    organizer: karthik._id,
+    createdBy: karthik._id,
     title: 'Breaking Into Big Tech: AMA & Live Resume Teardown',
     type: 'webinar',
     mode: 'online',
@@ -478,7 +480,7 @@ export async function seedAlumniNetwork() {
   await event2.save();
 
   const event3 = new AlumniEvent({
-    organizer: pooja._id,
+    createdBy: pooja._id,
     title: 'Semiconductor Trends: India Semiconductor Mission & You',
     type: 'guest_talk',
     mode: 'hybrid',
@@ -583,7 +585,7 @@ export async function seedAlumniNetwork() {
 
   // 8. Import Batch & Invites
   const batch = new AlumniImportBatch({
-    uploader: admin ? admin._id : hodCSE._id,
+    uploadedBy: admin ? admin._id : hodCSE._id,
     filename: 'alumni_2025_passouts_verified.csv',
     status: 'done',
     summary: { total: 3, valid: 3, invalid: 0, duplicates: 0, existing: 0 },
@@ -617,6 +619,7 @@ export async function seedAlumniNetwork() {
     department: 'CSE',
     gradYear: 2021,
     status: 'claimed',
+    expiresAt: daysFromNow(14),
     claimedAt: new Date(Date.now() - 30 * DAY),
     claimedUser: karthik._id,
   });

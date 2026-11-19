@@ -37,7 +37,7 @@ jobs:
   test:
     name: Server tests + client build
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     services:
       mongo:
         image: mongo:7

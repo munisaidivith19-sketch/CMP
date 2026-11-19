@@ -77,6 +77,7 @@ final class ChatThreadModel {
 struct ChatThreadView: View {
     let conversation: Conversation
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model: ChatThreadModel
 
     init(conversation: Conversation) {
@@ -85,30 +86,44 @@ struct ChatThreadView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            LoadStateView(state: model.state, retry: { await model.loadLatest(client: app.client) }) { _ in
-                ScrollViewReader { proxy in
-                    List {
+        LoadStateView(state: model.state, retry: { await model.loadLatest(client: app.client) }) { _ in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 10) {
                         if model.hasOlder {
-                            Button(model.loadingOlder ? "Loading…" : "Load earlier messages") {
+                            Button {
                                 Task { await model.loadOlder(client: app.client) }
+                            } label: {
+                                Text(model.loadingOlder ? "Loading…" : "Load earlier messages")
+                                    .font(.footnote.weight(.semibold))
+                                    .padding(.horizontal, 14)
+                                    .frame(minHeight: 44)
+                                    .frosted(in: Capsule())
                             }
-                            .frame(maxWidth: .infinity)
+                            .buttonStyle(.pressable)
+                            .disabled(model.loadingOlder)
                         }
                         ForEach(model.messages) { message in
                             MessageBubble(message: message, mine: message.sender.id == app.user?.id, showSender: conversation.type != "private")
-                                .listRowSeparator(.hidden)
                                 .id(message.id)
+                                .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: message.sender.id == app.user?.id ? .bottomTrailing : .bottomLeading)))
                         }
                     }
-                    .listStyle(.plain)
-                    .onChange(of: model.messages.last?.id) { _, last in
-                        if let last { withAnimation { proxy.scrollTo(last, anchor: .bottom) } }
-                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .animation(reduceMotion ? Motion.reduced : Motion.smooth, value: model.messages.last?.id)
+                }
+                // Open on the newest message and stay there as the keyboard and new messages arrive.
+                .defaultScrollAnchor(.bottom)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: model.messages.last?.id) { _, last in
+                    if let last { withAnimation(reduceMotion ? Motion.reduced : Motion.smooth) { proxy.scrollTo(last, anchor: .bottom) } }
                 }
             }
-            composer
         }
+        // The composer is an inset, not an overlay: the last message always rests above it.
+        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        .screenBackground()
         .navigationTitle(conversation.title(myId: app.user?.id))
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.loadLatest(client: app.client) }
@@ -117,30 +132,47 @@ struct ChatThreadView: View {
         .task { await live() }
     }
 
+    private var canSend: Bool { !model.sending && NewChatMessage.validated(model.draft) != nil }
+
     private var composer: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let error = model.sendError {
                 Text(error).font(.caption).foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
             }
-            HStack(alignment: .bottom) {
+            HStack(alignment: .bottom, spacing: 6) {
                 TextField("Message", text: $model.draft, axis: .vertical)
                     .lineLimit(1...5)
-                    .padding(10)
-                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 18))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 11)
                     .accessibilityIdentifier("chat.input")
                 Button {
                     Task { await model.send(client: app.client) }
                 } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title)
+                    Group {
+                        if model.sending {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "arrow.up").font(.body.weight(.bold)).foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: 36, height: 36)
+                    .background(Theme.heroGradient, in: Circle())
+                    .opacity(canSend || model.sending ? 1 : 0.4)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
-                .frame(minWidth: 44, minHeight: 44)
-                .disabled(model.sending || NewChatMessage.validated(model.draft) == nil)
+                .buttonStyle(.pressable)
+                .disabled(!canSend)
+                .animation(Motion.snappy, value: canSend)
                 .accessibilityLabel("Send")
             }
         }
-        .padding(.horizontal)
+        .padding(.leading, 4)
+        .glass(cornerRadius: 24)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.bar)
     }
 
     /// Room membership for this screen's lifetime; re-joined after every reconnect.
@@ -165,6 +197,17 @@ private struct MessageBubble: View {
     let mine: Bool
     let showSender: Bool
 
+    /// Rounded, with a tighter corner on the sender's side.
+    private var shape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 18,
+            bottomLeadingRadius: mine ? 18 : 6,
+            bottomTrailingRadius: mine ? 6 : 18,
+            topTrailingRadius: 18,
+            style: .continuous
+        )
+    }
+
     var body: some View {
         HStack {
             if mine { Spacer(minLength: 40) }
@@ -172,12 +215,7 @@ private struct MessageBubble: View {
                 if showSender, !mine, let name = message.sender.value?.name {
                     Text(name).font(.caption2.weight(.semibold)).foregroundStyle(Theme.primary)
                 }
-                Text(message.deletedAt != nil ? "This message was deleted" : (message.body ?? ""))
-                    .italic(message.deletedAt != nil)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .foregroundStyle(mine ? .white : .primary)
-                    .background(mine ? Theme.primary : Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 16))
+                text
                 if message.attachment?.url != nil {
                     Label("Attachment — open on the web app", systemImage: "paperclip").font(.caption2).foregroundStyle(.secondary)
                 }
@@ -187,5 +225,21 @@ private struct MessageBubble: View {
             if !mine { Spacer(minLength: 40) }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var text: some View {
+        let label = Text(message.deletedAt != nil ? "This message was deleted" : (message.body ?? ""))
+            .italic(message.deletedAt != nil)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        if mine {
+            label
+                .foregroundStyle(.white)
+                .background(Theme.heroGradient, in: shape)
+        } else {
+            label
+                .foregroundStyle(Color.primary)
+                .frosted(in: shape)
+        }
     }
 }

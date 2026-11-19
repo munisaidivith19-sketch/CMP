@@ -1,5 +1,10 @@
 package com.vexon.campus.screens
 
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.border
+import com.vexon.campus.ui.Glass
+import com.vexon.campus.ui.glass
+import com.vexon.campus.ui.pressable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -472,8 +477,12 @@ fun ThreadScreen(id: String) {
                                 }
                                 Column(
                                     Modifier.widthIn(max = bubbleMax).alpha(if (deleted) 0.6f else 1f)
-                                        .clip(RoundedCornerShape(22.dp, 22.dp, if (mine) 6.dp else 22.dp, if (mine) 22.dp else 6.dp))
-                                        .background(if (mine) C.primary else C.surface)
+                                        .then(
+                                            RoundedCornerShape(22.dp, 22.dp, if (mine) 6.dp else 22.dp, if (mine) 22.dp else 6.dp).let { bubble ->
+                                                if (mine) Modifier.clip(bubble).background(Brush.linearGradient(Grad.primary)).border(1.dp, Glass.shine, bubble)
+                                                else Modifier.glass(bubble, fill = Glass.strongFill)
+                                            },
+                                        )
                                         .combinedClickable(onClick = {}, onLongClick = { onLongPress(m) })
                                         .padding(horizontal = 14.dp, vertical = 9.dp),
                                 ) {
@@ -504,7 +513,11 @@ fun ThreadScreen(id: String) {
             }
         }
 
-        Column(Modifier.fillMaxWidth().background(C.glass(0.7f)).navigationBarsPadding().padding(10.dp)) {
+        // In its own row under the messages (never over them), above the system bar and the keyboard.
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp)
+                .glass(RoundedCornerShape(26.dp), fill = Glass.strongFill, elevation = 8.dp).padding(8.dp),
+        ) {
             replyTo?.let { r ->
                 Row(
                     Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(14.dp)).background(C.primarySoft).padding(8.dp),
@@ -519,10 +532,15 @@ fun ThreadScreen(id: String) {
                 Input(text, ::onType, Modifier.weight(1f).heightIn(max = 140.dp), placeholder = "Type a message…", multiline = true, minLines = 1, maxLength = 5000)
                 val canSend = text.isNotBlank() && !send.isLoading
                 Box(
-                    Modifier.padding(bottom = 4.dp).size(44.dp).clip(CircleShape).background(if (text.isNotBlank()) C.primary else C.primary300)
-                        .clickable(enabled = canSend) { submit() }.semantics { contentDescription = "Send" },
+                    Modifier.padding(bottom = 4.dp).size(46.dp).alpha(if (text.isNotBlank()) 1f else 0.45f)
+                        .pressable(if (canSend) ({ submit() }) else null, 0.9f)
+                        .clip(CircleShape).background(Brush.linearGradient(Grad.primary)).border(1.dp, Glass.shine, CircleShape)
+                        .semantics { contentDescription = "Send" },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.AutoMirrored.Rounded.Send, null, Modifier.size(18.dp), tint = Color.White) }
+                ) {
+                    if (send.isLoading) androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    else Icon(Icons.AutoMirrored.Rounded.Send, null, Modifier.size(18.dp), tint = Color.White)
+                }
             }
         }
     }

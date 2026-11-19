@@ -23,6 +23,7 @@ struct AttendanceView: View {
 
     var body: some View {
         List {
+            Group {
             Section {
                 Picker("Semester", selection: $semester) {
                     if currentSemester == nil { Text("All semesters").tag(Int?.none) }
@@ -52,7 +53,10 @@ struct AttendanceView: View {
             }
 
             recordsSection
+            }
+            .glassRow()
         }
+        .glassList()
         .navigationTitle("Attendance")
         .refreshable { await reload() }
         .task(id: "\(semester ?? 0)-\(range.rawValue)") { await loadSummary() }
@@ -99,6 +103,7 @@ struct AttendanceView: View {
                     Spacer()
                     Text("\(Int(line.percentage.rounded()))%")
                         .font(.headline.monospacedDigit())
+                        .contentTransition(.numericText())
                         .foregroundStyle(line.percentage >= s.threshold ? Theme.success : Theme.danger)
                 }
                 .accessibilityElement(children: .combine)

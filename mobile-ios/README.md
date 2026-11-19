@@ -129,6 +129,30 @@ Key decisions (each mirrors the Android app):
 - **Isolation between accounts:** signing in or out rebuilds the whole view
   tree, disconnects the socket, and stops any active trip sharing.
 
+### Design system (glass)
+
+All styling lives in `VEXON/Core/DesignSystem/` (`Theme.swift`, `Glass.swift`).
+Screens do not draw their own backgrounds, blurs or shadows.
+
+- **`AppBackground`**: the soft colour field behind every screen
+  (`.screenBackground()`, or `.glassList()` for a `List` / `Form`).
+- **`.glass(...)`**: a floating surface over live content (map controls and
+  panels, banners, the chat composer). Built with Xcode 26 and run on iOS 26 it
+  is real Liquid Glass (`glassEffect`); on iOS 17–25, or built with Xcode 16, it
+  is a blurred system material with a light rim. The iOS 26 calls are behind
+  `#if compiler(>=6.2)` and `#available(iOS 26.0, *)`, so the project still
+  builds with Xcode 16 and still runs on iOS 17.
+- **`.frosted(...)` / `.card()` / `.glassRow()` / `.glassCardRow()`**: content
+  surfaces (cards, list rows). A translucent fill with no live blur, so long
+  lists stay smooth on older iPhones.
+- **Motion**: `Motion.smooth` / `Motion.snappy` springs, `.entrance(_:)` for the
+  first appearance of a card, `.pressable` and `.primary` button styles.
+- **Accessibility**: every surface turns opaque with Reduce Transparency, and
+  movement is replaced by a short fade with Reduce Motion.
+- **Small screens**: panels floating over the bus map use `FittingScroll`, which
+  is as tall as its content up to a share of the screen and scrolls beyond that,
+  so nothing runs off an iPhone SE or overlaps at large text sizes.
+
 ## Features in this phase
 
 | Module | What works on iOS | Backend |

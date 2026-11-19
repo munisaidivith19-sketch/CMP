@@ -38,8 +38,15 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       // Chennai at city level until a bus / route / the viewer's position is known (applied once).
       center: DEFAULT_VIEW.center,
       zoom: DEFAULT_VIEW.zoom,
-      attributionControl: { compact: true, customAttribution: attribution },
+      // The map style already carries the OpenFreeMap / OpenMapTiles / OpenStreetMap credit; adding
+      // it again showed it twice. Kept (required by the licence) but collapsed to the (i) button.
+      attributionControl: { compact: true },
       cooperativeGestures: false,
+    });
+    m.once('load', () => {
+      const a = container.current?.querySelector('.maplibregl-ctrl-attrib');
+      a?.classList.remove('maplibregl-compact-show');
+      a?.removeAttribute('open');
     });
     map.current = m;
     m.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
@@ -210,9 +217,9 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       <div ref={container} className="h-full w-full" role="application" aria-label="Live bus map" />
       {(approximate || offRoute) && (
         <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[70%] flex-col items-start gap-1" role="status">
-          {approximate && <p className="rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow">Approximate path — straight lines between stops, not the road</p>}
+          {approximate && <p className="pointer-events-auto cursor-default select-none rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow">Approximate path — straight lines between stops, not the road</p>}
           {offRoute && (
-            <p className="rounded-lg bg-amber-50/95 px-2 py-1 text-[11px] font-semibold text-amber-800 shadow">
+            <p className="pointer-events-auto cursor-default select-none rounded-lg bg-amber-50/95 px-2 py-1 text-[11px] font-semibold text-amber-800 shadow">
               {detour.status === 'ok' ? 'Bus is off its route — orange line is the road back to the route' : 'Bus is off its route — road path back not available yet'}
             </p>
           )}

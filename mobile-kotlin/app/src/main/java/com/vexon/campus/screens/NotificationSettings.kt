@@ -1,5 +1,8 @@
 package com.vexon.campus.screens
 
+import androidx.compose.foundation.layout.widthIn
+import com.vexon.campus.ui.glass
+import com.vexon.campus.ui.entrance
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
@@ -216,11 +219,12 @@ fun NotificationsRequiredScreen(status: NotificationGate.Status) {
         Backdrop()
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.Center) {
             Column(
-                Modifier.verticalScroll(rememberScrollState()).padding(28.dp),
+                Modifier.verticalScroll(rememberScrollState()).padding(20.dp).widthIn(max = 480.dp).entrance()
+                    .glass(RoundedCornerShape(28.dp)).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Box(Modifier.size(72.dp).clip(RoundedCornerShape(26.dp)).background(C.primarySoft), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(76.dp).glass(RoundedCornerShape(26.dp)), contentAlignment = Alignment.Center) {
                     Icon(Icons.Rounded.NotificationsOff, null, Modifier.size(32.dp), tint = C.primary)
                 }
                 H2("Notifications Required", Modifier.semantics { heading() }, align = TextAlign.Center)

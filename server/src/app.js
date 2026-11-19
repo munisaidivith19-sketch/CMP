@@ -19,6 +19,7 @@ import { correlationId } from './services/soc/monitors.js';
 import { requestMetrics } from './services/soc/metrics.js';
 import { captureRateLimited } from './middleware/error.js';
 import { forceHttpsEnabled, httpsOnly, trustProxySetting } from './middleware/https.js';
+import { turnstileEnabled } from './services/turnstile.js';
 
 /**
  * Origins the bus map may load its style, tiles, glyphs and sprites from: the
@@ -57,6 +58,8 @@ const looksLikeFile = (p) => p.split('/').some((seg) => seg.includes('.'));
 export function createApp({ forceHttps = forceHttpsEnabled() } = {}) {
   const app = express();
   const mapOrigins = mapCspOrigins();
+  // The sign-in CAPTCHA (Cloudflare Turnstile) loads its script and iframe from this origin only when configured.
+  const captchaOrigins = turnstileEnabled() ? ['https://challenges.cloudflare.com'] : [];
   const CLIENT_DIST =process.env.CLIENT_DIST_DIR ? path.resolve(process.env.CLIENT_DIST_DIR) : DEFAULT_CLIENT_DIST;
   app.disable('x-powered-by');
   app.set('trust proxy', trustProxySetting());
@@ -83,6 +86,8 @@ export function createApp({ forceHttps = forceHttpsEnabled() } = {}) {
         useDefaults: true,
         directives: {
           'img-src': ["'self'", 'data:', 'blob:', 'https://res.cloudinary.com', ...mapOrigins],
+          'script-src': ["'self'", ...captchaOrigins],
+          'frame-src': ["'self'", ...captchaOrigins],
           // The bus map's style, tiles, glyphs and sprites come from the
           // configured map provider only (MAP_STYLE_URL / MAP_CSP_ORIGINS).
           'connect-src': ["'self'", 'ws:', 'wss:', ...mapOrigins],

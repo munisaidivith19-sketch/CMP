@@ -21,9 +21,12 @@ struct ConversationsView: View {
                 NavigationLink(value: conversation.id) {
                     ConversationRow(conversation: conversation, myId: app.user?.id)
                 }
+                .glassRow()
             }
-            .listStyle(.plain)
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
         }
+        .screenBackground()
         .navigationTitle("Chat")
         .navigationDestination(for: String.self) { id in
             if let conversation = state.value?.first(where: { $0.id == id }) {
@@ -72,16 +75,17 @@ private struct ConversationRow: View {
                     )
                 if conversation.type == "private", other?.online == true {
                     Circle().fill(Theme.success).frame(width: 12, height: 12)
-                        .overlay(Circle().stroke(.background, lineWidth: 2))
+                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 2))
                         .accessibilityLabel("Online")
                 }
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(conversation.title(myId: myId)).font(.subheadline.weight(.semibold)).lineLimit(1)
-                    Spacer()
+                    Spacer(minLength: 8)
                     if let at = conversation.lastMessage?.sentAt {
                         Text(at.formatted(.relative(presentation: .named))).font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1).layoutPriority(1)
                     }
                 }
                 HStack {
@@ -93,6 +97,7 @@ private struct ConversationRow: View {
                             .font(.caption2.bold()).foregroundStyle(.white)
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(Theme.primary, in: Capsule())
+                            .contentTransition(.numericText())
                             .accessibilityLabel("\(unread) unread")
                     }
                 }

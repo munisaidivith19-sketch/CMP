@@ -348,7 +348,7 @@ export default function Transport() {
                         <li key={s._id}>
                           <button type="button" onClick={() => select(selectedId, s._id)} className={cn('flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-white/50 dark:hover:bg-white/5', isSel && 'bg-primary-500/10 font-bold')} aria-current={isSel ? 'true' : undefined}>
                             <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', passed.has(s.sequence) ? 'bg-slate-300 text-slate-700' : 'bg-primary-500 text-white')}>{s.sequence}</span>
-                            <span className={cn('flex-1', passed.has(s.sequence) && 'text-ink-muted line-through')}>{s.name}</span>
+                            <span className={cn('flex-1', passed.has(s.sequence) && 'text-slate-400 dark:text-slate-500')}>{s.name}</span>
                             {s.scheduledTime && <span className="text-[11px] muted">{s.scheduledTime}</span>}
                           </button>
                         </li>

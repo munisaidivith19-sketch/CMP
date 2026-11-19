@@ -1,5 +1,7 @@
 import rateLimit from 'express-rate-limit';
 import { env } from '../config/env.js';
+import { turnstileEnabled } from '../services/turnstile.js';
+import { isNativeClient } from '../utils/tokens.js';
 
 const json = (message) => ({ message });
 
@@ -51,6 +53,22 @@ export const authLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skipSuccessfulRequests: true,
+  message: json('Too many failed sign-in attempts from this network. Try again later.'),
+});
+
+// Sign-in. Without the CAPTCHA: 20 failed sign-ins per address per 15 min,
+// as before. With the CAPTCHA on (services/turnstile.js), a browser's failures
+// from one address ask for the CAPTCHA instead, and a cap of 20 would let one
+// person on the shared college Wi-Fi block everyone's sign-in — so browsers
+// get a much higher ceiling there, and a "complete the CAPTCHA" answer (428,
+// no password checked) is not counted. Native apps keep the 20.
+export const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: (req) => (turnstileEnabled() && !isNativeClient(req) ? Number(process.env.LOGIN_CAPTCHA_RATE_LIMIT) || 300 : 20),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.statusCode === 428,
   message: json('Too many failed sign-in attempts from this network. Try again later.'),
 });
 

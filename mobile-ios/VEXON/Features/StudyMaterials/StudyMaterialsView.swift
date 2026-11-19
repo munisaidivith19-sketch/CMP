@@ -22,6 +22,7 @@ struct StudyMaterialsView: View {
 
     var body: some View {
         List {
+            Group {
             Section {
                 Picker("Semester", selection: $semester) {
                     Text("All semesters").tag(Int?.none)
@@ -61,7 +62,10 @@ struct StudyMaterialsView: View {
                     }
                 }
             }
+            }
+            .glassRow()
         }
+        .glassList()
         .navigationTitle("Study Materials")
         .refreshable { await load() }
         .onChange(of: semester) {
@@ -78,9 +82,9 @@ struct StudyMaterialsView: View {
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(material.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                    Spacer()
-                    StatusPill(text: StudyMaterialCategory.label(for: material.category), color: Theme.primary)
+                    Text(material.title).font(.subheadline.weight(.semibold)).foregroundStyle(Color.primary)
+                    Spacer(minLength: 8)
+                    StatusPill(text: StudyMaterialCategory.label(for: material.category), color: Theme.primary).fixedSize()
                 }
                 Text(material.subjectLine).font(.caption).foregroundStyle(.secondary)
                 if let description = material.description, !description.isEmpty {

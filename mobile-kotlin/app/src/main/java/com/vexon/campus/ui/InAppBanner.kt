@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
@@ -113,10 +114,10 @@ fun InAppBannerHost() {
         ) {
             val b = shown ?: return@AnimatedVisibility
             Row(
-                Modifier.fillMaxWidth().shadow(12.dp, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp))
-                    .background(C.surface).border(1.dp, C.border, RoundedCornerShape(20.dp))
+                Modifier.widthIn(max = 520.dp).fillMaxWidth()
+                    .glass(RoundedCornerShape(22.dp), fill = Glass.strongFill, elevation = 14.dp)
                     .clickable { InAppBanner.dismiss(); Nav.push(b.link) }
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)
                     .semantics { liveRegion = LiveRegionMode.Polite },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -126,10 +127,10 @@ fun InAppBannerHost() {
                     Strong(b.title, maxLines = 1)
                     b.text?.let { Small(it, maxLines = 2) }
                 }
-                Icon(
-                    Icons.Rounded.Close, "Dismiss", Modifier.size(28.dp).clip(RoundedCornerShape(14.dp)).clickable { InAppBanner.dismiss() }.padding(5.dp),
-                    tint = C.muted,
-                )
+                // A full 44dp target around the small cross.
+                Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).clickable { InAppBanner.dismiss() }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Close, "Dismiss", Modifier.size(18.dp), tint = C.muted)
+                }
             }
         }
     }

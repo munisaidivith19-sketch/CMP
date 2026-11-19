@@ -31,14 +31,19 @@ import {
   verifyRefreshToken,
 } from '../utils/tokens.js';
 import {
-  calculateLockoutMs,
-  getRemainingAttempts,
-  getNextLockMinutes,
+  ACCOUNT_WIDE_LOCK_AFTER,
+  ACCOUNT_WIDE_LOCK_MS,
   checkIpThrottled,
   recordIpFailure,
   checkAnonLockout,
   recordAnonFailure,
+  checkAccountLockout,
+  recordAccountFailure,
+  clearAccountLock,
+  isKnownNetwork,
+  captchaRequiredFor,
 } from '../utils/loginSecurity.js';
+import { turnstileConfig, turnstileEnabled, verifyTurnstile } from '../services/turnstile.js';
 import { clearCsrfCookie, generateCsrfToken, setCsrfCookie } from '../middleware/security.js';
 import { IDLE_MESSAGE, expireIdleSession, idleTimeoutFor, isIdleExpired, recordSessionActivity } from '../utils/sessionIdle.js';
 
@@ -186,8 +191,24 @@ export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const normalizedEmail = String(email || '').toLowerCase().trim();
 
-  // 1. IP-Level Throttling Check (protects against distributed attacks from a single IP)
-  const ipCheck = await checkIpThrottled(req.ip);
+  // CAPTCHA mode (services/turnstile.js): Turnstile is configured and this is
+  // a web browser. Locks keyed on an address cannot tell people apart behind
+  // one shared campus Wi-Fi, so in this mode a failing network must pass a
+  // CAPTCHA instead of being locked out. The native apps cannot show the
+  // widget and keep the per-network and per-IP locks.
+  const captchaMode = turnstileEnabled() && !isNativeClient(req);
+  const captchaError = (message) =>
+    new ApiError(428, message, null, { code: 'CAPTCHA_REQUIRED', captchaRequired: true, siteKey: turnstileConfig().siteKey });
+  // Worded the same for real and unknown emails (no enumeration).
+  const invalidWithCaptcha = async (userId) =>
+    new ApiError(401, 'Invalid email or password.', null, {
+      captchaRequired: await captchaRequiredFor({ userId, email: normalizedEmail, ip: req.ip }),
+      siteKey: turnstileConfig().siteKey,
+    });
+
+  // 1. IP-Level Throttling Check (protects against distributed attacks from a
+  // single IP). In CAPTCHA mode the CAPTCHA takes its place.
+  const ipCheck = captchaMode ? { locked: false } : await checkIpThrottled(req.ip);
   if (ipCheck.locked) {
     throw new ApiError(423, `Too many failed sign-in attempts from this network. Try again in ${ipCheck.mins} minute(s).`, null, {
       locked: true,
@@ -212,9 +233,20 @@ export const login = asyncHandler(async (req, res) => {
     user = await User.findById(leaseId).select(LOGIN_FIELDS);
   }
 
+  // 1b. CAPTCHA, once this network has failed recently on this email (or this
+  // IP on any account). Checked before the password, so a guess without a
+  // passed CAPTCHA is never even compared. Not counted as a failed sign-in.
+  if (captchaMode && (await captchaRequiredFor({ userId: user?._id, email: normalizedEmail, ip: req.ip }))) {
+    const check = await verifyTurnstile(req.body.captchaToken, req.ip);
+    if (!check.ok) {
+      logSecurity(req, 'LOGIN_FAILED', { actor: null, ...(user ? { target: user } : {}), success: false, identifier: normalizedEmail, reason: `captcha_${check.reason}` });
+      throw captchaError(check.reason === 'missing_token' ? 'Complete the security check to sign in.' : 'The security check could not be verified. Please try it again.');
+    }
+  }
+
   // 2. Anti-Enumeration Defense for Non-Existent Users
   if (!user) {
-    const anonCheck = await checkAnonLockout(normalizedEmail);
+    const anonCheck = await checkAnonLockout(normalizedEmail, req.ip, { perNetwork: !captchaMode });
     if (anonCheck.locked) {
       await bcrypt.compare(String(password), DUMMY_HASH); // equalize response timing
       throw new ApiError(423, `Too many failed attempts. Try again in ${anonCheck.mins} minute(s).`, null, {
@@ -228,7 +260,8 @@ export const login = asyncHandler(async (req, res) => {
     await bcrypt.compare(String(password), DUMMY_HASH); // equalize response timing
     await recordIpFailure(req.ip);
     logSecurity(req, 'LOGIN_FAILED', { actor: null, success: false, identifier: normalizedEmail, reason: 'unknown_account' });
-    const anonRes = await recordAnonFailure(normalizedEmail);
+    const anonRes = await recordAnonFailure(normalizedEmail, req.ip);
+    if (captchaMode) throw await invalidWithCaptcha(null);
 
     if (anonRes.locked) {
       throw new ApiError(423, `Too many failed attempts. Account locked for ${anonRes.mins} minute(s).`, null, {
@@ -255,34 +288,52 @@ export const login = asyncHandler(async (req, res) => {
     await user.save({ validateModifiedOnly: true });
   }
 
-  // 4. Existing User Lockout Check
-  if (user.lockUntil && user.lockUntil > new Date()) {
+  // 4. Lockout checks. The 3-strike lock is per (account, client IP): wrong
+  // passwords from one network lock only that network out of the account, so
+  // a stranger who knows the email cannot lock its owner out. user.lockUntil
+  // is the account-wide backstop that only a distributed guess reaches
+  // (ACCOUNT_WIDE_LOCK_AFTER failures across networks); a network the owner
+  // has recently signed in from is let past it, never past its own lock.
+  const lockedOut = (lockUntil) => {
     recordLogin(req, user, false, 'account_locked');
     logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'account_locked' });
-    const retryAfterSeconds = Math.ceil((user.lockUntil.getTime() - Date.now()) / 1000);
+    const retryAfterSeconds = Math.ceil((new Date(lockUntil).getTime() - Date.now()) / 1000);
     const mins = Math.ceil(retryAfterSeconds / 60);
-    throw new ApiError(423, `Too many failed attempts. Try again in ${mins} minute(s).`, null, {
+    return new ApiError(423, `Too many failed attempts. Try again in ${mins} minute(s).`, null, {
       locked: true,
-      lockUntil: user.lockUntil.toISOString(),
+      lockUntil: new Date(lockUntil).toISOString(),
       retryAfterSeconds,
       remainingAttempts: 0,
     });
-  }
+  };
+  if (user.lockUntil && user.lockUntil > new Date() && !(await isKnownNetwork(user._id, req.ip))) throw lockedOut(user.lockUntil);
+  // In CAPTCHA mode this network's strikes ask for the CAPTCHA (step 1b) instead of locking.
+  const clientLock = captchaMode ? { locked: false } : await checkAccountLockout(user._id, req.ip);
+  if (clientLock.locked) throw lockedOut(clientLock.lockUntil);
 
   // 5. Password Verification
   const ok = await user.comparePassword(password);
   if (!ok) {
     await recordIpFailure(req.ip);
     logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'invalid_password' });
+    // Running total across every network (drives the backstop and the admin view).
     user.failedLogins = (user.failedLogins || 0) + 1;
     user.lastFailedLoginAt = new Date();
+    if (user.failedLogins >= ACCOUNT_WIDE_LOCK_AFTER && !(user.lockUntil && user.lockUntil > new Date())) {
+      user.lockUntil = new Date(Date.now() + ACCOUNT_WIDE_LOCK_MS);
+      logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'account_wide_lock' });
+    }
 
-    const remainder = user.failedLogins % 3;
-    if (remainder === 0) {
-      // Escalation reached: 3 fails -> 5m, 6 fails -> 10m, 9 fails -> 30m, 12+ fails -> 60m
-      const lockMs = calculateLockoutMs(user.failedLogins);
-      const lockMins = Math.round(lockMs / 60000);
-      user.lockUntil = new Date(Date.now() + lockMs);
+    // This network's strikes: 3 fails -> 5m, 6 fails -> 10m, 9 fails -> 30m, 12+ fails -> 60m
+    const strikes = await recordAccountFailure(user._id, req.ip);
+    if (captchaMode) {
+      await user.save({ validateModifiedOnly: true });
+      recordLogin(req, user, false, 'invalid_password');
+      throw await invalidWithCaptcha(user._id);
+    }
+    if (strikes.locked) {
+      const lockMs = strikes.retryAfterSeconds * 1000;
+      const lockMins = strikes.mins;
       user.lockoutCount = (user.lockoutCount || 0) + 1;
       await user.save({ validateModifiedOnly: true });
       recordLogin(req, user, false, 'invalid_password');
@@ -295,7 +346,7 @@ export const login = asyncHandler(async (req, res) => {
       notifyUsers([user._id], {
         type: 'system',
         title: 'Security Alert: Account Temporarily Locked',
-        message: `Your account was locked for ${lockMins} minutes following repeated failed sign-ins from ${device} (${req.ip}). If this wasn't you, contact your Class In-Charge or Admin.`,
+        message: `Sign-in from ${device} (${req.ip}) was blocked for ${lockMins} minutes after repeated failed attempts. Your usual devices are not affected. If this wasn't you, contact your Class In-Charge or Admin.`,
         link: '/settings/security',
       });
 
@@ -303,11 +354,11 @@ export const login = asyncHandler(async (req, res) => {
       sendMail({
         to: user.email,
         subject: 'Security Alert: Account Temporarily Locked - CampusConnect',
-        text: `Hi ${user.name},\n\nWe detected ${user.failedLogins} consecutive failed sign-in attempts to your CampusConnect account.\n\n• Device: ${device}\n• IP Address: ${req.ip}\n• Date & Time: ${new Date().toUTCString()}\n\nAs a security precaution, your account has been temporarily locked for ${lockMins} minutes.\n\nIf this was you, you may try again once the timer expires.\n\nIf this was NOT you, someone may be attempting to access your account. Contact your Class In-Charge or Admin to reset your password.\n\nCampusConnect Security Team`,
+        text: `Hi ${user.name},\n\nWe detected ${strikes.count} failed sign-in attempts to your CampusConnect account from one network.\n\n• Device: ${device}\n• IP Address: ${req.ip}\n• Date & Time: ${new Date().toUTCString()}\n\nAs a security precaution, sign-in from that network has been blocked for ${lockMins} minutes. Your other devices and networks are not affected.\n\nIf this was you, you may try again once the timer expires.\n\nIf this was NOT you, someone may be attempting to access your account. Contact your Class In-Charge or Admin to reset your password.\n\nCampusConnect Security Team`,
         html: `<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;">
           <h2 style="color:#e11d48;margin-top:0;">🛡️ Security Alert: Account Locked</h2>
           <p>Hi <strong>${user.name.replace(/[<>&]/g, '')}</strong>,</p>
-          <p>We detected <strong>${user.failedLogins} consecutive failed sign-in attempts</strong> to your CampusConnect account.</p>
+          <p>We detected <strong>${strikes.count} failed sign-in attempts</strong> to your CampusConnect account from one network. Sign-in from that network is blocked for ${lockMins} minutes; your other devices are not affected.</p>
           <div style="background:#f8fafc;padding:14px 18px;border-radius:10px;margin:18px 0;font-size:14px;color:#334155;">
             <p style="margin:4px 0;"><strong>Device:</strong> ${device}</p>
             <p style="margin:4px 0;"><strong>IP Address:</strong> ${req.ip}</p>
@@ -320,18 +371,16 @@ export const login = asyncHandler(async (req, res) => {
 
       throw new ApiError(423, `Too many failed attempts. Account locked for ${lockMins} minute(s).`, null, {
         locked: true,
-        lockUntil: user.lockUntil.toISOString(),
+        lockUntil: strikes.lockUntil,
         retryAfterSeconds,
         remainingAttempts: 0,
       });
     } else {
       await user.save({ validateModifiedOnly: true });
       recordLogin(req, user, false, 'invalid_password');
-      const remaining = 3 - remainder;
-      const nextLockMins = getNextLockMinutes(user.failedLogins);
-      throw new ApiError(401, `Invalid email or password. ${remaining} attempt(s) remaining before ${nextLockMins}-minute lock.`, null, {
-        remainingAttempts: remaining,
-        nextLockMinutes: nextLockMins,
+      throw new ApiError(401, `Invalid email or password. ${strikes.remainingAttempts} attempt(s) remaining before ${strikes.nextLockMinutes}-minute lock.`, null, {
+        remainingAttempts: strikes.remainingAttempts,
+        nextLockMinutes: strikes.nextLockMinutes,
       });
     }
   }
@@ -360,13 +409,15 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(503, maintenanceBody(await getPlatformState()).message, undefined, { code: 'MAINTENANCE', maintenance: true });
   }
 
-  // 6. Successful Authentication: reset the account's counters. The per-IP
-  // failure counter is left alone (it only expires by TTL; see loginSecurity.js).
+  // 6. Successful Authentication: reset the account's counters and this
+  // network's strikes. Other networks' strikes against the account stay (an
+  // attacker elsewhere keeps their lock), and the per-IP failure counter is
+  // left alone (it only expires by TTL; see loginSecurity.js).
   user.failedLogins = 0;
   user.lockUntil = undefined;
   user.lastFailedLoginAt = undefined;
   user.lastLogin = new Date();
-  await user.save({ validateModifiedOnly: true });
+  await Promise.all([user.save({ validateModifiedOnly: true }), clearAccountLock(user._id, req.ip)]);
 
   // New-device detection: first successful sign-in from this device label.
   const device = parseDevice(req.headers['user-agent'], req);

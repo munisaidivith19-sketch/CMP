@@ -19,13 +19,17 @@
  * Mobile sessions, and the exempt roles' web sessions, keep the existing rule
  * (7 days idle, lastUsedAt written at most every 5 minutes) unchanged.
  */
+import '../config/env.js'; // loads .env so WEB_IDLE_TIMEOUT_MINUTES is read
 import Session from '../models/Session.js';
 import { registerJob, runJob } from '../services/soc/monitors.js';
 import { disconnectSessions } from '../config/socket.js';
 import { logActivity } from './activity.js';
 import { logSecurity } from './securityLog.js';
 
-export const WEB_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+// Minutes of inactivity before a student's web session ends. Set WEB_IDLE_TIMEOUT_MINUTES in
+// .env (default 2, allowed 1–1440). The web client reads the same value from the server at sign-in.
+const idleMinutes = Number(process.env.WEB_IDLE_TIMEOUT_MINUTES);
+export const WEB_IDLE_TIMEOUT_MS = (Number.isFinite(idleMinutes) && idleMinutes > 0 ? Math.min(Math.max(idleMinutes, 1), 1440) : 2) * 60 * 1000;
 // The activity endpoint writes at most once per this interval per session
 // (the client sends at most once per 30 s; 25 s absorbs network jitter).
 export const ACTIVITY_WRITE_THROTTLE_MS = 25 * 1000;
@@ -64,7 +68,7 @@ export async function expireIdleSession(sessionId, userId, ip) {
   );
   disconnectSessions([sessionId]);
   if (res.modifiedCount) {
-    logActivity({ ip }, 'auth.idle_expired', { user: userId, entityType: 'session', entityId: sessionId, summary: 'web session idle > 2 min' });
+    logActivity({ ip }, 'auth.idle_expired', { user: userId, entityType: 'session', entityId: sessionId, summary: `web session idle > ${Math.round(WEB_IDLE_TIMEOUT_MS / 60000)} min` });
     logSecurity(ip ? { ip } : null, 'SESSION_EXPIRED', { actor: null, target: { _id: userId }, reason: 'idle_timeout_web', entityType: 'session', entityId: sessionId });
   }
 }

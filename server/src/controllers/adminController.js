@@ -17,6 +17,7 @@ import { notifyUsers } from '../utils/notify.js';
 import { logActivity } from '../utils/activity.js';
 import { pick } from '../utils/http.js';
 import { logSecurity } from '../utils/securityLog.js';
+import { clearAccountLocks } from '../utils/loginSecurity.js';
 import { assertIdentifiersFree, createOrRestoreUser, findDeletedAccount, purgeTimeFrom } from '../services/userRestore.js';
 
 // Security-relevant snapshots of an account, for before/after audit records.
@@ -410,6 +411,7 @@ export const updateUser = asyncHandler(async (req, res) => {
     user.failedLogins = 0;
     user.lastFailedLoginAt = undefined;
     user.lockoutCount = 0;
+    await clearAccountLocks(user._id); // every network's 3-strike lock on this account
     changes.push('account_unlocked');
     logActivity(req, 'admin.user_unlock', { entityType: 'user', entityId: user._id, summary: `Manual unlock for ${user.email}` });
   }

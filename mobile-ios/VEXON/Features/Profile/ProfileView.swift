@@ -16,6 +16,7 @@ struct ProfileView: View {
 
     var body: some View {
         List {
+            Group {
             Section {
                 HStack(spacing: 14) {
                     AsyncImage(url: avatarURL) { image in
@@ -25,9 +26,11 @@ struct ProfileView: View {
                     }
                     .frame(width: 64, height: 64)
                     .clipShape(Circle())
+                    .overlay { Circle().strokeBorder(Color.white.opacity(0.6), lineWidth: 2) }
+                    .shadow(color: Theme.primary.opacity(0.25), radius: 8, y: 4)
                     .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(user.displayName).font(.title3.bold())
+                        Text(user.displayName).font(.title3.bold()).lineLimit(2).minimumScaleFactor(0.8)
                         StatusPill(text: user.role.label, color: Theme.primary)
                     }
                 }
@@ -73,7 +76,10 @@ struct ProfileView: View {
             } footer: {
                 Text("Forgot your password? Contact your Class In-Charge or Admin to reset it.")
             }
+            }
+            .glassRow()
         }
+        .glassList()
         .navigationTitle("Profile")
         .refreshable {
             await app.reloadUser()

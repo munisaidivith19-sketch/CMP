@@ -217,6 +217,16 @@
 .dark .recharts-tooltip-cursor {
   fill: rgba(255, 255, 255, 0.03);
 }
+/* Map credit: the (i) button and its text behave as a button (hand cursor, no text-select caret). */
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib-button,
+.maplibregl-ctrl-attrib summary {
+  cursor: pointer;
+  user-select: none;
+}
+.maplibregl-ctrl-attrib a {
+  cursor: pointer;
+}
 /* ── Bus tracking map ─────────────────────────────────────────────
    Bus markers: number + route label ABOVE a bus-shaped icon; the
    element's bottom is anchored (with half-icon offset) so the icon centre

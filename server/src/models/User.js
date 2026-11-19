@@ -135,6 +135,9 @@ const userSchema = new Schema(
     deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     purgeAt: { type: Date, index: { sparse: true } },
     tokenVersion: { type: Number, default: 0, select: false },
+    // Failed sign-ins across every network since the last success (24 h cooldown).
+    // The 3-strike lock itself is per network, in LoginThrottle (utils/loginSecurity.js);
+    // lockUntil is the account-wide backstop reached only by a distributed guess.
     failedLogins: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, select: false },
     lastFailedLoginAt: { type: Date, select: false },

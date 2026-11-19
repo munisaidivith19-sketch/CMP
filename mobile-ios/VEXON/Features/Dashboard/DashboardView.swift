@@ -17,14 +17,14 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                hero
-                if FeatureAccess.allows(.timetable, for: user.role) { classCard }
-                if FeatureAccess.isStudent(user.role) { attendanceCard }
-                moduleGrid
+                hero.entrance(0)
+                if FeatureAccess.allows(.timetable, for: user.role) { classCard.entrance(1) }
+                if FeatureAccess.isStudent(user.role) { attendanceCard.entrance(2) }
+                moduleGrid.entrance(3)
             }
             .padding()
         }
-        .background(Theme.background.ignoresSafeArea())
+        .screenBackground()
         .navigationTitle("Home")
         .navigationDestination(for: Feature.self) { feature in
             FeatureDestination(feature: feature, user: user)
@@ -35,20 +35,35 @@ struct DashboardView: View {
     }
 
     private var hero: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Hello, \(user.displayName)")
                 .font(.title2.bold())
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
             HStack(spacing: 8) {
                 StatusPill(text: user.role.label, color: .white)
                 if let line = user.classLine {
-                    Text(line).font(.footnote)
+                    Text(line).font(.footnote).lineLimit(2)
                 }
             }
         }
         .foregroundStyle(.white)
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.heroGradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background {
+            shape.fill(Theme.heroGradient)
+                // Soft highlights, clipped to the card, that give the gradient depth.
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Color.white.opacity(0.16)).frame(width: 150, height: 150).offset(x: 46, y: -62)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    Circle().fill(Color.white.opacity(0.08)).frame(width: 120, height: 120).offset(x: -40, y: 60)
+                }
+                .clipShape(shape)
+                .shadow(color: Theme.primary.opacity(0.30), radius: 18, y: 10)
+        }
+        .overlay { shape.strokeBorder(Color.white.opacity(0.28), lineWidth: 1).allowsHitTesting(false) }
         .accessibilityElement(children: .combine)
     }
 
@@ -74,6 +89,8 @@ struct DashboardView: View {
             }
         }
         .card()
+        .animation(Motion.smooth, value: current.value?.current?.id)
+        .animation(Motion.smooth, value: current.value?.next?.id)
     }
 
     @ViewBuilder private var attendanceCard: some View {
@@ -91,30 +108,38 @@ struct DashboardView: View {
                 case .failed(let error):
                     Label(error.userMessage, systemImage: "exclamationmark.triangle").font(.footnote)
                 default:
-                    ProgressView()
+                    ProgressView().frame(height: 64)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
             .card()
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private var moduleGrid: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
             ForEach(modules) { feature in
                 NavigationLink(value: feature) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 12) {
                         Image(systemName: feature.systemImage)
-                            .font(.title2)
+                            .font(.title3.weight(.semibold))
                             .foregroundStyle(Theme.primary)
-                        Text(feature.title).font(.subheadline.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                            .background(Theme.primary.opacity(0.14), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        Text(feature.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.primary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(2)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
                     .card()
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityIdentifier("module.\(feature.rawValue)")
             }
         }
@@ -177,19 +202,33 @@ private struct SlotLine: View {
 struct AttendanceRing: View {
     let percentage: Double
     let threshold: Double
+    /// The ring draws itself in the first time it appears.
+    @State private var drawn = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var color: Color { percentage >= threshold ? Theme.success : Theme.danger }
+    private var fraction: Double { max(0, min(1, percentage / 100)) }
 
     var body: some View {
         ZStack {
             Circle().stroke(color.opacity(0.18), lineWidth: 8)
             Circle()
-                .trim(from: 0, to: min(1, percentage / 100))
+                .trim(from: 0, to: drawn ? fraction : 0)
                 .stroke(color, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text("\(Int(percentage.rounded()))%")
                 .font(.subheadline.weight(.bold))
+                .monospacedDigit()
                 .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                .contentTransition(.numericText())
+                .padding(.horizontal, 10)
+        }
+        .padding(4) // the stroke is centred on the circle's edge; keep it inside the frame
+        .animation(reduceMotion ? Motion.reduced : Motion.smooth, value: percentage)
+        .onAppear {
+            guard !drawn else { return }
+            withAnimation(reduceMotion ? Motion.reduced : .spring(response: 0.9, dampingFraction: 0.85)) { drawn = true }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Attendance \(Int(percentage.rounded())) percent, threshold \(Int(threshold)) percent")

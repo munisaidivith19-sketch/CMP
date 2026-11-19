@@ -14,7 +14,7 @@ import { POLICY_MODES, applyPolicies, listPolicyTargets, policyView } from '../s
 import { adminModulesFor, effectiveDelegation, grantFor, isPolicyManaged, isStaffGrantee, POLICY_CATALOGUE, STAFF_GRANT_ROLES, staffCatalogue, staffHolds } from '../policies.js';
 import { ADMIN_MODULES, ADMIN_MODULE_SECTIONS } from '../constants/adminModules.js';
 import { idParam, validate } from '../middleware/validate.js';
-import { clientErrorLimiter, aiHourLimiter, aiMinuteLimiter, authLimiter, refreshLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
+import { clientErrorLimiter, aiHourLimiter, aiMinuteLimiter, authLimiter, loginLimiter, refreshLimiter, otpLimiter, returnLocationLimiter, passwordResetLimiter, passwordResetSubmitLimiter, uploadLimiter, verifyLimiter, writeLimiter } from '../middleware/rateLimit.js';
 import { ApiError } from '../utils/http.js';
 import { realtimeChanges } from '../middleware/realtime.js';
 import { upload } from '../utils/storage.js';
@@ -81,6 +81,7 @@ import {
 } from '../constants.js';
 
 import * as auth from '../controllers/authController.js';
+import { decryptLoginPassword, loginPublicKey } from '../services/loginCrypto.js';
 import * as legal from '../controllers/legalController.js';
 import { POLICY_IDS } from '../legal/registry.js';
 import * as soc from '../controllers/socController.js';
@@ -299,11 +300,19 @@ router.post(
   validate,
   auth.register
 );
+// Public key the web app encrypts the sign-in password with (see services/loginCrypto.js).
+router.get('/auth/login-key', refreshLimiter, (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(loginPublicKey());
+});
 router.post(
   '/auth/login',
-  authLimiter,
+  loginLimiter,
+  decryptLoginPassword,
   body('email').trim().isEmail().withMessage('Enter a valid email').normalizeEmail({ gmail_remove_dots: false }),
   body('password').isString().notEmpty().withMessage('Password is required'),
+  // Cloudflare Turnstile token, when the server asked for the CAPTCHA (services/turnstile.js).
+  body('captchaToken').optional({ values: 'undefined' }).isString().isLength({ max: 2048 }),
   validate,
   auth.login
 );

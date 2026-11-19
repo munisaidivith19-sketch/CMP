@@ -8,7 +8,7 @@ import { termsAcceptanceRequired } from '../services/legal.js';
 // Public endpoints that keep working in maintenance so the Super Admin can
 // still sign in (login / refresh refuse everyone else themselves) and every
 // client can ask what is going on.
-const PUBLIC_OPEN = new Set(['/auth/login', '/auth/refresh', '/auth/logout', '/platform/status']);
+const PUBLIC_OPEN = new Set(['/auth/login', '/auth/login-key', '/auth/refresh', '/auth/logout', '/platform/status']);
 
 /**
  * Before authentication: public endpoints are closed outside normal mode.

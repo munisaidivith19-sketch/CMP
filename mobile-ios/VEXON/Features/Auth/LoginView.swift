@@ -57,6 +57,7 @@ final class LoginFormModel {
 struct LoginView: View {
     let sessionEnded: Bool
     @Environment(AppModel.self) private var app
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var form = LoginFormModel()
     @State private var showServer = false
     @State private var showPassword = false
@@ -65,54 +66,73 @@ struct LoginView: View {
     private enum Field { case email, password }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    header
-                    VStack(alignment: .leading, spacing: 14) {
-                        banners
-                        emailField
-                        passwordField
-                        if let message = form.errorMessage, !form.isLocked {
-                            Text(message)
-                                .font(.footnote)
-                                .foregroundStyle(Theme.danger)
-                                .accessibilityIdentifier("login.error")
-                        }
-                        Button {
-                            Task { await form.submit(using: app.signIn) }
-                        } label: {
-                            Group {
-                                if form.isSubmitting { ProgressView().tint(.white) } else { Text(form.isLocked ? "Locked" : "Sign in") }
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(form.isSubmitting || form.isLocked)
-                        .accessibilityIdentifier("login.submit")
-
-                        Text("Forgot your password? Contact your Class In-Charge or Admin to reset your password.")
+        ScrollView {
+            VStack(spacing: 22) {
+                header
+                    .entrance(0)
+                VStack(alignment: .leading, spacing: 14) {
+                    banners
+                    emailField
+                    passwordField
+                    if let message = form.errorMessage, !form.isLocked {
+                        Text(message)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity)
-                            .multilineTextAlignment(.center)
+                            .foregroundStyle(Theme.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
+                            .accessibilityIdentifier("login.error")
                     }
-                    .card()
-
                     Button {
-                        showServer = true
+                        focus = nil
+                        Task { await form.submit(using: app.signIn) }
                     } label: {
-                        Label(app.serverAddress.isEmpty ? "Set server address" : "Server: \(displayHost)", systemImage: "server.rack")
-                            .font(.footnote)
+                        if form.isSubmitting { ProgressView().tint(.white) } else { Text(form.isLocked ? "Locked" : "Sign in") }
                     }
-                    .accessibilityIdentifier("login.server")
+                    .buttonStyle(.primary)
+                    .disabled(form.isSubmitting || form.isLocked)
+                    .accessibilityIdentifier("login.submit")
+
+                    Text("Forgot your password? Contact your Class In-Charge or Admin to reset your password.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(20)
+                .glass(cornerRadius: 26)
+                .entrance(1)
+                .animation(reduceMotion ? Motion.reduced : Motion.snappy, value: form.errorMessage)
+                .animation(reduceMotion ? Motion.reduced : Motion.snappy, value: form.emailError)
+                .animation(reduceMotion ? Motion.reduced : Motion.snappy, value: form.passwordError)
+                .animation(reduceMotion ? Motion.reduced : Motion.snappy, value: form.lockedMessage)
+
+                Button {
+                    showServer = true
+                } label: {
+                    Label(app.serverAddress.isEmpty ? "Set server address" : "Server: \(displayHost)", systemImage: "server.rack")
+                        .font(.footnote.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .glass(in: Capsule(), interactive: true)
+                }
+                .buttonStyle(.pressable)
+                .entrance(2)
+                .accessibilityIdentifier("login.server")
             }
-            .background(Theme.background.ignoresSafeArea())
-            .scrollDismissesKeyboard(.interactively)
-            .sheet(isPresented: $showServer) { ServerSettingsView() }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
+            // Comfortable on the largest iPhone, full width on the smallest.
+            .frame(maxWidth: 480)
+            .frame(maxWidth: .infinity)
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .defaultScrollAnchor(.center)
+        .scrollDismissesKeyboard(.interactively)
+        .screenBackground()
+        .sheet(isPresented: $showServer) { ServerSettingsView() }
     }
 
     private var displayHost: String {
@@ -124,16 +144,20 @@ struct LoginView: View {
             Image("Logo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 84, height: 84)
+                .frame(width: 72, height: 72)
+                .padding(18)
+                .glass(in: Circle())
                 .accessibilityLabel("College logo")
             Text("Welcome back")
                 .font(.largeTitle.bold())
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.7)
             Text("Sign in with your college email to continue.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, 24)
     }
 
     @ViewBuilder private var banners: some View {
@@ -141,6 +165,7 @@ struct LoginView: View {
             Label("You were signed out because your session ended or was revoked. Please sign in again.", systemImage: "info.circle")
                 .font(.footnote)
                 .foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("login.sessionEnded")
         }
         if let locked = form.lockedMessage {
@@ -154,16 +179,33 @@ struct LoginView: View {
             }
             .font(.footnote)
             .foregroundStyle(Theme.danger)
+            .fixedSize(horizontal: false, vertical: true)
+            .transition(.opacity)
         }
         if !form.isLocked, let left = form.remainingAttempts, left > 0 {
             Text("Invalid credentials. \(left) attempt\(left == 1 ? "" : "s") remaining before temporary lockout.")
                 .font(.footnote)
                 .foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    /// The well a text field sits in; the rim lights up while it has focus.
+    private func fieldWell(focused: Bool, invalid: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return shape
+            .fill(GlassTokens.well)
+            .overlay {
+                shape.strokeBorder(
+                    invalid ? Theme.danger : (focused ? Theme.primary : Color.primary.opacity(0.10)),
+                    lineWidth: focused || invalid ? 1.5 : 1
+                )
+            }
+            .animation(Motion.snappy, value: focused)
+    }
+
     private var emailField: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("College email").font(.subheadline.weight(.semibold))
             TextField("you@campus.edu", text: $form.email)
                 .textContentType(.username)
@@ -173,20 +215,21 @@ struct LoginView: View {
                 .submitLabel(.next)
                 .focused($focus, equals: .email)
                 .onSubmit { focus = .password }
-                .padding(12)
-                .background(.background, in: RoundedRectangle(cornerRadius: 10))
+                .padding(.horizontal, 12)
+                .frame(minHeight: 48)
+                .background { fieldWell(focused: focus == .email, invalid: form.emailError != nil) }
                 .disabled(form.isLocked)
                 .accessibilityIdentifier("login.email")
             if let error = form.emailError {
-                Text(error).font(.caption).foregroundStyle(Theme.danger)
+                Text(error).font(.caption).foregroundStyle(Theme.danger).transition(.opacity)
             }
         }
     }
 
     private var passwordField: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Password").font(.subheadline.weight(.semibold))
-            HStack {
+            HStack(spacing: 0) {
                 Group {
                     if showPassword {
                         TextField("Password", text: $form.password)
@@ -200,21 +243,27 @@ struct LoginView: View {
                 .submitLabel(.go)
                 .focused($focus, equals: .password)
                 .onSubmit { Task { await form.submit(using: app.signIn) } }
+                .frame(minHeight: 48)
                 .accessibilityIdentifier("login.password")
                 Button {
+                    // Swapping the secure field for a plain one drops focus; keep the keyboard up.
+                    let wasEditing = focus == .password
                     showPassword.toggle()
+                    if wasEditing { Task { focus = .password } }
                 } label: {
                     Image(systemName: showPassword ? "eye.slash" : "eye")
-                        .frame(width: 44, height: 44)
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: 44, height: 48)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel(showPassword ? "Hide password" : "Show password")
                 .foregroundStyle(.secondary)
             }
             .padding(.leading, 12)
-            .background(.background, in: RoundedRectangle(cornerRadius: 10))
+            .background { fieldWell(focused: focus == .password, invalid: form.passwordError != nil) }
             .disabled(form.isLocked)
             if let error = form.passwordError {
-                Text(error).font(.caption).foregroundStyle(Theme.danger)
+                Text(error).font(.caption).foregroundStyle(Theme.danger).transition(.opacity)
             }
         }
     }
@@ -243,8 +292,9 @@ struct OfflineLaunchView: View {
             .buttonStyle(.borderedProminent)
             .disabled(retrying)
             Button("Go to sign in") { app.skipOfflineLaunch() }
+                .frame(minHeight: 44)
         }
-        .background(Theme.background.ignoresSafeArea())
+        .screenBackground()
     }
 }
 
@@ -276,6 +326,7 @@ struct ServerSettingsView: View {
                     Text(error).foregroundStyle(Theme.danger)
                 }
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle("Server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -297,5 +348,6 @@ struct ServerSettingsView: View {
             }
             .onAppear { address = app.serverAddress }
         }
+        .glassSheet()
     }
 }

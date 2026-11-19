@@ -288,8 +288,11 @@ test('I login: parallel wrong passwords cannot race past the 3-strike lockout', 
   const statuses = attempts.map((r) => r.status);
   assert.ok(statuses.filter((s) => s === 401).length <= 2, `at most 2 plain failures before the lock, got ${statuses}`);
   const row = await ctx.models.User.findById(victim._id).select('+failedLogins +lockUntil').lean();
-  assert.ok(row.lockUntil && row.lockUntil > new Date(), 'the account is locked');
   assert.ok(row.failedLogins <= 3, `only 3 guesses were checked, got ${row.failedLogins}`);
+  // The lock is per (account, network): it lives in LoginThrottle, not on the account itself.
+  const lock = await ctx.models.LoginThrottle.findOne({ kind: 'account' }).lean();
+  assert.ok(lock && lock.lockUntil > new Date(), 'this network is locked out of the account');
+  assert.ok(!row.lockUntil, 'the account itself is not locked (only a distributed guess reaches the backstop)');
 
   const right = await ctx.request('POST', '/auth/login', { body: { email: victim.email, password: PASSWORD } });
   assert.equal(right.status, 423, 'even the right password waits for the lock to expire');

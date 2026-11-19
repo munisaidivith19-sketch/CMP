@@ -25,7 +25,8 @@ test('the sidebar of an Admin with only Gate Pass and Hostel ticked shows exactl
 test('ticked modules show every sidebar item they cover, in the sidebar\'s own sections', () => {
   const r = render(admin, { account: account(['people', 'grievances', 'analytics', 'securityLogs', 'chat']) });
   assert.deepEqual(r.main, ['Dashboard', 'People']);
-  assert.deepEqual(r.campus, ['Chat', 'Grievances']);
+  // An Admin manages grievances from the admin section (below), not the student-facing campus entry.
+  assert.deepEqual(r.campus, ['Chat']);
   assert.deepEqual(r.admin, ['Analytics', 'Grievances', 'Users', 'Group requests', 'Security & Logs']);
 });
 

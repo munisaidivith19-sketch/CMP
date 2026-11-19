@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -160,9 +161,9 @@ private fun FieldBox(label: String?, error: String?, onClick: () -> Unit, conten
     Column {
         if (label != null) Label(label, Modifier.padding(bottom = 6.dp))
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.whiteGlass)
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.glass(0.92f))
                 .border(1.dp, if (error != null) C.danger else C.border, RoundedCornerShape(18.dp))
-                .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
+                .clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 13.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) { content() }
@@ -243,7 +244,8 @@ fun PickerField(label: String?, value: String?, onChange: (String) -> Unit, opti
     }
     if (open) {
         Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-            Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
+            // imePadding: the list and "Close" stay above the keyboard while searching.
+            Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().imePadding().padding(16.dp)) {
                 H2(label ?: "Choose one", Modifier.padding(bottom = 12.dp))
                 Input(q, { q = it }, placeholder = "Search")
                 LazyColumn(Modifier.weight(1f).padding(vertical = 12.dp)) {

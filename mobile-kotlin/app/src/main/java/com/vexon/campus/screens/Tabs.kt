@@ -1,6 +1,8 @@
 package com.vexon.campus.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,11 +62,27 @@ import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
+import com.vexon.campus.ui.AppBackdrop
+import com.vexon.campus.ui.Glass
+import com.vexon.campus.ui.Motion
+import com.vexon.campus.ui.glass
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -187,8 +205,12 @@ fun TabsScreen() {
     val holder = rememberSaveableStateHolder()
     fun badge(n: Int?): String? = n?.takeIf { it > 0 }?.let { if (it > 99) "99+" else "$it" }
 
+    val haptics = LocalHapticFeedback.current
+    AppBackdrop {
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f)) {
+        // The tab bar below already sits above the system navigation bar, so the
+        // tab's own screen must not leave room for it a second time.
+        Box(Modifier.weight(1f).consumeWindowInsets(WindowInsets.navigationBars)) {
             holder.SaveableStateProvider(Nav.tab) {
                 when (Nav.tab) {
                     "chat" -> ChatListScreen()
@@ -199,31 +221,52 @@ fun TabsScreen() {
                 }
             }
         }
-        NavigationBar(containerColor = C.glass(0.96f), tonalElevation = 0.dp) {
+        // A glass bar in its own row: it never covers the screen above it.
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp).padding(top = 6.dp, bottom = 8.dp)
+                .glass(RoundedCornerShape(26.dp), fill = Glass.strongFill, elevation = 10.dp)
+                .padding(5.dp).selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             TAB_SPECS.filter { !coe || it.name in COE_TABS }.forEach { t ->
                 val count = when (t.name) {
                     "chat" -> badge(chat.data["total"].int)
                     "notifications" -> badge(notes.data["unread"].int)
                     else -> null
                 }
-                NavigationBarItem(
-                    selected = Nav.tab == t.name,
-                    onClick = { Nav.tab = t.name },
-                    icon = {
-                        androidx.compose.material3.BadgedBox(badge = {
-                            if (count != null) androidx.compose.material3.Badge(containerColor = C.danger) {
-                                Text(count, fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                            }
-                        }) { Icon(t.icon, t.title, Modifier.size(22.dp)) }
-                    },
-                    label = { Text(t.title, fontFamily = Jakarta, fontWeight = FontWeight.SemiBold, fontSize = 11.sp) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = C.primary, selectedTextColor = C.primary,
-                        unselectedIconColor = C.muted, unselectedTextColor = C.muted, indicatorColor = C.primarySoft,
-                    ),
-                )
+                TabItem(t, Nav.tab == t.name, count, Modifier.weight(1f)) {
+                    if (Nav.tab != t.name) {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        Nav.tab = t.name
+                    }
+                }
             }
         }
+    }
+    }
+}
+
+@Composable
+private fun TabItem(tab: TabSpec, selected: Boolean, count: String?, modifier: Modifier, onClick: () -> Unit) {
+    val tint by animateColorAsState(if (selected) C.primary else C.muted, tween(Motion.QUICK_MS), label = "tabTint")
+    val pill by animateColorAsState(if (selected) C.primarySoft else C.primarySoft.copy(alpha = 0f), tween(Motion.QUICK_MS), label = "tabPill")
+    val lift by animateFloatAsState(if (selected) 1.12f else 1f, Motion.press(), label = "tabIcon")
+    Column(
+        modifier.heightIn(min = 54.dp).clip(RoundedCornerShape(21.dp)).background(pill)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+    ) {
+        androidx.compose.material3.BadgedBox(badge = {
+            if (count != null) androidx.compose.material3.Badge(containerColor = C.danger) {
+                Text(count, fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            }
+        }) { Icon(tab.icon, null, Modifier.size(22.dp).scale(lift), tint = tint) }
+        Text(
+            tab.title, color = tint, fontFamily = Jakarta, fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+            fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -271,10 +314,13 @@ private fun Greeting(user: JsonElement, emoji: String, actions: @Composable () -
 
 @Composable
 private fun HeroCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Brush.linearGradient(Grad.hero)).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp), content = content,
-    )
+    val shape = RoundedCornerShape(28.dp)
+    Box(Modifier.fillMaxWidth().clip(shape).background(Brush.linearGradient(Grad.hero)).border(1.dp, Glass.shine, shape)) {
+        // Soft highlights give the gradient depth; they are clipped to the card.
+        Box(Modifier.align(Alignment.TopEnd).offset(46.dp, (-62).dp).size(150.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color(0x29FFFFFF)))
+        Box(Modifier.align(Alignment.BottomStart).offset((-40).dp, 60.dp).size(120.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color(0x14FFFFFF)))
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
+    }
 }
 
 @Composable
@@ -334,7 +380,8 @@ private fun SecurityHome(user: JsonElement) {
 @Composable
 private fun GateAction(modifier: Modifier, gradient: List<Color>, icon: ImageVector, title: String, text: String, onClick: () -> Unit) {
     Column(
-        modifier.clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(gradient)).clickable(onClick = onClick).padding(20.dp),
+        modifier.pressable(onClick, 0.97f).clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(gradient))
+            .border(1.dp, Glass.shine, RoundedCornerShape(24.dp)).padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
     ) {
         Icon(icon, null, Modifier.size(30.dp), tint = Color.White)
@@ -539,8 +586,8 @@ private fun PreviewSheet(title: String, viewAll: String?, onClose: () -> Unit, c
 
 @Composable
 private fun SheetRow(label: String, value: String?, tone: Color = Color.Unspecified) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.whiteGlass).padding(horizontal = 14.dp, vertical = 11.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Small(label)
+    Row(Modifier.fillMaxWidth().glass(RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 11.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Small(label, Modifier.weight(1f))
         Strong(value ?: "—", color = tone)
     }
 }
@@ -822,7 +869,7 @@ fun NotificationsScreen() {
     ) { n ->
         val read = n["read"].bool
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(if (read) C.glass(0.6f) else C.glass(0.95f))
+            Modifier.fillMaxWidth().glass(RoundedCornerShape(22.dp), fill = if (read) Glass.fill else Glass.strongFill)
                 .clickable {
                     if (!read) scope.launch { runCatching { Api.markNotificationRead(n.id.orEmpty()) } }
                     n["link"].text?.let { Nav.push(it) }

@@ -1,8 +1,27 @@
 package com.vexon.campus
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.vexon.campus.ui.AppBackdrop
+import com.vexon.campus.ui.Glass
+import com.vexon.campus.ui.Motion
+import com.vexon.campus.ui.glass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,7 +93,6 @@ object AppState {
      * their saved session is still valid — so report "offline" and let them retry.
      */
     suspend fun restore() {
-        launchOffline.value = false
         withContext(Dispatchers.IO) { ServerConfig.loadOverride() }
         when (Auth.refreshSession()) {
             RefreshResult.Offline -> {
@@ -83,7 +101,11 @@ object AppState {
             }
             else -> Unit
         }
+        // Order matters: "Try again" runs inside the offline screen's own coroutine scope, and
+        // clearing the flag removes that screen and cancels this coroutine. Mark the session
+        // checked first, so the app never ends up on a blank screen with nothing left to finish it.
         Auth.sessionChecked()
+        launchOffline.value = false
     }
 
     fun skipOffline() {
@@ -106,7 +128,7 @@ fun AppRoot() {
         return
     }
     if (!auth.ready) {
-        Box(Modifier.fillMaxSize().background(C.bg))
+        AppBackdrop {}
         return
     }
 
@@ -164,17 +186,37 @@ fun AppRoot() {
 
     BackHandler(enabled = !blocked && (Nav.canGoBack || Nav.tab != "index")) { Nav.back() }
 
-    Box(Modifier.fillMaxSize().background(C.bg)) {
-        // Back from the gate leaves the app (system default); the stack in Nav is kept for later.
-        when {
-            !blocked -> StackHost()
-            passwordPending -> PasswordChangeRequiredScreen()
-            else -> notifications?.let { NotificationsRequiredScreen(it) }
+    val online by Connection.online.collectAsState()
+    val offlineBar = userId != null && !online
+    Column(Modifier.fillMaxSize().background(C.bg)) {
+        // The offline pill has a row of its own under the status bar and the app moves
+        // down for it, so it never sits on top of a title or a header button.
+        AnimatedVisibility(offlineBar, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { ConnectionBanner() }
+        Box(Modifier.weight(1f).fillMaxWidth().then(if (offlineBar) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)) {
+            // Back from the gate leaves the app (system default); the stack in Nav is kept for later.
+            val gate = when {
+                !blocked -> 0
+                passwordPending -> 1
+                else -> 2
+            }
+            Crossfade(gate, animationSpec = tween(Motion.ENTER_MS), label = "gate") { g ->
+                when (g) {
+                    0 -> StackHost()
+                    1 -> PasswordChangeRequiredScreen()
+                    else -> notifications?.let { NotificationsRequiredScreen(it) }
+                }
+            }
+            if (userId != null && !blocked) InAppBannerHost()
+            DialogHost()
         }
-        ConnectionBanner(signedIn = userId != null)
-        if (userId != null && !blocked) InAppBannerHost()
-        DialogHost()
     }
+}
+
+/** What [StackHost] showed last, to tell a "back" from any other change of the stack. */
+private class StackMemory {
+    var last: List<Nav.Entry> = emptyList()
+    /** The screen that was just popped: kept on top while it slides away. */
+    var leaving by mutableStateOf<Nav.Entry?>(null)
 }
 
 /** Screens below the top stay composed (like a native stack) but are not laid out on screen. */
@@ -183,23 +225,54 @@ private val Hidden = Modifier.layout { measurable, constraints ->
     layout(0, 0) {}
 }
 
+/**
+ * The navigation stack. A new screen slides in from the right over the one
+ * below; going back slides the top screen away to reveal the one below, which
+ * was kept alive (scroll position, typed text) the whole time. With the
+ * system's "Remove animations" setting both are instant.
+ */
 @Composable
 private fun StackHost() {
     val settled = remember { mutableStateMapOf<Long, Boolean>() }
-    val stack = Nav.stack
-    stack.forEachIndexed { i, entry ->
+    val memory = remember { StackMemory() }
+    val stack = Nav.stack.toList()
+
+    // A plain "back" (the old top removed, everything under it unchanged) animates out.
+    val before = memory.last
+    val poppedTop = before.lastOrNull()
+    if (poppedTop != null && stack.isNotEmpty() && before.size == stack.size + 1 &&
+        before.dropLast(1).map { it.id } == stack.map { it.id }
+    ) {
+        memory.leaving = poppedTop
+    } else if (memory.leaving != null && before.map { it.id } != stack.map { it.id }) {
+        memory.leaving = null // the stack changed again: stop the old animation
+    }
+    memory.last = stack
+
+    val leaving = memory.leaving
+    val shown = if (leaving != null) stack + leaving else stack
+    shown.forEachIndexed { i, entry ->
         key(entry.id) {
-            val top = i == stack.lastIndex
-            val visible = top || (i == stack.lastIndex - 1 && settled[stack.last().id] != true)
-            val anim = remember { Animatable(if (i == 0) 0f else 1f) }
-            LaunchedEffect(Unit) {
-                anim.animateTo(0f, tween(220))
-                settled[entry.id] = true
+            val isLeaving = leaving != null && entry.id == leaving.id
+            val top = !isLeaving && i == stack.lastIndex
+            val visible = isLeaving || top || (i == stack.lastIndex - 1 && settled[stack.last().id] != true)
+            val root = i == 0
+            // 1 = fully off to the right and transparent, 0 = in place.
+            val anim = remember { Animatable(1f) }
+            LaunchedEffect(isLeaving) {
+                if (isLeaving) {
+                    anim.animateTo(1f, tween(Motion.EXIT_MS, easing = FastOutLinearInEasing))
+                    if (memory.leaving?.id == entry.id) memory.leaving = null
+                } else {
+                    anim.animateTo(0f, tween(Motion.ENTER_MS, easing = FastOutSlowInEasing))
+                    settled[entry.id] = true
+                }
             }
             Box(
                 Modifier.fillMaxSize()
                     .then(if (visible) Modifier else Hidden)
-                    .graphicsLayer { translationX = anim.value * size.width * 0.3f; alpha = 1f - anim.value }
+                    // The first screen (tabs, sign-in) only fades in; the others also slide.
+                    .graphicsLayer { translationX = if (root) 0f else anim.value * size.width * 0.25f; alpha = 1f - anim.value }
                     // Touches on the top screen never fall through to the one below.
                     .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
             ) { RouteContent(entry.route) }
@@ -207,20 +280,18 @@ private fun StackHost() {
     }
 }
 
-/** Thin banner while the server is unreachable; queries refetch when it comes back. */
+/** Thin pill while the server is unreachable; queries refetch when it comes back. */
 @Composable
-private fun ConnectionBanner(signedIn: Boolean) {
-    val online by Connection.online.collectAsState()
-    if (online || !signedIn) return
-    Box(Modifier.fillMaxSize().statusBarsPadding().padding(top = 4.dp), contentAlignment = Alignment.TopCenter) {
+private fun ConnectionBanner() {
+    Box(Modifier.fillMaxWidth().statusBarsPadding().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
         Row(
-            Modifier.alpha(0.92f).clip(CircleShape).background(Color(0xFF1B1D3A)).padding(horizontal = 14.dp, vertical = 7.dp)
+            Modifier.glass(CircleShape, fill = Glass.strongFill).padding(horizontal = 14.dp, vertical = 7.dp)
                 .semantics { liveRegion = LiveRegionMode.Polite },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Icon(Icons.Rounded.WifiOff, null, Modifier.size(14.dp), tint = Color.White)
-            Text("Offline — reconnecting…", color = Color.White, fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Icon(Icons.Rounded.WifiOff, null, Modifier.size(14.dp), tint = C.warningText)
+            Text("Offline — reconnecting…", color = C.ink, fontFamily = Jakarta, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
         }
     }
 }

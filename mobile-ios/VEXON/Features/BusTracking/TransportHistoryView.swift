@@ -17,6 +17,7 @@ struct TransportHistoryView: View {
 
     var body: some View {
         List {
+            Group {
             Section {
                 Picker("Period", selection: $range) {
                     Text("Today").tag("day")
@@ -60,7 +61,10 @@ struct TransportHistoryView: View {
                     }
                 }
             }
+            }
+            .glassRow()
         }
+        .glassList()
         .navigationTitle("Journey history")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load(reset: true) }
@@ -69,7 +73,9 @@ struct TransportHistoryView: View {
 
     private func load(reset: Bool) async {
         if !reset, let result, !result.hasMore { return }
-        if reset { state = .loading }
+        // Keep the trips on screen while they refresh (pull to refresh, a filter change);
+        // the spinner replaces the list only when there is nothing to show yet.
+        if reset && trips.isEmpty { state = .loading }
         let page = reset ? 1 : (result?.page ?? 0) + 1
         do {
             let r = try await app.client.send(API.transportHistory(range: range, direction: direction, status: status, page: page))
@@ -124,6 +130,7 @@ struct TransportHistoryTripView: View {
     var body: some View {
         LoadStateView(state: state, retry: { await load() }) { d in
             List {
+                Group {
                 Section {
                     HStack(spacing: 8) {
                         StatusPill(text: JourneyFormat.tripStatus(d.trip.status, interrupted: d.trip.interrupted == true), color: statusColor(d.trip))
@@ -151,8 +158,12 @@ struct TransportHistoryTripView: View {
                 } footer: {
                     Text("Only recorded times are shown. “Late / early” is measured against the route timetable, where one exists.")
                 }
+                }
+                .glassRow()
             }
+            .scrollContentBackground(.hidden)
         }
+        .screenBackground()
         .navigationTitle(state.value.map { "Bus \($0.trip.bus?.number ?? "—")" } ?? "Trip")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }

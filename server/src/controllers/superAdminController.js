@@ -16,6 +16,7 @@ import { logAudit } from '../utils/auditLog.js';
 import { notifyUsers } from '../utils/notify.js';
 import { emitToRoles, disconnectAllExcept } from '../config/socket.js';
 import { revokeSessions } from './authController.js';
+import { clearAccountLocks } from '../utils/loginSecurity.js';
 import { applyDelegation, applyPolicies } from '../services/adminPolicies.js';
 import { DELEGATABLE_ROLES, POLICY_CATALOGUE, adminModulesFor, modulesToPolicies, normalizePolicies } from '../policies.js';
 import { ADMIN_MODULES, ADMIN_MODULE_SECTIONS } from '../constants/adminModules.js';
@@ -215,6 +216,7 @@ export const resetAdminPassword = asyncHandler(async (req, res) => {
   admin.lastFailedLoginAt = undefined;
   admin.lockoutCount = 0;
   await admin.save();
+  await clearAccountLocks(admin._id);
   const revoked = await revokeSessions({ user: admin._id }, 'super_admin_password_reset');
   const reason = String(req.body.reason || '').trim() || undefined;
   await logAudit(req, 'ADMIN_PASSWORD_RESET', { target: admin, reason, details: { sessionsRevoked: revoked, forcedChange: true } });

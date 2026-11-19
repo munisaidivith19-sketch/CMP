@@ -79,7 +79,8 @@ export const CAMPUS = [
   { to: '/hostel', label: 'Hostel', icon: BedDouble, excludeRoles: ROLES.filter((r) => !HOSTEL_ROLES.includes(r)) },
   { to: '/lost-found', label: 'Lost & found', icon: PackageSearch },
   // Grievances are filed by students only; the server refuses a club admin's account.
-  { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning, excludeRoles: ['club_admin'] },
+  // Admin and Chairman manage them from the admin section's Grievances dashboard instead.
+  { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning, excludeRoles: ['club_admin', 'admin', 'chairman'] },
   { to: '/alumni', label: 'Alumni Network', icon: GraduationCap, excludeRoles: ['warden', 'security'] },
   { to: '/sos', label: 'Emergency SOS', icon: AlertOctagon, excludeRoles: ['student', 'club_admin'] },
   { to: '/analytics', label: 'Insights', icon: LineChart },

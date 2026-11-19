@@ -28,7 +28,13 @@ export default function RoutePreviewMap({ styleUrl, attribution, stops, geometry
       style: styleUrl,
       center: DEFAULT_VIEW.center,
       zoom: DEFAULT_VIEW.zoom,
-      attributionControl: { compact: true, customAttribution: attribution },
+      // The style already carries the required credit; collapse it to the (i) button.
+      attributionControl: { compact: true },
+    });
+    m.once('load', () => {
+      const a = container.current?.querySelector('.maplibregl-ctrl-attrib');
+      a?.classList.remove('maplibregl-compact-show');
+      a?.removeAttribute('open');
     });
     map.current = m;
     m.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');

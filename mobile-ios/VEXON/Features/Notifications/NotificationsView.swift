@@ -10,6 +10,8 @@ struct NotificationsView: View {
     @State private var page = 0
     @State private var hasMore = false
     @State private var state: LoadState<Void> = .idle
+    @State private var showSettings = false
+    @State private var loadingMore = false
 
     var body: some View {
         LoadStateView(
@@ -25,28 +27,34 @@ struct NotificationsView: View {
                     Button {
                         Task { await markRead(item) }
                     } label: {
-                        NotificationRow(item: item)
+                        // The card is the button's label, so the whole card is the tap target.
+                        NotificationRow(item: item).glassCard()
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
+                    .clearListRow()
                     .onAppear {
                         if item.id == items.last?.id, hasMore { Task { await load(reset: false) } }
                     }
                 }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
+        .screenBackground()
         .navigationTitle("Notifications")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Mark all as read") { Task { await markAllRead() } }
                         .disabled(unread == 0)
-                    NavigationLink("Notification settings") { NotificationSettingsView() }
+                    // A NavigationLink inside a Menu does not push; open the screen from state instead.
+                    Button("Notification settings") { showSettings = true }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
             }
         }
+        .navigationDestination(isPresented: $showSettings) { NotificationSettingsView() }
         .refreshable { await load(reset: true) }
         .task { await load(reset: true) }
         .task {
@@ -57,6 +65,12 @@ struct NotificationsView: View {
     }
 
     private func load(reset: Bool) async {
+        // One "next page" request at a time: the last row can appear again while it loads.
+        if !reset {
+            if loadingMore { return }
+            loadingMore = true
+        }
+        defer { if !reset { loadingMore = false } }
         if reset && items.isEmpty { state = .loading }
         do {
             let result = try await app.client.send(API.notifications(page: reset ? 1 : page + 1))
@@ -90,6 +104,7 @@ private struct NotificationRow: View {
                 .fill(item.read ? Color.clear : Theme.primary)
                 .frame(width: 8, height: 8)
                 .padding(.top, 6)
+                .animation(Motion.snappy, value: item.read)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title).font(.subheadline.weight(item.read ? .regular : .semibold))
@@ -100,10 +115,8 @@ private struct NotificationRow: View {
                     Text(created.formatted(.relative(presentation: .named))).font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(item.read ? "" : "Unread. Double-tap to mark as read.")
     }
@@ -119,6 +132,7 @@ struct NotificationSettingsView: View {
 
     var body: some View {
         Form {
+            Group {
             Section {
                 switch app.push.status {
                 case .authorized:
@@ -138,7 +152,7 @@ struct NotificationSettingsView: View {
 
             switch prefs {
             case .idle, .loading:
-                ProgressView()
+                ProgressView().frame(maxWidth: .infinity)
             case .failed(let e):
                 Text(e.userMessage).foregroundStyle(.secondary)
             case .loaded(let p):
@@ -162,7 +176,10 @@ struct NotificationSettingsView: View {
                 }
             }
             if let error { Text(error).foregroundStyle(Theme.danger) }
+            }
+            .glassRow()
         }
+        .glassList()
         .navigationTitle("Notification settings")
         .task {
             await app.push.refreshStatus()

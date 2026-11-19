@@ -11,6 +11,8 @@ import { useLoginMutation } from '../../services/api';
 import { setCredentials } from '../../features/authSlice';
 import { IDLE_LOGOUT_MESSAGE, clearLogoutReason, peekLogoutReason } from '../../services/sessionSync';
 import { errMsg } from '../../utils/format';
+import { encryptPassword } from '../../services/loginCrypto';
+import TurnstileWidget from '../../components/TurnstileWidget';
 
 // Passwords are reset by the Class In-Charge or an Admin — there is no email reset.
 const PASSWORD_HELP = 'Forgot your password? Contact your Class In-Charge or Admin to reset your password.';
@@ -46,6 +48,10 @@ export default function Login() {
 
   const [remainingAttempts, setRemainingAttempts] = useState(null);
   const [nextLockMinutes, setNextLockMinutes] = useState(5);
+  // Security check (CAPTCHA): shown only when the server asks for it.
+  const [captcha, setCaptcha] = useState(null); // { siteKey } | null
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
   const timerRef = useRef(null);
   // Shown once when the previous session ended for inactivity.
   const [idleNotice] = useState(() => peekLogoutReason() === 'idle');
@@ -80,9 +86,29 @@ export default function Login() {
 
   const onSubmit = async (values) => {
     if (lockout.isLocked) return;
+    if (captcha && !captchaToken) {
+      toast.error('Complete the security check first.');
+      return;
+    }
+    // A Turnstile token is single-use: whatever happens, the widget needs a new one next time.
+    const sentToken = captcha ? captchaToken : null;
 
     try {
-      const data = await login(values).unwrap();
+      // The password leaves the browser as encrypted text, not readable in the request.
+      const send = async (refreshKey) => {
+        const envelope = await encryptPassword(values.password, { refreshKey });
+        const body = envelope ? { email: values.email, ...envelope } : { ...values };
+        if (sentToken) body.captchaToken = sentToken;
+        return login(body).unwrap();
+      };
+      let data;
+      try {
+        data = await send(false);
+      } catch (err) {
+        // The server's key changed (restart / new key): fetch the new one and retry once.
+        if (err?.data?.code !== 'LOGIN_KEY_STALE') throw err;
+        data = await send(true);
+      }
       sessionStorage.removeItem('campus_lockout');
       setRemainingAttempts(null);
       dispatch(setCredentials(data));
@@ -90,6 +116,10 @@ export default function Login() {
       navigate(location.state?.from || '/', { replace: true });
     } catch (err) {
       const data = err?.data;
+
+      // The server says whether the next attempt needs the security check.
+      if (data?.captchaRequired !== undefined) setCaptcha(data.captchaRequired && data.siteKey ? { siteKey: data.siteKey } : null);
+      if (sentToken) setCaptchaReset((n) => n + 1);
 
       // Handle HTTP 423 (Locked) or payload indicating lockout
       if (err?.status === 423 || data?.locked) {
@@ -124,7 +154,13 @@ export default function Login() {
           <span>{IDLE_LOGOUT_MESSAGE}</span>
         </div>
       )}
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+      <form
+        onSubmit={(e) => {
+          // Never leave the password readable once Sign in is pressed: back to the masked dots.
+          setShow(false);
+          return handleSubmit(onSubmit)(e);
+        }}
+        className="space-y-4" noValidate>
         {/* Active Lockout Banner with Live Monospace Countdown */}
         {lockout.isLocked && (
           <div className="rounded-2xl border border-white/45 bg-white/10 p-4 text-center backdrop-blur-sm">
@@ -196,10 +232,25 @@ export default function Login() {
           <span>{PASSWORD_HELP}</span>
         </p>
 
+        {captcha && (
+          <div className="space-y-1.5">
+            <p className="text-center text-xs font-semibold text-ink-soft dark:text-ink-muted">
+              There were failed sign-ins from this network. Please complete this quick security check.
+            </p>
+            <TurnstileWidget
+              siteKey={captcha.siteKey}
+              action="login"
+              onToken={setCaptchaToken}
+              resetKey={captchaReset}
+              onLoadError={() => toast.error('The security check could not load. Check your connection and reload the page.')}
+            />
+          </div>
+        )}
+
         <Button
           type="submit"
           loading={isLoading}
-          disabled={lockout.isLocked}
+          disabled={lockout.isLocked || (Boolean(captcha) && !captchaToken)}
           className="w-full"
           size="lg"
         >

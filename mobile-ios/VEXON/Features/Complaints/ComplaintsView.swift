@@ -11,6 +11,7 @@ struct ComplaintsView: View {
     @State private var showNew = false
     @State private var cancelling: String?
     @State private var actionError: String?
+    @State private var loadingMore = false
 
     var body: some View {
         LoadStateView(
@@ -33,9 +34,12 @@ struct ComplaintsView: View {
                         .onAppear {
                             if complaint.id == items.last?.id { Task { await load(reset: false) } }
                         }
+                        .glassRow()
                 }
             }
+            .scrollContentBackground(.hidden)
         }
+        .screenBackground()
         .navigationTitle("Grievances")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -60,6 +64,12 @@ struct ComplaintsView: View {
 
     private func load(reset: Bool) async {
         if !reset, let page, !page.hasMore { return }
+        // One "next page" request at a time: the last row can appear several times while it loads.
+        if !reset {
+            if loadingMore { return }
+            loadingMore = true
+        }
+        defer { if !reset { loadingMore = false } }
         if reset && items.isEmpty { state = .loading }
         let next = reset ? 1 : (page?.page ?? 0) + 1
         do {
@@ -101,11 +111,11 @@ private struct ComplaintRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text(ComplaintCatalog.label(complaint.category)).font(.subheadline.weight(.semibold))
                 if let sub = complaint.subCategory { Text("· \(ComplaintCatalog.label(sub))").font(.subheadline).foregroundStyle(.secondary) }
-                Spacer()
-                StatusPill(text: complaint.statusLabel, color: color)
+                Spacer(minLength: 8)
+                StatusPill(text: complaint.statusLabel, color: color).fixedSize()
             }
             if let text = complaint.description {
                 Text(text).font(.footnote).lineLimit(3)
@@ -136,6 +146,7 @@ struct NewComplaintView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Group {
                 Section("Category") {
                     Picker("Category", selection: $draft.category) {
                         ForEach(ComplaintCatalog.categories, id: \.self) { Text(ComplaintCatalog.label($0)).tag($0) }
@@ -167,7 +178,10 @@ struct NewComplaintView: View {
                 if let error {
                     Text(error).foregroundStyle(Theme.danger)
                 }
+                }
+                .glassRow()
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle("New grievance")
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: draft.category) { _, category in
@@ -184,6 +198,7 @@ struct NewComplaintView: View {
             }
             .interactiveDismissDisabled(submitting)
         }
+        .glassSheet()
     }
 
     /// One request at a time — the button is disabled while sending, so a slow

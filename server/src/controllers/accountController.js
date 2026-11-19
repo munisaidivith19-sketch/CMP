@@ -6,6 +6,7 @@ import { notifyUsers } from '../utils/notify.js';
 import { STUDENT_ROLES } from '../utils/academicScope.js';
 import { normalizePhoneDigits, yearOfSemester } from '../constants.js';
 import { revokeSessions } from './authController.js';
+import { clearAccountLocks } from '../utils/loginSecurity.js';
 import { adminAllows, isStaffGrantee, moduleForRole } from '../policies.js';
 import { assertIdentifiersFree, createOrRestoreUser, findDeletedAccount, graceLabel } from '../services/userRestore.js';
 
@@ -299,6 +300,7 @@ export const resetUserPassword = asyncHandler(async (req, res) => {
   target.lastFailedLoginAt = undefined;
   target.lockoutCount = 0;
   await target.save();
+  await clearAccountLocks(target._id);
 
   const signedOut = await revokeSessions({ user: target._id }, 'password_reset');
   const reason = typeof req.body.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : undefined;

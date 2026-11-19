@@ -12,8 +12,10 @@ struct BusTrackingView: View {
                 BusTrackingScreen(model: model)
             } else {
                 ProgressView("Loading buses…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .screenBackground()
         .navigationTitle("Bus Tracking")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -44,6 +46,7 @@ private struct BusTrackingScreen: View {
     @State private var command: MapCommand?
     @State private var mapError: String?
     @State private var showBusList = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         content
@@ -101,50 +104,65 @@ private struct BusTrackingScreen: View {
 
     private var styleURL: URL? { model.config.flatMap { URL(string: $0.mapStyleUrl) } }
 
+    /// The map with its floating glass layer. Every floating group has a height
+    /// budget taken from the space actually available, so on a small iPhone (or at a
+    /// large text size) the groups scroll inside themselves instead of running into
+    /// each other or off the screen.
     private var mapLayer: some View {
-        ZStack(alignment: .top) {
-            if let styleURL {
-                BusMapView(
-                    styleURL: styleURL,
-                    buses: model.buses,
-                    selectedBusId: model.selectedBusId,
-                    // The route the bus is actually following (a separate return route, when it has one).
-                    route: model.detail.value?.mapRoute,
-                    fraction: JourneyFormat.mapFraction(model.detail.value),
-                    passed: JourneyFormat.mapPassed(model.detail.value),
-                    // Off route: the server's road path back, from where the bus is now.
-                    detour: BusMath.detourAhead(
-                        model.detail.value?.detour?.path ?? [],
-                        bus: model.buses.first { $0.id == model.selectedBusId }?.location.map { BusMath.LatLng(lat: $0.lat, lng: $0.lng) }
-                    ),
-                    selectedStopId: model.selectedStopId,
-                    student: locator.coordinate,
-                    command: command,
-                    onSelectBus: { id in Task { await model.select(busId: id) } },
-                    onSelectStop: { id in Task { await model.select(stopId: id) } },
-                    onMapError: { mapError = $0 }
-                )
-                .ignoresSafeArea(edges: .bottom)
-            } else {
-                ContentUnavailableView("Map not configured", systemImage: "map", description: Text("The server did not provide a map style."))
-            }
+        GeometryReader { proxy in
+            let height = proxy.size.height
+            ZStack(alignment: .top) {
+                if let styleURL {
+                    BusMapView(
+                        styleURL: styleURL,
+                        buses: model.buses,
+                        selectedBusId: model.selectedBusId,
+                        // The route the bus is actually following (a separate return route, when it has one).
+                        route: model.detail.value?.mapRoute,
+                        fraction: JourneyFormat.mapFraction(model.detail.value),
+                        passed: JourneyFormat.mapPassed(model.detail.value),
+                        // Off route: the server's road path back, from where the bus is now.
+                        detour: BusMath.detourAhead(
+                            model.detail.value?.detour?.path ?? [],
+                            bus: model.buses.first { $0.id == model.selectedBusId }?.location.map { BusMath.LatLng(lat: $0.lat, lng: $0.lng) }
+                        ),
+                        selectedStopId: model.selectedStopId,
+                        student: locator.coordinate,
+                        command: command,
+                        onSelectBus: { id in Task { await model.select(busId: id) } },
+                        onSelectStop: { id in Task { await model.select(stopId: id) } },
+                        onMapError: { mapError = $0 }
+                    )
+                    .ignoresSafeArea(edges: .bottom)
+                } else {
+                    ContentUnavailableView("Map not configured", systemImage: "map", description: Text("The server did not provide a map style."))
+                }
 
-            VStack(spacing: 8) {
-                if let results = model.searchResults, !query.isEmpty {
-                    SearchResultsList(results: results, model: model) { kind in
-                        query = ""
-                        command = MapCommand(kind: kind)
+                VStack(spacing: 8) {
+                    if let results = model.searchResults, !query.isEmpty {
+                        // While searching, the results take the place of the status banners.
+                        SearchResultsList(results: results, model: model) { kind in
+                            query = ""
+                            command = MapCommand(kind: kind)
+                        }
+                        .frame(maxHeight: min(300, height * 0.45))
+                    } else {
+                        FittingScroll(maxHeight: height * 0.28) {
+                            VStack(spacing: 8) { banners }
+                        }
                     }
+                    Spacer(minLength: 0)
+                    HStack(alignment: .bottom) {
+                        Spacer(minLength: 0)
+                        controls
+                    }
+                    bottomPanel(maxHeight: height * 0.5)
                 }
-                banners
-                Spacer()
-                HStack(alignment: .bottom) {
-                    Spacer()
-                    controls
-                }
-                bottomPanel
+                .padding(12)
+                .animation(reduceMotion ? Motion.reduced : Motion.smooth, value: model.selectedBusId)
+                .animation(reduceMotion ? Motion.reduced : Motion.smooth, value: app.realtime.isConnected)
+                .animation(reduceMotion ? Motion.reduced : Motion.smooth, value: locator.state)
             }
-            .padding(12)
         }
     }
 
@@ -183,8 +201,10 @@ private struct BusTrackingScreen: View {
 
     // MARK: Map controls
 
+    /// One glass capsule of map actions. Laid out in a row so it needs the same
+    /// 52 points of height whether two or five actions are showing.
     private var controls: some View {
-        VStack(spacing: 10) {
+        HStack(spacing: 2) {
             if let id = model.selectedBusId {
                 MapButton(icon: "bus", label: "Centre on selected bus") { command = MapCommand(kind: .bus(id)) }
                 if locator.coordinate != nil {
@@ -194,28 +214,42 @@ private struct BusTrackingScreen: View {
             MapButton(icon: locator.state == .requesting ? "location.circle" : "location.fill", label: "Centre on my location") {
                 locator.locateOnce()
             }
-            .onChange(of: locator.coordinate?.latitude) { _, _ in
-                if locator.coordinate != nil { command = MapCommand(kind: .me) }
-            }
             MapButton(icon: "square.dashed", label: "Show all buses") { command = MapCommand(kind: .fitAll) }
             MapButton(icon: "arrow.clockwise", label: "Refresh") { Task { await model.load() } }
+        }
+        .padding(4)
+        .glass(in: Capsule(), interactive: true)
+        .onChange(of: locator.coordinate?.latitude) { _, _ in
+            if locator.coordinate != nil { command = MapCommand(kind: .me) }
         }
     }
 
     // MARK: Bottom panel
 
-    @ViewBuilder private var bottomPanel: some View {
-        if model.config?.canShare == true, showSharingCard {
-            TripSharingCard(model: model)
+    @ViewBuilder private func bottomPanel(maxHeight: CGFloat) -> some View {
+        let sharing = model.config?.canShare == true && showSharingCard
+        let bus = model.selectedBus
+        if sharing || bus != nil {
+            // One glass panel; the trip-sharing card and the bus details scroll together inside it.
+            FittingScroll(maxHeight: maxHeight) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if sharing { TripSharingCard(model: model) }
+                    if sharing, bus != nil { Divider() }
+                    if let bus { BusDetailPanel(bus: bus, model: model) }
+                }
+                .padding(14)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .glass(cornerRadius: 22)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        if let bus = model.selectedBus {
-            BusDetailPanel(bus: bus, model: model)
-        } else {
-            Text(model.buses.isEmpty ? "" : "\(model.liveCount) of \(model.buses.count) buses live · tap a bus for details")
+        if bus == nil, !model.buses.isEmpty {
+            Text("\(model.liveCount) of \(model.buses.count) buses live · tap a bus for details")
                 .font(.footnote.weight(.semibold))
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(.regularMaterial, in: Capsule())
-                .opacity(model.buses.isEmpty ? 0 : 1)
+                .glass(in: Capsule())
+                .transition(.opacity)
         }
     }
 
@@ -251,19 +285,21 @@ private struct BusDetailPanel: View {
                     Text("Bus \(bus.number)").font(.title3.bold())
                     if let route = bus.routeName { Text(route).font(.subheadline).foregroundStyle(.secondary) }
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 StatusPill(text: bus.tracking.label, color: color(bus.tracking))
                 Button {
                     model.clearSelection()
                 } label: {
                     Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-                .frame(minWidth: 44, minHeight: 44)
+                .buttonStyle(.pressable)
                 .accessibilityLabel("Close bus details")
             }
 
             TimelineView(.periodic(from: .now, by: 5)) { context in
-                HStack(spacing: 14) {
+                HStack(alignment: .top, spacing: 14) {
                     InfoItem(title: "Last update", value: BusMath.agoText(bus.location?.at, now: context.date))
                     if let speed = bus.location?.speed, bus.tracking == .live {
                         InfoItem(title: "Speed", value: "\(Int((speed * 3.6).rounded())) km/h")
@@ -297,8 +333,6 @@ private struct BusDetailPanel: View {
                 }
             }
         }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
@@ -401,12 +435,10 @@ private struct JourneySection: View {
                 Text("College · \(college.name): \(collegeText(college))").font(.footnote)
             }
             DisclosureGroup(isExpanded: $expanded) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(journey.stops) { stop in stopRow(stop) }
-                    }
+                // The whole panel scrolls (see `bottomPanel`), so this list is not a scroll view of its own.
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(journey.stops) { stop in stopRow(stop) }
                 }
-                .frame(maxHeight: 220)
             } label: {
                 Text("Stops in travel order").font(.subheadline.weight(.semibold))
             }
@@ -446,7 +478,7 @@ private struct JourneySection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background((ok ? Theme.success : Color.secondary).opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .background((ok ? Theme.success : Color.secondary).opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -486,28 +518,25 @@ private struct StopList: View {
 
     var body: some View {
         let passed = Set(progress?.passedSequences ?? [])
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(route.orderedStops) { stop in
-                    Button { onSelect(stop.id) } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: passed.contains(stop.sequence) ? "checkmark.circle.fill" : (stop.id == selectedStopId ? "mappin.circle.fill" : "circle"))
-                                .foregroundStyle(stop.id == selectedStopId ? Color.orange : (passed.contains(stop.sequence) ? Color.secondary : Theme.primary))
-                            Text("\(stop.sequence). \(stop.name)")
-                                .foregroundStyle(passed.contains(stop.sequence) ? .secondary : .primary)
-                            Spacer()
-                            if let time = stop.scheduledTime { Text(time).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                        }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(route.orderedStops) { stop in
+                Button { onSelect(stop.id) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: passed.contains(stop.sequence) ? "checkmark.circle.fill" : (stop.id == selectedStopId ? "mappin.circle.fill" : "circle"))
+                            .foregroundStyle(stop.id == selectedStopId ? Color.orange : (passed.contains(stop.sequence) ? Color.secondary : Theme.primary))
+                        Text("\(stop.sequence). \(stop.name)")
+                            .foregroundStyle(passed.contains(stop.sequence) ? .secondary : .primary)
+                        Spacer()
+                        if let time = stop.scheduledTime { Text(time).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(stop.name)\(passed.contains(stop.sequence) ? ", passed" : "")\(stop.id == selectedStopId ? ", selected" : "")")
-                    .accessibilityHint("Shows the arrival estimate for this stop")
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(stop.name)\(passed.contains(stop.sequence) ? ", passed" : "")\(stop.id == selectedStopId ? ", selected" : "")")
+                .accessibilityHint("Shows the arrival estimate for this stop")
             }
         }
-        .frame(maxHeight: 220)
     }
 }
 
@@ -520,6 +549,7 @@ private struct SearchResultsList: View {
 
     var body: some View {
         List {
+            Group {
             if results.isEmpty {
                 Text("No buses, routes or stops match.").foregroundStyle(.secondary)
             }
@@ -566,10 +596,13 @@ private struct SearchResultsList: View {
                     }
                 }
             }
+            }
+            .listRowBackground(Color.clear)
         }
-        .listStyle(.insetGrouped)
-        .frame(maxHeight: 300)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .glass(cornerRadius: 18)
     }
 }
 
@@ -597,11 +630,14 @@ private struct BusListSheet: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(bus.location == nil)
+                .glassRow()
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle("Buses")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
+        .glassSheet()
     }
 }
 
@@ -634,7 +670,7 @@ private struct TripSharingCard: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Tracking active for bus \(number). \(statusLine)")
             case .starting, .stopping:
-                ProgressView()
+                ProgressView().frame(maxWidth: .infinity)
             case .idle:
                 if let trip = model.mine?.activeTrip {
                     Text("You have an active trip for bus \(trip.bus.number).").font(.subheadline)
@@ -672,8 +708,7 @@ private struct TripSharingCard: View {
                 Text(problem).font(.caption).foregroundStyle(Theme.warning)
             }
         }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .frame(maxWidth: .infinity, alignment: .leading)
         .confirmationDialog("End this bus trip? Location sharing will stop.", isPresented: $confirmStop, titleVisibility: .visible) {
             Button("End trip", role: .destructive) {
                 Task {
@@ -704,12 +739,17 @@ private struct Banner: View {
         Label(text, systemImage: icon)
             .font(.footnote)
             .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .glass(cornerRadius: 14)
+            // Room for the glass shadow inside the scrolling banner stack.
+            .padding(.horizontal, 2)
+            .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
 
+/// One action inside the map's glass control capsule.
 private struct MapButton: View {
     let icon: String
     let label: String
@@ -720,25 +760,12 @@ private struct MapButton: View {
             Image(systemName: icon)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(Color.primary)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(width: 44, height: 44)
-                // Opaque and outlined so it stays readable over any map tiles, light or dark.
-                .background(Color(uiColor: .systemBackground), in: Circle())
-                .overlay(Circle().strokeBorder(Color(uiColor: .systemGray2), lineWidth: 1.5))
-                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
                 .contentShape(Circle())
         }
-        .buttonStyle(MapButtonStyle())
+        .buttonStyle(.pressable)
         .accessibilityLabel(label)
-    }
-}
-
-/// Pressed: dimmed and slightly smaller, so a tap is visible over the map.
-private struct MapButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.7 : 1)
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -748,8 +775,8 @@ private struct InfoItem: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.caption.weight(.semibold))
+            Text(title).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            Text(value).font(.caption.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
     }

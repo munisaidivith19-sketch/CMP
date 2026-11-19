@@ -4,59 +4,103 @@ import VEXONKit
 /// Swaps the whole UI between launch, sign-in and the signed-in tabs.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Which top-level screen is showing — the value the screen transition animates on.
+    private enum Screen: Equatable { case launching, offline, signIn, passwordChange, checking, permission, main }
+
+    private var screen: Screen {
+        switch model.phase {
+        case .launching: return .launching
+        case .offlineLaunch: return .offline
+        case .signedOut: return .signIn
+        case .signedIn(let user) where user.mustChangePassword == true: return .passwordChange
+        case .signedIn:
+            switch model.push.gate {
+            case .allowed: return .main
+            case .checking: return .checking
+            case .canRequest, .settingsOnly: return .permission
+            }
+        }
+    }
+
+    private var showsOfflineBanner: Bool { model.user != nil && !model.isOnline }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
+            AppBackground()
             switch model.phase {
             case .launching:
-                LaunchView()
+                LaunchView().transition(.opacity)
             case .offlineLaunch:
-                OfflineLaunchView()
+                OfflineLaunchView().transition(.opacity)
             case .signedOut(let sessionEnded):
-                LoginView(sessionEnded: sessionEnded)
+                LoginView(sessionEnded: sessionEnded).transition(.opacity)
             case .signedIn(let user) where user.mustChangePassword == true:
-                PasswordChangeRequiredView()
+                PasswordChangeRequiredView().transition(.opacity)
             case .signedIn(let user):
                 switch model.push.gate {
                 case .allowed:
                     MainTabView(user: user)
                         // New identity = brand-new view tree: no state carries over between accounts.
                         .id(user.id)
+                        .transition(.opacity)
                 case .checking:
-                    LaunchView()
+                    LaunchView().transition(.opacity)
                 case .canRequest, .settingsOnly:
                     // Notifications are mandatory once signed in (sign-in itself is never gated).
-                    NotificationRequiredView(state: model.push.gate)
+                    NotificationRequiredView(state: model.push.gate).transition(.opacity)
                 }
             }
-            if model.user != nil && !model.isOnline {
-                OfflineBanner()
-            }
         }
-        .animation(.default, value: model.isOnline)
+        // The offline pill takes its own row above the screen (the navigation bar moves
+        // down for it), so it never covers a title or a toolbar button on any iPhone.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if showsOfflineBanner { OfflineBanner() }
+        }
+        .animation(reduceMotion ? Motion.reduced : Motion.smooth, value: screen)
+        .animation(reduceMotion ? Motion.reduced : Motion.smooth, value: showsOfflineBanner)
     }
 }
 
 private struct LaunchView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathing = false
+
     var body: some View {
-        ZStack {
-            Theme.background.ignoresSafeArea()
+        VStack(spacing: 22) {
+            Image("Logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 76, height: 76)
+                .padding(22)
+                .glass(in: Circle())
+                .scaleEffect(breathing ? 1.04 : 0.97)
+                .accessibilityHidden(true)
             ProgressView()
                 .accessibilityLabel("Starting VEXON")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { breathing = true }
         }
     }
 }
 
-/// Thin banner while the server is unreachable; screens refetch when it comes back.
+/// Thin pill while the server is unreachable; screens refetch when it comes back.
 private struct OfflineBanner: View {
     var body: some View {
         Label("Offline — reconnecting…", systemImage: "wifi.slash")
             .font(.footnote.weight(.semibold))
-            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(Color(red: 0.11, green: 0.11, blue: 0.23).opacity(0.92), in: Capsule())
-            .padding(.top, 4)
+            .glass(in: Capsule(), tint: Theme.warning)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity)
             .transition(.move(edge: .top).combined(with: .opacity))
             .accessibilityAddTraits(.updatesFrequently)
     }
@@ -96,6 +140,8 @@ struct MainTabView: View {
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
                 .tag(Tab.profile)
         }
+        .minimizingTabBar()
+        .sensoryFeedback(.selection, trigger: selection)
         .overlay(alignment: .top) {
             if let banner {
                 InAppBannerView(banner: banner, onOpen: { open(banner) }, onDismiss: { self.banner = nil })
@@ -103,7 +149,7 @@ struct MainTabView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(duration: 0.35), value: banner)
+        .animation(Motion.smooth, value: banner)
         .sensoryFeedback(.impact(weight: .light), trigger: banner?.id)
         .task { await popUps() }
         .task(id: banner?.id) {

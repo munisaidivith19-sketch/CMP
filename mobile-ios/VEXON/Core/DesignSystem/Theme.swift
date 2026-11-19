@@ -9,6 +9,8 @@ enum Theme {
     static let warning = Color(red: 0xF5 / 255, green: 0x9E / 255, blue: 0x0B / 255)
     static let danger = Color(red: 0xF4 / 255, green: 0x3F / 255, blue: 0x5E / 255)
     static let info = Color(red: 0x0E / 255, green: 0xA5 / 255, blue: 0xE9 / 255)
+    /// Second accent of the backdrop glow (violet), never used for text.
+    static let aurora = Color(red: 0x7C / 255, green: 0x5C / 255, blue: 0xF6 / 255)
 
     /// Bus marker body colours by tracking state (shared with web busMarker.js and Android BusIcon.kt).
     static let busLive = UIColor(red: 0xCB / 255, green: 0x01 / 255, blue: 0x01 / 255, alpha: 1)
@@ -25,17 +27,13 @@ enum Theme {
     static let cornerRadius: CGFloat = 16
 }
 
-/// Card surface used across screens.
+/// Card surface used across screens: a frosted glass panel (see Glass.swift).
 struct CardBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary, in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                    .strokeBorder(Theme.primary.opacity(0.12))
-            )
+            .frosted(cornerRadius: Theme.cornerRadius)
     }
 }
 

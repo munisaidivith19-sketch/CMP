@@ -85,8 +85,9 @@ struct PolicyView: View {
 
     var body: some View {
         PolicyLoader(policy: policy, state: $state) { doc in
-            ScrollView { PolicyDocumentView(document: doc).padding() }
+            ScrollView { PolicyDocumentView(document: doc).card().padding() }
         }
+        .screenBackground()
         .navigationTitle(policy.title)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -95,6 +96,7 @@ struct PolicyView: View {
 struct AboutAppView: View {
     var body: some View {
         List {
+            Group {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(Legal.appName).font(.title3.bold())
@@ -113,7 +115,10 @@ struct AboutAppView: View {
                 NavigationLink("Terms and Conditions") { PolicyView(policy: .terms) }
                 NavigationLink("Privacy Policy") { PolicyView(policy: .privacy) }
             }
+            }
+            .glassRow()
         }
+        .glassList()
         .navigationTitle("About the App")
     }
 }

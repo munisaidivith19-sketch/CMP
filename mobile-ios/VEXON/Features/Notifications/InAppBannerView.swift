@@ -30,17 +30,21 @@ struct InAppBannerView: View {
             }
             Spacer(minLength: 0)
             Button(action: onDismiss) {
-                Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(.secondary).padding(6)
+                Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.pressable)
             .accessibilityLabel("Dismiss")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+        .padding(.vertical, 8)
+        .glass(cornerRadius: 22)
+        .frame(maxWidth: 520)
         .padding(.horizontal, 12)
         .padding(.top, 4)
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .onTapGesture(perform: onOpen)
         .gesture(DragGesture(minimumDistance: 10).onEnded { if $0.translation.height < 0 { onDismiss() } })
         .accessibilityElement(children: .combine)

@@ -16,6 +16,7 @@ struct PasswordChangeRequiredView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Group {
                 Section {
                     Text("You signed in with a password someone else set. Choose your own password to continue.")
                 }
@@ -33,7 +34,7 @@ struct PasswordChangeRequiredView: View {
                     Text(PasswordRule.hint)
                 }
                 if let problem {
-                    Section { Text(problem).foregroundStyle(.red) }
+                    Section { Text(problem).foregroundStyle(Theme.danger) }
                 }
                 Section {
                     Button {
@@ -41,7 +42,7 @@ struct PasswordChangeRequiredView: View {
                     } label: {
                         if saving { ProgressView().frame(maxWidth: .infinity) } else { Text("Update password").frame(maxWidth: .infinity) }
                     }
-                    .disabled(saving || current.isEmpty || new.isEmpty)
+                    .disabled(saving || signingOut || current.isEmpty || new.isEmpty || confirm.isEmpty)
                     .accessibilityIdentifier("password.submit")
                     Button(role: .destructive) {
                         signingOut = true
@@ -51,7 +52,11 @@ struct PasswordChangeRequiredView: View {
                     }
                     .disabled(signingOut)
                 }
+                }
+                .glassRow()
             }
+            .glassList()
+            .animation(Motion.snappy, value: problem)
             .navigationTitle("Choose your password")
             .navigationBarTitleDisplayMode(.inline)
         }

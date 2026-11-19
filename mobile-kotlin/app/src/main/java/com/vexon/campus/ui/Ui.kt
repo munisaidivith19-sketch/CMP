@@ -1,6 +1,9 @@
 package com.vexon.campus.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -48,6 +51,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -120,16 +124,13 @@ fun T(
 
 /* ── Layout ─────────────────────────────────────────────────────── */
 
-/** Soft blue blobs behind every screen. */
-@Composable
-fun BoxScope.Backdrop() {
-    Box(Modifier.offset((-100).dp, (-120).dp).size(340.dp).clip(CircleShape).background(Color(0x294396EF)))
-    Box(Modifier.align(Alignment.TopEnd).offset(140.dp, 180.dp).size(340.dp).clip(CircleShape).background(Color(0x1A1D6FEB)))
-}
-
 /**
- * A screen: background, top safe area, optional pull-to-refresh, and (when
+ * A screen: background, safe areas, optional pull-to-refresh, and (when
  * [scroll]) a vertically scrolling column with 16dp padding and 14dp gaps.
+ *
+ * Safe areas: the content starts below the status bar and always ends above the
+ * system navigation bar and the keyboard, so the last button on a page is never
+ * under the 3-button bar of an older phone. The background still runs edge to edge.
  */
 @Composable
 fun Screen(
@@ -145,15 +146,15 @@ fun Screen(
         val body: @Composable () -> Unit = {
             if (scroll) {
                 Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).imePadding(),
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).navigationBarsPadding().imePadding(),
                     verticalArrangement = Arrangement.spacedBy(gap),
                     content = content,
                 )
             } else {
-                Column(Modifier.fillMaxSize().imePadding(), content = content)
+                Column(Modifier.fillMaxSize().navigationBarsPadding().imePadding(), content = content)
             }
         }
-        Box(Modifier.fillMaxSize().statusBarsPadding()) {
+        Box(Modifier.fillMaxSize().statusBarsPadding().entrance()) {
             if (onRefresh != null) {
                 PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) { body() }
             } else body()
@@ -191,8 +192,18 @@ fun Modifier.pressable(onClick: (() -> Unit)?, pressedScale: Float = 0.985f, ena
     if (onClick == null) return this
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) pressedScale else 1f, label = "press")
+    val scale by animateFloatAsState(if (pressed) pressedScale else 1f, Motion.press(), label = "press")
     return this.scale(scale).clickable(interactionSource = source, indication = null, enabled = enabled, role = role, onClick = onClick)
+}
+
+/**
+ * A card's surface. The default card is glass; a card given its own colours
+ * (a red holiday notice, an amber warning) keeps them, flat.
+ */
+private fun Modifier.surface(background: Color, border: Color): Modifier {
+    val shape = RoundedCornerShape(Radius.xl)
+    return if (background == C.card && border == C.border) glass(shape)
+    else clip(shape).background(background).border(1.dp, border, shape)
 }
 
 @Composable
@@ -208,10 +219,8 @@ fun Card(
 ) {
     Column(
         modifier
-            .pressable(onClick)
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(background)
-            .border(1.dp, border, RoundedCornerShape(Radius.xl))
+            .pressable(onClick, 0.975f)
+            .surface(background, border)
             .then(if (padded) Modifier.padding(16.dp) else Modifier),
         verticalArrangement = Arrangement.spacedBy(gap),
         horizontalAlignment = horizontalAlignment,
@@ -232,10 +241,8 @@ fun RowCard(
 ) {
     Row(
         modifier
-            .pressable(onClick)
-            .clip(RoundedCornerShape(Radius.xl))
-            .background(background)
-            .border(1.dp, border, RoundedCornerShape(Radius.xl))
+            .pressable(onClick, 0.975f)
+            .surface(background, border)
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(gap),
         verticalAlignment = verticalAlignment,
@@ -295,11 +302,19 @@ fun Button(
     Row(
         modifier
             .alpha(if (!enabled) 0.5f else 1f)
-            .pressable(if (active) onClick else null, 0.97f)
+            .pressable(if (active) onClick else null, 0.96f)
             .clip(shape)
-            .then(if (primary) Modifier.background(Brush.linearGradient(Grad.primary)) else Modifier.background(bg))
-            .then(if (variant == Variant.Outline) Modifier.border(1.dp, C.border, shape) else Modifier)
-            .then(if (variant == Variant.Map) Modifier.border(1.5.dp, C.controlBorder, shape) else Modifier)
+            .then(
+                when (variant) {
+                    // Gradient with a highlight along the top edge.
+                    Variant.Primary -> Modifier.background(Brush.linearGradient(Grad.primary)).border(1.dp, Glass.shine, shape)
+                    Variant.Outline -> Modifier.background(Glass.fill).border(1.dp, Glass.rim, shape)
+                    Variant.Map -> Modifier.background(bg).border(1.5.dp, C.controlBorder, shape)
+                    else -> Modifier.background(bg)
+                },
+            )
+            // A comfortable touch height on every phone, whatever the text size.
+            .heightIn(min = if (small) 36.dp else 48.dp)
             .padding(horizontal = if (small) 12.dp else 18.dp, vertical = if (small) 8.dp else 13.dp)
             .semantics { if (title == null && icon != null) contentDescription = "button" },
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -315,11 +330,9 @@ fun Button(
 fun IconButton(icon: ImageVector, label: String, color: Color = C.ink, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier
-            .size(40.dp)
-            .pressable(onClick, 0.92f)
-            .clip(RoundedCornerShape(16.dp))
-            .background(C.glass(0.88f))
-            .border(1.dp, C.border, RoundedCornerShape(16.dp))
+            .size(42.dp)
+            .pressable(onClick, 0.9f)
+            .glass(RoundedCornerShape(16.dp))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, label, Modifier.size(20.dp), tint = color) }
@@ -400,20 +413,21 @@ fun <V> Segmented(options: List<Opt<V>>, value: V, onChange: (V) -> Unit, modifi
     Row(
         modifier
             .horizontalScroll(rememberScrollState())
-            .clip(RoundedCornerShape(18.dp))
-            .background(C.glass(0.75f))
-            .border(1.dp, C.border, RoundedCornerShape(18.dp))
+            .glass(RoundedCornerShape(18.dp))
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         options.forEach { o ->
             val active = o.value == value
+            val pill by animateColorAsState(if (active) C.surface else C.surface.copy(alpha = 0f), tween(Motion.QUICK_MS), label = "segment")
             Box(
                 Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (active) C.surface else Color.Transparent)
+                    .background(pill)
                     .clickable(role = Role.Tab) { onChange(o.value) }
+                    .heightIn(min = 36.dp)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     o.label + (o.count?.takeIf { it > 0 }?.let { " · $it" } ?: ""),
@@ -427,13 +441,16 @@ fun <V> Segmented(options: List<Opt<V>>, value: V, onChange: (V) -> Unit, modifi
 
 @Composable
 fun Chip(label: String, active: Boolean, onClick: () -> Unit) {
+    val fill by animateColorAsState(if (active) C.primary else C.glass(0.72f), tween(Motion.QUICK_MS), label = "chip")
     Box(
         Modifier
             .clip(CircleShape)
-            .background(if (active) C.primary else C.glass(0.8f))
-            .border(1.dp, if (active) C.primary else C.border, CircleShape)
+            .background(fill)
+            .then(if (active) Modifier.border(1.dp, Glass.shine, CircleShape) else Modifier.border(1.dp, Glass.rim, CircleShape))
             .clickable(onClick = onClick)
+            .heightIn(min = 34.dp)
             .padding(horizontal = 14.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center,
     ) { Text(label, fontFamily = Jakarta, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = if (active) Color.White else C.soft, maxLines = 1) }
 }
 
@@ -515,7 +532,8 @@ fun Avatar(user: JsonElement? = null, name: String? = null, uri: String? = null,
 /** Rounded gradient tile with an icon (used for quick links and stats). */
 @Composable
 fun IconTile(icon: ImageVector, gradient: List<Color> = Grad.primary, size: Dp = 44.dp) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.36f)).background(Brush.linearGradient(gradient)), contentAlignment = Alignment.Center) {
+    val shape = RoundedCornerShape(size * 0.36f)
+    Box(Modifier.size(size).clip(shape).background(Brush.linearGradient(gradient)).border(1.dp, Glass.shine, shape), contentAlignment = Alignment.Center) {
         Icon(icon, null, Modifier.size(size * 0.45f), tint = Color.White)
     }
 }
@@ -540,7 +558,7 @@ fun Loading(label: String? = null) {
 fun EmptyState(icon: ImageVector? = null, title: String, text: String? = null, action: (@Composable () -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(vertical = 36.dp, horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (icon != null) {
-            Box(Modifier.padding(bottom = 4.dp).size(60.dp).clip(RoundedCornerShape(22.dp)).background(C.primarySoft), contentAlignment = Alignment.Center) {
+            Box(Modifier.padding(bottom = 4.dp).size(60.dp).glass(RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
                 Icon(icon, null, Modifier.size(26.dp), tint = C.primary)
             }
         }
@@ -584,6 +602,9 @@ fun pctColor(v: Double, threshold: Double = 75.0): Color = when {
 fun PercentRing(value: Double?, size: Dp = 120.dp, stroke: Dp = 11.dp, threshold: Double = 75.0, sub: String? = null) {
     val pct = (value ?: 0.0).coerceIn(0.0, 100.0)
     val color = pctColor(pct, threshold)
+    // The ring draws itself in, and glides to a new value when the data changes.
+    val drawn = remember { Animatable(0f) }
+    LaunchedEffect(pct) { drawn.animateTo(pct.toFloat(), tween(700)) }
     Box(Modifier.size(size).semantics { contentDescription = "${num(pct)} percent" }, contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val s = stroke.toPx()
@@ -591,7 +612,7 @@ fun PercentRing(value: Double?, size: Dp = 120.dp, stroke: Dp = 11.dp, threshold
             val tl = Offset(s / 2, s / 2)
             val sz = androidx.compose.ui.geometry.Size(d, d)
             drawArc(C.border, 0f, 360f, false, tl, sz, style = Stroke(s))
-            drawArc(color, -90f, (pct / 100 * 360).toFloat(), false, tl, sz, style = Stroke(s, cap = StrokeCap.Round))
+            drawArc(color, -90f, drawn.value / 100f * 360f, false, tl, sz, style = Stroke(s, cap = StrokeCap.Round))
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             H2("${num(pct)}%")
@@ -603,8 +624,9 @@ fun PercentRing(value: Double?, size: Dp = 120.dp, stroke: Dp = 11.dp, threshold
 @Composable
 fun ProgressBar(value: Double?, threshold: Double = 75.0, modifier: Modifier = Modifier) {
     val pct = (value ?: 0.0).coerceIn(0.0, 100.0)
+    val fraction by animateFloatAsState((pct / 100).toFloat(), tween(600), label = "progress")
     Box(modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(8.dp)).background(C.primarySoft)) {
-        Box(Modifier.fillMaxWidth((pct / 100).toFloat()).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(pctColor(pct, threshold)))
+        Box(Modifier.fillMaxWidth(fraction).fillMaxHeight().clip(RoundedCornerShape(8.dp)).background(pctColor(pct, threshold)))
     }
 }
 
@@ -612,7 +634,7 @@ fun ProgressBar(value: Double?, threshold: Double = 75.0, modifier: Modifier = M
 @Composable
 fun InfoRow(label: String, value: String?, valueColor: Color = Color.Unspecified) {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Small(label)
+        Small(label, Modifier.widthIn(max = 150.dp))
         Strong(value?.takeIf { it.isNotBlank() } ?: "—", Modifier.weight(1f), valueColor, TextAlign.End)
     }
 }
@@ -621,7 +643,7 @@ fun InfoRow(label: String, value: String?, valueColor: Color = Color.Unspecified
 @Composable
 fun GlassRow(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable RowScope.() -> Unit) {
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.whiteGlass)
+        modifier.fillMaxWidth().glass(RoundedCornerShape(16.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -103,6 +103,7 @@ struct ErrorStateView: View {
                     if retrying { ProgressView() } else { Text("Try again") }
                 }
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
                 .disabled(retrying)
                 .accessibilityIdentifier("retry")
             }

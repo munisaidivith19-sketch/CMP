@@ -1,0 +1,102 @@
+name: iOS
+
+# Builds the VEXON iOS app on a GitHub macOS runner (no local Mac needed),
+# runs the unit/UI tests, and uploads simulator screenshots + test results as
+# downloadable artifacts. Run it from Actions -> iOS -> "Run workflow", or it
+# runs automatically when files under mobile-ios/ change.
+
+on:
+  push:
+    paths:
+      - "mobile-ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and screenshot
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile-ios
+    env:
+      DEVICE: iPhone 16
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Select Xcode 16
+        run: |
+          ls /Applications | grep -i '^Xcode' || true
+          XC=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$XC" ] && sudo xcode-select -s "$XC"
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen and generate project
+        run: |
+          brew install xcodegen
+          bash Scripts/generate-project.sh
+
+      - name: Test the VEXONKit package (Swift Package Manager)
+        run: swift test
+        working-directory: mobile-ios/Packages/VEXONKit
+
+      - name: Build app for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project VEXON.xcodeproj \
+            -scheme VEXON \
+            -destination "platform=iOS Simulator,name=${DEVICE}" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO | tee build.log | tail -n 60
+
+      - name: Run app unit + UI tests
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project VEXON.xcodeproj \
+            -scheme VEXON \
+            -destination "platform=iOS Simulator,name=${DEVICE}" \
+            -derivedDataPath build \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO | tail -n 80
+
+      - name: Launch app in simulator and take screenshots
+        run: |
+          mkdir -p screenshots
+          xcrun simctl boot "${DEVICE}" || true
+          xcrun simctl bootstatus "${DEVICE}" -b
+          APP=$(find build/Build/Products -name 'VEXON.app' -path '*iphonesimulator*' | head -1)
+          xcrun simctl install booted "$APP"
+          BUNDLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")
+          xcrun simctl launch booted "$BUNDLE"
+          sleep 8
+          xcrun simctl io booted screenshot screenshots/01-launch.png
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-screenshots
+          path: mobile-ios/screenshots
+          if-no-files-found: ignore
+
+      - name: Upload build log and test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-logs-and-results
+          path: |
+            mobile-ios/build.log
+            mobile-ios/TestResults.xcresult
+          if-no-files-found: ignore

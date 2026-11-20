@@ -52,6 +52,7 @@ public struct TripFixBuffer: Sendable {
 
     /// The next batch to upload (fresh fixes only, oldest first). Expired fixes are discarded.
     public mutating func nextBatch(now: Date) -> [OutgoingFix] {
+        let maxAge = self.maxAge // copy first: the closure must not read `self` while `pending` is mutated
         pending.removeAll { now.timeIntervalSince($0.at) > maxAge }
         return pending.prefix(maxBatch).map(\.fix)
     }

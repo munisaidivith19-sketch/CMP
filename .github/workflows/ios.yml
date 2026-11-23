@@ -1,0 +1,162 @@
+name: iOS
+
+# Builds the VEXON iOS app (mobile-ios/) on a macOS runner: generates the Xcode
+# project with XcodeGen, runs the VEXONKit package tests, builds the app for an
+# iPhone 16 simulator (unsigned), runs the unit + UI tests, then boots the
+# simulator, launches the app and takes a screenshot. Screenshots, the build log
+# and the .xcresult test results are uploaded as artifacts. No secrets needed.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'mobile-ios/**'
+      - '.github/workflows/ios.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and screenshot
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      SIM_NAME: iPhone 16
+      DESTINATION: platform=iOS Simulator,name=iPhone 16
+      DERIVED_DATA: ${{ github.workspace }}/build/DerivedData
+    defaults:
+      run:
+        working-directory: mobile-ios
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # The runner ships versioned folders (Xcode_16.2.app, ...), so pick the
+      # newest Xcode 16 that is installed rather than guessing a path.
+      - name: Select Xcode 16
+        run: |
+          set -euo pipefail
+          echo "Installed Xcode versions:"
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$XCODE" ]; then
+            echo "No Xcode 16 found on this runner." >&2
+            exit 1
+          fi
+          echo "Using $XCODE"
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Show Xcode and simulator versions
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices available "iPhone 16"
+
+      - name: Install XcodeGen and generate VEXON.xcodeproj
+        run: |
+          brew install xcodegen
+          # Run through bash: the executable bit is often lost on Windows checkouts.
+          bash Scripts/generate-project.sh
+
+      - name: Test VEXONKit package
+        run: swift test
+        working-directory: mobile-ios/Packages/VEXONKit
+
+      - name: Build VEXON for the simulator
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/build"
+          set -o pipefail
+          xcodebuild build \
+            -project VEXON.xcodeproj \
+            -scheme VEXON \
+            -configuration Debug \
+            -destination "$DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$GITHUB_WORKSPACE/build/build.log"
+
+      # continue-on-error so the screenshot and upload steps still run.
+      - name: Run unit and UI tests
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project VEXON.xcodeproj \
+            -scheme VEXON \
+            -configuration Debug \
+            -destination "$DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -resultBundlePath "$GITHUB_WORKSPACE/build/VEXON.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$GITHUB_WORKSPACE/build/test.log"
+
+      - name: Launch the app and take a screenshot
+        run: |
+          set -euo pipefail
+          APP="$DERIVED_DATA/Build/Products/Debug-iphonesimulator/VEXON.app"
+          test -d "$APP"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")
+          mkdir -p "$GITHUB_WORKSPACE/build/screenshots"
+          xcrun simctl boot "$SIM_NAME" || true
+          xcrun simctl bootstatus "$SIM_NAME" -b
+          xcrun simctl install booted "$APP"
+          xcrun simctl launch booted "$BUNDLE_ID"
+          sleep 8
+          xcrun simctl io booted screenshot "$GITHUB_WORKSPACE/build/screenshots/launch.png"
+
+      # A simulator build for Appetize.io (run the app in a browser, no Mac):
+      # unsigned, arm64 + x86_64, pointed at the deployed server so sign-in
+      # works without typing a server address. Upload the zip to appetize.io.
+      - name: Build the Appetize.io simulator app
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project VEXON.xcodeproj \
+            -scheme VEXON \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$GITHUB_WORKSPACE/build/AppetizeData" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            VEXON_API_BASE_URL=https://jnn.onrender.com \
+            | tee "$GITHUB_WORKSPACE/build/appetize-build.log"
+          APP="$GITHUB_WORKSPACE/build/AppetizeData/Build/Products/Debug-iphonesimulator/VEXON.app"
+          test -d "$APP"
+          mkdir -p "$GITHUB_WORKSPACE/build/appetize"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$GITHUB_WORKSPACE/build/appetize/VEXON-simulator.zip"
+
+      - name: Upload the Appetize.io app (VEXON-simulator.zip)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-appetize-app
+          path: build/appetize/VEXON-simulator.zip
+          if-no-files-found: warn
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-screenshots
+          path: build/screenshots
+          if-no-files-found: warn
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-build-log
+          path: build/*.log
+          if-no-files-found: warn
+
+      - name: Upload test results (.xcresult)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-xcresult
+          path: build/VEXON.xcresult
+          if-no-files-found: warn

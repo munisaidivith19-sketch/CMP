@@ -33,17 +33,16 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # The app uses the iOS 26 SDK (Liquid Glass, behind #available checks),
-      # so it needs Xcode 26; pick the newest one installed.
-      - name: Select Xcode 26
+      # Xcode 16 builds the app (the iOS 26 Liquid Glass code is compiled only
+      # with Xcode 26, behind `#if compiler(>=6.2)`); pick the newest Xcode 16.
+      - name: Select Xcode 16
         run: |
           set -euo pipefail
           echo "Installed Xcode versions:"
           ls -d /Applications/Xcode*.app
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -vi beta | sort -V | tail -n 1 || true)
-          [ -z "$XCODE" ] && XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          XCODE=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)
           if [ -z "$XCODE" ]; then
-            echo "No Xcode 26 found on this runner." >&2
+            echo "No Xcode 16 found on this runner." >&2
             exit 1
           fi
           echo "Using $XCODE"

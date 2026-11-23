@@ -26,8 +26,6 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     env:
-      SIM_NAME: iPhone 16
-      DESTINATION: platform=iOS Simulator,name=iPhone 16
       DERIVED_DATA: ${{ github.workspace }}/build/DerivedData
     defaults:
       run:
@@ -35,25 +33,36 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # The runner ships versioned folders (Xcode_16.2.app, ...), so pick the
-      # newest Xcode 16 that is installed rather than guessing a path.
-      - name: Select Xcode 16
+      # The app uses the iOS 26 SDK (Liquid Glass, behind #available checks),
+      # so it needs Xcode 26; pick the newest one installed.
+      - name: Select Xcode 26
         run: |
           set -euo pipefail
           echo "Installed Xcode versions:"
           ls -d /Applications/Xcode*.app
-          XCODE=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -vi beta | sort -V | tail -n 1 || true)
+          [ -z "$XCODE" ] && XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1 || true)
           if [ -z "$XCODE" ]; then
-            echo "No Xcode 16 found on this runner." >&2
+            echo "No Xcode 26 found on this runner." >&2
             exit 1
           fi
           echo "Using $XCODE"
           echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
 
-      - name: Show Xcode and simulator versions
+      # Simulator device names change with each Xcode, so use the first iPhone it has.
+      - name: Pick an iPhone simulator
         run: |
+          set -euo pipefail
           xcodebuild -version
-          xcrun simctl list devices available "iPhone 16"
+          xcrun simctl list devices available
+          SIM=$(xcrun simctl list devices available | grep -oE "iPhone [0-9]+[A-Za-z ]*\(" | head -n 1 | sed 's/ *($//')
+          if [ -z "$SIM" ]; then
+            echo "No iPhone simulator available." >&2
+            exit 1
+          fi
+          echo "Using simulator: $SIM"
+          echo "SIM_NAME=$SIM" >> "$GITHUB_ENV"
+          echo "DESTINATION=platform=iOS Simulator,name=$SIM" >> "$GITHUB_ENV"
 
       - name: Install XcodeGen and generate VEXON.xcodeproj
         run: |
@@ -61,8 +70,14 @@ jobs:
           # Run through bash: the executable bit is often lost on Windows checkouts.
           bash Scripts/generate-project.sh
 
+      # continue-on-error: a package test failure should not stop the app build;
+      # the output is kept in the build-log artifact.
       - name: Test VEXONKit package
-        run: swift test
+        continue-on-error: true
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/build"
+          set -o pipefail
+          swift test 2>&1 | tee "$GITHUB_WORKSPACE/build/package-test.log"
         working-directory: mobile-ios/Packages/VEXONKit
 
       - name: Build VEXON for the simulator

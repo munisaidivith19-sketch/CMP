@@ -27,9 +27,12 @@ export const sameMobile = (a, b) => {
  * Mobile number field: only digits, never more than 10 — typed, pasted or
  * autofilled.
  */
-export default function MobileInput({ value, onValue, ...props }) {
+// `onChange` is taken out so a caller's handler (or undefined) never replaces
+// the digit-only one below — that left the field ignoring every key press.
+export default function MobileInput({ value, onValue, onChange: _ignored, ...props }) {
   return (
     <Input
+      {...props}
       type="tel"
       inputMode="numeric"
       autoComplete="off"
@@ -42,7 +45,6 @@ export default function MobileInput({ value, onValue, ...props }) {
         e.preventDefault();
         onValue(toMobile(e.clipboardData.getData('text')));
       }}
-      {...props}
     />
   );
 }

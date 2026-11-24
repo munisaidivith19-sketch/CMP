@@ -162,13 +162,8 @@ const tagArray = (field) =>
     .bail() // a string, number or null is a 422, never a crash in the sanitizer
     .customSanitizer((arr) => arr.map((s) => String(s).trim().toLowerCase().slice(0, 40)).filter(Boolean));
 
-/** Phone numbers: digits with optional +, spaces, dashes and brackets — never free text. */
-const PHONE_CHARS = /^[0-9+\-\s()]*$/;
-const phoneRule = (chain, label = 'Phone number') =>
-  chain.trim().isLength({ max: 20 }).matches(PHONE_CHARS).withMessage(`${label} may contain only digits, +, spaces, - and brackets`);
-
 /**
- * A mobile number entered by a Class In-Charge: exactly 10 digits. Spacing,
+ * A mobile number (every role): exactly 10 digits. Spacing,
  * dashes, brackets and a +91 / 91 / 0 prefix are dropped first, so the stored
  * value is always the bare 10 digits.
  */
@@ -425,7 +420,8 @@ router.put(
   body('department').optional().trim().isLength({ max: 80 }),
   body('year').optional({ values: 'null' }).isInt({ min: 1, max: 6 }).toInt(),
   body('bio').optional().trim().isLength({ max: 500 }),
-  phoneRule(body('phone').optional()),
+  // Every role: a mobile number is exactly 10 digits (empty clears it).
+  mobile10(body('phone').optional({ values: 'falsy' }), 'Mobile number'),
   tagArray('interests'),
   tagArray('skills'),
   tagArray('extracurriculars'),
@@ -817,9 +813,9 @@ router.post(
     .withMessage('Department is required'),
   // Staff "class in charge" section, optional.
   body('section').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' }).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
-  // Students: exactly 10 digits (optional). Staff keep the free-form rule.
+  // Every role: exactly 10 digits (optional).
   mobile10(body('phone').if(isStudentRole).optional({ values: 'falsy' }), 'Student mobile number'),
-  phoneRule(body('phone').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' })),
+  mobile10(body('phone').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' }), 'Mobile number'),
   // Policy Assignment: "none" (role access only, the default) or "custom"
   // (additional policies, checked against the caller's authority in the controller).
   body('policyMode').optional().isIn(POLICY_MODES).withMessage('Choose a policy option'),
@@ -849,8 +845,9 @@ router.patch(
   body('rollNo').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('employeeId').optional({ values: 'null' }).trim().isLength({ max: 30 }),
   body('stayType').optional({ values: 'null' }).isIn(STAY_TYPES),
-  phoneRule(body('phone').optional({ values: 'null' })),
-  phoneRule(body('parentPhone').optional({ values: 'null' }), "Parent's mobile number"),
+  // Every role: 10 digits; an empty value clears the number.
+  mobile10(body('phone').optional({ values: 'falsy' }), 'Mobile number'),
+  mobile10(body('parentPhone').optional({ values: 'falsy' }), "Parent's mobile number"),
   validate,
   admin.updateUser
 );

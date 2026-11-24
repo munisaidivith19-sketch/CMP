@@ -104,27 +104,24 @@ function EditProfile({ open, onClose, user }) {
         ) : (
           <Input label="Designation" {...register('designation')} />
         )}
-        {isStudent ? (
-          <Input
-            label="Mobile"
-            type="tel"
-            inputMode="numeric"
-            maxLength={10}
-            placeholder="10-digit mobile"
-            hint="10 digits · must be different from your parent's number"
-            error={errors.phone}
-            {...register('phone', {
-              setValueAs: (raw) => toMobile(raw),
-              validate: (val) => {
-                if (!mobileOk(val)) return 'Enter exactly 10 digits';
-                if (val && sameMobile(val, user.parentPhone)) return "This is your parent's number. Enter your own mobile";
-                return true;
-              },
-            })}
-          />
-        ) : (
-          <Input label="Phone" {...register('phone')} />
-        )}
+        {/* Every role: exactly 10 digits; a student's must differ from the parent's. */}
+        <Input
+          label="Mobile"
+          type="tel"
+          inputMode="numeric"
+          maxLength={10}
+          placeholder="10-digit mobile"
+          hint={isStudent ? "10 digits · must be different from your parent's number" : '10 digits'}
+          error={errors.phone}
+          {...register('phone', {
+            setValueAs: (raw) => toMobile(raw),
+            validate: (val) => {
+              if (!mobileOk(val)) return 'Enter exactly 10 digits';
+              if (isStudent && val && sameMobile(val, user.parentPhone)) return "This is your parent's number. Enter your own mobile";
+              return true;
+            },
+          })}
+        />
         <Textarea className="sm:col-span-2" label="Bio" rows={3} maxLength={500} {...register('bio')} />
         <Controller name="interests" control={control} render={({ field }) => <TagInput label="Interests" hint="e.g. technical, hackathon, cultural, sports" value={field.value} onChange={field.onChange} />} />
         <Controller name="skills" control={control} render={({ field }) => <TagInput label="Skills" value={field.value} onChange={field.onChange} />} />

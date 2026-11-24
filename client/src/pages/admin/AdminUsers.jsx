@@ -141,9 +141,13 @@ function ClassModal({ user, onClose }) {
     setMobileErrors((e) => ({ ...e, [k]: undefined }));
   };
   const save = async () => {
+    // Every role: a mobile number, when given, is exactly 10 digits.
+    if (!mobileOk(toMobile(v.phone))) {
+      setMobileErrors({ phone: 'Enter exactly 10 digits' });
+      return;
+    }
     if (isStudent) {
       const bad = {};
-      if (!mobileOk(toMobile(v.phone))) bad.phone = 'Enter exactly 10 digits';
       if (!v.parentPhone || !mobileOk(toMobile(v.parentPhone))) bad.parentPhone = 'Enter exactly 10 digits';
       setMobileErrors(bad);
       if (Object.keys(bad).length) return;
@@ -273,7 +277,7 @@ function ClassModal({ user, onClose }) {
         {isStudent ? (
           <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setMobile('phone')} error={mobileErrors.phone} />
         ) : (
-          <Input label="Mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} />
+          <MobileInput label="Mobile" hint={MOBILE_HINT} value={v.phone} onValue={setMobile('phone')} error={mobileErrors.phone} />
         )}
         {isStaff && <Input label="Employee ID" maxLength={30} className="uppercase" value={v.employeeId} onChange={set('employeeId')} />}
         {isStudent && (

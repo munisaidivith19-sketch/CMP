@@ -153,9 +153,13 @@ const normalizeDigits = (val) => {
   const submit = async (e) => {
     e.preventDefault();
 
+    // Every role: a mobile number, when given, is exactly 10 digits.
+    if (!mobileOk(toMobile(v.phone))) {
+      setErrors((prev) => ({ ...prev, phone: 'Enter exactly 10 digits' }));
+      return;
+    }
     if (STUDENT_FORM_ROLES.includes(role)) {
       const bad = {};
-      if (!mobileOk(toMobile(v.phone))) bad.phone = 'Enter exactly 10 digits';
       if (!v.parentPhone || !mobileOk(toMobile(v.parentPhone))) bad.parentPhone = 'Enter exactly 10 digits';
       if (Object.keys(bad).length) {
         setErrors((prev) => ({ ...prev, ...bad }));
@@ -312,14 +316,14 @@ const normalizeDigits = (val) => {
       case 'stayType':
         return <Select key={k} label="Stay" placeholder="Hosteler / Day Scholar" options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))} {...common} />;
       case 'email':
-        return <Input key={k} label="College email (username)" type="email" autoComplete="off" placeholder="name@college.edu" {...common} />;
+        return <Input key={k} label="College email (username)" type="email" autoComplete="off" placeholder="name@jnn.edu.in" {...common} />;
       case 'phone':
         if (STUDENT_FORM_ROLES.includes(role)) {
-          return <MobileInput key={k} label="Student mobile" hint={MOBILE_HINT} {...common} onChange={undefined} onValue={setMobile('phone')} />;
+          return <MobileInput key={k} label="Student mobile" hint={MOBILE_HINT} {...common} onValue={setMobile('phone')} />;
         }
-        return <Input key={k} label="Mobile" type="tel" maxLength={20} {...common} />;
+        return <MobileInput key={k} label="Mobile" hint={MOBILE_HINT} {...common} onValue={setMobile('phone')} />;
       case 'parentPhone':
-        return <MobileInput key={k} label="Parent mobile" hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} {...common} onChange={undefined} onValue={setMobile('parentPhone')} />;
+        return <MobileInput key={k} label="Parent mobile" hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} {...common} onValue={setMobile('parentPhone')} />;
       case 'password':
         return (
           <div key={k} className="flex items-start gap-2 sm:col-span-2">

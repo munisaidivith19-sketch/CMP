@@ -51,9 +51,23 @@ test('admin create: student and parent numbers must be exactly 10 digits and dif
   assert.equal(stored.parentPhone, PARENT);
 });
 
-test('admin create: staff numbers keep the free-form rule', async () => {
-  const r = await create({ role: 'hod', name: 'New HOD', email: `hod${rnd()}@test.edu`, password: 'Welcome@123', employeeId: `E-${rnd()}`, department: 'ECE', phone: '0442 2345 678' });
-  assert.equal(r.status, 201, JSON.stringify(r.body));
+test('every role: staff mobile numbers must be exactly 10 digits too', async () => {
+  const hod = (phone) => create({ role: 'hod', name: 'New HOD', email: `hod${rnd()}@test.edu`, password: 'Welcome@123', employeeId: `E-${rnd()}`, department: 'ECE', phone });
+  for (const bad of ['98765', '98765432101', '+1 555 0100', 'call me']) {
+    const r = await hod(bad);
+    assert.equal(r.status, 422, `${bad}: ${JSON.stringify(r.body)}`);
+  }
+  const ok = await hod('+91 98765-00009');
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  assert.equal((await ctx.models.User.findById(ok.body._id).lean()).phone, '9876500009', 'stored as the bare 10 digits');
+  assert.equal((await hod('')).status, 201, 'the mobile stays optional');
+
+  // Admin edit and the staff member's own profile follow the same rule.
+  const staff = ok.body._id;
+  assert.equal((await ctx.request('PATCH', `/admin/users/${staff}`, { token: admin.token, body: { phone: '12345' } })).status, 422);
+  assert.equal((await ctx.request('PATCH', `/admin/users/${staff}`, { token: admin.token, body: { phone: '9876500010' } })).status, 200);
+  assert.equal((await ctx.request('PUT', '/users/me', { token: faculty.token, body: { phone: '12345' } })).status, 422);
+  assert.equal((await ctx.request('PUT', '/users/me', { token: faculty.token, body: { phone: '9876500011' } })).status, 200);
 });
 
 test('admin edit: a changed number must be 10 digits and not match the other one', async () => {

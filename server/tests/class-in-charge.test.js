@@ -155,7 +155,7 @@ after(async () => {
 test('Faculty create/update stores the exact in-charge year and semester, and refuses invalid ones', async () => {
   const base = {
     role: 'faculty', name: 'New In-Charge', password: 'Welcome@123', department: CY, section: 'A',
-    teachingYears: [3, 4], teachingSections: ['A'], phone: '9333',
+    teachingYears: [3, 4], teachingSections: ['A'], phone: '9333333333',
   };
   const ok = await ctx.request('POST', '/admin/users', {
     token: admin.token,

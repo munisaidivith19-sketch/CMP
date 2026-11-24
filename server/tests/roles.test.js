@@ -81,7 +81,7 @@ test('admin creates student / faculty / HOD / principal logins with role-specifi
   const fac = await ctx.request('POST', '/admin/users', {
     token: admin.token,
     body: {
-      role: 'faculty', name: 'New Fac', email: 'new.fac@test.edu', password: 'Welcome@123', employeeId: 'E-100', department: 'CSE', section: 'A', phone: '9222',
+      role: 'faculty', name: 'New Fac', email: 'new.fac@test.edu', password: 'Welcome@123', employeeId: 'E-100', department: 'CSE', section: 'A', phone: '9222222222',
       teachingYears: [3, 2], teachingSections: ['b', 'A'],
     },
   });
@@ -102,7 +102,7 @@ test('admin creates student / faculty / HOD / principal logins with role-specifi
 
   const pr = await ctx.request('POST', '/admin/users', {
     token: admin.token,
-    body: { role: 'principal', name: 'New Principal', email: 'principal2@test.edu', password: 'Welcome@123', employeeId: 'E-P2', phone: '9333' },
+    body: { role: 'principal', name: 'New Principal', email: 'principal2@test.edu', password: 'Welcome@123', employeeId: 'E-P2', phone: '9333333333' },
   });
   assert.equal(pr.status, 201, 'principal needs no department');
 

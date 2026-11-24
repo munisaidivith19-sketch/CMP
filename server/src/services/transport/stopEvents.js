@@ -131,7 +131,7 @@ async function completeAtFinalStop(trip, finalEvent) {
   const ended = await BusTrip.findOneAndUpdate(
     { _id: trip._id, status: 'active' },
     { $set: { status: 'completed', endedAt: new Date(finalEvent.detectedAt || finalEvent.at), endReason: 'Arrived at the final stop' } },
-    { new: true }
+    { returnDocument: 'after' }
   ).lean();
   if (!ended) return;
   emitToRooms([`bus:${ended.bus}`, 'transport:all'], 'bus:trip', { busId: String(ended.bus), tripId: String(ended._id), status: ended.status });
@@ -290,7 +290,7 @@ export async function changeDirection(tripId, direction) {
   if (await BusStopEvent.exists({ trip: trip._id, type: { $in: ['arrival', 'departure'] } })) throw new ApiError(409, 'Stops have already been recorded on this trip — its direction can no longer change', undefined, { code: 'stops_recorded' });
   const fields = await journeyFields(trip.baseRoute || trip.route, direction);
   fields.directionAssumed = false;
-  const updated = await BusTrip.findOneAndUpdate({ _id: trip._id, status: 'active' }, { $set: fields }, { new: true }).lean();
+  const updated = await BusTrip.findOneAndUpdate({ _id: trip._id, status: 'active' }, { $set: fields }, { returnDocument: 'after' }).lean();
   if (!updated) throw new ApiError(409, 'This trip has ended', undefined, { code: 'trip_not_active' });
   await BusStopEvent.updateMany({ trip: trip._id, type: 'trip_started' }, { $set: { direction, route: updated.route } });
   emitToRooms([`bus:${updated.bus}`, 'transport:all'], 'bus:trip', { busId: String(updated.bus), tripId: String(updated._id), status: updated.status, direction });

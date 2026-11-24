@@ -54,7 +54,7 @@ async function bumpCounter(key, kind, subject) {
   return LoginThrottle.findOneAndUpdate(
     { key },
     { $inc: { count: 1 }, $set: { kind, lastAttempt: now, expiresAt: new Date(now.getTime() + maxAgeOf(kind)), ...(subject ? { subject } : {}) } },
-    { upsert: true, new: true, lean: true }
+    { upsert: true, returnDocument: 'after', lean: true }
   );
 }
 

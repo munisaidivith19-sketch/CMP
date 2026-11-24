@@ -49,8 +49,8 @@ async function login(overrides) {
 }
 const restrictedAdmin = () => login({ role: 'admin', employeeId: `PA-${uniq()}`, policyManaged: true, policies: [] });
 async function setModules(target, modules) {
-  assert.equal((await req('POST', '/super-admin/reauth', sa, { password: PASSWORD })).status, 200);
-  return req('PUT', `/super-admin/admins/${target.u._id}/modules`, sa, { modules });
+  assert.equal((await req('POST', '/console/reauth', sa, { password: PASSWORD })).status, 200);
+  return req('PUT', `/console/admins/${target.u._id}/modules`, sa, { modules });
 }
 
 before(async () => {
@@ -145,13 +145,13 @@ test('other roles are not module-restricted: their modules are null and their ac
   assert.equal((await req('GET', '/notifications', faculty)).status, 200);
 });
 
-test('the modules endpoint is Super-Admin-only, re-authenticated and validated', async () => {
+test('the modules endpoint is IT support-only, re-authenticated and validated', async () => {
   const admin = await restrictedAdmin();
   assert.equal((await setModules(admin, ['gatePass', 'nuclearLaunch'])).status, 422);
   assert.equal((await req('GET', '/account/modules', admin)).body.modules.length, 0, 'nothing half-saved');
   // An Admin cannot use it, not even on another Admin.
   const legacy = await login({ role: 'admin', employeeId: `LA-${uniq()}` });
-  assert.equal((await req('PUT', `/super-admin/admins/${admin.u._id}/modules`, legacy, { modules: ['gatePass'] })).status, 403);
+  assert.equal((await req('PUT', `/console/admins/${admin.u._id}/modules`, legacy, { modules: ['gatePass'] })).status, 403);
   // A checkbox save keeps fine-tuned grants of modules that stay ticked.
   await ctx.models.User.updateOne({ _id: admin.u._id }, { $set: { policies: [{ module: 'user_management', actions: ['view'], scope: 'department', department: 'CSE' }] } });
   const kept = await setModules(admin, ['people', 'gatePass']);

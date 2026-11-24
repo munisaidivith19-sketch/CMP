@@ -20,7 +20,7 @@ import {
 const asPlain = (list) => (list || []).map((p) => (p.toObject ? p.toObject() : p));
 
 /**
- * For a delegated (non Super Admin) save that only shows the actor what it may
+ * For a delegated (non IT support) save that only shows the actor what it may
  * delegate: keep everything the actor cannot see exactly as it was. Modules
  * outside the actor's cap and actions outside it are carried over from the
  * target's current policies; nothing is ever added by the merge, and the result
@@ -50,13 +50,13 @@ function keepUnmanaged(actor, previous, requested) {
 }
 
 /**
- * The one writer of Admin module policies. Used by the Super Admin
+ * The one writer of Admin module policies. Used by IT support
  * (any catalogue policy) and by a policy-managed admin holding
  * user_management.policies (only within its own authority and delegation limit).
  *
  * - The target must be an ordinary Admin account; never yourself, never a
- *   Super Admin. A delegated actor may only change policy-managed Admins:
- *   restricting a legacy (unrestricted) Admin is a Super Admin decision.
+ *   IT support. A delegated actor may only change policy-managed Admins:
+ *   restricting a legacy (unrestricted) Admin is IT support decision.
  * - Input is validated against the catalogue; unknown modules, actions or
  *   scopes are rejected, never silently dropped.
  * - Saving marks the target policy-managed: from then on it is deny-by-default.
@@ -91,7 +91,7 @@ export async function applyPolicies(req, targetId, rawPolicies, { merge = false 
   }
   if (delegated && !staffTarget && isPolicyManaged(actor) && !target.policyManaged) {
     logAudit(req, 'PRIVILEGE_ESCALATION_BLOCKED', { outcome: 'denied', target, reason: 'legacy_admin_target' });
-    throw new ApiError(403, 'Only a Super Admin can restrict a legacy (unrestricted) Admin');
+    throw new ApiError(403, 'Only IT support can restrict a legacy (unrestricted) Admin');
   }
   if (delegated && merge) policies = keepUnmanaged(actor, previous, policies);
 
@@ -109,7 +109,7 @@ export async function applyPolicies(req, targetId, rawPolicies, { merge = false 
   const updated = await User.findOneAndUpdate(
     staffTarget ? { _id: target._id, role: target.role } : { _id: target._id, role: 'admin', 'delegation.updatedAt': target.delegation?.updatedAt ?? null },
     { $set: staffTarget ? { policies } : { policies, policyManaged: true } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'The account changed while saving. Reload and try again.');
 
@@ -138,7 +138,7 @@ export const POLICY_MODES = ['none', 'custom'];
  * policy never leaves a half-configured account behind.
  *
  * - Only staff roles that can hold additional policies (STAFF_GRANT_ROLES).
- * - Super Admin: anything in the staff catalogue. Admin: only a
+ * - IT support: anything in the staff catalogue. Admin: only a
  *   policy-managed Admin holding User Management → policies and Staff
  *   Management → edit for the new account's department, and only what it may
  *   delegate (exceedsAuthority). Everyone else is refused, whatever the UI showed.
@@ -168,7 +168,7 @@ export function validateCreationPolicies(req, { role, department, policyMode, po
   if (!policies.length) throw new ApiError(422, 'Choose at least one permission, or select "No Additional Policies"', [{ field: 'policies', message: 'No permissions selected' }]);
 
   if (actor.role !== 'super_admin') {
-    if (!isPolicyManaged(actor) || !hasPolicy(actor, 'user_management', 'policies')) deny('create_policies_not_authorized', 'You are not authorized to assign policies. A Super Admin must grant you User Management → policies.');
+    if (!isPolicyManaged(actor) || !hasPolicy(actor, 'user_management', 'policies')) deny('create_policies_not_authorized', 'You are not authorized to assign policies. IT support must grant you User Management → policies.');
     if (!adminAllows(actor, 'staff_management', 'edit', department)) deny('staff_target_outside_scope', 'You need Staff Management → edit for this department to assign policies to this account');
   }
   const tooMuch = exceedsAuthority(actor, [], policies, { role, department });
@@ -186,7 +186,7 @@ export async function auditCreationPolicies(req, user, policies) {
 /**
  * One account's policies as far as `actor` may see and change them: the base
  * catalogue for that kind of account, the actor's cap (null = everything, for a
- * Super Admin), the visible grants and how many are hidden.
+ * IT support), the visible grants and how many are hidden.
  */
 export async function policyView(actor, targetId) {
   const target = await User.findById(targetId).select('name email role department policies policyManaged').lean();
@@ -196,9 +196,9 @@ export async function policyView(actor, targetId) {
   const base = staffTarget ? staffCatalogue() : POLICY_CATALOGUE;
   let cap = null;
   if (actor.role !== 'super_admin') {
-    if (!isPolicyManaged(actor) || !hasPolicy(actor, 'user_management', 'policies')) throw new ApiError(403, 'Assigning policies needs a Super Admin to grant you User Management → policies');
+    if (!isPolicyManaged(actor) || !hasPolicy(actor, 'user_management', 'policies')) throw new ApiError(403, 'Assigning policies needs IT support to grant you User Management → policies');
     if (staffTarget && !adminAllows(actor, 'staff_management', 'edit', target.department)) throw new ApiError(403, 'You need Staff Management → edit for this account to change its policies');
-    if (!staffTarget && !target.policyManaged) throw new ApiError(403, 'Only a Super Admin can restrict a legacy (unrestricted) Admin');
+    if (!staffTarget && !target.policyManaged) throw new ApiError(403, 'Only IT support can restrict a legacy (unrestricted) Admin');
     cap = policyCap(actor)
       .filter((p) => base[p.module])
       .map((p) => ({ ...p, actions: p.actions.filter((a) => base[p.module].actions[a]) }))
@@ -232,7 +232,7 @@ const plainDelegation = (d) => {
 };
 
 /**
- * Super Admin only: set an Admin's delegation limits (which roles it may
+ * IT support only: set an Admin's delegation limits (which roles it may
  * create / assign, and the most it may delegate to other Admins). The target
  * must already be policy-managed: a legacy Admin is unrestricted, so a limit
  * on it would mean nothing.
@@ -241,7 +241,7 @@ export async function applyDelegation(req, targetId, rawDelegation) {
   const actor = req.user;
   if (actor.role !== 'super_admin') {
     logAudit(req, 'PRIVILEGE_ESCALATION_BLOCKED', { outcome: 'denied', reason: 'delegation_not_super_admin', details: { target: String(targetId) } });
-    throw new ApiError(403, 'Only a Super Admin can change delegation limits');
+    throw new ApiError(403, 'Only IT support can change delegation limits');
   }
   const target = await User.findById(targetId).select('role policyManaged delegation name email');
   if (!target || target.role !== 'admin') throw new ApiError(404, 'Admin account not found');
@@ -257,7 +257,7 @@ export async function applyDelegation(req, targetId, rawDelegation) {
   const updated = await User.findOneAndUpdate(
     { _id: target._id, role: 'admin', policyManaged: true },
     { $set: { delegation: { ...delegation, updatedAt: new Date(), updatedBy: actor._id } } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'The account changed while saving. Reload and try again.');
 
@@ -273,7 +273,7 @@ export async function applyDelegation(req, targetId, rawDelegation) {
 /**
  * Admins a delegated actor may assign policies to, showing only what the
  * actor may delegate: other modules and actions are summarised as a count,
- * never listed. Legacy and Super Admin accounts never appear.
+ * never listed. Legacy and IT support accounts never appear.
  */
 export async function listPolicyTargets(actor) {
   const cap = policyCap(actor);

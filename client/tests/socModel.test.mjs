@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { countLabel, groupCauses, isFinal, percentLabel, statusTone, telemetryNotice, verifyState, STATUS_MEANING } from '../src/pages/superadmin/socModel.js';
+import { countLabel, groupCauses, isFinal, percentLabel, statusTone, telemetryNotice, verifyState, STATUS_MEANING } from '../src/pages/console/socModel.js';
 
 test('statuses that prove nothing are never shown as healthy (green)', () => {
   assert.equal(statusTone('PASS'), 'success');

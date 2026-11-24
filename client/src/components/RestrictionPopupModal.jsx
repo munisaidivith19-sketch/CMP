@@ -110,7 +110,7 @@ export default function RestrictionPopupModal({
             <button
               type="button"
               onClick={onClose}
-              className="w-full rounded-2xl bg-gradient-to-r from-rose-600 to-rose-700 py-3 text-sm font-extrabold text-white shadow-lg shadow-rose-900/40 hover:from-rose-500 hover:to-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-400 active:scale-[0.98] transition-all"
+              className="w-full rounded-2xl bg-gradient-to-r from-rose-600 to-rose-700 py-3 text-sm font-extrabold text-white shadow-lg shadow-rose-900/40 hover:from-rose-500 hover:to-rose-600 focus:outline-hidden focus:ring-2 focus:ring-rose-400 active:scale-[0.98] transition-all"
             >
               Understood
             </button>

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AlertOctagon, Bell, CalendarClock, CalendarDays, CheckCheck, ClipboardCheck, DoorOpen, Info, Megaphone, MessageCircle, MessagesSquare, PackageSearch, ShieldAlert, Shapes } from 'lucide-react';
 import { useGetNotificationsQuery, useMarkAllNotificationsReadMutation, useMarkNotificationReadMutation } from '../../services/api';
 import { useSelector } from 'react-redux';
-import { useGetAccountModulesQuery } from '../../services/superAdmin';
+import { useGetAccountModulesQuery } from '../../services/consoleApi';
 import { isModuleRestricted } from '../../utils/adminModules';
 import { cn } from '../ui/primitives';
 import { timeAgo } from '../../utils/format';

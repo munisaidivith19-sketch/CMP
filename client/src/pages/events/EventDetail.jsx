@@ -194,7 +194,7 @@ function Participants({ event, canMarkAttendance, isPast }) {
   }, [selectedDate]);
 
   return (
-    <Card className="overflow-hidden border border-white/10 shadow-xl backdrop-blur-md">
+    <Card className="overflow-hidden border border-white/10 shadow-xl">
       {/* Header with Title and PDF Download Button */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 p-5 bg-white/[0.02]">
         <div>
@@ -222,7 +222,7 @@ function Participants({ event, canMarkAttendance, isPast }) {
             loading={downloadingPdf}
             disabled={!data.length}
             title="Download event participants list as PDF with official college logo"
-            className="shadow-sm"
+            className="shadow-xs"
           >
             Download PDF
           </Button>
@@ -282,7 +282,7 @@ function Participants({ event, canMarkAttendance, isPast }) {
                 type="button"
                 onClick={() => setSelectedDate(dStr)}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm',
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs',
                   isSelected
                     ? 'bg-primary-600 text-white shadow-primary-500/30'
                     : 'bg-white/5 hover:bg-white/10 text-ink-muted hover:text-ink'
@@ -470,7 +470,7 @@ function Participants({ event, canMarkAttendance, isPast }) {
                             disabled={isMutating}
                             onClick={() => handleMark(r.user._id, true)}
                             className={cn(
-                              'inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all shadow-sm',
+                              'inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all shadow-xs',
                               dayStatus === 'attended'
                                 ? 'bg-emerald-600 text-white shadow-emerald-500/30'
                                 : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400'
@@ -486,7 +486,7 @@ function Participants({ event, canMarkAttendance, isPast }) {
                             disabled={isMutating}
                             onClick={() => handleMark(r.user._id, false)}
                             className={cn(
-                              'inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all shadow-sm',
+                              'inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-bold transition-all shadow-xs',
                               dayStatus === 'absent'
                                 ? 'bg-rose-600 text-white shadow-rose-500/30'
                                 : 'bg-rose-500/10 text-rose-700 hover:bg-rose-500/20 dark:text-rose-400'
@@ -549,7 +549,7 @@ export default function EventDetail() {
                 {ev.category}
               </span>
               {ev.isFeatured && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 shadow-sm">
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 shadow-xs">
                   <Star className="h-3 w-3 fill-amber-950" /> Featured
                 </span>
               )}
@@ -559,10 +559,10 @@ export default function EventDetail() {
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight leading-tight">{ev.title}</h1>
 
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-white/90">
-              <span className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-1.5 backdrop-blur-sm">
+              <span className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-1.5 backdrop-blur-xs">
                 <CalendarDays className="h-4 w-4 text-white/80" /> {eventRange(ev.startDate, ev.endDate)}
               </span>
-              <span className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-1.5 backdrop-blur-sm">
+              <span className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-1.5 backdrop-blur-xs">
                 <MapPin className="h-4 w-4 text-white/80" /> {ev.venue}
               </span>
             </div>
@@ -578,7 +578,7 @@ export default function EventDetail() {
                   {ev.facultyCoordinators.map((fc) => (
                     <div
                       key={fc._id}
-                      className="flex items-center gap-3 rounded-xl bg-white/15 p-2.5 backdrop-blur-sm border border-white/10 dark:bg-white/5"
+                      className="flex items-center gap-3 rounded-xl bg-white/15 p-2.5 backdrop-blur-xs border border-white/10 dark:bg-white/5"
                     >
                       <Avatar user={fc} size="sm" className="ring-2 ring-white/30" />
                       <div className="min-w-0 flex-1">
@@ -602,7 +602,7 @@ export default function EventDetail() {
           {/* Right Column: Compact Poster Preview Card */}
           <div className="flex items-center justify-center lg:col-span-5 lg:justify-end">
             {ev.poster ? (
-              <div className="group relative w-full max-w-[340px] sm:max-w-[380px] overflow-hidden rounded-2xl border border-white/20 bg-black/40 shadow-2xl backdrop-blur-sm transition-transform hover:scale-[1.02]">
+              <div className="group relative w-full max-w-[340px] sm:max-w-[380px] overflow-hidden rounded-2xl border border-white/20 bg-black/40 shadow-2xl backdrop-blur-xs transition-transform hover:scale-[1.02]">
                 <img
                   src={ev.poster}
                   alt={`${ev.title} poster`}
@@ -627,7 +627,7 @@ export default function EventDetail() {
                 </button>
               </div>
             ) : (
-              <div className="flex h-[240px] w-full max-w-[340px] flex-col items-center justify-center rounded-2xl border border-white/20 bg-white/5 p-6 text-center text-white/70 backdrop-blur-sm">
+              <div className="flex h-[240px] w-full max-w-[340px] flex-col items-center justify-center rounded-2xl border border-white/20 bg-white/5 p-6 text-center text-white/70 backdrop-blur-xs">
                 <CalendarDays className="mb-3 h-12 w-12 text-white/40" />
                 <p className="text-sm font-semibold">Campus Event</p>
                 <p className="mt-1 text-xs text-white/50">Official College & Department Session</p>

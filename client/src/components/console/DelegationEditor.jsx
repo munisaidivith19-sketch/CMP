@@ -6,7 +6,7 @@ import { ROLE_LABELS } from '../../utils/constants';
 import { DELEGATABLE_ROLES, previewDelegation, rolesSummary } from '../../utils/delegation';
 
 /**
- * Super Admin: which roles a policy-managed Admin may create and assign, and
+ * IT support: which roles a policy-managed Admin may create and assign, and
  * the most it may delegate to other Admins. Each limit can be left "not
  * limited" (the module policies decide, as before) or set to an explicit list.
  * The effective result is previewed from the draft before saving; the server

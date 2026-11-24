@@ -7,9 +7,9 @@ import {
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, StatCard, Tabs, cn } from '../../components/ui/primitives';
 import { Input, Select } from '../../components/ui/form';
 import { Modal } from '../../components/ui/Modal';
-import ModuleCheckboxes from '../../components/superadmin/ModuleCheckboxes';
-import DelegationEditor from '../../components/superadmin/DelegationEditor';
-import { reportError, useReauth } from '../../components/superadmin/Reauth';
+import ModuleCheckboxes from '../../components/console/ModuleCheckboxes';
+import DelegationEditor from '../../components/console/DelegationEditor';
+import { reportError, useReauth } from '../../components/console/Reauth';
 import {
   useCreateSuperAdminAdminMutation,
   useGetAdminEventsQuery,
@@ -30,7 +30,7 @@ import {
   useSetAdminPoliciesMutation,
   useSetAdminStatusMutation,
   useUpdateSuperAdminAdminMutation,
-} from '../../services/superAdmin';
+} from '../../services/consoleApi';
 import { ROLE_LABELS } from '../../utils/constants';
 import { rolesSummary } from '../../utils/delegation';
 import { checkedModules } from '../../utils/adminModules';
@@ -38,7 +38,7 @@ import { OtpTab } from '../admin/SecurityLogs';
 import { fmtDateTime, safeHref } from '../../utils/format';
 
 /**
- * Super Admin console. Deliberately has no link to the Emergency Control
+ * console. Deliberately has no link to the Emergency Control
  * page. Every action is authorized on the server; sensitive ones prompt for
  * the password (useReauth) when the server asks for it.
  */
@@ -57,7 +57,7 @@ export default function SuperAdmin() {
   const tab = TABS.some((t) => t.value === params.get('tab')) ? params.get('tab') : 'overview';
   return (
     <div>
-      <PageHeader icon={Crown} title="Super Admin" subtitle="Platform administration: admin accounts, policies, security and recovery." />
+      <PageHeader icon={Crown} title="IT support" subtitle="Platform administration: admin accounts, policies, security and recovery." />
       <Tabs tabs={TABS} value={tab} onChange={(v) => setParams({ tab: v }, { replace: true })} className="mb-6" />
       {tab === 'overview' && <Overview />}
       {tab === 'admins' && <Admins />}
@@ -89,7 +89,7 @@ function Overview() {
         <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {roles.map(([role, v]) => (
             <div key={role} className="rounded-2xl bg-white/40 p-3 dark:bg-white/5">
-              <p className="text-xs font-semibold muted">{ROLE_LABELS[role] || 'Super Admin'}</p>
+              <p className="text-xs font-semibold muted">{ROLE_LABELS[role] || 'IT support'}</p>
               <p className="text-xl font-extrabold">{v.total}</p>
               <p className="text-[11px] muted">{v.active} active</p>
             </div>
@@ -126,7 +126,7 @@ function Admins() {
     <Card>
       <CardHeader
         title="Admin accounts"
-        subtitle="Only ordinary Admins are managed here. Super Admin accounts are provisioned from the server."
+        subtitle="Only ordinary Admins are managed here. IT support accounts are provisioned from the server."
         action={<Button icon={Plus} onClick={() => setCreating(true)}>New admin</Button>}
       />
       <div className="mb-4 flex flex-wrap gap-3">
@@ -433,7 +433,7 @@ function Chats() {
               <button type="button" onClick={() => setOpenId(c._id)} className="flex w-full flex-wrap items-center gap-3 py-3 text-left hover:bg-white/30 dark:hover:bg-white/5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-bold">{convTitle(c)}</p>
-                  <p className="truncate text-xs muted">{c.lastMessage?.body ? `${c.lastMessage.sender?.name || ''}: ${c.lastMessage.body}` : 'No messages yet'}</p>
+                  <p className="truncate text-xs muted">{c.lastMessage?.e2e ? `${c.lastMessage.sender?.name || ''}: 🔒 End-to-end encrypted` : c.lastMessage?.body ? `${c.lastMessage.sender?.name || ''}: ${c.lastMessage.body}` : 'No messages yet'}</p>
                 </div>
                 <Badge color="neutral">{c.type}</Badge>
                 <span className="text-xs muted">{c.participantCount} people · {fmtDateTime(c.updatedAt)}</span>
@@ -461,7 +461,7 @@ function ChatViewer({ id, onClose }) {
             {data.items.map((m) => (
               <li key={m._id} className="rounded-2xl bg-white/40 p-3 text-sm dark:bg-white/5">
                 <p className="text-xs font-bold">{m.sender?.name || 'Unknown'} <span className="font-normal muted">· {ROLE_LABELS[m.sender?.role] || ''} · {fmtDateTime(m.createdAt)}{m.editedAt ? ' · edited' : ''}</span></p>
-                <p className="mt-1 whitespace-pre-wrap break-words">{m.deleted ? <span className="muted italic">Message deleted</span> : m.body}</p>
+                <p className="mt-1 whitespace-pre-wrap break-words">{m.deleted ? <span className="muted italic">Message deleted</span> : m.e2e ? <span className="muted italic">🔒 End-to-end encrypted — only the people in this chat can read it</span> : m.body}</p>
                 {m.attachment?.url && <a href={safeHref(m.attachment.url)} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-semibold text-primary-600 underline">{m.attachment.name || 'Attachment'}</a>}
               </li>
             ))}
@@ -502,7 +502,7 @@ function Recovery() {
       <Card>
         <CardHeader title="Backups" subtitle="Reported by the server's backup job (BACKUP_STATUS_FILE)." />
         {!backup.configured ? (
-          <EmptyState icon={HardDriveDownload} title="Backup status not configured" text="Have your backup job write its status file and set BACKUP_STATUS_FILE on the server. See docs/SUPER_ADMIN.md." />
+          <EmptyState icon={HardDriveDownload} title="Backup status not configured" text="Have your backup job write its status file and set BACKUP_STATUS_FILE on the server. See docs/CONSOLE.md." />
         ) : !backup.readable ? (
           <p className="text-sm font-semibold text-rose-600">The backup status file could not be read. Check the backup job on the server.</p>
         ) : (

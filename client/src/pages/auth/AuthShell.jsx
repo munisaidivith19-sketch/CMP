@@ -24,7 +24,7 @@ export default function AuthShell({ title, subtitle, children }) {
             </button>
           </div>
           <div className="mb-6 flex items-center gap-3 pr-8">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-sm">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-xs">
               <img src="/logo.jpeg" alt="Logo" className="h-full w-full object-contain" />
             </div>
             <span className="text-sm font-extrabold leading-tight tracking-tight text-ink dark:text-primary-50 sm:whitespace-nowrap sm:text-[17px]">J.N.N INSTITUTE OF ENGINEERING</span>

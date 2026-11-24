@@ -382,8 +382,10 @@ test('L4.8 only the built web app and /uploads are served — never .env, server
 test('L4.9/10 vite: no source maps, console/debugger dropped in production; verify:bundle catches secrets', () => {
   const vite = fs.readFileSync(path.join(REPO, 'client', 'vite.config.js'), 'utf8');
   assert.match(vite, /sourcemap:\s*false/);
-  assert.match(vite, /drop:\s*\['console',\s*'debugger'\]/);
-  assert.match(vite, /legalComments:\s*'none'/);
+  // Vite 8 (Rolldown/Oxc minifier) options.
+  assert.match(vite, /dropConsole:\s*true/);
+  assert.match(vite, /dropDebugger:\s*true/);
+  assert.match(vite, /comments:\s*\{\s*legal:\s*false\s*\}/);
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
   assert.ok(pkg.scripts['verify:bundle']);
 

@@ -163,7 +163,7 @@ export default function Login() {
         className="space-y-4" noValidate>
         {/* Active Lockout Banner with Live Monospace Countdown */}
         {lockout.isLocked && (
-          <div className="rounded-2xl border border-white/45 bg-white/10 p-4 text-center backdrop-blur-sm">
+          <div className="rounded-2xl border border-white/45 bg-white/10 p-4 text-center backdrop-blur-xs">
             <div className="flex items-center justify-center gap-2">
               <ShieldAlert className="auth-red h-6 w-6" />
               <p className="auth-red text-lg font-extrabold">Account Temporarily Locked</p>

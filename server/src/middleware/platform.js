@@ -5,7 +5,7 @@ import { SUPER_ADMIN_ROLE } from '../constants.js';
 import { authenticateAccessToken } from './auth.js';
 import { termsAcceptanceRequired } from '../services/legal.js';
 
-// Public endpoints that keep working in maintenance so the Super Admin can
+// Public endpoints that keep working in maintenance so IT support can
 // still sign in (login / refresh refuse everyone else themselves) and every
 // client can ask what is going on.
 const PUBLIC_OPEN = new Set(['/auth/login', '/auth/login-key', '/auth/refresh', '/auth/logout', '/platform/status']);
@@ -16,7 +16,7 @@ const PUBLIC_OPEN = new Set(['/auth/login', '/auth/login-key', '/auth/refresh', 
  * token is verified exactly as protect does (signature, live session, active
  * account) and the account must be allowed in the current mode. An invalid,
  * expired or revoked token never passes: it gets the same 401 protect would
- * give (so a Super Admin's client still refreshes its token during an
+ * give (so an IT support account's client still refreshes its token during an
  * emergency), and nothing behind the gate runs.
  */
 export const publicPlatformGate = asyncHandler(async (req, res, next) => {
@@ -25,14 +25,14 @@ export const publicPlatformGate = asyncHandler(async (req, res, next) => {
   if (state.mode === 'normal') return next();
   const header = String(req.headers.authorization || '');
   if (header.startsWith('Bearer ')) {
-    const { user } = await authenticateAccessToken(header.slice(7), req.ip);
+    const { user } = await authenticateAccessToken(header.slice(7), req.ip, { remoteAddress: req.socket?.remoteAddress, headers: req.headers });
     if (await platformAllows(user)) return next();
   }
   res.set('Retry-After', '300');
   return res.status(503).json(maintenanceBody(state));
 });
 
-/** After authentication: only a Super Admin gets through outside normal mode. */
+/** After authentication: only IT support gets through outside normal mode. */
 export const platformGate = asyncHandler(async (req, res, next) => {
   if (await platformAllows(req.user)) return next();
   const state = await getPlatformState();
@@ -44,7 +44,7 @@ export const platformGate = asyncHandler(async (req, res, next) => {
 // change the password, sign out, keep its session alive.
 const PASSWORD_CHANGE_OPEN = [/^\/auth\/me$/, /^\/auth\/change-password$/, /^\/auth\/activity$/, /^\/auth\/sessions(\/|$)/, /^\/auth\/push-token$/, /^\/notifications(\/|$)/];
 
-/** A temporary password set by a Super Admin must be replaced before anything else. */
+/** A temporary password set by IT support must be replaced before anything else. */
 export function passwordChangeGate(req, _res, next) {
   if (!req.user?.mustChangePassword) return next();
   const path = req.path.replace(/\/+$/, '') || '/';
@@ -79,8 +79,8 @@ export const termsGate = asyncHandler(async (req, res, next) => {
 export const REAUTH_WINDOW_MS = 5 * 60 * 1000;
 
 /**
- * Sensitive Super Admin actions need the password re-entered on this session
- * within the last five minutes (POST /super-admin/reauth). The proof lives on
+ * Sensitive IT support actions need the password re-entered on this session
+ * within the last five minutes (POST /console/reauth). The proof lives on
  * the server-side session row, never in anything the client sends.
  */
 export const requireRecentReauth = asyncHandler(async (req, _res, next) => {

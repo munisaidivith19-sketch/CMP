@@ -28,6 +28,7 @@ import {
 import { DEPARTMENTS } from '../../utils/constants';
 import { displayName, errMsg, fmtDateTime, titleCase } from '../../utils/format';
 import { SectionNote, StatusBadge } from './components';
+import { useDebounced } from '../../utils/useDebounced';
 
 function StaffPicker({ onPick, exclude = [] }) {
   const [q, setQ] = useState('');
@@ -86,7 +87,8 @@ function Projects() {
   const [q, setQ] = useState('');
   const [hidden, setHidden] = useState(false);
   const [page, setPage] = useState(1);
-  const { data, isLoading, error, refetch } = useGetSwManagedProjectsQuery({ q: q || undefined, hidden: hidden ? 'true' : undefined, page });
+  const debouncedQ = useDebounced(q);
+  const { data, isLoading, error, refetch } = useGetSwManagedProjectsQuery({ q: debouncedQ || undefined, hidden: hidden ? 'true' : undefined, page });
   const [hide] = useHideSwProjectMutation();
   const [unhide] = useUnhideSwProjectMutation();
   const [assigning, setAssigning] = useState(null);

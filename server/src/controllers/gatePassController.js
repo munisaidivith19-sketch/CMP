@@ -272,7 +272,7 @@ async function withGatePassLock(studentId, fn) {
   const locked = await User.findOneAndUpdate(
     { _id: studentId, $or: [{ gatePassLockUntil: null }, { gatePassLockUntil: { $lte: now } }] },
     { $set: { gatePassLockUntil: new Date(now.getTime() + GATE_LOCK_MS) } },
-    { new: true, projection: { _id: 1 } }
+    { returnDocument: 'after', projection: { _id: 1 } }
   );
   if (!locked) throw new ApiError(409, 'Your gate pass request is already being processed');
   try {
@@ -512,7 +512,7 @@ export const getGatePassQr = asyncHandler(async (req, res) => {
 async function approveWithSecurityCode(filter, set) {
   for (let attempt = 0; attempt < 6; attempt += 1) {
     try {
-      return await GatePass.findOneAndUpdate(filter, { $set: { ...set, verificationCode: generateGatePassSecurityCode() } }, { new: true });
+      return await GatePass.findOneAndUpdate(filter, { $set: { ...set, verificationCode: generateGatePassSecurityCode() } }, { returnDocument: 'after' });
     } catch (err) {
       if (err?.code !== 11000) throw err;
     }
@@ -552,7 +552,7 @@ async function reviewStage(req, res, { stage, from, forwardFrom = from, forwardB
   }
 
   const filter = { _id: pass._id, status: pass.status };
-  const updated = approving ? await approveWithSecurityCode(filter, set) : await GatePass.findOneAndUpdate(filter, { $set: set }, { new: true });
+  const updated = approving ? await approveWithSecurityCode(filter, set) : await GatePass.findOneAndUpdate(filter, { $set: set }, { returnDocument: 'after' });
   if (!updated) throw new ApiError(422, 'This pass was just reviewed by someone else');
 
   logActivity(req, `gate_pass.${stage}_${forwarding ? (approving ? 'approve' : 'forward') : 'reject'}`, { entityType: 'gate_pass', entityId: pass._id });
@@ -759,6 +759,11 @@ async function alternateMobileFor(req, pass) {
   const mobile = otpService.normalizeIndianMobile(typed);
   if (!mobile) throw new ApiError(422, 'Enter a valid 10-digit mobile number');
   if (otpService.sameMobile(mobile, await otpService.registeredParentMobile(pass))) return null;
+  // The temporary number is a parent's or guardian's, never the student's own.
+  const student = await User.findById(pass.student?._id || pass.student).select('phone').lean();
+  if (student?.phone && otpService.sameMobile(mobile, student.phone)) {
+    throw new ApiError(422, "That is the student's own mobile number. Enter the parent's or guardian's temporary number");
+  }
   const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
   if (reason.length < 3) throw new ApiError(422, 'Say why the OTP is going to a different number (e.g. parent not reachable)');
   return { mobile, reason };
@@ -823,7 +828,7 @@ export const verifyParentOtp = asyncHandler(async (req, res) => {
         ...(used?.alternateMobile ? { parentVerifiedAlternate: { mobileMasked: used.parentMobileMasked, reason: used.alternateReason } } : {}),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'This request changed while verifying — refresh and try again');
   logActivity(req, 'gate_pass.parent_verified', { entityType: 'gate_pass', entityId: pass._id });
@@ -855,7 +860,7 @@ export const cancelGatePass = asyncHandler(async (req, res) => {
   const pass = await GatePass.findOneAndUpdate(
     { _id: req.params.id, student: req.user._id, status: { $in: GATE_PASS_PENDING_STATUSES } },
     { $set: { status: 'cancelled', cancelledAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!pass) {
     const exists = await GatePass.findById(req.params.id).select('student status').lean();
@@ -963,7 +968,7 @@ export async function confirmExit(req, passId, code) {
   const updated = await GatePass.findOneAndUpdate(
     { _id: pass._id, status: 'approved', actualExit: null, verificationCode: code },
     { $set: set, $unset: { verificationCode: 1 } },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('student', STUDENT_FIELDS);
   if (!updated) throw new ApiError(409, 'Exit has already been recorded');
 
@@ -1013,7 +1018,7 @@ export async function confirmReturn(req, passId, credential) {
       // Every credential is consumed: none of them can be verified again.
       $unset: { verificationCode: 1, returnToken: 1, returnCode: 1 },
     },
-    { new: true }
+    { returnDocument: 'after' }
   ).populate('student', STUDENT_FIELDS);
   if (!updated) {
     const pass = await loadPass(passId);
@@ -1167,7 +1172,7 @@ export const revokeGatePass = asyncHandler(async (req, res) => {
       $set: { status: 'revoked', revokedBy: req.user._id, revokedAt: new Date(), revokeReason: req.body?.reason || '' },
       $unset: { verificationCode: 1 },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) {
     const pass = await loadPass(req.params.id);

@@ -168,7 +168,7 @@ export function TagInput({ label, value = [], onChange, placeholder = 'Type and 
           }}
           onBlur={add}
           placeholder={value.length ? '' : placeholder}
-          className="min-w-[120px] flex-1 bg-transparent text-sm outline-none placeholder:text-ink-muted"
+          className="min-w-[120px] flex-1 bg-transparent text-sm outline-hidden placeholder:text-ink-muted"
         />
       </div>
     </Field>
@@ -221,7 +221,7 @@ export function ImageUpload({ label, value, onChange, hint, aspect = 'aspect-[16
                 e.stopPropagation();
                 onChange('');
               }}
-              className="absolute right-3 top-3 rounded-full bg-black/50 p-1.5 text-white backdrop-blur hover:bg-rose-500"
+              className="absolute right-3 top-3 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm hover:bg-rose-500"
             >
               <X className="h-4 w-4" />
             </button>

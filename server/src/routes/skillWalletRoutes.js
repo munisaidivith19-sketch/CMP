@@ -24,7 +24,7 @@ import { downloadFile } from '../controllers/skillWallet/fileController.js';
 
 /**
  * Skill Wallet API (/api/skill-wallet). Mounted after protect, the platform
- * gate, the confined-role guard (COE / Office / Transport / Super Admin are
+ * gate, the confined-role guard (COE / Office / Transport / IT support are
  * deny-by-default) and the admin policy guard — none of which are weakened.
  * Each handler re-checks ownership / membership / designation itself.
  */

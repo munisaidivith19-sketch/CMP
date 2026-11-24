@@ -97,8 +97,8 @@ const userSchema = new Schema(
       default: [],
     },
     // Delegation limits (policies.js → normalizeDelegation / rolesFor / policyCap).
-    // Only meaningful for a policy-managed admin; written only by a Super Admin
-    // (PUT /super-admin/admins/:id/delegation). Each list narrows what the module
+    // Only meaningful for a policy-managed admin; written only by IT support
+    // (PUT /console/admins/:id/delegation). Each list narrows what the module
     // policies allow; null / missing means "no extra limit" so existing admins
     // keep exactly their current access.
     delegation: {
@@ -119,10 +119,10 @@ const userSchema = new Schema(
       updatedAt: Date,
       updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
-    // Set when a Super Admin issues a temporary password: every request except
+    // Set when IT support issues a temporary password: every request except
     // the account routes is refused until the user picks their own password.
     mustChangePassword: { type: Boolean, default: false },
-    // Who provisioned this account (Super Admin for admin accounts).
+    // Who provisioned this account (IT support for admin accounts).
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
 
     // Security
@@ -191,10 +191,10 @@ userSchema.index(
  * semester must belong to the year (year 3 → semester 5 or 6). Enforced on the
  * model so every write path — create, admin edit, seed — obeys the same rule.
  */
-userSchema.pre('validate', function checkClassInCharge(next) {
+userSchema.pre('validate', function checkClassInCharge() {
   const hasYear = this.inChargeYear != null;
   const hasSemester = this.inChargeSemester != null;
-  if (!hasYear && !hasSemester) return next();
+  if (!hasYear && !hasSemester) return;
   if (this.role !== 'faculty') {
     this.invalidate('inChargeYear', 'In-charge year and semester apply to faculty accounts only');
   } else if (hasYear !== hasSemester) {
@@ -207,13 +207,11 @@ userSchema.pre('validate', function checkClassInCharge(next) {
       `Semester ${this.inChargeSemester} belongs to year ${yearOfSemester(this.inChargeSemester)}, not year ${this.inChargeYear}`
     );
   }
-  next();
 });
 
-userSchema.pre('validate', function checkTitleGender(next) {
+userSchema.pre('validate', function checkTitleGender() {
   if (this.title === 'Mr' && this.gender === 'female') this.invalidate('title', 'Mr cannot be used with gender Female');
   if (this.title === 'Ms' && this.gender === 'male') this.invalidate('title', 'Ms cannot be used with gender Male');
-  next();
 });
 
 /**
@@ -221,10 +219,9 @@ userSchema.pre('validate', function checkTitleGender(next) {
  * selects it) also fetch `title`, so each card and list can show "Dr. Mohan
  * Babu" without editing every select string in the controllers.
  */
-userSchema.pre(['find', 'findOne', 'findOneAndUpdate'], function includeTitle(next) {
+userSchema.pre(['find', 'findOne', 'findOneAndUpdate'], function includeTitle() {
   const fields = this.projection();
   if (fields && fields.name === 1 && fields.title === undefined && !Object.values(fields).includes(0)) this.select('title');
-  next();
 });
 
 /**
@@ -236,23 +233,20 @@ const SOFT_DELETE_OPS = [
   'find', 'findOne', 'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace',
   'countDocuments', 'distinct', 'updateOne', 'updateMany', 'replaceOne', 'deleteOne', 'deleteMany',
 ];
-userSchema.pre(SOFT_DELETE_OPS, { document: false, query: true }, function hideDeleted(next) {
+userSchema.pre(SOFT_DELETE_OPS, { document: false, query: true }, function hideDeleted() {
   if (!this.getOptions().withDeleted && this.getFilter().deletedAt === undefined) this.where({ deletedAt: null });
-  next();
 });
-userSchema.pre('aggregate', function hideDeletedAggregate(next) {
+userSchema.pre('aggregate', function hideDeletedAggregate() {
   const pipeline = this.pipeline();
   const first = pipeline[0] && Object.keys(pipeline[0])[0];
   if (!this.options?.withDeleted && !['$geoNear', '$search', '$searchMeta', '$vectorSearch'].includes(first)) {
     pipeline.unshift({ $match: { deletedAt: null } });
   }
-  next();
 });
 
-userSchema.pre('save', async function hashPassword(next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function hashPassword() {
+  if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, 12);
-  next();
 });
 
 userSchema.methods.comparePassword = function comparePassword(candidate) {

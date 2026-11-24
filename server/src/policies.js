@@ -91,7 +91,7 @@ export const POLICY_CATALOGUE = {
       edit: 'Edit permitted profile fields and reset passwords',
       suspend: 'Suspend or reactivate accounts',
       delete: 'Permanently delete student or alumni accounts',
-      roles: 'Change an account between ordinary and staff roles (never Admin or Super Admin)',
+      roles: 'Change an account between ordinary and staff roles (never Admin or IT support)',
       policies: 'Assign or revoke module policies of other Admins — only policies this Admin holds',
       export: 'Download the profiles PDF',
     },
@@ -100,7 +100,7 @@ export const POLICY_CATALOGUE = {
     label: 'Security Logs',
     scopes: ['campus'],
     actions: {
-      view: 'View routine security events (never parent OTPs or protected Super Admin audit records)',
+      view: 'View routine security events (never parent OTPs or protected IT support audit records)',
     },
   },
   activity_logs: {
@@ -160,11 +160,11 @@ export function normalizePolicies(input, catalogue = POLICY_CATALOGUE) {
 }
 
 /**
- * Is this an Admin account whose access a Super Admin restricted with module
+ * Is this an Admin account whose access IT support restricted with module
  * policies? Such an admin is deny-by-default (middleware/adminPolicy.js): it
  * may use only the modules, actions and department scopes in `policies` (an
  * empty list grants nothing). Admins without the flag are legacy,
- * unrestricted admins; Super Admin and staff roles are never policy-managed
+ * unrestricted admins; IT support and staff roles are never policy-managed
  * (staff use additional grants, isStaffGrantee). The flag is written only by
  * the policy service (services/adminPolicies.js).
  */
@@ -223,7 +223,7 @@ export function modulesToPolicies(keys, previous = []) {
 
 // ── Additional policies for individual staff accounts ─────────────────
 //
-// A Super Admin (or an Admin holding user_management.policies, within its own
+// IT support (or an Admin holding user_management.policies, within its own
 // limits) may give one faculty / HOD / principal / dean / AO / chairman /
 // office / COE account extra access on top of its role. These grants only ADD
 // access to admin modules; the account keeps everything its role allows.
@@ -312,7 +312,7 @@ export const grantCovers = (grant, department) => Boolean(grant) && (!grant.depa
 // Accounts handled by User Management; every other non-admin role is staff.
 export const ORDINARY_ROLES = ['student', 'club_admin', 'alumni'];
 
-/** Which module governs accounts of this role (null: Admin / Super Admin — Super Admin only). */
+/** Which module governs accounts of this role (null: Admin / IT support — IT support only). */
 export function moduleForRole(role) {
   if (role === 'admin' || role === 'super_admin') return null;
   return ORDINARY_ROLES.includes(role) ? 'user_management' : 'staff_management';
@@ -323,7 +323,7 @@ export function moduleForRole(role) {
  * Legacy (non-policy-managed) admins keep their existing unrestricted access.
  */
 export function adminAllows(user, module, action, department) {
-  // The Super Admin manages accounts of every ordinary and staff role.
+  // IT support manages accounts of every ordinary and staff role.
   if (user?.role === 'super_admin') return Boolean(module);
   if (isStaffGrantee(user)) {
     if (!staffHolds(user, module, action)) return false;
@@ -340,7 +340,7 @@ export function adminAllows(user, module, action, department) {
 /**
  * Mongo filter limiting a user list to what this admin may `action` (view…):
  * the roles of the modules it holds, each within that module's scope.
- * Legacy admins: everything but Super Admin accounts.
+ * Legacy admins: everything but IT support accounts.
  */
 export function userListScope(user, action = 'view') {
   const staff = isStaffGrantee(user);
@@ -357,7 +357,7 @@ export function userListScope(user, action = 'view') {
 
 /**
  * Can `actor` change a target's policies from `previous` to `requested`?
- * A Super Admin may grant or revoke anything in the catalogue. A
+ * IT support may grant or revoke anything in the catalogue. A
  * policy-managed admin with user_management.policies may only touch modules
  * and actions it holds itself — granting or revoking — at a scope no wider
  * than its own (and inside its own department when department-scoped).
@@ -387,7 +387,7 @@ export function exceedsAuthority(actor, previous, requested, target) {
       if (own.scope === 'department' && p.department !== own.department) return `${label}: outside your department`;
     }
     // Handing out a delegating power (create accounts, change roles, assign
-    // policies) needs the target's own limit for it to be set by a Super Admin
+    // policies) needs the target's own limit for it to be set by IT support
     // and to sit inside the actor's: otherwise an unlimited target would end up
     // with more than the actor could ever grant (escalation through a chain).
     const added = (now?.actions || []).filter((a) => !(was?.actions || []).includes(a));
@@ -397,7 +397,7 @@ export function exceedsAuthority(actor, previous, requested, target) {
   return null;
 }
 
-// ── Delegation limits (set by a Super Admin on a policy-managed Admin) ────
+// ── Delegation limits (set by IT support on a policy-managed Admin) ────
 //
 // `user.delegation` narrows, never widens, what the module policies already
 // allow. Each field is either unset (null / missing: no extra limit, the
@@ -408,14 +408,14 @@ export function exceedsAuthority(actor, previous, requested, target) {
 //   grantablePolicies  the most this Admin may hand to other Admins through
 //                      user_management.policies (also capped by its own policies)
 //
-// Admin and Super Admin are never in any list: ADMIN_ASSIGNABLE_ROLES excludes
+// Admin and IT support are never in any list: ADMIN_ASSIGNABLE_ROLES excludes
 // them and every check below starts from it.
 
 export const DELEGATABLE_ROLES = ADMIN_ASSIGNABLE_ROLES;
 const isSet = (v) => Array.isArray(v);
 const limitOf = (user, key) => (isSet(user?.delegation?.[key]) ? user.delegation[key] : null);
 
-/** Validate a Super Admin's delegation input. Throws Error with a user-facing message. */
+/** Validate an IT support account's delegation input. Throws Error with a user-facing message. */
 export function normalizeDelegation(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Delegation must be an object');
   const allowed = ['createRoles', 'assignRoles', 'grantablePolicies'];
@@ -466,7 +466,7 @@ function moduleRoles(user, action) {
 }
 
 /**
- * Roles this admin may create accounts for, or assign. Super Admin: every
+ * Roles this admin may create accounts for, or assign. IT support: every
  * delegatable role. Legacy admins: unchanged (every delegatable role). Policy-managed:
  * the module policies, narrowed by the delegation limit when one is set.
  */
@@ -542,13 +542,13 @@ function delegatingGrantProblem(actor, target, module, added) {
     }
     if (kind === 'policies') {
       const limit = limitOf(target, 'grantablePolicies');
-      if (!limit) return `${label} → policies: a Super Admin must first set this Admin's delegation limit`;
+      if (!limit) return `${label} → policies: IT support must first set this Admin's delegation limit`;
       if (!policiesWithin(limit, policyCap(actor))) return `${label} → policies: this Admin's delegation limit is wider than yours`;
       continue;
     }
     const key = kind === 'create' ? 'createRoles' : 'assignRoles';
     const limit = limitOf(target, key);
-    if (!limit) return `${label} → ${action}: a Super Admin must first set which roles this Admin may ${kind}`;
+    if (!limit) return `${label} → ${action}: IT support must first set which roles this Admin may ${kind}`;
     const mine = rolesFor(actor, kind);
     const outside = limit.find((r) => !mine.includes(r));
     if (outside) return `${label} → ${action}: this Admin may ${kind} "${outside}", which you cannot`;

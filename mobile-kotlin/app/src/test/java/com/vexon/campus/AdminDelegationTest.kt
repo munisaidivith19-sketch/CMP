@@ -5,7 +5,7 @@ import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Create-login: only the roles a Super Admin delegated are offered (the server enforces the same). */
+/** Create-login: only the roles IT support delegated are offered (the server enforces the same). */
 class AdminDelegationTest {
     private val all = listOf("student", "faculty", "hod", "principal")
 

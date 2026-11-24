@@ -56,7 +56,7 @@ export default function Topbar() {
   };
 
   return (
-    <header className="glass sticky top-3 z-20 mb-6 flex items-center gap-3 rounded-[28px] px-4 py-3 sm:px-5">
+    <header className="glass backdrop-blur-md sticky top-3 z-20 mb-6 flex items-center gap-3 rounded-[28px] px-4 py-3 sm:px-5">
       <button className="btn-icon btn-ghost lg:hidden" onClick={() => dispatch(setSidebar(true))} aria-label="Open menu">
         <Menu className="h-5 w-5" />
       </button>

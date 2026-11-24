@@ -154,7 +154,7 @@ export const decideEarlyExit = asyncHandler(async (req, res) => {
       $set: { status: approve ? 'approved' : 'rejected', decidedBy: req.user._id, decidedAt: now, decisionNote: req.body.note, affectedPeriods },
       $push: { history: { action: approve ? 'approved' : 'rejected', by: req.user._id, role: req.user.role, at: now, note: req.body.note } },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'This request has already been decided');
   logActivity(req, `staff.early_exit_${approve ? 'approved' : 'rejected'}`, { entityType: 'early_exit', entityId: exit._id, summary: `${faculty?.name} ${dayKey(exit.date)}` });
@@ -196,7 +196,7 @@ export const cancelEarlyExit = asyncHandler(async (req, res) => {
   const updated = await FacultyEarlyExit.findOneAndUpdate(
     { _id: exit._id, status: 'pending' },
     { $set: { status: 'cancelled' }, $push: { history: { action: 'cancelled', by: req.user._id, role: req.user.role, at: new Date() } } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'Only a pending request can be withdrawn');
   res.json(updated);

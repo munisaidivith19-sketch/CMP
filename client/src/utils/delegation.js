@@ -1,11 +1,11 @@
 /**
  * Role-policy delegation helpers for the admin UIs. These mirror the server's
  * rules in server/src/policies.js (rolesFor / policyCap) only to decide what
- * to show and to preview a Super Admin's change before it is saved: the
+ * to show and to preview an IT support account's change before it is saved: the
  * server re-checks every request and is the only authority.
  */
 
-// Account roles an Admin may ever create or assign (never Admin / Super Admin).
+// Account roles an Admin may ever create or assign (never Admin / IT support).
 export const DELEGATABLE_ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni', 'coe', 'office', 'transport'];
 const ORDINARY_ROLES = ['student', 'club_admin', 'alumni'];
 const SCOPE_RANK = { department: 1, campus: 2 };
@@ -16,7 +16,7 @@ const holds = (policies, module, action) => (policies || []).some((p) => p.modul
 /**
  * Roles the signed-in admin may `kind` ('create' | 'assign'), from the
  * /admin/my-policies response. A legacy admin (no delegation in the response)
- * and a Super Admin keep every delegatable role.
+ * and IT support keep every delegatable role.
  */
 export function allowedRoles(myPolicies, kind) {
   const d = myPolicies?.delegation;
@@ -121,7 +121,7 @@ export function creationPolicyAccess(meRole, myPolicies, role, department) {
   if (meRole === 'super_admin') return { eligible, allowed: true, reason: null, catalogue: staff };
   const d = myPolicies?.delegation;
   if (meRole !== 'admin' || !myPolicies?.policyManaged || !d?.canAssignPolicies) {
-    return no('You are not authorized to assign policies. A Super Admin must grant you User Management → policies.');
+    return no('You are not authorized to assign policies. IT support must grant you User Management → policies.');
   }
   const edit = (myPolicies.policies || []).find((p) => p.module === 'staff_management' && p.actions.includes('edit'));
   if (!edit || (edit.scope === 'department' && edit.department !== department)) {

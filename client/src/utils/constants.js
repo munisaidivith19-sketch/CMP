@@ -2,10 +2,10 @@ export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'a
 export const ROLE_LABELS = {
   student: 'Student', club_admin: 'Club Admin', faculty: 'Faculty', hod: 'HOD', principal: 'Principal', admin: 'Admin', security: 'Security',
   dean: 'Dean', ao: 'AO', chairman: 'Chairman', warden: 'Warden', alumni: 'Alumni', coe: 'COE', office: 'Office', transport: 'Transport',
-  super_admin: 'Super Admin',
+  super_admin: 'IT support',
 };
 /**
- * Platform Super Admin. Deliberately NOT in ROLES: it is never offered in any
+ * Platform IT support. Deliberately NOT in ROLES: it is never offered in any
  * role picker and never assignable from the UI (the server refuses it too).
  */
 export const SUPER_ADMIN = 'super_admin';

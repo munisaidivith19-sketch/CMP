@@ -359,7 +359,7 @@ export default function Achievements() {
                   setCategory(e.target.value);
                   setPage(1);
                 }}
-                className="input text-xs !py-1.5 !px-3 w-auto cursor-pointer border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-[#131427]/85 text-ink dark:text-primary-50 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                className="input text-xs !py-1.5 !px-3 w-auto cursor-pointer border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-[#131427]/85 text-ink dark:text-primary-50 rounded-2xl shadow-xs focus:outline-hidden focus:ring-2 focus:ring-primary-500/20"
               >
                 <option value="" className="bg-white text-ink dark:bg-[#131427] dark:text-primary-50">All Categories</option>
                 {ACHIEVEMENT_CATEGORIES.map((c) => (
@@ -375,7 +375,7 @@ export default function Achievements() {
                   setLevel(e.target.value);
                   setPage(1);
                 }}
-                className="input text-xs !py-1.5 !px-3 w-auto cursor-pointer border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-[#131427]/85 text-ink dark:text-primary-50 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                className="input text-xs !py-1.5 !px-3 w-auto cursor-pointer border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-[#131427]/85 text-ink dark:text-primary-50 rounded-2xl shadow-xs focus:outline-hidden focus:ring-2 focus:ring-primary-500/20"
               >
                 <option value="" className="bg-white text-ink dark:bg-[#131427] dark:text-primary-50">All Levels</option>
                 {ACHIEVEMENT_LEVELS.map((lvl) => (
@@ -391,7 +391,7 @@ export default function Achievements() {
                   setDept(e.target.value);
                   setPage(1);
                 }}
-                className="input text-xs !py-1.5 !px-3 w-auto cursor-pointer border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-[#131427]/85 text-ink dark:text-primary-50 rounded-2xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                className="input text-xs !py-1.5 !px-3 w-auto cursor-pointer border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-[#131427]/85 text-ink dark:text-primary-50 rounded-2xl shadow-xs focus:outline-hidden focus:ring-2 focus:ring-primary-500/20"
               >
                 <option value="" className="bg-white text-ink dark:bg-[#131427] dark:text-primary-50">All Departments</option>
                 {DEPARTMENTS.map((d) => (

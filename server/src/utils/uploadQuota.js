@@ -23,7 +23,7 @@ export async function reserveUpload(userId, bytes) {
     const row = await UploadQuota.findOneAndUpdate(
       { user: userId, day, count: { $lt: files }, bytes: { $lte: maxBytes - size } },
       { $inc: { count: 1, bytes: size }, $setOnInsert: { expiresAt: new Date(Date.now() + 2 * DAY_MS) } },
-      { upsert: true, new: true, lean: true }
+      { upsert: true, returnDocument: 'after', lean: true }
     );
     if (!row) throw refuse();
   } catch (err) {

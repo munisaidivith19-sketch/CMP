@@ -63,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vexon.campus.core.E2e
 import com.vexon.campus.core.Api
 import com.vexon.campus.core.Fmt
 import com.vexon.campus.core.Omit
@@ -321,10 +322,15 @@ fun ThreadScreen(id: String) {
 
     fun markRead() = scope.launch { Realtime.emitWithAck("chat:read", jsonOf("conversationId" to id)) }
 
+    // End-to-end encrypted chat: this phone's key, and whether every participant has one.
+    var e2eOn by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(id) { e2eOn = E2e.isOn(id) }
+
     LaunchedEffect(first.data) {
         first.data?.let { f ->
+            val opened = E2e.revealAll(id, f["messages"].list)
             messages.clear()
-            messages += f["messages"].list
+            messages += opened
             hasMore = (f["pagination"]["total"].int ?: 0) > messages.size
             markRead()
         }
@@ -333,10 +339,13 @@ fun ThreadScreen(id: String) {
     SocketEvent("chat:message") { a ->
         val p = a.firstOrNull()
         if (p["conversationId"].str != id) return@SocketEvent
-        val message = p["message"] ?: return@SocketEvent
-        if (messages.none { it.id == message.id }) messages += message
-        typingIds.removeAll { sameId(message["sender"], it) }
-        if (!sameId(message["sender"], me)) markRead()
+        val raw = p["message"] ?: return@SocketEvent
+        typingIds.removeAll { sameId(raw["sender"], it) }
+        if (!sameId(raw["sender"], me)) markRead()
+        scope.launch {
+            val message = E2e.reveal(id, raw) ?: return@launch
+            if (messages.none { it.id == message.id }) messages += message
+        }
     }
     SocketEvent("chat:messageDeleted") { a ->
         val p = a.firstOrNull()
@@ -390,7 +399,9 @@ fun ThreadScreen(id: String) {
         if (body.isEmpty()) return
         stopTyping()
         send.launch(onError = { Dialogs.alert("Message not sent", errMsg(it)) }) {
-            val msg = Api.sendMessage(id, jsonOf("body" to body, "replyTo" to (replyTo?.id ?: Omit)))
+            val extra = replyTo?.id?.let { mapOf("replyTo" to it) } ?: emptyMap()
+            val sent = E2e.send(id, body, extra) { payload -> Api.sendMessage(id, payload) }
+            val msg = E2e.reveal(id, sent) ?: sent
             if (messages.none { it.id == msg.id }) messages += msg
             text = ""
             replyTo = null
@@ -403,7 +414,7 @@ fun ThreadScreen(id: String) {
         loadingOlder = true
         scope.launch {
             runCatching { Api.messages(id, mapOf("before" to oldest["createdAt"].str, "limit" to 40)) }.getOrNull()?.let { res ->
-                val older = res["messages"].list.filter { m -> messages.none { it.id == m.id } }
+                val older = E2e.revealAll(id, res["messages"].list.filter { m -> messages.none { it.id == m.id } })
                 messages.addAll(0, older)
                 hasMore = (res["pagination"]["total"].int ?: 0) > res["messages"].list.size
             }
@@ -456,6 +467,15 @@ fun ThreadScreen(id: String) {
             })
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.divider))
+        e2eOn?.let { on ->
+            Small(
+                if (on) "🔒 End-to-end encrypted. Only the people in this chat can read these messages."
+                else "🔒 Not end-to-end encrypted yet: someone in this chat must open the updated app first. Until then messages are encrypted on the server.",
+                Wide.padding(horizontal = 16.dp, vertical = 6.dp),
+                color = if (on) C.emeraldText else C.amberText,
+                align = TextAlign.Center,
+            )
+        }
 
         Box(Modifier.weight(1f)) {
             if (first.isLoading) Loading()

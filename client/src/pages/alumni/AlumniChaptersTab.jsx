@@ -399,7 +399,7 @@ export default function AlumniChaptersTab() {
                       type="checkbox"
                       checked={isAnnouncement}
                       onChange={(e) => setIsAnnouncement(e.target.checked)}
-                      className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                      className="rounded-sm border-amber-300 text-amber-600 focus:ring-amber-500"
                     />
                     <Megaphone className="h-3.5 w-3.5" /> Post as Chapter Announcement
                   </label>
@@ -595,7 +595,7 @@ export default function AlumniChaptersTab() {
               type="checkbox"
               checked={newIsPrivate}
               onChange={(e) => setNewIsPrivate(e.target.checked)}
-              className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
             />
             <span>Private Chapter (Requires moderator approval to join)</span>
           </label>

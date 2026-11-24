@@ -209,7 +209,7 @@ export async function verifyOtp({ gatePassId, otp }) {
   const claimed = await OutpassOtp.findOneAndUpdate(
     { _id: record._id, status: 'active', attempts: { $lt: record.maxAttempts } },
     { $inc: { attempts: 1 } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!claimed) {
     await OutpassOtp.updateOne({ _id: record._id, status: 'active' }, { $set: { status: 'locked' } });
@@ -228,7 +228,7 @@ export async function verifyOtp({ gatePassId, otp }) {
   const used = await OutpassOtp.findOneAndUpdate(
     { _id: record._id, status: 'active' },
     { $set: { status: 'used', usedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!used) throw otpError(409, 'This OTP has already been used.', 'failed', 'already_used');
   testOtpProvider.forget(record._id);

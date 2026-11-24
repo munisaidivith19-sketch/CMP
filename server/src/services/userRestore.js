@@ -18,7 +18,7 @@ import { logSecurity } from '../utils/securityLog.js';
  *    its records — whatever role or details the new form carried. Only the
  *    password comes from the new form, so the person can sign in again.
  *    This applies to every login that can be deleted (all roles except
- *    Admin and Super Admin, which are deactivated, never deleted).
+ *    Admin and IT support, which are deactivated, never deleted).
  *  - When the window ends, purgeDeletedUsers() removes the account document
  *    for good (the old behaviour of Delete). Creating the email after that
  *    makes a brand-new, empty account.

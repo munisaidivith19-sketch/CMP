@@ -445,7 +445,7 @@ export const publishExam = asyncHandler(async (req, res) => {
       $set: { status: 'published', publishedBy: user._id, publishedAt: new Date(), updatedBy: user._id },
       $push: { history: { action: 'published', by: user._id, role: user.role, at: new Date(), summary: 'Published' } },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!claimed) throw new ApiError(409, 'This exam was just changed by someone else — reload and try again');
   logActivity(req, 'exam.published', { entityType: 'exam', entityId: exam._id, summary: `[${user.role}] ${describe(claimed)}` });
@@ -471,7 +471,7 @@ export const cancelExam = asyncHandler(async (req, res) => {
       $set: { status: 'cancelled', cancelledBy: user._id, cancelledAt: new Date(), cancelReason: reason, updatedBy: user._id },
       $push: { history: { action: 'cancelled', by: user._id, role: user.role, at: new Date(), summary: reason ? `Cancelled: ${reason}` : 'Cancelled' } },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!claimed) throw new ApiError(409, 'This exam was just changed by someone else — reload and try again');
   logActivity(req, 'exam.cancelled', { entityType: 'exam', entityId: exam._id, summary: `[${user.role}] ${describe(claimed)}${reason ? ` — ${reason}` : ''}` });

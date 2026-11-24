@@ -197,10 +197,10 @@ export default function AlumniImportTab() {
                   Required Columns in CSV:
                 </p>
                 <p className="text-slate-600 dark:text-slate-300">
-                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded">name</code>,{' '}
-                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded">email</code>,{' '}
-                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded">department</code>,{' '}
-                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded">gradYear</code>
+                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded-sm">name</code>,{' '}
+                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded-sm">email</code>,{' '}
+                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded-sm">department</code>,{' '}
+                  <code className="bg-white/80 dark:bg-black/30 px-1 py-0.5 rounded-sm">gradYear</code>
                 </p>
               </div>
               <Button
@@ -317,7 +317,7 @@ export default function AlumniImportTab() {
                   type="checkbox"
                   checked={sendEmails}
                   onChange={(e) => setSendEmails(e.target.checked)}
-                  className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
                 />
                 <span>Email invitation claim links immediately to valid alumni</span>
               </label>

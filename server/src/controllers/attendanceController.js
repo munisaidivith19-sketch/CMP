@@ -9,7 +9,7 @@ import Subject from '../models/Subject.js';
 import TimetableSlot from '../models/TimetableSlot.js';
 import User from '../models/User.js';
 import Event from '../models/Event.js';
-import { ApiError, asyncHandler, paginate, pageMeta } from '../utils/http.js';
+import { ApiError, asyncHandler, escapeRegex, paginate, pageMeta } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { notifyUsers } from '../utils/notify.js';
 import { sameId } from '../utils/permissions.js';
@@ -1476,11 +1476,29 @@ export const getLowAttendance = asyncHandler(async (req, res) => {
   const match = scopedMatch(scope, narrow);
   const threshold = Math.min(100, Math.max(1, Number(req.query.threshold) || LOW_ATTENDANCE_THRESHOLD));
 
+  // Year and name / roll-number search narrow the students first, before the
+  // 200-row limit, so a match is never cut off by students outside the filter.
+  const year = Number(req.query.year) || undefined;
+  const q = String(req.query.q || '').trim().slice(0, 60);
+  let only = null;
+  if (year || q) {
+    const who = { role: { $in: STUDENT_ROLES }, deletedAt: null };
+    if (year) who.year = year;
+    if (q) {
+      const rx = new RegExp(escapeRegex(q), 'i');
+      who.$or = [{ name: rx }, { rollNo: rx }];
+    }
+    only = await User.find(who).distinct('_id');
+    if (!only.length) return res.json({ threshold, students: [] });
+    // Intersect with whatever scope already limits the students.
+    match.$and = [...(match.$and || []), { student: { $in: only } }];
+  }
+
   // College-wide, un-narrowed, up to today (the dashboard case): the per-student
   // totals are exactly what services/attendanceTotals keeps warm, so use them
   // instead of re-reading the whole semester on every live refresh.
   const upToToday = !window.to || window.to.getTime() === campusNow().day.getTime();
-  if (!Object.keys(scope).length && !narrow.section && !narrow.department && !narrow.subject && upToToday) {
+  if (!Object.keys(scope).length && !narrow.section && !narrow.department && !narrow.subject && !only && upToToday) {
     const totals = await studentTotals(window.from);
     const low = [...totals]
       .map(([id, t]) => ({ _id: id, total: t.total, present: t.present, percentage: percentage(t.present, t.total) }))
@@ -1774,7 +1792,7 @@ export const reviewCorrection = asyncHandler(async (req, res) => {
   const claimed = await AttendanceCorrectionRequest.findOneAndUpdate(
     { _id: request._id, status: 'pending' },
     { $set: { status: action, reviewedBy: req.user._id, reviewNote: note, reviewedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!claimed) throw new ApiError(409, 'This request was just reviewed by someone else');
 

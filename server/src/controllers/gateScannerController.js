@@ -166,7 +166,7 @@ async function finish(event, result) {
   const set = { state: 'done', completedAt: new Date(), ...pick(result, ['outcome', 'code', 'message', 'gatePass', 'student', 'recordedAt']) };
   if (result.direction) set.direction = result.direction;
   const filter = result.outcome === 'success' ? { _id: event._id } : { _id: event._id, state: 'processing' };
-  const saved = await GateScanEvent.findOneAndUpdate(filter, { $set: set }, { new: true });
+  const saved = await GateScanEvent.findOneAndUpdate(filter, { $set: set }, { returnDocument: 'after' });
   return saved || GateScanEvent.findById(event._id);
 }
 

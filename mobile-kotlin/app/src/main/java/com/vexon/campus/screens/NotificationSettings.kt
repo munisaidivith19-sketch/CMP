@@ -1,6 +1,26 @@
 package com.vexon.campus.screens
 
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.vexon.campus.ui.Grad
+import com.vexon.campus.ui.Jakarta
+import com.vexon.campus.ui.LiquidBackdrop
+import com.vexon.campus.ui.LiquidButton
+import com.vexon.campus.ui.LiquidGlassButton
+import com.vexon.campus.ui.liquidGlass
+import com.vexon.campus.ui.liquidTextSoft
+import com.vexon.campus.ui.rememberReducedMotion
+import com.vexon.campus.ui.rise
 import com.vexon.campus.ui.glass
 import com.vexon.campus.ui.entrance
 import android.content.Intent
@@ -215,43 +235,62 @@ fun NotificationsRequiredScreen(status: NotificationGate.Status) {
         }
     }
 
+    val calm = rememberReducedMotion()
+    val textSoft = liquidTextSoft
     Box(Modifier.fillMaxSize().background(C.bg)) {
-        Backdrop()
+        LiquidBackdrop(calm)
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.Center) {
             Column(
-                Modifier.verticalScroll(rememberScrollState()).padding(20.dp).widthIn(max = 480.dp).entrance()
-                    .glass(RoundedCornerShape(28.dp)).padding(24.dp),
+                Modifier.verticalScroll(rememberScrollState()).padding(20.dp).widthIn(max = 460.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Box(Modifier.size(76.dp).glass(RoundedCornerShape(26.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.NotificationsOff, null, Modifier.size(32.dp), tint = C.primary)
+                // Bell in a glass orb, like the logo on the sign-in screen.
+                Box(Modifier.rise(0, calm).size(96.dp).liquidGlass(CircleShape), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(60.dp).clip(CircleShape).background(Brush.linearGradient(Grad.primary)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.NotificationsOff, null, Modifier.size(30.dp), tint = Color.White)
+                    }
                 }
-                H2("Notifications Required", Modifier.semantics { heading() }, align = TextAlign.Center)
-                Small(
-                    "Notifications are required to use JNN. Please enable notifications to continue using the app and receive important updates.",
-                    align = TextAlign.Center,
-                )
-                Small(
-                    if (status == NotificationGate.Status.CanRequest) "Tap Enable Notifications and choose Allow."
-                    else "Notifications are turned off for JNN. Tap Open Settings, switch notifications on, then come back — JNN continues automatically.",
-                    color = C.muted,
-                    align = TextAlign.Center,
-                )
-                if (settingsFailed) {
-                    Small(
-                        "Settings could not be opened. Open your phone's Settings → Apps → JNN → Notifications and switch them on.",
-                        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                        color = C.roseText,
-                        align = TextAlign.Center,
+                Spacer(Modifier.height(22.dp))
+                Column(
+                    Modifier.fillMaxWidth().rise(80, calm).liquidGlass(RoundedCornerShape(32.dp)).padding(horizontal = 20.dp, vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    H2("Notifications Required", Modifier.semantics { heading() }, align = TextAlign.Center)
+                    Text(
+                        "Notifications are required to use JNN. Please enable notifications to continue using the app and receive important updates.",
+                        color = textSoft, fontFamily = Jakarta, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp, textAlign = TextAlign.Center,
                     )
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.primarySoft).padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Rounded.Info, null, Modifier.size(18.dp), tint = C.primary600)
+                        Small(
+                            if (status == NotificationGate.Status.CanRequest) "Tap Enable Notifications and choose Allow."
+                            else "Notifications are turned off for JNN. Tap Open Settings, switch notifications on, then come back — JNN continues automatically.",
+                            Modifier.weight(1f), textSoft,
+                        )
+                    }
+                    if (settingsFailed) {
+                        Small(
+                            "Settings could not be opened. Open your phone's Settings → Apps → JNN → Notifications and switch them on.",
+                            Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                            color = C.dangerText,
+                            align = TextAlign.Center,
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    LiquidButton("Enable Notifications", { enable() }, loading = busy, enabled = !signingOut, icon = Icons.Rounded.NotificationsActive)
+                    LiquidGlassButton("Open Settings", { settingsFailed = false; openSettings() }, enabled = !signingOut, icon = Icons.Rounded.Settings)
                 }
-                Button("Enable Notifications", { enable() }, Modifier.fillMaxWidth(), icon = Icons.Rounded.NotificationsActive, loading = busy, enabled = !signingOut)
-                Button("Open Settings", { settingsFailed = false; openSettings() }, Modifier.fillMaxWidth(), variant = Variant.Outline, icon = Icons.Rounded.Settings, enabled = !signingOut)
-                Button("Sign out", {
-                    signingOut = true
-                    scope.launch { try { signOutThisDevice() } finally { signingOut = false } }
-                }, variant = Variant.Ghost, loading = signingOut)
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.rise(160, calm)) {
+                    Button("Sign out", {
+                        signingOut = true
+                        scope.launch { try { signOutThisDevice() } finally { signingOut = false } }
+                    }, variant = Variant.Ghost, loading = signingOut, icon = Icons.AutoMirrored.Rounded.Logout)
+                }
             }
         }
     }

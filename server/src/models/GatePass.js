@@ -171,11 +171,10 @@ gatePassSchema.index(
 gatePassSchema.index({ returnToken: 1 }, { unique: true, name: 'unique_return_token', partialFilterExpression: { returnToken: { $type: 'string' } } });
 gatePassSchema.index({ returnCode: 1 }, { unique: true, name: 'unique_return_code', partialFilterExpression: { returnCode: { $type: 'string' } } });
 
-gatePassSchema.pre('validate', function checkDates(next) {
+gatePassSchema.pre('validate', function checkDates() {
   if (this.fromDate && this.toDate && this.toDate < this.fromDate) {
     this.invalidate('toDate', 'Return date cannot be before the departure date');
   }
-  next();
 });
 
 export { GATE_PASS_STATUSES, GATE_PASS_REGARDING, GATE_PASS_STAGES };

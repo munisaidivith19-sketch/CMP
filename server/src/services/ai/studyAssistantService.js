@@ -144,7 +144,7 @@ export async function askAssistant({ user, conversationId, message, useStudyMate
   let saved;
   const push = { messages: { $each: [userMsg, assistantMsg], $slice: -env.ai.maxConversationMessages } };
   if (convo) {
-    saved = await AIConversation.findOneAndUpdate({ _id: convo._id, user: user._id }, { $push: push }, { new: true }).lean();
+    saved = await AIConversation.findOneAndUpdate({ _id: convo._id, user: user._id }, { $push: push }, { returnDocument: 'after' }).lean();
     if (!saved) throw new ApiError(404, 'This conversation was cleared. Please ask again.');
   } else {
     saved = (

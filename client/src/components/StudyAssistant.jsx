@@ -127,13 +127,13 @@ function Message({ msg, onRetry }) {
       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-400 to-fuchsia-500 text-white">
         <Bot className="h-4 w-4" />
       </span>
-      <div className="min-w-0 max-w-[92%] flex-1 rounded-3xl rounded-tl-lg bg-white/80 px-4 py-3 text-ink shadow-sm dark:bg-white/10 dark:text-primary-50">
+      <div className="min-w-0 max-w-[92%] flex-1 rounded-3xl rounded-tl-lg bg-white/80 px-4 py-3 text-ink shadow-xs dark:bg-white/10 dark:text-primary-50">
         {msg.pending && !msg.content ? (
           <Thinking />
         ) : (
           <>
             <Markdown text={msg.content} />
-            {msg.pending && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-primary-400 align-middle" />}
+            {msg.pending && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-xs bg-primary-400 align-middle" />}
           </>
         )}
         {msg.notices?.map((n) => (

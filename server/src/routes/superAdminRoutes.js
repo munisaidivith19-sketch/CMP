@@ -4,7 +4,7 @@ import { body, query } from 'express-validator';
 import { authorize } from '../middleware/auth.js';
 import { idParam, validate } from '../middleware/validate.js';
 import { requireRecentReauth } from '../middleware/platform.js';
-import { aiMinuteLimiter, reauthLimiter, socRunLimiter, superAdminWriteLimiter } from '../middleware/rateLimit.js';
+import { aiMinuteLimiter, reauthLimiter, smsTestLimiter, socRunLimiter, superAdminWriteLimiter } from '../middleware/rateLimit.js';
 import { ACADEMIC_YEARS, CONVERSATION_TYPES, DEPARTMENTS, GENDERS, SECTIONS, SUPER_ADMIN_ROLE, TITLES } from '../constants.js';
 import { OTP_STATUSES } from '../models/OutpassOtp.js';
 import * as security from '../controllers/securityController.js';
@@ -19,8 +19,8 @@ import { RUN_STATUSES } from '../models/DiagnosticRun.js';
 import { RANGES } from '../services/soc/detections.js';
 
 /**
- * /api/super-admin/* — mounted after protect, the platform gate and the
- * confined-role guard. Every route is Super Admin only; sensitive writes also
+ * /api/console/* — mounted after protect, the platform gate and the
+ * confined-role guard. Every route is IT support only; sensitive writes also
  * need a password re-entry on this session within the last five minutes.
  */
 const router = Router();
@@ -172,6 +172,7 @@ router.post(
   validate,
   soc.runDiagnostic
 );
+router.post('/soc/diagnostics/sms-test', smsTestLimiter, body('phone').isString().isLength({ min: 10, max: 20 }).withMessage('Enter a mobile number'), validate, soc.smsTest);
 router.get('/soc/diagnostics/runs', query('errorId').optional().isMongoId(), query('testId').optional().isString().isLength({ max: 60 }), query('status').optional().isIn(RUN_STATUSES), validate, soc.listRuns);
 router.get('/soc/diagnostics/runs/:id', idParam('id'), soc.getRun);
 router.post('/soc/diagnostics/runs/:id/cancel', idParam('id'), soc.cancelDiagnostic);

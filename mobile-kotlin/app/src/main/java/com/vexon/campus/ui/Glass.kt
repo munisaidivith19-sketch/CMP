@@ -43,20 +43,23 @@ import androidx.compose.ui.unit.dp
 object Glass {
     private val darkPanel = Color(0xFF1E2C44)
 
-    /** Card and row fill. */
+    /** Card and row fill: ≥ 88% opaque under text, so it stays crisp without any blur. */
     val fill: Brush
-        get() = if (ThemeState.dark) Brush.verticalGradient(listOf(darkPanel.copy(alpha = 0.82f), darkPanel.copy(alpha = 0.62f)))
-        else Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.86f), Color.White.copy(alpha = 0.66f)))
+        get() = if (ThemeState.dark) Brush.verticalGradient(listOf(Color(0xF21E2C44), Color(0xE0152033)))
+        else Brush.verticalGradient(listOf(Color(0xF7FFFFFF), Color(0xE0FFFFFF)))
 
     /** Nearly opaque fill for surfaces that float over other content (tab bar, pop-ups, map panels). */
     val strongFill: Brush
         get() = if (ThemeState.dark) Brush.verticalGradient(listOf(darkPanel.copy(alpha = 0.97f), darkPanel.copy(alpha = 0.93f)))
         else Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.97f), Color.White.copy(alpha = 0.92f)))
 
-    /** The light edge that makes a surface read as glass. */
+    /** The light edge that makes a surface read as glass: bright top-left, faint middle, a glint bottom-right. */
     val rim: Brush
-        get() = if (ThemeState.dark) Brush.linearGradient(listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0.06f)))
-        else Brush.linearGradient(listOf(Color.White, Color(0xFF1D6FEB).copy(alpha = 0.16f)))
+        get() = if (ThemeState.dark) Brush.linearGradient(listOf(Color.White.copy(alpha = 0.34f), Color.White.copy(alpha = 0.05f), Color(0xFF7EB6F7).copy(alpha = 0.25f)))
+        else Brush.linearGradient(listOf(Color.White, Color(0xFF1D6FEB).copy(alpha = 0.12f), Color.White.copy(alpha = 0.9f)))
+
+    /** Liquid sheen across the upper part of a glass surface. */
+    val sheen: Color get() = Color.White.copy(alpha = if (ThemeState.dark) 0.07f else 0.5f)
 
     /** Highlight along the top of a coloured (gradient) surface. */
     val shine: Brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.45f), Color.White.copy(alpha = 0.04f)))
@@ -78,6 +81,10 @@ fun Modifier.glass(
     .then(if (elevation > 0.dp) Modifier.shadow(elevation, shape, clip = false, ambientColor = Glass.shadow, spotColor = Glass.shadow) else Modifier)
     .clip(shape)
     .background(fill)
+    .drawBehind {
+        val top = Glass.sheen
+        drawRect(Brush.verticalGradient(listOf(top, Color.Transparent), endY = size.height * 0.45f))
+    }
     .border(1.dp, rim, shape)
 
 /** Shared motion: one feel for the whole app. */
@@ -89,25 +96,15 @@ object Motion {
     fun <T> smooth() = tween<T>(ENTER_MS, easing = FastOutSlowInEasing)
 }
 
+@Suppress("unused")
 private fun DrawScope.glow(color: Color, alpha: Float, center: Offset, radius: Float) {
     if (radius <= 0f) return
     drawCircle(Brush.radialGradient(listOf(color.copy(alpha = alpha), color.copy(alpha = 0f)), center, radius), radius, center)
 }
 
-/** The soft colour field behind every screen: three glows drawn in one pass (no blur, no bitmaps). */
+/** The soft colour field behind every screen: the sign-in screen's liquid blobs, held still (no blur, no bitmaps). */
 @Composable
-fun BoxScope.Backdrop() {
-    val dark = ThemeState.dark
-    Box(
-        Modifier.matchParentSize().drawBehind {
-            val w = size.width
-            val h = size.height
-            glow(Color(0xFF4396EF), if (dark) 0.34f else 0.30f, Offset(w * 0.05f, h * 0.04f), w * 0.95f)
-            glow(Color(0xFF7C5CF6), if (dark) 0.22f else 0.15f, Offset(w * 1.02f, h * 0.36f), w * 0.85f)
-            glow(Color(0xFF0EA5E9), if (dark) 0.18f else 0.16f, Offset(w * 0.10f, h * 1.0f), w * 0.90f)
-        },
-    )
-}
+fun BoxScope.Backdrop() = LiquidBackdrop(calm = true)
 
 /** Full-screen background + [Backdrop], for layouts that do not use `Screen`. */
 @Composable

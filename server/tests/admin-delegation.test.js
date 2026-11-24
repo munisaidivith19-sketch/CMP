@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { startServer, PASSWORD, sleep } from './helpers.js';
 
 /**
- * Role-policy delegation: a Super Admin decides which roles each policy-managed
+ * Role-policy delegation: IT support decides which roles each policy-managed
  * Admin may create and assign, and the most it may delegate to other Admins.
  * Every rule is checked against the API directly (no UI involved).
  */
@@ -13,7 +13,7 @@ let legacyAdmin;
 let n = 0;
 
 const req = (method, path, who, body) => ctx.request(method, path, { token: who?.token, body });
-const reauth = (who = sa) => req('POST', '/super-admin/reauth', who, { password: PASSWORD });
+const reauth = (who = sa) => req('POST', '/console/reauth', who, { password: PASSWORD });
 const settle = () => sleep(150);
 const uniq = () => `${Date.now().toString(36)}${(n++).toString(36)}`;
 
@@ -25,7 +25,7 @@ const policyAdmin = (policies, extra = {}) => login({ role: 'admin', employeeId:
 
 async function setDelegation(target, delegation) {
   await reauth();
-  return req('PUT', `/super-admin/admins/${target.u._id}/delegation`, sa, { delegation });
+  return req('PUT', `/console/admins/${target.u._id}/delegation`, sa, { delegation });
 }
 
 /** A valid create-user body for each role used here. */
@@ -52,11 +52,11 @@ before(async () => {
 });
 after(async () => ctx.stop());
 
-test('1. Super Admin configures delegation: validated, re-auth protected, audited; nobody else can', async () => {
+test('1. IT support configures delegation: validated, re-auth protected, audited; nobody else can', async () => {
   const admin = await policyAdmin(CREATOR_POLICIES);
   // Re-auth is required (sensitive action).
   await ctx.models.Session.updateMany({ user: sa.u._id }, { $unset: { reauthAt: 1 } });
-  const noReauth = await req('PUT', `/super-admin/admins/${admin.u._id}/delegation`, sa, { delegation: { createRoles: ['student'] } });
+  const noReauth = await req('PUT', `/console/admins/${admin.u._id}/delegation`, sa, { delegation: { createRoles: ['student'] } });
   assert.equal(noReauth.status, 403);
   assert.equal(noReauth.body.code, 'REAUTH_REQUIRED');
 
@@ -64,18 +64,18 @@ test('1. Super Admin configures delegation: validated, re-auth protected, audite
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   assert.deepEqual(ok.body.delegation.createRoles, ['faculty', 'student']);
   assert.deepEqual(ok.body.delegation.assignRoles, ['club_admin', 'student']);
-  // Unknown, Admin and Super Admin roles, aliases and unknown fields are rejected.
+  // Unknown, Admin and IT support roles, aliases and unknown fields are rejected.
   for (const bad of [{ createRoles: ['super_admin'] }, { createRoles: ['admin'] }, { createRoles: ['Super_Admin'] }, { assignRoles: ['wizard'] }, { createRoles: 'student' }, { isSuper: true }, { grantablePolicies: [{ module: 'root', actions: ['all'] }] }]) {
     assert.equal((await setDelegation(admin, bad)).status, 422, JSON.stringify(bad));
   }
   // Legacy (unrestricted) admins must be converted with policies first.
   assert.equal((await setDelegation(legacyAdmin, { createRoles: ['student'] })).status, 422);
-  // Ordinary admins (even with every policy) cannot reach the Super Admin route.
+  // Ordinary admins (even with every policy) cannot reach IT support route.
   const strong = await policyAdmin([{ module: 'user_management', actions: ['policies', 'create', 'roles', 'view', 'edit'] }]);
-  assert.equal((await req('PUT', `/super-admin/admins/${admin.u._id}/delegation`, strong, { delegation: { createRoles: null } })).status, 403);
+  assert.equal((await req('PUT', `/console/admins/${admin.u._id}/delegation`, strong, { delegation: { createRoles: null } })).status, 403);
   // Delegation cannot ride along on a profile edit (mass assignment).
   await reauth();
-  assert.equal((await req('PATCH', `/super-admin/admins/${admin.u._id}`, sa, { name: 'Renamed', delegation: { createRoles: ['principal'] } })).status, 422);
+  assert.equal((await req('PATCH', `/console/admins/${admin.u._id}`, sa, { name: 'Renamed', delegation: { createRoles: ['principal'] } })).status, 422);
 
   await settle();
   assert.ok(await ctx.models.AuditLog.exists({ action: 'DELEGATION_CHANGED', targetUser: admin.u._id }));
@@ -105,7 +105,7 @@ test('3 + 4. an Admin creates only the roles delegated to it', async () => {
     assert.equal(res.status, 403, role);
     assert.equal(res.body.code, 'DELEGATION_EXCEEDED', role);
   }
-  // Admin / Super Admin are never creatable here, delegation or not.
+  // Admin / IT support are never creatable here, delegation or not.
   assert.equal((await create(admin, 'admin')).status, 422);
   assert.equal((await create(admin, 'super_admin')).status, 422);
   const mine = await req('GET', '/admin/my-policies', admin);
@@ -132,7 +132,7 @@ test('5. an Admin cannot delegate beyond its own limit, nor through another Admi
   assert.equal((await put([keep, { module: 'attendance', actions: ['view'] }, { module: 'user_management', actions: ['policies'] }])).status, 403, 'policies is outside the cap');
 
   // Granting "create" to an Admin with no create limit would hand it every
-  // ordinary role: refused until a Super Admin sets one inside the delegator's.
+  // ordinary role: refused until IT support sets one inside the delegator's.
   const grantCreate = [keep, { module: 'attendance', actions: ['view'] }, { module: 'user_management', actions: ['create', 'view'] }];
   assert.equal((await put(grantCreate)).status, 403);
   assert.equal((await setDelegation(target, { createRoles: ['student', 'club_admin'] })).status, 200);
@@ -156,11 +156,11 @@ test('5. an Admin cannot delegate beyond its own limit, nor through another Admi
   assert.equal(row.hiddenActions, 1);
   assert.ok(!list.body.items.some((a) => a._id === String(delegator.u._id)), 'never itself');
   assert.ok(!list.body.items.some((a) => a._id === String(legacyAdmin.u._id)), 'never a legacy admin');
-  assert.ok(!list.body.items.some((a) => a._id === String(sa.u._id)), 'never a Super Admin');
-  assert.equal((await req('PUT', `/admin/users/${legacyAdmin.u._id}/policies`, delegator, { policies: [] })).status, 403, 'legacy admins are restricted only by a Super Admin');
+  assert.ok(!list.body.items.some((a) => a._id === String(sa.u._id)), 'never IT support');
+  assert.equal((await req('PUT', `/admin/users/${legacyAdmin.u._id}/policies`, delegator, { policies: [] })).status, 403, 'legacy admins are restricted only by IT support');
 });
 
-test('6. no Admin can promote itself or anyone to Admin / Super Admin, or raise its own powers', async () => {
+test('6. no Admin can promote itself or anyone to Admin / IT support, or raise its own powers', async () => {
   const admin = await policyAdmin(CREATOR_POLICIES);
   const kid = await ctx.createUser({ name: 'Promote Me', department: 'CSE', section: 'A', rollNo: `P${uniq()}`.toUpperCase() });
   for (const role of ['super_admin', 'admin', 'SUPER_ADMIN', 'super_admin ']) {
@@ -170,7 +170,7 @@ test('6. no Admin can promote itself or anyone to Admin / Super Admin, or raise 
   assert.equal((await req('PATCH', `/admin/users/${admin.u._id}`, admin, { role: 'principal' })).status, 400, 'never its own account');
   assert.equal((await req('PATCH', `/admin/users/${sa.u._id}`, admin, { isActive: false })).status, 403);
   assert.equal((await req('PUT', `/admin/users/${admin.u._id}/policies`, admin, { policies: CREATOR_POLICIES })).status, 403);
-  assert.equal((await req('PUT', `/super-admin/admins/${admin.u._id}/delegation`, admin, { delegation: { createRoles: null } })).status, 403);
+  assert.equal((await req('PUT', `/console/admins/${admin.u._id}/delegation`, admin, { delegation: { createRoles: null } })).status, 403);
   assert.equal((await ctx.models.User.findById(kid._id).lean()).role, 'student');
 });
 

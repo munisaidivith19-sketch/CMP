@@ -10,13 +10,15 @@ import { api, refreshSession } from '../../services/api';
 import { connectSocket, disconnectSocket } from '../../services/socket';
 import { loggedOut, setCredentials } from '../../features/authSlice';
 import { useIdleSession } from './useIdleSession';
+import { ensureDevice, textOf } from '../../services/e2e';
 
 export function Backdrop() {
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-      <div className="absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full bg-primary-300/50 blur-[80px] dark:bg-primary-300/30" />
-      <div className="absolute -right-32 top-1/4 h-[460px] w-[460px] rounded-full bg-fuchsia-300/40 blur-[80px] dark:bg-amber-200/25" />
-      <div className="absolute -bottom-40 left-1/3 h-[520px] w-[520px] rounded-full bg-sky-300/40 blur-[80px] dark:bg-rose-200/20" />
+      {/* Gradients, not blur filters: see .app-blob in index.css. */}
+      <div className="app-blob app-blob--a" />
+      <div className="app-blob app-blob--b" />
+      <div className="app-blob app-blob--c" />
       <div className="absolute inset-0 bg-[radial-gradient(rgba(108,93,211,0.08)_1px,transparent_1px)] [background-size:22px_22px] dark:bg-[radial-gradient(rgba(160,120,60,0.07)_1px,transparent_1px)]" />
     </div>
   );
@@ -77,6 +79,10 @@ function useRealtime() {
       },
     });
 
+    // Register this browser for end-to-end encrypted chat early, so others can
+    // send it encrypted messages before its chat page is ever opened.
+    ensureDevice().catch(() => {});
+
     // A burst of events (a class of 60 saved, an exam published…) becomes ONE
     // refresh per tag: tags are collected for a moment, then invalidated together.
     let pending = new Set();
@@ -111,7 +117,7 @@ function useRealtime() {
       dispatch(api.util.invalidateTags(['Chat']));
       const mine = String(message?.sender?._id) === String(userId);
       if (mine || pathRef.current.startsWith('/chat')) return;
-      toast.custom(
+      textOf(conversationId, message).then((body) => toast.custom(
         (t) => (
           <Link
             to={`/chat/${conversationId}`}
@@ -121,12 +127,12 @@ function useRealtime() {
             <NotificationIcon type="chat" />
             <div className="min-w-0">
               <p className="text-sm font-bold leading-snug">{message?.sender?.name || 'New message'}</p>
-              <p className="mt-0.5 line-clamp-2 text-xs muted">{message?.body}</p>
+              <p className="mt-0.5 line-clamp-2 text-xs muted">{body}</p>
             </div>
           </Link>
         ),
         { duration: 4000, id: `chat-${conversationId}` }
-      );
+      ));
     };
     socket.on('chat:message', onChatMessage);
 
@@ -175,7 +181,8 @@ export default function AppLayout() {
   useIdleSession();
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Instant: a smooth scroll would run while the new page is mounting.
+    window.scrollTo(0, 0);
   }, [pathname]);
 
   return (

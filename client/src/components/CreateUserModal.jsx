@@ -4,15 +4,16 @@ import toast from 'react-hot-toast';
 import { Eye, EyeOff, KeyRound, ShieldCheck } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useCreateAdminUserMutation } from '../services/api';
-import { useGetMyPoliciesQuery } from '../services/superAdmin';
+import { useGetMyPoliciesQuery } from '../services/consoleApi';
 import { selectUser } from '../features/authSlice';
 import { STAFF_GRANT_ROLES, allowedRoles, creationPolicyAccess, grantedPages, policySummary } from '../utils/delegation';
 import { Button, cn } from './ui/primitives';
 import { ConfirmDialog, Modal } from './ui/Modal';
-import PolicyEditor from './superadmin/PolicyEditor';
-import { reportError, useReauth } from './superadmin/Reauth';
+import PolicyEditor from './console/PolicyEditor';
+import { reportError, useReauth } from './console/Reauth';
 import { ChipMultiSelect, Input, Select } from './ui/form';
 import RestrictionPopupModal from './RestrictionPopupModal';
+import MobileInput, { MOBILE_HINT, mobileOk, toMobile } from './ui/MobileInput';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLE_LABELS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../utils/constants';
 import { displayName, errMsg } from '../utils/format';
 
@@ -57,7 +58,7 @@ const NUMERIC = new Set(['year', 'inChargeYear', 'inChargeSemester']);
 
 export default function CreateUserModal({ open, onClose }) {
   const me = useSelector(selectUser);
-  // Policy-managed admins see only the roles a Super Admin delegated to them
+  // Policy-managed admins see only the roles IT support delegated to them
   // (the server refuses any other role regardless of what this shows).
   const { data: myPolicies } = useGetMyPoliciesQuery(undefined, { skip: !open || !['admin', 'super_admin', ...STAFF_GRANT_ROLES].includes(me?.role) });
   const creatable = Object.keys(FORMS).filter((r) => allowedRoles(myPolicies, 'create').includes(r));
@@ -136,6 +137,11 @@ export default function CreateUserModal({ open, onClose }) {
   // "Add Policies" needs at least one permission the signed-in account may delegate here.
   const policyBlocked = custom && (!access.allowed || policies.length === 0);
 
+const STUDENT_FORM_ROLES = ['student', 'club_admin'];
+  const setMobile = (k) => (val) => {
+    setV((s) => ({ ...s, [k]: val }));
+    setErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 const normalizeDigits = (val) => {
   if (!val) return '';
   const digits = String(val).replace(/\D/g, '');
@@ -147,6 +153,15 @@ const normalizeDigits = (val) => {
   const submit = async (e) => {
     e.preventDefault();
 
+    if (STUDENT_FORM_ROLES.includes(role)) {
+      const bad = {};
+      if (!mobileOk(toMobile(v.phone))) bad.phone = 'Enter exactly 10 digits';
+      if (!v.parentPhone || !mobileOk(toMobile(v.parentPhone))) bad.parentPhone = 'Enter exactly 10 digits';
+      if (Object.keys(bad).length) {
+        setErrors((prev) => ({ ...prev, ...bad }));
+        return;
+      }
+    }
     // Verify student mobile and parent mobile are not identical
     if (v.phone && v.parentPhone) {
       const p1 = normalizeDigits(v.phone);
@@ -177,7 +192,7 @@ const normalizeDigits = (val) => {
     body.policyMode = custom ? 'custom' : 'none';
     if (custom) body.policies = policies;
     try {
-      // A Super Admin adding policies confirms its password first (server: REAUTH_REQUIRED).
+      // IT support adding policies confirms its password first (server: REAUTH_REQUIRED).
       const user = await guard(() => create(body).unwrap());
       const summary = custom ? policySummary(user.policies, access.catalogue) : [];
       const made = user.restored
@@ -299,9 +314,12 @@ const normalizeDigits = (val) => {
       case 'email':
         return <Input key={k} label="College email (username)" type="email" autoComplete="off" placeholder="name@college.edu" {...common} />;
       case 'phone':
-        return <Input key={k} label={role === 'student' ? 'Student mobile' : 'Mobile'} type="tel" maxLength={20} {...common} />;
+        if (STUDENT_FORM_ROLES.includes(role)) {
+          return <MobileInput key={k} label="Student mobile" hint={MOBILE_HINT} {...common} onChange={undefined} onValue={setMobile('phone')} />;
+        }
+        return <Input key={k} label="Mobile" type="tel" maxLength={20} {...common} />;
       case 'parentPhone':
-        return <Input key={k} label="Parent mobile" type="tel" maxLength={20} {...common} />;
+        return <MobileInput key={k} label="Parent mobile" hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} {...common} onChange={undefined} onValue={setMobile('parentPhone')} />;
       case 'password':
         return (
           <div key={k} className="flex items-start gap-2 sm:col-span-2">
@@ -355,9 +373,9 @@ const normalizeDigits = (val) => {
       }
     >
       {creatable.length === 0 ? (
-        <p className="mb-4 rounded-xl bg-amber-500/10 p-3 text-sm">You are not authorized to create any account type. A Super Admin must delegate roles to you first.</p>
+        <p className="mb-4 rounded-xl bg-amber-500/10 p-3 text-sm">You are not authorized to create any account type. IT support must delegate roles to you first.</p>
       ) : hiddenRoles > 0 ? (
-        <p className="mb-3 text-xs muted">Only the account types delegated to you are shown. Other roles require Super Admin authorization.</p>
+        <p className="mb-3 text-xs muted">Only the account types delegated to you are shown. Other roles require IT support authorization.</p>
       ) : null}
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Account type">
         {creatable.map((r) => (
@@ -475,7 +493,7 @@ function PolicyAssignment({ role, mode, onMode, access, policies, onPolicies, er
             <PolicyEditor catalogue={access.catalogue} value={policies} onChange={onPolicies} />
             <p className="mt-2 text-xs muted">
               Only permissions you may delegate are shown. Changing roles, managing staff accounts and assigning policies always stay with Admins
-              and the Super Admin.
+              and IT support.
             </p>
           </div>
           <div className="rounded-2xl border border-primary-500/30 p-3 text-xs" aria-live="polite">

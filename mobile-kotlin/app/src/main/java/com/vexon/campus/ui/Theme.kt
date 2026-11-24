@@ -94,8 +94,8 @@ object C {
     val divider get() = pick(Color(0x1A1D6FEB), Color(0x267EB6F7))
     /** Main text: black in light mode, white in dark mode. */
     val ink get() = pick(Color.Black, Color.White)
-    val soft get() = pick(Color(0xFF3B4658), Color(0xFFCBD5E1))
-    val muted get() = pick(Color(0xFF5B6779), Color(0xFF94A3B8))
+    val soft get() = pick(Color(0xFF334155), Color(0xFFE2E8F0))
+    val muted get() = pick(Color(0xFF52607A), Color(0xFFB4C0D0))
     val primary50 get() = pick(Color(0xFFEAF3FF), Color(0xFF13243D))
     val primary100 get() = pick(Color(0xFFD2E6FF), Color(0xFF1A3253))
     val primary300 = Color(0xFF7EB6F7)

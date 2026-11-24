@@ -246,7 +246,7 @@ export const authorityUpdate = asyncHandler(async (req, res) => {
   const updated = await Complaint.findOneAndUpdate(
     { _id: complaint._id, currentAuthorityUserId: complaint.currentAuthorityUserId },
     { $set: { status, ...(status === 'RESOLVED' ? { resolvedAt: new Date() } : {}) } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(422, 'This grievance was just updated by someone else');
 
@@ -292,7 +292,7 @@ export const markNotResolved = asyncHandler(async (req, res) => {
     const updated = await Complaint.findOneAndUpdate(
       { _id: complaint._id, status: previousStatus },
       { $set: { status: 'NOT_RESOLVED' } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!updated) throw new ApiError(422, 'This grievance was just updated by someone else');
     await writeHistory(complaint._id, {
@@ -324,7 +324,7 @@ export const markNotResolved = asyncHandler(async (req, res) => {
         notResolvedAvailableAt: new Date(Date.now() + COMPLAINT_NOT_RESOLVED_WAIT_MS),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(422, 'This grievance was just updated by someone else');
 
@@ -354,7 +354,7 @@ export const markResolved = asyncHandler(async (req, res) => {
   const complaint = await Complaint.findOneAndUpdate(
     { _id: req.params.id, student: req.user._id, status: { $nin: NOT_CLOSABLE } },
     { $set: { status: 'CLOSED', closedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!complaint) {
     const exists = await Complaint.findById(req.params.id).select('student status').lean();
@@ -379,7 +379,7 @@ export const cancelComplaint = asyncHandler(async (req, res) => {
   const complaint = await Complaint.findOneAndUpdate(
     { _id: req.params.id, student: req.user._id, status: { $in: COMPLAINT_CANCELLABLE_STATUSES } },
     { $set: { status: 'CANCELLED', cancelledAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!complaint) {
     const exists = await Complaint.findById(req.params.id).select('student status').lean();

@@ -78,10 +78,10 @@ export async function peopleScopeFilter(user) {
     return { department: ownDepartment(user) };
   }
   // Policy-managed admins: only the account types / departments their
-  // User or Staff Management policies cover (policies.js). Never Super Admins.
+  // User or Staff Management policies cover (policies.js). Never IT support accounts.
   if (isPolicyManaged(user)) return userListScope(user, 'view');
   // Admin, Principal, Chairman, Dean and AO: college-wide, read-only — but
-  // Super Admin accounts are platform staff and never listed.
+  // IT support accounts are platform staff and never listed.
   if (COLLEGE_WIDE_ROLES.includes(user.role)) {
     return { role: { $ne: SUPER_ADMIN_ROLE } };
   }
@@ -91,7 +91,7 @@ export async function peopleScopeFilter(user) {
 /** Field-level check for a single profile fetch (GET /users/:id). */
 export async function canViewProfile(viewer, targetId) {
   if (String(viewer._id) === String(targetId)) return true;
-  // Super Admin profiles are not part of the campus directory.
+  // IT support profiles are not part of the campus directory.
   if (await User.exists({ _id: targetId, role: SUPER_ADMIN_ROLE })) return false;
   if (isPolicyManaged(viewer)) return Boolean(await User.exists({ $and: [{ _id: targetId }, userListScope(viewer, 'view')] }));
   if (COLLEGE_WIDE_ROLES.includes(viewer.role)) return true; // college-wide authorities: unrestricted

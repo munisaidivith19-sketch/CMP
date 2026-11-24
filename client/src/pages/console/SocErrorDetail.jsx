@@ -4,8 +4,8 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, CheckCircle2, ClipboardList, Plus, Sparkles } from 'lucide-react';
 import { Badge, Button, Card, CardHeader, ErrorState, PageHeader, Skeleton } from '../../components/ui/primitives';
 import { Input } from '../../components/ui/form';
-import { KindTag, RunResult, RunTestButton, StatusBadge } from '../../components/superadmin/soc';
-import { errorMessage, useAddSocErrorNoteMutation, useAiExplainSocErrorMutation, useGetSocErrorQuery, useSetSocErrorStatusMutation, useVerifySocErrorMutation } from '../../services/superAdmin';
+import { KindTag, RunResult, RunTestButton, StatusBadge } from '../../components/console/soc';
+import { errorMessage, useAddSocErrorNoteMutation, useAiExplainSocErrorMutation, useGetSocErrorQuery, useSetSocErrorStatusMutation, useVerifySocErrorMutation } from '../../services/consoleApi';
 import { ERROR_STATUS_LABEL, TRANSITION_LABEL, groupCauses, severityTone, verifyState } from './socModel';
 import { NewIncidentModal } from './Soc';
 import { fmtDateTime } from '../../utils/format';
@@ -60,7 +60,7 @@ export default function SocErrorDetail() {
 
   return (
     <div className="space-y-5">
-      <Link to="/super-admin/soc?tab=errors" className="inline-flex items-center gap-1 text-sm font-semibold muted hover:underline"><ArrowLeft className="h-4 w-4" /> Error explorer</Link>
+      <Link to="/console/soc?tab=errors" className="inline-flex items-center gap-1 text-sm font-semibold muted hover:underline"><ArrowLeft className="h-4 w-4" /> Error explorer</Link>
       <PageHeader
         icon={ClipboardList}
         title={e.title}
@@ -183,7 +183,7 @@ export default function SocErrorDetail() {
           <CardHeader title="Related" subtitle="Errors sharing a correlation ID, and incidents" />
           {related.length === 0 && incidents.length === 0 ? <p className="text-sm muted">Nothing linked.</p> : (
             <ul className="space-y-1 text-sm">
-              {related.map((r) => <li key={r._id}><Link to={`/super-admin/soc/errors/${r._id}`} className="hover:underline">{r.title}</Link> <span className="text-xs muted">{r.source} · ×{r.count}</span></li>)}
+              {related.map((r) => <li key={r._id}><Link to={`/console/soc/errors/${r._id}`} className="hover:underline">{r.title}</Link> <span className="text-xs muted">{r.source} · ×{r.count}</span></li>)}
               {incidents.map((i) => <li key={i._id}>Incident #{i.number}: {i.title} <span className="text-xs muted">{i.status}</span></li>)}
             </ul>
           )}

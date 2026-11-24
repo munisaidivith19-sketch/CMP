@@ -163,7 +163,7 @@ export default function FacultyAvailability() {
                   className={cn(
                     'group inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all',
                     isSelected
-                      ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/30 dark:bg-primary-500'
+                      ? 'bg-primary-600 text-white shadow-xs shadow-primary-600/30 dark:bg-primary-500'
                       : 'border border-slate-200/80 bg-white/70 text-ink-muted hover:border-primary-400 hover:text-primary-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:border-primary-500 dark:hover:bg-white/10'
                   )}
                 >
@@ -308,15 +308,15 @@ export default function FacultyAvailability() {
           />
         </Card>
       ) : (
-        <Card className="overflow-hidden border border-slate-200/80 p-0 shadow-sm dark:border-white/10">
+        <Card className="overflow-hidden border border-slate-200/80 p-0 shadow-xs dark:border-white/10">
           <div className="relative overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs">
               {/* Table Header: Faculty Member + Periods with timings */}
-              <thead className="sticky top-0 z-20 border-b border-slate-200/80 bg-slate-50/95 backdrop-blur-md dark:border-white/10 dark:bg-[#121426]/95">
+              <thead className="sticky top-0 z-20 border-b border-slate-200/80 bg-slate-50/95 dark:border-white/10 dark:bg-[#121426]/95">
                 <tr>
                   <th
                     scope="col"
-                    className="sticky left-0 z-30 min-w-[200px] border-r border-slate-200/80 bg-slate-100/95 p-3 font-extrabold text-ink shadow-[2px_0_5px_rgba(0,0,0,0.05)] backdrop-blur dark:border-white/10 dark:bg-[#15172e]/95 dark:text-slate-100"
+                    className="sticky left-0 z-30 min-w-[200px] border-r border-slate-200/80 bg-slate-100/95 p-3 font-extrabold text-ink shadow-[2px_0_5px_rgba(0,0,0,0.05)] dark:border-white/10 dark:bg-[#15172e]/95 dark:text-slate-100"
                   >
                     <div className="flex items-center gap-1.5">
                       <User className="h-4 w-4 text-primary-600 dark:text-primary-400" />
@@ -373,7 +373,7 @@ export default function FacultyAvailability() {
                     className="group transition-colors hover:bg-primary-500/[0.02] dark:hover:bg-white/[0.02]"
                   >
                     {/* Sticky Faculty Info Column */}
-                    <td className="sticky left-0 z-10 border-r border-slate-200/80 bg-white/95 p-3 shadow-[2px_0_5px_rgba(0,0,0,0.05)] backdrop-blur group-hover:bg-slate-50/95 dark:border-white/10 dark:bg-[#15172e]/95 dark:group-hover:bg-[#1c1f3b]/95">
+                    <td className="sticky left-0 z-10 border-r border-slate-200/80 bg-white/95 p-3 shadow-[2px_0_5px_rgba(0,0,0,0.05)] group-hover:bg-slate-50/95 dark:border-white/10 dark:bg-[#15172e]/95 dark:group-hover:bg-[#1c1f3b]/95">
                       <div className="flex items-center gap-2.5">
                         <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-500/10 font-bold text-primary-600 dark:bg-primary-500/20 dark:text-primary-400">
                           {f.name.charAt(0)}
@@ -464,7 +464,7 @@ export default function FacultyAvailability() {
                                 {slot?.subject?.code || 'CLASS'}
                               </span>
                               {slot?.room && (
-                                <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-white/70 px-1 py-0.2 text-[9px] font-bold text-ink-muted dark:bg-white/10 dark:text-slate-300">
+                                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-white/70 px-1 py-0.2 text-[9px] font-bold text-ink-muted dark:bg-white/10 dark:text-slate-300">
                                   <MapPin className="h-2.5 w-2.5" />
                                   {slot.room}
                                 </span>

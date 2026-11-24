@@ -1,9 +1,12 @@
-/** @type {import('tailwindcss').Config} */
+/**
+ * Theme for Tailwind 4, loaded from src/index.css with @config.
+ * Dark mode (`.dark` class) is set in index.css with @custom-variant. The
+ * btn-* variants need no safelist: they are plain CSS in @layer components,
+ * which Tailwind 4 always emits.
+ * @type {import('tailwindcss').Config}
+ */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
-  darkMode: 'class',
-  // Button variants are composed dynamically (`btn-${variant}`), so keep them.
-  safelist: ['btn-primary', 'btn-soft', 'btn-ghost', 'btn-outline', 'btn-danger', 'btn-success'],
   theme: {
     extend: {
       fontFamily: {
@@ -53,8 +56,10 @@ export default {
         },
       },
       animation: {
-        'fade-up': 'fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both',
-        'scale-in': 'scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both',
+        // `backwards`, not `both`: once finished the element keeps no transform,
+        // so a whole page is not held as a GPU layer (and fixed children work).
+        'fade-up': 'fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards',
+        'scale-in': 'scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) backwards',
         float: 'float 18s ease-in-out infinite',
         'float-slow': 'float 26s ease-in-out infinite reverse',
       },

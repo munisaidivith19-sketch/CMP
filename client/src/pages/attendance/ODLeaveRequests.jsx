@@ -118,7 +118,7 @@ export default function ODLeaveRequests() {
 
       {/* MiniStats Counters */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-500/10 to-sky-500/5 p-4 shadow-sm dark:border-sky-500/20 dark:from-sky-500/15 dark:to-transparent">
+        <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-500/10 to-sky-500/5 p-4 shadow-xs dark:border-sky-500/20 dark:from-sky-500/15 dark:to-transparent">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-sky-700 dark:text-sky-300">
               Active / Approved OD
@@ -135,7 +135,7 @@ export default function ODLeaveRequests() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-500/10 to-amber-500/5 p-4 shadow-sm dark:border-amber-500/20 dark:from-amber-500/15 dark:to-transparent">
+        <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-500/10 to-amber-500/5 p-4 shadow-xs dark:border-amber-500/20 dark:from-amber-500/15 dark:to-transparent">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
               Approved Leaves
@@ -152,7 +152,7 @@ export default function ODLeaveRequests() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 p-4 shadow-sm dark:border-indigo-500/20 dark:from-indigo-500/15 dark:to-transparent">
+        <div className="rounded-2xl border border-indigo-200/80 bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 p-4 shadow-xs dark:border-indigo-500/20 dark:from-indigo-500/15 dark:to-transparent">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
               Pending In Review
@@ -171,7 +171,7 @@ export default function ODLeaveRequests() {
       </div>
 
       {/* Filter Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/70 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/70 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-ink-muted flex items-center gap-1.5 mr-1">
             <Filter className="h-3.5 w-3.5" /> Filters:
@@ -285,8 +285,8 @@ export default function ODLeaveRequests() {
               <div
                 key={req._id}
                 className={cn(
-                  'group relative rounded-2xl border p-4 transition-all duration-300 shadow-sm',
-                  'bg-white/80 dark:bg-[#131427]/80 backdrop-blur-xl',
+                  'group relative rounded-2xl border p-4 transition-all duration-300 shadow-xs',
+                  'bg-white/80 dark:bg-[#131427]/80',
                   isApproved
                     ? 'border-emerald-300/70 dark:border-emerald-500/30'
                     : isRejected

@@ -33,11 +33,11 @@ import {
 } from '../services/platformState.js';
 
 /**
- * Super Admin: platform-level administration. Every route is mounted behind
+ * IT support: platform-level administration. Every route is mounted behind
  * protect → authorize('super_admin') (routes/superAdminRoutes.js); sensitive
  * ones also need a recent password re-entry (requireRecentReauth).
  *
- * The Super Admin manages ordinary Admin accounts and their policies, reads
+ * IT support manages ordinary Admin accounts and their policies, reads
  * security information and runs emergency modes. It has NO direct write
  * access to academic data (attendance, timetables, exams, materials,
  * announcements, gate passes): campus monitoring is read-only aggregates.
@@ -159,7 +159,7 @@ export const createAdmin = asyncHandler(async (req, res) => {
   notifyUsers([saved._id], {
     type: 'system',
     title: 'Your VEXON administrator account is ready',
-    message: 'Sign in with the temporary password your Super Admin gave you. You must choose a new password at first sign-in.',
+    message: 'Sign in with the temporary password IT support gave you. You must choose a new password at first sign-in.',
   }, { push: false });
   noStore(res);
   res.status(201).json(await User.findById(saved._id).select(ADMIN_FIELDS).lean());
@@ -206,7 +206,7 @@ export const setAdminStatus = asyncHandler(async (req, res) => {
 export const resetAdminPassword = asyncHandler(async (req, res) => {
   const admin = await User.findOne({ _id: req.params.id, role: 'admin' }).select('+password +tokenVersion +failedLogins +lockUntil +lastFailedLoginAt +lockoutCount');
   if (!admin) throw new ApiError(404, 'Admin account not found');
-  // Temporary credential chosen by the Super Admin and handed over out of band.
+  // Temporary credential chosen by IT support and handed over out of band.
   // It is never logged, returned or stored except as the bcrypt hash.
   admin.password = req.body.newPassword;
   admin.mustChangePassword = true;
@@ -223,7 +223,7 @@ export const resetAdminPassword = asyncHandler(async (req, res) => {
   notifyUsers([admin._id], {
     type: 'system',
     title: 'Your password was reset',
-    message: 'A Super Admin reset your password. Sign in with the temporary password and choose a new one.',
+    message: 'IT support reset your password. Sign in with the temporary password and choose a new one.',
   }, { push: false });
   noStore(res);
   res.json({ message: 'Password reset. All sessions were signed out; a new password is required at next sign-in.', sessionsRevoked: revoked });
@@ -354,12 +354,12 @@ export const monitoring = asyncHandler(async (_req, res) => {
     upcomingEvents,
     approvedClubs,
     pendingGatePasses,
-    note: 'Read-only aggregate counts. Super Admin cannot edit academic records, and chat content is not accessible from this role.',
+    note: 'Read-only aggregate counts. IT support cannot edit academic records, and chat content is not accessible from this role.',
   });
 });
 
 // ── Chats (read-only) ───────────────────────────────────────────────
-// The Super Admin can read every conversation but has no way to post: the
+// IT support can read every conversation but has no way to post: the
 // confined-role guard keeps it off /chat/* and its sockets never join chat
 // rooms. Every conversation opened is recorded in the protected audit trail.
 const PERSON = 'name title email role department year section';
@@ -385,7 +385,9 @@ export const listChats = asyncHandler(async (req, res) => {
     Conversation.countDocuments(filter),
   ]);
   for (const c of items) {
-    if (c.lastMessage?.body) c.lastMessage.body = openCipher(c.lastMessage.body);
+    // End-to-end encrypted messages cannot be read by the server (or IT support).
+    if (c.lastMessage?.e2e) c.lastMessage = { ...c.lastMessage, e2e: true, body: null };
+    else if (c.lastMessage?.body) c.lastMessage.body = openCipher(c.lastMessage.body);
     c.participantCount = c.participants?.length || 0;
     c.participants = (c.participants || []).slice(0, 8);
   }
@@ -404,7 +406,8 @@ export const chatMessages = asyncHandler(async (req, res) => {
   const messages = items.reverse().map((m) => ({
     _id: m._id,
     sender: m.sender,
-    body: m.deletedAt ? null : openCipher(m.body),
+    body: m.deletedAt || m.e2e ? null : openCipher(m.body),
+    e2e: Boolean(m.e2e),
     deleted: Boolean(m.deletedAt),
     attachment: m.deletedAt ? undefined : m.attachment,
     editedAt: m.editedAt,
@@ -416,7 +419,8 @@ export const chatMessages = asyncHandler(async (req, res) => {
 });
 
 // ── Backup & recovery ───────────────────────────────────────────────
-export const recoveryStatus = asyncHandler(async (_req, res) => {
+export const recoveryStatus = asyncHandler(async (req, res) => {
+  logAudit(req, 'RECOVERY_VIEWED');
   const [backup, state] = await Promise.all([backupStatus(), getPlatformState({ fresh: true })]);
   noStore(res);
   res.json({ backup, lastHealthCheck: state.lastHealthCheck || null, healthCheckValidMs: HEALTH_CHECK_VALID_MS });
@@ -467,7 +471,7 @@ export const emergencyTransition = asyncHandler(async (req, res) => {
       return res.json({ state: stateView(result.state), changed: false });
     }
 
-    // Side effects. Super Admin sessions are never touched: the recovery path stays open.
+    // Side effects. IT support sessions are never touched: the recovery path stays open.
     const effects = {};
     if (to !== 'normal') {
       effects.socketsDisconnected = await disconnectAllExcept([SUPER_ADMIN_ROLE]);
@@ -477,7 +481,7 @@ export const emergencyTransition = asyncHandler(async (req, res) => {
       effects.sessionsRevoked = await revokeSessions({ user: { $nin: supers } }, 'emergency_lockdown');
     }
     await logAudit(req, 'EMERGENCY_TRANSITION', { reason, details: { to, version: result.state.version, ...effects } });
-    // Alert every Super Admin (protected channel — never broadcast to other roles).
+    // Alert every IT support (protected channel — never broadcast to other roles).
     const supers = await User.find({ role: SUPER_ADMIN_ROLE, isActive: true }).distinct('_id');
     notifyUsers(supers, { type: 'system', title: `Emergency mode: ${to}`, message: `${req.user.name} switched the platform to ${to}. Reason: ${String(reason).slice(0, 120)}` }, { push: true });
     emitToRoles([SUPER_ADMIN_ROLE], 'platform:state', { mode: to, version: result.state.version });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Break-glass: show or reset the platform emergency mode from a server shell,
- * independent of the web UI (for example if every Super Admin is locked out).
+ * independent of the web UI (for example if every IT support is locked out).
  *
  *   node scripts/platform-mode.mjs            # show the current mode
  *   node scripts/platform-mode.mjs normal     # force normal operation
@@ -12,6 +12,7 @@
  */
 import mongoose from 'mongoose';
 import { connectDB } from '../src/config/db.js';
+import { securityAlert, shellClient } from '../src/services/securityAlerts.js';
 import PlatformState from '../src/models/PlatformState.js';
 import AuditLog from '../src/models/AuditLog.js';
 
@@ -35,6 +36,13 @@ try {
       { upsert: true }
     );
     await AuditLog.create({ action: 'EMERGENCY_TRANSITION', actorRole: 'system', reason: 'Reset from server shell (scripts/platform-mode.mjs)', details: { from: state.mode, to: 'normal' } });
+    await securityAlert('audit', 'EMERGENCY_TRANSITION', {
+      actorRole: 'system',
+      outcome: 'success',
+      reason: 'Reset from the server shell (scripts/platform-mode.mjs)',
+      details: { from: state.mode, to: 'normal' },
+      client: shellClient(),
+    });
     console.log(`✔ Platform mode reset: ${state.mode} → normal`);
   }
 } finally {

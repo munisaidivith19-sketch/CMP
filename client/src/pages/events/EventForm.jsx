@@ -208,7 +208,7 @@ export default function EventForm({ open, onClose, event, defaultClub, onSaved }
                       key={fid}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-primary-500/20 bg-primary-500/10 px-3 py-1.5 text-xs font-semibold text-primary-700 dark:text-primary-300"
                     >
-                      <span className="rounded bg-primary-600/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-800 dark:text-primary-200">
+                      <span className="rounded-sm bg-primary-600/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-800 dark:text-primary-200">
                         {fac?.department || 'Staff'}
                       </span>
                       <span>{fac?.name || 'Faculty'}</span>

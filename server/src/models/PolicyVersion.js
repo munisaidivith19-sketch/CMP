@@ -41,31 +41,31 @@ policyVersionSchema.index({ policyId: 1, version: 1 }, { unique: true });
 policyVersionSchema.index({ policyId: 1, status: 1, effectiveAt: -1, version: -1 });
 
 const IMMUTABLE = 'Published policy versions cannot be modified or deleted';
-const refuse = (next) => next(new Error(IMMUTABLE));
+const refuse = async () => {
+  throw new Error(IMMUTABLE);
+};
 
 // Bulk/query updates and every delete are refused outright.
 for (const op of ['updateMany', 'replaceOne', 'findOneAndReplace', 'deleteOne', 'deleteMany', 'findOneAndDelete', 'findOneAndRemove']) {
-  policyVersionSchema.pre(op, function refuseOp(next) {
-    refuse(next);
+  policyVersionSchema.pre(op, async function refuseOp() {
+    await refuse();
   });
 }
-policyVersionSchema.pre('deleteOne', { document: true, query: false }, function refuseDoc(next) {
-  refuse(next);
+policyVersionSchema.pre('deleteOne', { document: true, query: false }, async function refuseDoc() {
+  await refuse();
 });
 
 // Single-document query updates may only touch drafts (publishing one).
 for (const op of ['updateOne', 'findOneAndUpdate']) {
-  policyVersionSchema.pre(op, function draftsOnly(next) {
+  policyVersionSchema.pre(op, function draftsOnly() {
     this.where({ status: 'draft' });
-    next();
   });
 }
 
-policyVersionSchema.pre('save', async function onlyDrafts(next) {
-  if (this.isNew) return next();
+policyVersionSchema.pre('save', async function onlyDrafts() {
+  if (this.isNew) return;
   const stored = await this.constructor.findById(this._id).select('status').lean();
-  if (stored?.status !== 'draft') return refuse(next);
-  next();
+  if (stored?.status !== 'draft') await refuse();
 });
 
 export default mongoose.model('PolicyVersion', policyVersionSchema);

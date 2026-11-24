@@ -1,5 +1,6 @@
 import AuditLog from '../models/AuditLog.js';
-import { scrub } from './securityLog.js';
+import { clientInfo, scrub } from './securityLog.js';
+import { securityAlert } from '../services/securityAlerts.js';
 
 const idOf = (v) => v?._id || v || undefined;
 
@@ -9,6 +10,17 @@ const idOf = (v) => v?._id || v || undefined;
  */
 export function logAudit(req, action, { actor, target, outcome = 'success', reason, details } = {}) {
   const who = actor === undefined ? req?.user : actor;
+  securityAlert('audit', action, {
+    actorRole: who?.role,
+    actorId: idOf(who) && String(idOf(who)),
+    actorEmail: who?.email,
+    targetRole: target?.role,
+    account: target?.email || details?.email || who?.email,
+    outcome,
+    reason,
+    details,
+    client: clientInfo(req),
+  });
   return AuditLog.create({
     action,
     outcome,

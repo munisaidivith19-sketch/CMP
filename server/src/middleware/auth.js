@@ -4,13 +4,16 @@ import User from '../models/User.js';
 import Session from '../models/Session.js';
 import { ApiError, asyncHandler } from '../utils/http.js';
 import { IDLE_MESSAGE, expireIdleSession, idleTimeoutFor, isIdleExpired } from '../utils/sessionIdle.js';
+import { SUPER_ADMIN_ROLE } from '../constants.js';
+import { consoleNetworkAllowed } from '../utils/consoleNetwork.js';
+import { logSecurity } from '../utils/securityLog.js';
 
 /**
  * Verify an access token and load its user + session. Shared by the REST
  * `protect` middleware and the Socket.io handshake so both enforce the same rules:
  * valid signature, live (not revoked / expired) session, active account.
  */
-export async function authenticateAccessToken(token, ip) {
+export async function authenticateAccessToken(token, ip, origin) {
   if (!token || typeof token !== 'string') throw new ApiError(401, 'Please sign in to continue');
 
   let payload;
@@ -38,6 +41,15 @@ export async function authenticateAccessToken(token, ip) {
   }
 
   if (!user || !user.isActive) throw new ApiError(401, 'Account is unavailable');
+
+  // IT support only from CONSOLE_ALLOWED_NETWORKS (utils/consoleNetwork.js):
+  // a session used anywhere else is ended, whoever holds the token.
+  if (user.role === SUPER_ADMIN_ROLE && !consoleNetworkAllowed(origin)) {
+    await Session.updateOne({ _id: session._id, revokedAt: null }, { $set: { revokedAt: new Date(), revokedReason: 'outside_allowed_network' } });
+    const headers = origin?.headers || {};
+    logSecurity({ headers, ip, get: (h) => headers[String(h).toLowerCase()] }, 'SESSION_REVOKED', { actor: null, target: user, success: false, reason: 'outside_allowed_network', entityType: 'session', entityId: session._id });
+    throw new ApiError(401, 'Your session has ended. Please sign in again.');
+  }
 
   // A Gate Scanner session belongs to a Security account; if the role changes
   // the session ends for good (it cannot be refreshed back either).
@@ -68,7 +80,7 @@ export async function authenticateAccessToken(token, ip) {
 export const protect = asyncHandler(async (req, _res, next) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  const { user, sessionId, idleTimeoutMs, client } = await authenticateAccessToken(token, req.ip);
+  const { user, sessionId, idleTimeoutMs, client } = await authenticateAccessToken(token, req.ip, { remoteAddress: req.socket?.remoteAddress, headers: req.headers });
   req.user = user;
   req.sessionClient = client;
   req.sessionId = sessionId;

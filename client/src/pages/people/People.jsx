@@ -9,6 +9,7 @@ import { ACADEMIC_YEARS, ROLE_LABELS, YEAR_LABELS } from '../../utils/constants'
 import { displayName } from '../../utils/format';
 import { selectUser } from '../../features/authSlice';
 import { downloadProfilesPdf } from '../../services/reports';
+import { useDebounced } from '../../utils/useDebounced';
 
 /**
  * The People directory.
@@ -34,8 +35,9 @@ export default function People() {
   const [page, setPage] = useState(1);
 
   const can = useMemo(() => new Set(config?.filters || ['search']), [config]);
+  const debouncedQ = useDebounced(q);
   const { data, isFetching, error, refetch } = useGetUsersQuery({
-    q: q || undefined,
+    q: debouncedQ || undefined,
     department: can.has('department') ? department || undefined : undefined,
     role: can.has('role') ? role || undefined : undefined,
     year: can.has('year') ? year || undefined : undefined,

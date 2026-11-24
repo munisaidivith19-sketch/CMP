@@ -613,7 +613,7 @@ export function ReviewCard({ pass, onDone }) {
   const saving = fLoading || hLoading || pLoading || aLoading;
   if (!stage) return null;
   // Only the authority the student chose may decide an emergency pass (the API enforces it too).
-  // The Super Admin views gate passes read-only.
+  // IT support views gate passes read-only.
   const canDecide = me.role !== 'super_admin' && (stage.hook !== 'authority' || me.role === pass.emergencyAuthority);
 
   const act = async (action, rejectReason) => {
@@ -733,7 +733,7 @@ export const canReviewPass = (role, pass) => role === 'admin' ? PENDING.includes
 /** Faculty / HOD / principal each see only their own stage; admin sees every open stage. */
 function ReviewQueue({ role }) {
   const [page, setPage] = useState(1);
-  // Admin (acts) and Super Admin (read-only) see every open stage.
+  // Admin (acts) and IT support (read-only) see every open stage.
   const isAdmin = role === 'admin' || role === 'super_admin';
   // HOD / principal / admin decide bound requests from the Bind tab, as a group.
   const bind = role === 'faculty' ? {} : { bind: 'none' };

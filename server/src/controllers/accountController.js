@@ -277,7 +277,7 @@ export const resetUserPassword = asyncHandler(async (req, res) => {
 
   let scope = null;
   if (actor.role === 'admin' || actor.role === 'super_admin') {
-    // Admin accounts are reset through the Super Admin console (forced change at next sign-in).
+    // Admin accounts are reset through the console (forced change at next sign-in).
     if (target.role === 'admin' || target.role === 'super_admin') throw fail(403, 'Another administrator’s password cannot be reset here', 'target_is_admin', target);
     const module = moduleForRole(target.role);
     if (!adminAllows(actor, module, 'edit', target.department)) {
@@ -292,7 +292,7 @@ export const resetUserPassword = asyncHandler(async (req, res) => {
   }
 
   target.password = req.body.newPassword;
-  // Whoever reset it knows it: an ordinary user chooses their own at next sign-in. (Admin and Super Admin accounts are never reset here.)
+  // Whoever reset it knows it: an ordinary user chooses their own at next sign-in. (Admin and IT support accounts are never reset here.)
   if (target.role !== 'admin' && target.role !== 'super_admin') target.mustChangePassword = true;
   target.tokenVersion = (target.tokenVersion || 0) + 1;
   target.failedLogins = 0;

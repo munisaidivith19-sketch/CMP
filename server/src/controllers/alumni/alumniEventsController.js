@@ -332,7 +332,7 @@ export const cancelEvent = asyncHandler(async (req, res) => {
   const updated = await AlumniEvent.findOneAndUpdate(
     { _id: event._id, status: { $in: CANCELLABLE } },
     { $set: { status: 'cancelled', cancelReason } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, `This event is already ${event.status} and cannot be cancelled`);
   event.cancelReason = updated.cancelReason;
@@ -428,7 +428,7 @@ export const cancelRsvp = asyncHandler(async (req, res) => {
     const waitlisted = await AlumniEventRsvp.findOneAndUpdate(
       { event: id, status: 'waitlisted' },
       { $set: { status: 'going' } },
-      { sort: { createdAt: 1 }, new: true }
+      { sort: { createdAt: 1 }, returnDocument: 'after' }
     ).populate('event', 'title');
 
     if (waitlisted) {

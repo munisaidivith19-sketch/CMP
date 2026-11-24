@@ -4,13 +4,13 @@ import { AlertTriangle, CheckCircle2, HeartPulse, LifeBuoy, Lock, ShieldOff, Sir
 import { Badge, Button, Card, CardHeader, ErrorState, PageHeader, Skeleton, cn } from '../../components/ui/primitives';
 import { Input, Textarea } from '../../components/ui/form';
 import { Modal } from '../../components/ui/Modal';
-import { reportError, useReauth } from '../../components/superadmin/Reauth';
-import { useEmergencyHealthCheckMutation, useEmergencyTransitionMutation, useGetEmergencyStateQuery } from '../../services/superAdmin';
+import { reportError, useReauth } from '../../components/console/Reauth';
+import { useEmergencyHealthCheckMutation, useEmergencyTransitionMutation, useGetEmergencyStateQuery } from '../../services/consoleApi';
 import { fmtDateTime } from '../../utils/format';
 
 /**
  * Emergency Control Center. Not linked from any navigation; reachable only by
- * URL, and the route + every API behind it are Super Admin only on the server.
+ * URL, and the route + every API behind it are IT support only on the server.
  *
  * What these switches do — and do not do — is stated plainly on the page:
  * they control access to the VEXON application. They cannot take hosting or
@@ -19,7 +19,7 @@ import { fmtDateTime } from '../../utils/format';
 const MODES = {
   normal: { label: 'Normal', icon: CheckCircle2, color: 'success', text: 'Everyone can use VEXON.' },
   maintenance: { label: 'Maintenance', icon: Wrench, color: 'warning', text: 'Ordinary users see a maintenance page and cannot sign in. Existing sessions are kept but paused.' },
-  lockdown: { label: 'Access lockdown', icon: Lock, color: 'danger', text: 'Every non-Super-Admin session is revoked and sign-ins are refused. Use during a security incident.' },
+  lockdown: { label: 'Access lockdown', icon: Lock, color: 'danger', text: 'Every session other than IT support is revoked and sign-ins are refused. Use during a security incident.' },
   recovery: { label: 'Recovery', icon: LifeBuoy, color: 'info', text: 'Access stays closed while you verify the database and services. Reopening requires a passing health check.' },
 };
 
@@ -52,7 +52,7 @@ export default function EmergencyControl() {
         <p className="flex items-start gap-2 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
           These modes control access to the VEXON application only. They do not shut down the hosting server or the database — that needs
-          separately authorised infrastructure access. Nothing here deletes data or backups, and your Super Admin access is never blocked.
+          separately authorised infrastructure access. Nothing here deletes data or backups, and your IT support access is never blocked.
         </p>
       </Card>
 

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Category
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.DoorFront
+import androidx.compose.material.icons.rounded.Quiz
 import androidx.compose.material.icons.rounded.DirectionsBus
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EmojiEvents
@@ -78,6 +79,16 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.em
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.draw.drawBehind
+import com.vexon.campus.ui.rememberReducedMotion
+import com.vexon.campus.ui.rise
 import androidx.compose.ui.text.style.TextOverflow
 import com.vexon.campus.ui.AppBackdrop
 import com.vexon.campus.ui.Glass
@@ -111,6 +122,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import com.vexon.campus.VexonApp
 import com.vexon.campus.core.Api
+import com.vexon.campus.core.ParentMobile
+import com.vexon.campus.core.rememberChatText
 import com.vexon.campus.core.Auth
 import com.vexon.campus.core.Fmt
 import com.vexon.campus.core.Http
@@ -221,38 +234,65 @@ fun TabsScreen() {
                 }
             }
         }
-        // A glass bar in its own row: it never covers the screen above it.
-        Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp).padding(top = 6.dp, bottom = 8.dp)
-                .glass(RoundedCornerShape(26.dp), fill = Glass.strongFill, elevation = 10.dp)
-                .padding(5.dp).selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            TAB_SPECS.filter { !coe || it.name in COE_TABS }.forEach { t ->
-                val count = when (t.name) {
+        // A floating liquid-glass bar in its own row: it never covers the screen above it.
+        val tabs = TAB_SPECS.filter { !coe || it.name in COE_TABS }
+        LiquidTabBar(
+            tabs, Nav.tab,
+            onSelect = { name ->
+                if (Nav.tab != name) {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    Nav.tab = name
+                }
+            },
+            count = { name ->
+                when (name) {
                     "chat" -> badge(chat.data["total"].int)
                     "notifications" -> badge(notes.data["unread"].int)
                     else -> null
                 }
-                TabItem(t, Nav.tab == t.name, count, Modifier.weight(1f)) {
-                    if (Nav.tab != t.name) {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        Nav.tab = t.name
-                    }
-                }
-            }
-        }
+            },
+        )
     }
+    }
+}
+
+/**
+ * Bottom navigation: a glass capsule with a gradient "drop" that slides to the
+ * selected tab on a spring. Only the indicator's offset animates (a transform),
+ * so switching tabs never re-lays out the bar.
+ */
+@Composable
+private fun LiquidTabBar(tabs: List<TabSpec>, current: String, onSelect: (String) -> Unit, count: (String) -> String?) {
+    val shape = RoundedCornerShape(30.dp)
+    val gap = 4.dp
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp).padding(top = 6.dp, bottom = 10.dp)
+            .glass(shape, fill = Glass.strongFill, elevation = 8.dp)
+            .padding(6.dp),
+    ) {
+        val n = tabs.size.coerceAtLeast(1)
+        val itemW = (maxWidth - gap * (n - 1)) / n
+        val index = tabs.indexOfFirst { it.name == current }.coerceAtLeast(0)
+        val x by animateDpAsState((itemW + gap) * index, spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow), label = "tabDrop")
+        // The drop: a primary gradient capsule with a glossy top edge.
+        Box(
+            Modifier.offset { IntOffset(x.roundToPx(), 0) }.width(itemW).height(56.dp)
+                .clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(Grad.primary))
+                .drawBehind { drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.32f), Color.Transparent), endY = size.height * 0.55f)) }
+                .border(1.dp, Glass.shine, RoundedCornerShape(24.dp)),
+        )
+        Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            tabs.forEach { t -> TabItem(t, current == t.name, count(t.name), Modifier.weight(1f)) { onSelect(t.name) } }
+        }
     }
 }
 
 @Composable
 private fun TabItem(tab: TabSpec, selected: Boolean, count: String?, modifier: Modifier, onClick: () -> Unit) {
-    val tint by animateColorAsState(if (selected) C.primary else C.muted, tween(Motion.QUICK_MS), label = "tabTint")
-    val pill by animateColorAsState(if (selected) C.primarySoft else C.primarySoft.copy(alpha = 0f), tween(Motion.QUICK_MS), label = "tabPill")
-    val lift by animateFloatAsState(if (selected) 1.12f else 1f, Motion.press(), label = "tabIcon")
+    val tint by animateColorAsState(if (selected) Color.White else C.soft, tween(Motion.QUICK_MS), label = "tabTint")
+    val lift by animateFloatAsState(if (selected) 1.1f else 1f, Motion.press(), label = "tabIcon")
     Column(
-        modifier.heightIn(min = 54.dp).clip(RoundedCornerShape(21.dp)).background(pill)
+        modifier.height(56.dp).clip(RoundedCornerShape(24.dp))
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 2.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -287,8 +327,9 @@ private data class TileSpec(val icon: ImageVector, val gradient: List<Color>, va
 
 @Composable
 private fun Tiles(tiles: List<TileSpec>) {
+    val calm = rememberReducedMotion()
     Grid2(tiles) { t, mod ->
-        Card(mod, onClick = t.onClick, gap = 10.dp) {
+        Card(mod.rise(40 * tiles.indexOf(t), calm), onClick = t.onClick, gap = 10.dp) {
             IconTile(t.icon, t.gradient, 38.dp)
             Column {
                 Label(t.label)
@@ -305,20 +346,51 @@ private fun Greeting(user: JsonElement, emoji: String, actions: @Composable () -
         Avatar(user, size = 46.dp)
         Column(Modifier.weight(1f)) {
             Small("${greeting()},")
-            H2("${firstName(user["name"].str)} $emoji", maxLines = 1)
+            // Students see their full name (wrapping to a second line if it is long); staff keep the first name.
+            if (user.role in STUDENT_ROLES) StudentName(user["name"].str?.trim().orEmpty())
+            else H2(firstName(user["name"].str), maxLines = 1)
         }
         actions()
         ThemeToggle()
     }
 }
 
+/**
+ * A student's full name, never cut. Two lines are preferred: the largest size
+ * from 20 sp down to 14 sp at which the whole name fits in two lines; only a
+ * name too long for that takes a third line at 14 sp. Measured once per width.
+ * TalkBack always reads the whole name.
+ */
+@Composable
+private fun StudentName(name: String) {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val width = constraints.maxWidth
+        val base = Type.h2.copy(lineHeight = 1.15.em)
+        val style = remember(name, width, base) {
+            (20 downTo 14).asSequence()
+                .map { base.copy(fontSize = it.sp) }
+                .firstOrNull { st ->
+                    !measurer.measure(name, st, maxLines = 2, constraints = androidx.compose.ui.unit.Constraints(maxWidth = width)).hasVisualOverflow
+                } ?: base.copy(fontSize = 14.sp)
+        }
+        Text(name, Modifier.semantics { contentDescription = name }, style = style, maxLines = 3, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 @Composable
 private fun HeroCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(28.dp)
-    Box(Modifier.fillMaxWidth().clip(shape).background(Brush.linearGradient(Grad.hero)).border(1.dp, Glass.shine, shape)) {
-        // Soft highlights give the gradient depth; they are clipped to the card.
-        Box(Modifier.align(Alignment.TopEnd).offset(46.dp, (-62).dp).size(150.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color(0x29FFFFFF)))
-        Box(Modifier.align(Alignment.BottomStart).offset((-40).dp, 60.dp).size(120.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color(0x14FFFFFF)))
+    Box(
+        Modifier.fillMaxWidth().clip(shape).background(Brush.linearGradient(Grad.hero))
+            .drawBehind {
+                // Soft highlights give the gradient depth (drawn, so they never set the card's height).
+                drawCircle(Color(0x29FFFFFF), 75.dp.toPx(), androidx.compose.ui.geometry.Offset(size.width - 29.dp.toPx(), 13.dp.toPx()))
+                drawCircle(Color(0x14FFFFFF), 60.dp.toPx(), androidx.compose.ui.geometry.Offset(20.dp.toPx(), size.height + 10.dp.toPx()))
+                drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.22f), Color.Transparent), endY = size.height * 0.5f))
+            }
+            .border(1.dp, Glass.shine, shape),
+    ) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
     }
 }
@@ -406,8 +478,17 @@ private fun GeneralHome(user: JsonElement) {
     // The current semester, as the Attendance screen opens on.
     val att = Api.myAttendance(mapOf("range" to "all", "semester" to user["semester"].int), skip = !isStudent)
     val summary = Api.attendanceSummary(skip = !seesSummary, pollMs = 120_000)
-    val passes = Api.gatePasses(mapOf("limit" to 5), skip = !isStudent)
+    // Ask for the open pass by status: the server sorts a student's passes by status name
+    // first, so a plain "latest 5" can be all completed passes and miss the pending one.
+    val passes = Api.gatePasses(mapOf("limit" to 1, "status" to OPEN_PASS.joinToString(",")), skip = !isStudent)
+    val rejectedPass = Api.gatePasses(mapOf("limit" to 1, "status" to "rejected"), skip = !isStudent)
     val unread = Api.chatUnread()
+    // Students' home shows Bus tracking instead of My clubs. Only day scholars may track buses
+    // (the server refuses everyone else), so only they load their bus assignment.
+    val busUser = isStudent && user["stayType"].str == "day_scholar"
+    val myBus = Api.transportMe(skip = !busUser)
+    // Students: upcoming exams (from today) replace the events tile.
+    val exams = Api.exams(mapOf("from" to Fmt.todayKey()), skip = !isStudent)
 
     val cls = now.data["current"] ?: now.data["next"]
     val open = passes.data["passes"].list.firstOrNull { it["status"].str in OPEN_PASS }
@@ -425,7 +506,7 @@ private fun GeneralHome(user: JsonElement) {
         else -> "Mark classes" to "Your sections"
     }
 
-    Screen(refreshing = dash.isFetching && !dash.isLoading, onRefresh = { listOf(dash, now, att, summary, passes, unread).forEach { it.refetch() } }) {
+    Screen(refreshing = dash.isFetching && !dash.isLoading, onRefresh = { listOf(dash, now, att, summary, passes, unread).forEach { it.refetch() }; rejectedPass.refetch(); myBus.refetch(); exams.refetch() }) {
         Greeting(user, "👋") {
             IconButton(Icons.Rounded.CalendarMonth, "Calendar") { Nav.push("/calendar") }
         }
@@ -434,7 +515,8 @@ private fun GeneralHome(user: JsonElement) {
             H2(
                 when {
                     noTimetable -> "Welcome back"
-                    cls != null -> "${if (now.data["current"] != null) "Now" else "Next"}: ${cls["subject"]["name"].str ?: ""}"
+                    // A break period has no subject: show its label ("Lunch Break") instead of an empty "Now:".
+                    cls != null -> "${if (now.data["current"] != null) "Now" else "Next"}: ${cls["subject"]["name"].str ?: cls["breakLabel"].str ?: "Break"}"
                     now.data["today"].list.isNotEmpty() -> "Classes are done for today"
                     else -> "No classes today"
                 },
@@ -451,6 +533,15 @@ private fun GeneralHome(user: JsonElement) {
             }
         }
 
+        // The student's current gate pass, stage by stage (or a rejection from the last two days).
+        if (isStudent) {
+            val recentReject = rejectedPass.data["passes"].list.firstOrNull {
+                it["status"].str == "rejected" &&
+                    (Fmt.parse(it["updatedAt"])?.isAfter(java.time.ZonedDateTime.now().minusDays(2)) == true)
+            }
+            (open ?: recentReject)?.let { p -> GatePassTracker(p) { Nav.push("/gate-pass") } }
+        }
+
         val d = dash.data
         when {
             d == null && dash.error != null -> ErrorState(dash.error) { dash.refetch() }
@@ -460,18 +551,50 @@ private fun GeneralHome(user: JsonElement) {
                 val myClubs = stats["myClubs"].int ?: 0
                 val regs = stats["upcomingRegistrations"].int ?: 0
                 val tiles = buildList {
-                    add(TileSpec(Icons.Rounded.Category, Grad.violet, "My clubs", "$myClubs club${if (myClubs == 1) "" else "s"}", "Tap to preview") { sheet = "clubs" })
-                    add(TileSpec(Icons.Rounded.EventAvailable, Grad.sky, "Upcoming", "$regs registered", "Tap to preview") { sheet = "upcoming" })
+                    if (isStudent && !busUser) {
+                        // The server allows bus tracking for day scholars only: say so instead of opening an error page.
+                        add(TileSpec(Icons.Rounded.DirectionsBus, Grad.violet, "Bus tracking", "Day scholars only", "Tap for details") {
+                            Dialogs.alert("Bus tracking", "Live bus tracking is available to day scholars. If you travel by college bus, ask the office to update your stay type to Day scholar.")
+                        })
+                    } else if (busUser) {
+                        val a = myBus.data["assignment"]
+                        val busNo = a["bus"]["number"].str
+                        val stop = a["stop"]
+                        add(TileSpec(
+                            Icons.Rounded.DirectionsBus, Grad.violet, "Bus tracking",
+                            busNo?.let { "Bus $it" } ?: "Live buses",
+                            stop["name"].str?.let { "Stop: $it" } ?: "Tap to track",
+                        ) {
+                            val busId = a["bus"].id
+                            Nav.push(if (busId != null) "/transport?bus=$busId" + (stop.id?.let { "&stop=$it" } ?: "") else "/transport")
+                        })
+                    } else add(TileSpec(Icons.Rounded.Category, Grad.violet, "My clubs", "$myClubs club${if (myClubs == 1) "" else "s"}", "Tap to preview") { sheet = "clubs" })
+                    if (!isStudent) add(TileSpec(Icons.Rounded.EventAvailable, Grad.sky, "Upcoming", "$regs registered", "Tap to preview") { sheet = "upcoming" })
                     add(TileSpec(Icons.Rounded.FactCheck, if (low) Grad.rose else Grad.emerald, if (isHod) "Dept attendance" else "Attendance", attValue, attHint) {
                         if (seesSummary) sheet = "attendance" else Nav.push("/attendance")
                     })
+                    if (isStudent) {
+                        val list = exams.data["exams"].list.filter { it["status"].str != "cancelled" }
+                        val next = list.firstOrNull()
+                        add(TileSpec(
+                            Icons.Rounded.Quiz, Grad.rose, "Upcoming exams",
+                            when {
+                                exams.data == null -> if (exams.isLoading) "…" else "—"
+                                list.isEmpty() -> "None scheduled"
+                                else -> "${list.size} exam${if (list.size == 1) "" else "s"}"
+                            },
+                            next?.let { "Next: ${it["subjectCode"].str ?: it["subjectName"].str ?: ""} · ${Fmt.classDay(it["date"], "dd MMM")}" },
+                        ) { Nav.push("/exams") })
+                    }
+                    // Students reach chat from the Chat tab (with its unread badge); no Messages tile.
                     val total = unread.data["total"].int ?: 0
-                    add(TileSpec(Icons.Rounded.ChatBubble, Grad.primary, "Messages", if (total > 0) "$total unread" else "All caught up") { Nav.push("/chat") })
+                    if (!isStudent) add(TileSpec(Icons.Rounded.ChatBubble, Grad.primary, "Messages", if (total > 0) "$total unread" else "All caught up") { Nav.push("/chat") })
                     if (!noTimetable) {
                         val classes = now.data["today"].list.count { !it["isBreak"].bool }
                         add(TileSpec(Icons.Rounded.EventNote, Grad.amber, "Timetable", "$classes classes today") { Nav.push("/timetable") })
                     }
-                    add(TileSpec(
+                    // Students follow their pass in the tracking card above; no Gate pass tile.
+                    if (!isStudent) add(TileSpec(
                         Icons.Rounded.DoorFront, Grad.cyan, "Gate pass",
                         if (isStudent) open?.let { it["status"].str.orEmpty().replace(Regex("^pending_"), "waiting: ") } ?: "No active pass"
                         else if (role == "security") "Verify codes" else "Review passes",
@@ -754,10 +877,12 @@ fun ChatListScreen() {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val last = c["lastMessage"]
+                    // End-to-end encrypted previews are decrypted on this phone.
+                    val lastText = rememberChatText(c.id, last)
                     Small(
                         when {
                             isTyping -> "typing…"
-                            last["body"].text != null -> "${if (sameId(last["sender"], me)) "You: " else ""}${last["body"].str}"
+                            !lastText.isNullOrBlank() -> "${if (sameId(last["sender"], me)) "You: " else ""}$lastText"
                             else -> "No messages yet"
                         },
                         Modifier.weight(1f), if (isTyping) C.primary else C.soft, maxLines = 1,
@@ -911,6 +1036,7 @@ fun ProfileScreen() {
     var editing by remember { mutableStateOf(false) }
     var bio by remember(user, editing) { mutableStateOf(user["bio"].str.orEmpty()) }
     var phone by remember(user, editing) { mutableStateOf(user["phone"].str.orEmpty()) }
+    var phoneError by remember(user, editing) { mutableStateOf<String?>(null) }
     var skills by remember(user, editing) { mutableStateOf(user["skills"].strings.joinToString(", ")) }
     val save = rememberMutation()
     var signingOut by remember { mutableStateOf(false) }
@@ -947,9 +1073,21 @@ fun ProfileScreen() {
         if (editing) {
             Card(Wide, gap = 12.dp) {
                 Input(bio, { bio = it }, label = "Bio", multiline = true, maxLength = 500)
-                Input(phone, { phone = it }, label = "Phone", keyboardType = KeyboardType.Phone, maxLength = 20)
+                val student = user.role == "student" || user.role == "club_admin"
+                if (student) Input(
+                    phone, { phone = ParentMobile.digits10(it); phoneError = null }, label = "Mobile", keyboardType = KeyboardType.Number, maxLength = 10,
+                    placeholder = "10-digit mobile", hint = "10 digits · must be different from your parent's number", error = phoneError,
+                ) else Input(phone, { phone = it }, label = "Phone", keyboardType = KeyboardType.Phone, maxLength = 20)
                 Input(skills, { skills = it }, label = "Skills", hint = "Comma-separated")
                 Button("Save profile", {
+                    if (student) {
+                        phoneError = when {
+                            !ParentMobile.ok10(phone) -> "Enter exactly 10 digits"
+                            ParentMobile.same(phone, user["parentPhone"].str) -> "This is your parent's number. Enter your own mobile"
+                            else -> null
+                        }
+                        if (phoneError != null) return@Button
+                    }
                     save.launch(onError = { Dialogs.alert("Could not save", errMsg(it)) }) {
                         val updated = Api.updateMe(jsonOf("bio" to bio, "phone" to phone, "skills" to skills.split(",").map { it.trim() }.filter { it.isNotEmpty() }))
                         Auth.setUser(updated)

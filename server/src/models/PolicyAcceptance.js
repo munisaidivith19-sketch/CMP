@@ -38,8 +38,8 @@ const policyAcceptanceSchema = new Schema(
 policyAcceptanceSchema.index({ user: 1, policyId: 1, version: 1 }, { unique: true });
 policyAcceptanceSchema.index({ policyId: 1, version: 1 });
 
-const refuse = function refuseChange(next) {
-  next(new Error('Policy acceptance records cannot be modified or deleted'));
+const refuse = async function refuseChange() {
+  throw new Error('Policy acceptance records cannot be modified or deleted');
 };
 for (const op of [
   'updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne', 'findOneAndReplace',
@@ -48,9 +48,8 @@ for (const op of [
   policyAcceptanceSchema.pre(op, refuse);
 }
 policyAcceptanceSchema.pre('deleteOne', { document: true, query: false }, refuse);
-policyAcceptanceSchema.pre('save', function onlyInsert(next) {
-  if (!this.isNew) return next(new Error('Policy acceptance records cannot be modified or deleted'));
-  next();
+policyAcceptanceSchema.pre('save', async function onlyInsert() {
+  if (!this.isNew) throw new Error('Policy acceptance records cannot be modified or deleted');
 });
 
 export default mongoose.model('PolicyAcceptance', policyAcceptanceSchema);

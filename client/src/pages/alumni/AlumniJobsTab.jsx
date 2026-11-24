@@ -266,7 +266,7 @@ export default function AlumniJobsTab() {
                   type="checkbox"
                   checked={mineOnly}
                   onChange={(e) => setMineOnly(e.target.checked)}
-                  className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
                 />
                 <span className="font-medium text-slate-700 dark:text-slate-300">My Postings</span>
               </label>
@@ -611,7 +611,7 @@ export default function AlumniJobsTab() {
                     </div>
 
                     {myCurrentApp.posterNote && (
-                      <div className="rounded-xl bg-white p-3 text-xs shadow-sm dark:bg-white/5">
+                      <div className="rounded-xl bg-white p-3 text-xs shadow-xs dark:bg-white/5">
                         <p className="font-bold text-primary-600 dark:text-primary-400">Note from Poster:</p>
                         <p className="mt-0.5 text-slate-700 dark:text-slate-300">{myCurrentApp.posterNote}</p>
                       </div>
@@ -658,7 +658,7 @@ export default function AlumniJobsTab() {
                           type="checkbox"
                           checked={applyReferral}
                           onChange={(e) => setApplyReferral(e.target.checked)}
-                          className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                          className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
                         />
                         <span>Request internal referral directly from the alumni poster</span>
                       </label>

@@ -43,7 +43,7 @@ timetableSlotSchema.index({ room: 1, dayOfWeek: 1, isActive: 1 });
 // Class timetable lookup: department + year + section + semester.
 timetableSlotSchema.index({ department: 1, year: 1, section: 1, semester: 1, isActive: 1 }, { name: 'class_timetable' });
 
-timetableSlotSchema.pre('validate', function checkTimes(next) {
+timetableSlotSchema.pre('validate', function checkTimes() {
   if (this.startTime && this.endTime && this.endTime <= this.startTime) {
     this.invalidate('endTime', 'End time must be after start time');
   }
@@ -52,7 +52,6 @@ timetableSlotSchema.pre('validate', function checkTimes(next) {
     if (this.year == null) this.year = expected;
     else if (this.year !== expected) this.invalidate('year', `Semester ${this.semester} belongs to year ${expected}, not year ${this.year}`);
   }
-  next();
 });
 
 export { DAYS };

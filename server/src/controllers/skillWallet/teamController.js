@@ -183,14 +183,14 @@ export const acceptInvitation = asyncHandler(async (req, res) => {
     const claimed = await TeamInvitation.findOneAndUpdate(
       { _id: inv._id, invitee: req.user._id, status: 'pending', expiresAt: { $gt: new Date() } },
       { $set: { status: 'accepted', respondedAt: new Date() } },
-      { new: true, session }
+      { returnDocument: 'after', session }
     );
     if (!claimed) return { lost: true };
 
     const seat = await InnovationProject.findOneAndUpdate(
       { _id: inv.project, isDeleted: false, mode: 'team', memberCount: { $lt: env.skillWallet.maxTeamSize } },
       { $inc: { memberCount: 1 } },
-      { new: true, session }
+      { returnDocument: 'after', session }
     );
     const rollback = async (status) => {
       // Without a transaction (standalone MongoDB) undo the claim by hand.
@@ -267,7 +267,7 @@ export const declineInvitation = asyncHandler(async (req, res) => {
   const updated = await TeamInvitation.findOneAndUpdate(
     { _id: inv._id, invitee: req.user._id, status: 'pending' },
     { $set: { status: 'declined', respondedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) {
     const fresh = await TeamInvitation.findById(inv._id).lean();
@@ -294,7 +294,7 @@ export const cancelInvitation = asyncHandler(async (req, res) => {
   const updated = await TeamInvitation.findOneAndUpdate(
     { _id: inv._id, status: 'pending' },
     { $set: { status: 'cancelled', cancelledBy: req.user._id, respondedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw finished(await TeamInvitation.findById(inv._id).lean());
   res.json({ status: 'cancelled' });
@@ -307,7 +307,7 @@ async function endMembership(project, userId, status, actor) {
   const updated = await TeamMembership.findOneAndUpdate(
     { project: project._id, user: userId, status: 'active', role: 'member' },
     { $set: { status, endedAt: new Date(), endedBy: actor._id } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) return false;
   await InnovationProject.updateOne({ _id: project._id }, { $inc: { memberCount: -1 } });

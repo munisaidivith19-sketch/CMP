@@ -1,35 +1,30 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Activity, AlertTriangle, BookOpen, ClipboardList, FlaskConical, Gauge, HeartPulse, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Activity, AlertTriangle, BookOpen, ClipboardList, FlaskConical, Gauge, Plus, RefreshCw, Search, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, StatCard, Tabs, cn } from '../../components/ui/primitives';
 import { Input, Select, Textarea } from '../../components/ui/form';
 import { Modal } from '../../components/ui/Modal';
-import { KindTag, RunResult, RunTestButton, StatusBadge } from '../../components/superadmin/soc';
+import { KindTag, StatusBadge } from '../../components/console/soc';
 import {
   errorMessage,
   useAddSocIncidentNoteMutation,
   useCreateSocIncidentMutation,
   useGetSocAlertsQuery,
   useGetSocAssigneesQuery,
-  useGetSocCatalogQuery,
   useGetSocCoverageQuery,
-  useGetSocDiagnosticsQuery,
   useGetSocErrorsQuery,
-  useGetSocHealthQuery,
   useGetSocIncidentQuery,
   useGetSocIncidentsQuery,
   useGetSocOverviewQuery,
-  useGetSocRunsQuery,
   useGetSuperSecurityEventsQuery,
-  useRunSocHealthMutation,
   useUpdateSocIncidentMutation,
-} from '../../services/superAdmin';
+} from '../../services/consoleApi';
 import { countLabel, percentLabel, severityTone, telemetryNotice, ERROR_STATUS_LABEL } from './socModel';
 import { fmtDateTime } from '../../utils/format';
 
 /**
- * Super Admin → Security Operations. Every number comes from the server for
+ * IT support → Security Operations. Every number comes from the server for
  * an explicit time range; "No data" is shown where the server has none.
  * The server authorizes every request (super_admin only).
  */
@@ -38,9 +33,6 @@ const TABS = [
   { value: 'errors', label: 'Error explorer' },
   { value: 'security', label: 'Security log' },
   { value: 'incidents', label: 'Incidents' },
-  { value: 'health', label: 'System health' },
-  { value: 'diagnostics', label: 'Diagnostics' },
-  { value: 'catalog', label: 'Error catalog' },
   { value: 'coverage', label: 'Coverage' },
 ];
 const RANGE_OPTIONS = [
@@ -66,15 +58,12 @@ export default function Soc() {
   const [newIncident, setNewIncident] = useState(null);
   return (
     <div>
-      <PageHeader icon={ShieldAlert} title="Security Operations" subtitle="Security monitoring, errors, diagnostics and guided repairs — Super Admin only." />
+      <PageHeader icon={ShieldAlert} title="Security Operations" subtitle="Security monitoring, errors and guided repairs — IT support only." />
       <Tabs tabs={TABS} value={tab} onChange={(v) => setParams({ tab: v }, { replace: true })} className="mb-6" />
       {tab === 'overview' && <Overview onOpenIncident={setNewIncident} go={(t) => setParams({ tab: t })} />}
       {tab === 'errors' && <ErrorExplorer />}
       {tab === 'security' && <SecurityLog />}
       {tab === 'incidents' && <Incidents onNew={() => setNewIncident({})} />}
-      {tab === 'health' && <Health />}
-      {tab === 'diagnostics' && <Diagnostics />}
-      {tab === 'catalog' && <Catalog />}
       {tab === 'coverage' && <Coverage />}
       {newIncident && <NewIncidentModal seed={newIncident} onClose={() => setNewIncident(null)} />}
     </div>
@@ -208,7 +197,7 @@ function ErrorExplorer() {
                 <tr key={e._id} className="hover:bg-white/30 dark:hover:bg-white/5">
                   <td className="py-2 pr-2"><Badge color={severityTone(e.severity)}>{e.severity}</Badge></td>
                   <td className="max-w-[360px] pr-3">
-                    <Link to={`/super-admin/soc/errors/${e._id}`} className="font-bold hover:underline">{e.title}</Link>
+                    <Link to={`/console/soc/errors/${e._id}`} className="font-bold hover:underline">{e.title}</Link>
                     <p className="truncate text-xs muted">{e.code}{!e.classified && ' · unclassified'} · {e.method ? `${e.method} ` : ''}{e.route}</p>
                   </td>
                   <td className="pr-3 capitalize">{words(e.module)}</td>
@@ -369,7 +358,7 @@ function IncidentModal({ id, onClose }) {
           {inc.errorEvents?.length > 0 && (
             <div>
               <p className="mb-1 font-bold">Related errors</p>
-              <ul className="space-y-1">{inc.errorEvents.map((e) => <li key={e._id}><Link className="hover:underline" to={`/super-admin/soc/errors/${e._id}`}>{e.title}</Link> <span className="text-xs muted">{e.code} · {ERROR_STATUS_LABEL[e.status]} · ×{e.count}</span></li>)}</ul>
+              <ul className="space-y-1">{inc.errorEvents.map((e) => <li key={e._id}><Link className="hover:underline" to={`/console/soc/errors/${e._id}`}>{e.title}</Link> <span className="text-xs muted">{e.code} · {ERROR_STATUS_LABEL[e.status]} · ×{e.count}</span></li>)}</ul>
             </div>
           )}
           {inc.diagnosticRuns?.length > 0 && <p className="text-xs">Linked diagnostic runs: {inc.diagnosticRuns.map((r) => `${r.testName || r.testId} (${r.status})`).join(', ')}</p>}
@@ -405,123 +394,6 @@ function IncidentModal({ id, onClose }) {
         </div>
       )}
     </Modal>
-  );
-}
-
-/* ── System health ────────────────────────────────────────────────── */
-function Health() {
-  const { data, error, refetch } = useGetSocHealthQuery();
-  const [run, { isLoading }] = useRunSocHealthMutation();
-  const [fresh, setFresh] = useState(null);
-  const h = fresh || data;
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
-  if (!h) return <Skeleton className="h-60" />;
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader
-          title={<span className="flex items-center gap-2">System health <StatusBadge status={h.status} /></span>}
-          subtitle={`${h.scope} · checked ${fmtDateTime(h.checkedAt)}${h.cached ? ` (cached up to ${h.cacheSeconds} s)` : ''}. UNKNOWN means no data — it is never counted as healthy.`}
-          action={<Button size="sm" icon={HeartPulse} loading={isLoading} onClick={async () => { try { setFresh(await run().unwrap()); } catch (err) { toast.error(errorMessage(err)); } }}>Run checks now</Button>}
-        />
-        <ul className="divide-y divide-white/50 text-sm dark:divide-white/10">
-          {h.checks.map((c) => (
-            <li key={c.key} className="flex flex-wrap items-center gap-3 py-2">
-              <StatusBadge status={c.status} />
-              <span className="min-w-[180px] font-bold">{c.label}</span>
-              <span className="flex-1 muted">{c.detail}</span>
-              <span className="text-[11px] muted">{c.testId}{c.durationMs !== undefined ? ` · ${c.durationMs} ms` : ''}</span>
-            </li>
-          ))}
-        </ul>
-      </Card>
-      <Card>
-        <CardHeader title="Background jobs" subtitle="Heartbeats in this API process. UNKNOWN right after a restart is normal." />
-        {h.jobs.length === 0 ? <p className="text-sm muted">No background jobs are registered in this process.</p> : (
-          <ul className="divide-y divide-white/50 text-sm dark:divide-white/10">
-            {h.jobs.map((j) => (
-              <li key={j.name} className="flex flex-wrap items-center gap-3 py-2">
-                <StatusBadge status={j.status} />
-                <span className="min-w-[200px] font-mono text-xs font-bold">{j.name}</span>
-                <span className="flex-1 text-xs muted">{j.reason} {j.description ? `· ${j.description}` : ''}</span>
-                <span className="text-[11px] muted">last run {j.lastRunAt ? fmtDateTime(j.lastRunAt) : 'never'}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-/* ── Diagnostics ──────────────────────────────────────────────────── */
-function Diagnostics() {
-  const { data, error, refetch } = useGetSocDiagnosticsQuery({});
-  const [page, setPage] = useState(1);
-  const history = useGetSocRunsQuery({ page });
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
-  if (!data) return <Skeleton className="h-60" />;
-  const tests = data.items.filter((t) => !t.requiresError);
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader title="Diagnostic test library" subtitle="Registered, read-only tests. Only these can run; nothing typed here is executed. Error-specific tests run from an error's page." />
-        <ul className="space-y-3">
-          {tests.map((t) => (
-            <li key={t.id} className="rounded-2xl border border-white/50 p-3 dark:border-white/10">
-              <div className="flex flex-wrap items-center gap-2"><FlaskConical className="h-4 w-4" /><span className="font-bold">{t.name}</span><span className="font-mono text-[11px] muted">{t.id}</span></div>
-              <p className="mt-1 text-sm">{t.purpose}</p>
-              <p className="text-xs muted">Result rules: {t.output}</p>
-              <div className="mt-2"><RunTestButton test={t} onFinished={() => history.refetch()} /></div>
-            </li>
-          ))}
-        </ul>
-      </Card>
-      <Card>
-        <CardHeader title="Run history" subtitle="Every run is stored with its evidence and recorded in the audit trail." />
-        {!history.data ? <Skeleton className="h-32" /> : history.data.items.length === 0 ? <p className="text-sm muted">No diagnostics have been run yet.</p> : (
-          <div className="space-y-2">{history.data.items.map((r) => <RunResult key={r._id} run={r} compact />)}</div>
-        )}
-        <Pagination page={page} pages={history.data?.pages} onChange={setPage} />
-      </Card>
-    </div>
-  );
-}
-
-/* ── Catalog ──────────────────────────────────────────────────────── */
-function Catalog() {
-  const { data, error, refetch } = useGetSocCatalogQuery();
-  const [q, setQ] = useState('');
-  if (error) return <ErrorState error={error} onRetry={refetch} />;
-  if (!data) return <Skeleton className="h-60" />;
-  const rx = q.trim().toLowerCase();
-  const items = data.items.filter((d) => !rx || `${d.code} ${d.title} ${d.module}`.toLowerCase().includes(rx));
-  return (
-    <Card>
-      <CardHeader title="Error catalog" subtitle={`${data.items.length} definitions. Errors are classified only by structured signals, never by message similarity.`} />
-      <Input icon={Search} placeholder="Search code, title or module" value={q} onChange={(e) => setQ(e.target.value)} className="mb-4" />
-      <div className="space-y-2">
-        {items.map((d) => (
-          <details key={d.code} className="rounded-2xl border border-white/50 p-3 dark:border-white/10">
-            <summary className="flex cursor-pointer flex-wrap items-center gap-2">
-              <BookOpen className="h-4 w-4" />
-              <span className="font-mono text-xs font-bold">{d.code}</span>
-              <span className="font-bold">{d.title}</span>
-              {d.severity && <Badge color={severityTone(d.severity)}>{d.severity}</Badge>}
-              <span className="text-xs capitalize muted">{words(d.module)}</span>
-              {!d.repair && <span className="text-xs muted">· no repair guide</span>}
-            </summary>
-            <div className="mt-2 space-y-2 text-sm">
-              <p>{d.summary}</p>
-              <p className="muted">{d.meaning}</p>
-              {d.causes?.length > 0 && <div><p className="font-semibold">Possible causes</p><ul className="list-disc pl-5">{d.causes.map((c) => <li key={c.id}>{c.text}</li>)}</ul></div>}
-              <p className="text-xs"><span className="font-semibold">Tests:</span> {d.diagnostics?.join(', ') || d.verification?.tests?.join(', ') || 'none'}</p>
-              <p className="text-xs muted">v{d.version} · updated {d.updatedAt} · {d.classification}</p>
-            </div>
-          </details>
-        ))}
-      </div>
-    </Card>
   );
 }
 
@@ -577,7 +449,7 @@ function Coverage() {
           <ul className="space-y-2 text-sm">
             {data.unclassified.map((u) => (
               <li key={u.id} className="rounded-2xl bg-white/40 p-3 dark:bg-white/5">
-                <Link to={`/super-admin/soc/errors/${u.id}`} className="font-bold hover:underline">{u.facts.errorName || 'Error'}: {u.facts.message}</Link>
+                <Link to={`/console/soc/errors/${u.id}`} className="font-bold hover:underline">{u.facts.errorName || 'Error'}: {u.facts.message}</Link>
                 <p className="text-xs muted">{u.facts.source} · {u.facts.module} · {u.facts.method ? `${u.facts.method} ` : ''}{u.facts.route} · ×{u.facts.count} · last {fmtDateTime(u.facts.lastSeenAt)} · stack {u.facts.hasStack ? 'captured' : 'not captured'}</p>
                 <p className="text-xs"><KindTag kind="unverified" /> Missing: {u.missing.join(', ')}</p>
                 <p className="text-xs"><KindTag kind="recommended" /> {u.nextStep}</p>

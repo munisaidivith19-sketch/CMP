@@ -86,7 +86,7 @@ const dbRepair = {
   riskLevel: 'low',
   category: 'manual',
   steps: [
-    { action: 'Run the "Database connectivity" diagnostic', where: 'Super Admin → SOC → Diagnostics', why: 'Confirms whether the API can reach MongoDB right now and how slow it is.', expected: 'PASS with a round-trip time under 500 ms.' },
+    { action: 'Run the "Database connectivity" diagnostic', where: 'IT support → SOC → Diagnostics', why: 'Confirms whether the API can reach MongoDB right now and how slow it is.', expected: 'PASS with a round-trip time under 500 ms.' },
     { action: 'Check which database the server is configured to use', where: 'server/.env — DB_TARGET, MONGO_URI (local) or MONGO_URI_ATLAS (Atlas)', why: 'A wrong host, database name or expired credentials make every query fail.', expected: 'DB_TARGET names the database you expect and the matching URI is set.', risk: 'Editing .env needs a server restart, which briefly interrupts users.' },
     { action: 'Confirm MongoDB itself is running and reachable', where: 'Local: the MongoDB service on the server. Atlas: cluster status and Network Access (IP allow-list)', why: 'If the database is down or the server\'s IP is not allowed, the API cannot connect.', expected: 'The cluster/service is running and the API server\'s IP is allowed.' },
     { action: 'Restart the API after fixing the configuration', where: 'Your process manager (Render dashboard, systemd, pm2)', why: 'server/src/config/db.js connects at start-up with five retries.', expected: 'The log shows "[db] MongoDB connected".', risk: 'Users are briefly disconnected during the restart.' },
@@ -159,7 +159,7 @@ defineError({
   repair: {
     ...dbRepair,
     steps: [
-      { action: 'Run "Database connectivity" and "Database indexes"', where: 'Super Admin → SOC → Diagnostics', why: 'Separates "no connection" from "slow query" from "missing index".', expected: 'Both PASS.' },
+      { action: 'Run "Database connectivity" and "Database indexes"', where: 'IT support → SOC → Diagnostics', why: 'Separates "no connection" from "slow query" from "missing index".', expected: 'Both PASS.' },
       { action: 'If indexes are missing, restart the API', where: 'Your process manager', why: 'server/src/config/db.js builds every declared index (syncIndexes) at start-up.', expected: 'The indexes diagnostic passes after the restart.', risk: 'Building an index on a large collection adds database load for a while.' },
       ...dbRepair.steps.slice(1, 3),
     ],
@@ -207,7 +207,7 @@ defineError({
   severity: 'low',
   severityReason: 'The security control worked as designed. Many refusals from one account can still be worth a look.',
   summary: 'A policy-managed Admin tried an action their module policies do not include.',
-  meaning: 'Super Admins grant ordinary Admins specific modules and actions. The server refused a request outside those grants. Usually this is an Admin clicking something they are not allowed to use; repeated refusals can indicate probing.',
+  meaning: 'IT support accounts grant ordinary Admins specific modules and actions. The server refused a request outside those grants. Usually this is an Admin clicking something they are not allowed to use; repeated refusals can indicate probing.',
   technical: 'server/src/middleware/adminPolicy.js answered 403 with code POLICY_DENIED and wrote a POLICY_DENIED security log entry.',
   causes: [
     { id: 'missing_grant', text: 'The Admin genuinely needs this module and was not granted it.', tests: [] },
@@ -217,17 +217,17 @@ defineError({
   match: (s) => s.httpStatus === 403 && s.dataCode === 'POLICY_DENIED',
   repair: {
     symptoms: ['An Admin reports "Your administrator policies do not include this action"'],
-    preconditions: ['Super Admin access'],
+    preconditions: ['IT support access'],
     riskLevel: 'low',
     category: 'manual',
     steps: [
-      { action: 'Decide whether the Admin should have this module', where: 'Super Admin → Admin accounts → the Admin → Policies', why: 'Policies are the intended way to widen access; there is nothing to "fix" if the refusal is correct.', expected: 'The Admin has exactly the modules their job needs.', risk: 'Granting more modules widens what that account can change.' },
-      { action: 'If refusals are frequent and unexplained, check the account\'s security events', where: 'Super Admin → SOC → Event explorer (Security log, event POLICY_DENIED)', why: 'Many refusals across unrelated modules can mean a stolen session.', expected: 'Refusals line up with the Admin\'s normal work.' },
+      { action: 'Decide whether the Admin should have this module', where: 'IT support → Admin accounts → the Admin → Policies', why: 'Policies are the intended way to widen access; there is nothing to "fix" if the refusal is correct.', expected: 'The Admin has exactly the modules their job needs.', risk: 'Granting more modules widens what that account can change.' },
+      { action: 'If refusals are frequent and unexplained, check the account\'s security events', where: 'IT support → SOC → Event explorer (Security log, event POLICY_DENIED)', why: 'Many refusals across unrelated modules can mean a stolen session.', expected: 'Refusals line up with the Admin\'s normal work.' },
     ],
     rollback: 'Remove the added policy from the Admin account.',
   },
   verification: { tests: ['security.authz_denials'], criteria: 'Refusals return to the normal background level.' },
-  docs: ['docs/SUPER_ADMIN.md'],
+  docs: ['docs/CONSOLE.md'],
 });
 
 defineError({
@@ -298,16 +298,16 @@ defineError({
   module: 'super_admin',
   service: 'api',
   severity: 'info',
-  severityReason: 'Expected behaviour: sensitive Super Admin actions need a password re-entry every five minutes.',
-  summary: 'A sensitive Super Admin action was attempted without a recent password confirmation.',
-  meaning: 'Changing admin accounts or emergency modes requires the Super Admin to re-enter their password. The web console asks for it and retries.',
+  severityReason: 'Expected behaviour: sensitive IT support actions need a password re-entry every five minutes.',
+  summary: 'A sensitive IT support action was attempted without a recent password confirmation.',
+  meaning: 'Changing admin accounts or emergency modes requires the IT support user to re-enter their password. The web console asks for it and retries.',
   technical: 'server/src/middleware/platform.js requireRecentReauth answered 403 code REAUTH_REQUIRED.',
   causes: [{ id: 'expected', text: 'The five-minute confirmation window had passed — normal behaviour.', tests: [] }],
   affected: ['Nothing — the action ran after the password was confirmed, or was cancelled'],
   match: (s) => s.httpStatus === 403 && s.dataCode === 'REAUTH_REQUIRED',
   repair: null,
   verification: { tests: [], criteria: 'No action needed.' },
-  docs: ['docs/SUPER_ADMIN.md'],
+  docs: ['docs/CONSOLE.md'],
 });
 
 defineError({
@@ -318,7 +318,7 @@ defineError({
   severity: 'info',
   severityReason: 'Expected behaviour after a password reset.',
   summary: 'An account with a temporary password tried to use the app before choosing a new password.',
-  meaning: 'When a Super Admin or Admin resets a password, the user must pick a new one before doing anything else.',
+  meaning: 'When IT support or Admin resets a password, the user must pick a new one before doing anything else.',
   technical: 'passwordChangeGate (server/src/middleware/platform.js) answered 403 code PASSWORD_CHANGE_REQUIRED.',
   causes: [{ id: 'expected', text: 'The user has not yet changed their temporary password — normal behaviour.', tests: [] }],
   affected: ['That user only, until they change their password'],
@@ -414,7 +414,7 @@ defineError({
     riskLevel: 'low',
     category: 'manual',
     steps: [
-      { action: 'Run "AI provider configuration"', where: 'Super Admin → SOC → Diagnostics', why: 'Confirms a key is configured (it is never displayed).', expected: 'PASS.' },
+      { action: 'Run "AI provider configuration"', where: 'IT support → SOC → Diagnostics', why: 'Confirms a key is configured (it is never displayed).', expected: 'PASS.' },
       { action: 'Check the category in Technical details', where: 'This error page', why: '"auth" means the key was rejected; "rate_limit" means quota; "timeout"/"upstream" mean the provider had trouble.', expected: 'You know which of the three it is.' },
       { action: 'For "auth": create a new key and set GROQ_API_KEY, then restart the API', where: 'Groq console; server/.env', why: 'The key is read at start-up.', expected: 'Study Assistant answers again.', risk: 'Never paste the key into chats, tickets or this dashboard.' },
     ],
@@ -446,7 +446,7 @@ defineError({
     riskLevel: 'low',
     category: 'manual',
     steps: [
-      { action: 'Run "Background job heartbeats"', where: 'Super Admin → SOC → Diagnostics', why: 'Shows whether the job succeeded since this failure.', expected: 'The job\'s last run succeeded.' },
+      { action: 'Run "Background job heartbeats"', where: 'IT support → SOC → Diagnostics', why: 'Shows whether the job succeeded since this failure.', expected: 'The job\'s last run succeeded.' },
       { action: 'If it keeps failing, read the server log lines for that job', where: 'Server log, lines starting with the job\'s tag (for example "[reminders]", "[gate-code-queue]", "[transport]")', why: 'The full error text stays in the server log; only a redacted summary is stored here.', expected: 'The log shows the failing operation.' },
     ],
     rollback: 'No change is made.',
@@ -477,7 +477,7 @@ defineError({
     riskLevel: 'low',
     category: 'manual',
     steps: [
-      { action: 'Run "Real-time server"', where: 'Super Admin → SOC → Diagnostics', why: 'Confirms Socket.IO is running and how many clients are connected.', expected: 'PASS with connected clients during working hours.' },
+      { action: 'Run "Real-time server"', where: 'IT support → SOC → Diagnostics', why: 'Confirms Socket.IO is running and how many clients are connected.', expected: 'PASS with connected clients during working hours.' },
       { action: 'Check that the proxy forwards WebSocket upgrades for /socket.io/', where: 'Your reverse proxy (nginx: proxy_set_header Upgrade/Connection)', why: 'Without upgrades clients fall back or fail.', expected: 'WebSocket connections succeed.' },
     ],
     rollback: 'Restore the previous proxy configuration.',

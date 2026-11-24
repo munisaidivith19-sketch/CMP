@@ -97,7 +97,7 @@ export default function RoutePreviewMap({ styleUrl, attribution, stops, geometry
     <div className="relative h-72 w-full overflow-hidden rounded-2xl border border-white/20">
       <div ref={container} className="h-full w-full" role="img" aria-label={exact ? 'Map preview of the road route and its stops' : 'Map preview of the stops joined by straight lines'} />
       {!exact && ordered.length >= 2 && (
-        <p className="pointer-events-none absolute left-2 top-2 z-10 max-w-[70%] rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow" role="status">
+        <p className="pointer-events-none absolute left-2 top-2 z-10 max-w-[70%] rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm" role="status">
           Approximate path — straight lines between stops, not the road
         </p>
       )}

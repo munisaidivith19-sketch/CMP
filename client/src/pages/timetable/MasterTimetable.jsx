@@ -221,7 +221,7 @@ export default function MasterTimetable() {
                   className={cn(
                     'flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all',
                     day === d
-                      ? 'bg-primary-500 text-white shadow-sm shadow-primary-500/30'
+                      ? 'bg-primary-500 text-white shadow-xs shadow-primary-500/30'
                       : 'bg-white/60 text-ink-muted hover:bg-white hover:text-ink dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-slate-700'
                   )}
                 >
@@ -372,7 +372,7 @@ export default function MasterTimetable() {
               <thead>
                 <tr className="border-b border-black/10 bg-slate-50/80 dark:border-white/10 dark:bg-slate-900/80">
                   {/* Sticky Class Column */}
-                  <th className="sticky left-0 z-20 w-44 min-w-[176px] bg-slate-100/95 px-3 py-3.5 text-xs font-extrabold uppercase tracking-wider text-ink shadow-[2px_0_5px_rgba(0,0,0,0.05)] backdrop-blur dark:bg-slate-800/95 dark:text-slate-100">
+                  <th className="sticky left-0 z-20 w-44 min-w-[176px] bg-slate-100/95 px-3 py-3.5 text-xs font-extrabold uppercase tracking-wider text-ink shadow-[2px_0_5px_rgba(0,0,0,0.05)] dark:bg-slate-800/95 dark:text-slate-100">
                     Class / Section
                   </th>
                   {dayPeriods.map((p) => (
@@ -405,7 +405,7 @@ export default function MasterTimetable() {
                       className="group transition-colors hover:bg-primary-500/[0.02] dark:hover:bg-white/[0.02]"
                     >
                       {/* Sticky Row Header for Class */}
-                      <td className="sticky left-0 z-10 bg-white/95 px-3 py-3 shadow-[2px_0_5px_rgba(0,0,0,0.05)] backdrop-blur dark:bg-slate-900/95">
+                      <td className="sticky left-0 z-10 bg-white/95 px-3 py-3 shadow-[2px_0_5px_rgba(0,0,0,0.05)] dark:bg-slate-900/95">
                         <div className="flex flex-col gap-0.5">
                           <span className="font-extrabold text-ink dark:text-slate-100">
                             {YEAR_LABELS[cls.year] || `Year ${cls.year}`} · Sec {cls.section}
@@ -488,7 +488,7 @@ export default function MasterTimetable() {
                                 'group/item relative flex min-h-[74px] flex-col justify-between rounded-xl border p-2 transition-all duration-200',
                                 slot.subject?.type === 'lab'
                                   ? 'border-amber-400/40 bg-amber-500/10 dark:border-amber-500/30 dark:bg-amber-500/15'
-                                  : 'border-white/60 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-800/80',
+                                  : 'border-white/60 bg-white/80 shadow-xs dark:border-white/10 dark:bg-slate-800/80',
                                 isMatch && 'ring-2 ring-primary-500 shadow-glow bg-primary-500/10',
                                 isDimmed && 'opacity-35 grayscale'
                               )}
@@ -500,7 +500,7 @@ export default function MasterTimetable() {
                                       {slot.subject?.code}
                                     </span>
                                     {slot.subject?.type === 'lab' && (
-                                      <span className="rounded bg-amber-500/20 px-1 py-0.2 text-[9px] font-black uppercase text-amber-700 dark:text-amber-300">
+                                      <span className="rounded-sm bg-amber-500/20 px-1 py-0.2 text-[9px] font-black uppercase text-amber-700 dark:text-amber-300">
                                         Lab
                                       </span>
                                     )}
@@ -513,7 +513,7 @@ export default function MasterTimetable() {
                                   <button
                                     type="button"
                                     onClick={() => openEditSlot(slot)}
-                                    className="rounded p-1 text-ink-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/10"
+                                    className="rounded-sm p-1 text-ink-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/10"
                                     title="Edit period"
                                     aria-label="Edit period"
                                   >
@@ -522,7 +522,7 @@ export default function MasterTimetable() {
                                   <button
                                     type="button"
                                     onClick={() => setDel(slot)}
-                                    className="rounded p-1 text-ink-muted hover:bg-rose-500/10 hover:text-rose-500"
+                                    className="rounded-sm p-1 text-ink-muted hover:bg-rose-500/10 hover:text-rose-500"
                                     title="Delete period"
                                     aria-label="Delete period"
                                   >

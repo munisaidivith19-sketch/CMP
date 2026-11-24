@@ -12,10 +12,9 @@ import {
   MapPin,
   Mail,
   Phone,
-  Linkedin,
-  Github,
   Save,
 } from 'lucide-react';
+import { Linkedin, Github } from '../../components/ui/brandIcons';
 import toast from 'react-hot-toast';
 import { selectUser } from '../../features/authSlice';
 import {
@@ -307,7 +306,7 @@ export default function AlumniProfileTab() {
                   type="checkbox"
                   checked={domains.includes(d)}
                   onChange={() => handleDomainToggle(d)}
-                  className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
                 />
                 <span>{DOMAIN_LABELS[d] || d}</span>
               </label>
@@ -322,7 +321,7 @@ export default function AlumniProfileTab() {
                 type="checkbox"
                 checked={mentorshipAvailable}
                 onChange={(e) => setMentorshipAvailable(e.target.checked)}
-                className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
               />
               <span>Available for Student Mentorship</span>
             </label>
@@ -345,7 +344,7 @@ export default function AlumniProfileTab() {
                 type="checkbox"
                 checked={openToReferrals}
                 onChange={(e) => setOpenToReferrals(e.target.checked)}
-                className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
               />
               <span>Open to Company Job Referrals</span>
             </label>
@@ -355,7 +354,7 @@ export default function AlumniProfileTab() {
                 type="checkbox"
                 checked={showInDirectory}
                 onChange={(e) => setShowInDirectory(e.target.checked)}
-                className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
               />
               <span>Show Profile in Alumni Directory</span>
             </label>
@@ -424,7 +423,7 @@ export default function AlumniProfileTab() {
           <Eye className="h-4 w-4" /> Live Preview: How Students See You
         </h4>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#1b1d3a]">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs dark:border-white/10 dark:bg-[#1b1d3a]">
           <div className="flex items-center gap-3">
             <Avatar user={currentUser} size="lg" />
             <div>

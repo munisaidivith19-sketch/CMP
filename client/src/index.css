@@ -1,8 +1,30 @@
 @import '@fontsource-variable/plus-jakarta-sans';
+@import 'tailwindcss';
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Theme (colours, shadows, animations) still lives in the JS config. */
+@config '../tailwind.config.js';
+
+/* Dark mode follows the `.dark` class on <html>, as it did in Tailwind 3. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind 4 changed a few defaults; these keep the Tailwind 3 look. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
 
 @layer base {
   :root {
@@ -44,16 +66,23 @@
 
 @layer components {
   /* ── Glass surfaces ─────────────────────────────── */
+  /* .glass and .card carry no backdrop-blur: a page can hold dozens of them
+     and the browser re-blurs each one on every scroll frame (the main source
+     of lag). The backdrop behind them is already soft, so the look is kept.
+     Single overlays (topbar, sidebar, menus, modals) still blur. */
   .glass {
-    @apply border border-white/70 bg-white/55 shadow-glass backdrop-blur-md
+    @apply border border-white/70 bg-white/55 shadow-glass
       dark:border-white/10 dark:bg-ink/40 dark:shadow-glass-dark;
   }
   .glass-strong {
     @apply border border-white/80 bg-white/75 shadow-glass backdrop-blur-md
       dark:border-white/15 dark:bg-ink/70 dark:shadow-glass-dark;
   }
+  /* Tailwind 4 cannot @apply another custom class, so .card repeats .glass. */
   .card {
-    @apply glass rounded-[28px] p-5 transition-all duration-500 ease-smooth;
+    @apply border border-white/70 bg-white/55 shadow-glass
+      dark:border-white/10 dark:bg-ink/40 dark:shadow-glass-dark
+      rounded-[28px] p-5 transition-[transform,background-color,box-shadow] duration-300 ease-smooth;
   }
   .card-hover {
     @apply hover:-translate-y-1 hover:bg-white/70 hover:shadow-soft dark:hover:bg-ink/80;
@@ -63,7 +92,7 @@
   .btn {
     @apply relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-2xl px-4 py-2.5
       text-sm font-semibold transition-all duration-300 ease-smooth
-      focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary-400/30
+      focus-visible:outline-hidden focus-visible:ring-4 focus-visible:ring-primary-400/30
       active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-primary {
@@ -89,8 +118,13 @@
     @apply bg-emerald-500/10 text-emerald-700 hover:bg-emerald-600 hover:text-white 
       dark:bg-emerald-500/20 dark:text-emerald-300 dark:hover:bg-emerald-500 dark:hover:text-white;
   }
+  /* Same as .btn (Tailwind 4 cannot @apply a custom class), but square. */
   .btn-icon {
-    @apply btn h-10 w-10 rounded-2xl p-0;
+    @apply relative inline-flex select-none items-center justify-center gap-2 whitespace-nowrap
+      text-sm font-semibold transition-all duration-300 ease-smooth
+      focus-visible:outline-hidden focus-visible:ring-4 focus-visible:ring-primary-400/30
+      active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50
+      h-10 w-10 rounded-2xl p-0;
   }
   /* Buttons floating on a map: opaque, bordered and high-contrast over any tiles (light or dark). */
   /* Buttons floating on the map: small dark cards (the bus label's navy) that
@@ -106,7 +140,7 @@
   .input-base {
     @apply w-full rounded-2xl border border-slate-200/90 bg-white/80 px-4 py-2.5 text-sm text-ink shadow-[inset_0_1px_2px_rgba(27,29,58,0.04)]
       transition-all duration-300 ease-smooth placeholder:text-slate-500/80
-      hover:bg-white hover:border-slate-300 focus:border-primary-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-400/15
+      hover:bg-white hover:border-slate-300 focus:border-primary-400 focus:bg-white focus:outline-hidden focus:ring-4 focus:ring-primary-400/15
       dark:border-white/10 dark:bg-ink/60 dark:text-primary-50 dark:placeholder:text-slate-400/70 dark:hover:bg-ink/80
       dark:focus:border-primary-500/50 dark:focus:bg-ink/90;
     color-scheme: light;
@@ -145,7 +179,7 @@
   }
   .chip-active,
   .dark .chip-active {
-    @apply border-transparent bg-gradient-to-br from-primary-400 to-primary-600 !text-white shadow-glow hover:bg-primary-500 hover:!text-white;
+    @apply border-transparent bg-gradient-to-br from-primary-400 to-primary-600 text-white! shadow-glow hover:bg-primary-500 hover:text-white!;
     color: #ffffff !important;
   }
   .section-title {
@@ -162,8 +196,8 @@
       hover:bg-white/70 hover:text-ink dark:text-ink-muted dark:hover:bg-white/5 dark:hover:text-primary-50;
   }
   .nav-link-active {
-    @apply bg-gradient-to-br from-primary-400 to-primary-600 !text-white shadow-glow hover:bg-primary-500 hover:!text-white
-      dark:!text-white dark:hover:bg-primary-500;
+    @apply bg-gradient-to-br from-primary-400 to-primary-600 text-white! shadow-glow hover:bg-primary-500 hover:text-white!
+      dark:text-white! dark:hover:bg-primary-500;
   }
   .nav-link-active span,
   .nav-link-active svg,
@@ -352,3 +386,30 @@
 }
 .auth-glass .auth-red,
 .auth-glass svg.auth-red { color: #ef4444 !important; }
+
+/* ── App backdrop: soft colour blobs drawn as gradients ──────────
+   (A blur filter on three 500px circles cost a full repaint whenever
+   anything above them changed; a radial gradient costs nothing.) */
+.app-blob {
+  position: absolute;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, var(--blob) 0%, var(--blob) 20%, transparent 100%);
+}
+.app-blob--a { left: -320px; top: -320px; width: 840px; height: 840px; --blob: color-mix(in oklab, #aca4ff 50%, transparent); }
+.app-blob--b { right: -282px; top: calc(25% - 150px); width: 760px; height: 760px; --blob: color-mix(in oklab, oklch(83.3% 0.145 321.434) 40%, transparent); }
+.app-blob--c { bottom: -320px; left: calc(33.333% - 160px); width: 840px; height: 840px; --blob: color-mix(in oklab, oklch(82.8% 0.111 230.318) 40%, transparent); }
+.dark .app-blob--a { --blob: color-mix(in oklab, #aca4ff 30%, transparent); }
+.dark .app-blob--b { --blob: color-mix(in oklab, oklch(92.4% 0.12 95.746) 25%, transparent); }
+.dark .app-blob--c { --blob: color-mix(in oklab, oklch(89.2% 0.058 10.001) 20%, transparent); }
+
+/* People who ask the OS for less motion get (almost) none. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

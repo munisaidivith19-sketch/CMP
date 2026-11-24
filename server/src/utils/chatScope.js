@@ -64,7 +64,7 @@ export async function facultyChatClasses(user) {
 
 /** Mongo filter over User for the people `user` may see and message in Chat. */
 export async function chatContactFilter(user) {
-  // Super Admin accounts have no chat and never appear as a contact.
+  // IT support accounts have no chat and never appear as a contact.
   if (UNRESTRICTED.includes(user.role)) return { role: { $ne: 'super_admin' } };
   const staff = { role: { $in: CHAT_STAFF_ROLES } };
 

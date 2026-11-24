@@ -389,7 +389,7 @@ export default function ShareLocation() {
             </Suspense>
           )}
           {deviceFix && (
-            <p className="absolute bottom-3 left-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-ink shadow">
+            <p className="absolute bottom-3 left-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-bold text-ink shadow-sm">
               Blue dot: this device · Bus marker: the position riders see
             </p>
           )}

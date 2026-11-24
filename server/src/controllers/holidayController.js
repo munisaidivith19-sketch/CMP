@@ -117,7 +117,7 @@ export const cancelHoliday = asyncHandler(async (req, res) => {
   const holiday = await Holiday.findOneAndUpdate(
     { _id: req.params.id, status: 'ACTIVE' },
     { $set: { status: 'CANCELLED', cancelledBy: req.user._id, cancelledAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!holiday) throw new ApiError(404, 'Holiday not found');
   logActivity(req, 'holiday.cancel', { entityType: 'holiday', entityId: holiday._id, summary: summary(holiday) });

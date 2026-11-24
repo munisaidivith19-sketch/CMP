@@ -103,7 +103,7 @@ export async function seedAlumniUsers() {
           ...(a.isVerified ? { verifiedAt: new Date() } : {}),
         },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     // Accepted mentees so the reconcile job agrees with activeMenteeCount.

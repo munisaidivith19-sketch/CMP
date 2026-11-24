@@ -4,13 +4,13 @@ import toast from 'react-hot-toast';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/primitives';
 import { Input } from '../ui/form';
-import { errorMessage, needsReauth, useSuperReauthMutation } from '../../services/superAdmin';
+import { errorMessage, needsReauth, useSuperReauthMutation } from '../../services/consoleApi';
 
 /**
- * Sensitive Super Admin actions need the password re-entered (server-side
+ * Sensitive IT support actions need the password re-entered (server-side
  * proof on the session, valid ~5 minutes). `guard(action)` runs the action;
  * if the server answers REAUTH_REQUIRED it asks for the password once and
- * retries. The password is sent only to /super-admin/reauth and never kept.
+ * retries. The password is sent only to /console/reauth and never kept.
  */
 export function useReauth() {
   const [open, setOpen] = useState(false);

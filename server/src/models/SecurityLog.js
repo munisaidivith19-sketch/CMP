@@ -100,15 +100,14 @@ securityLogSchema.index({ targetUser: 1, createdAt: -1 });
 securityLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: RETAIN_DAYS * 24 * 3600, name: 'security_log_retention' });
 
 // Append-only at the model level too: any attempt to rewrite a record fails.
-const refuse = function refuseUpdate(next) {
-  next(new Error('Security logs are append-only'));
+const refuse = async function refuseUpdate() {
+  throw new Error('Security logs are append-only');
 };
 for (const op of ['updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne', 'findOneAndReplace']) {
   securityLogSchema.pre(op, refuse);
 }
-securityLogSchema.pre('save', function onlyInsert(next) {
-  if (!this.isNew) return next(new Error('Security logs are append-only'));
-  next();
+securityLogSchema.pre('save', async function onlyInsert() {
+  if (!this.isNew) throw new Error('Security logs are append-only');
 });
 
 export default mongoose.model('SecurityLog', securityLogSchema);

@@ -16,7 +16,7 @@ const FACULTY_FIELDS = 'name employeeId department designation phone avatar role
 const STUDENT_FIELDS = 'name rollNo section department year semester phone parentPhone avatar stayType';
 /**
  * Read-only oversight roles (ATTENDANCE_READ_ONLY_ROLES: principal / dean / AO /
- * chairman, COE, Office, Super Admin) look at attendance, they never contact a
+ * chairman, COE, Office, IT support) look at attendance, they never contact a
  * family: the parent's mobile is left out of what they receive.
  */
 const withoutParentPhone = (fields, user) =>

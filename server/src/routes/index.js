@@ -7,6 +7,7 @@ import { confinedRoleGuard } from '../middleware/coeGuard.js';
 import { adminPolicyGuard, staffGrantGuard } from '../middleware/adminPolicy.js';
 import { passwordChangeGate, platformGate, publicPlatformGate, requireRecentReauth, termsGate } from '../middleware/platform.js';
 import { publicStatus } from '../services/platformState.js';
+import { logAudit } from '../utils/auditLog.js';
 import superAdminRouter from './superAdminRoutes.js';
 import gateScannerRouter from './gateScannerRoutes.js';
 import { gateDesktopScope } from '../middleware/gateScanner.js';
@@ -39,6 +40,7 @@ import {
   GROUP_CATEGORIES,
   STAY_TYPES,
   normalizePhoneDigits,
+  toMobile10,
   TITLES,
   GENDERS,
   STAFF_ROLES,
@@ -170,13 +172,6 @@ const phoneRule = (chain, label = 'Phone number') =>
  * dashes, brackets and a +91 / 91 / 0 prefix are dropped first, so the stored
  * value is always the bare 10 digits.
  */
-const toMobile10 = (v) => {
-  const d = String(v ?? '').replace(/[\s\-()]/g, '');
-  if (d.startsWith('+91')) return d.slice(3);
-  if (/^91\d{10}$/.test(d)) return d.slice(2);
-  if (/^0\d{10}$/.test(d)) return d.slice(1);
-  return d;
-};
 const mobile10 = (chain, label) =>
   chain.isString().withMessage(`${label} is required`).bail().customSanitizer(toMobile10).matches(/^\d{10}$/).withMessage(`${label} must be exactly 10 digits`);
 // Students: Mr / Ms only (Dr is for staff), and a gender that matches it (checked in the User model too).
@@ -283,7 +278,7 @@ router.get(
 );
 
 // Outside normal mode the public endpoints close (login / refresh decide per
-// account: only a Super Admin gets in). Authenticated requests are decided by
+// account: only IT support gets in). Authenticated requests are decided by
 // platformGate after protect.
 router.use(publicPlatformGate);
 
@@ -338,7 +333,7 @@ router.use('/skill-wallet', skillWalletPublicRouter);
 router.use(protect);
 // A Windows Gate Scanner session reaches the gate-scanner endpoints only.
 router.use(gateDesktopScope);
-// Maintenance / lockdown / recovery: only a Super Admin continues.
+// Maintenance / lockdown / recovery: only IT support continues.
 router.use(platformGate);
 // A temporary password must be replaced before anything else.
 router.use(passwordChangeGate);
@@ -347,15 +342,15 @@ router.use(termsGate);
 // Staff accounts with additional policies: mark admin routes they were granted.
 router.use(staffGrantGuard);
 // COE (Timetable / Exam Timetable / Attendance) and Office (attendance, read)
-// are confined to their own dashboards — deny-by-default. So is the Super Admin.
+// are confined to their own dashboards — deny-by-default. So is IT support.
 router.use(confinedRoleGuard);
 // Policy-managed admins: only the modules and actions granted (policies.js).
 router.use(adminPolicyGuard);
-// Super Admin platform administration and emergency control.
-router.use('/super-admin', superAdminRouter);
+// IT support platform administration and emergency control.
+router.use('/console', superAdminRouter);
 // Windows Gate Scanner (Security role only): scans, dashboard, history.
 router.use('/gate-scanner', gateScannerRouter);
-// Web / mobile client error reports for the Super Admin SOC (redacted, deduplicated, rate-limited).
+// Web / mobile client error reports for IT support SOC (redacted, deduplicated, rate-limited).
 router.post(
   '/client-errors',
   clientErrorLimiter,
@@ -748,6 +743,15 @@ router.delete('/notifications/:id', idParam('id'), notes.deleteNotification);
 // ── Admin ──────────────────────────────────────────────────────────
 router.get('/admin/analytics', authorize('admin', 'faculty', 'hod', 'principal'), admin.analytics);
 router.get('/admin/users', authorize('admin', SUPER_ADMIN_ROLE), admin.listUsers);
+// An Admin or IT support role can never be given from the Users page (the
+// validators below refuse it). Record the attempt so it is alerted on.
+function flagAdminRoleAttempt(req, _res, next) {
+  const role = req.body?.role;
+  if (role === 'admin' || role === SUPER_ADMIN_ROLE) {
+    logAudit(req, 'PRIVILEGE_ESCALATION_BLOCKED', { outcome: 'denied', reason: 'admin_role_via_user_form', details: { role, via: req.method === 'POST' ? 'user_create' : 'user_update' } });
+  }
+  next();
+}
 router.post(
   '/admin/users',
   writeLimiter,
@@ -757,7 +761,8 @@ router.post(
   body('gender').optional({ values: 'falsy' }).isIn(GENDERS).withMessage('Choose a gender'),
   body('email').trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
   password('password'),
-  // Admin and Super Admin accounts are created by a Super Admin only.
+  // Admin and IT support accounts are created by IT support only.
+  flagAdminRoleAttempt,
   body('role').isIn(ADMIN_ASSIGNABLE_ROLES).withMessage('Choose a role'),
   // Student / club admin.
   body('rollNo')
@@ -786,13 +791,7 @@ router.post(
     .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
     .isIn(STAY_TYPES)
     .withMessage('Select hosteler or day scholar'),
-  body('parentPhone')
-    .if((_v, { req }) => ['student', 'club_admin'].includes(req.body.role))
-    .trim()
-    .isLength({ min: 6, max: 20 })
-    .withMessage("Parent's mobile number is required")
-    .matches(PHONE_CHARS)
-    .withMessage("Parent's mobile number may contain only digits, +, spaces, - and brackets")
+  mobile10(body('parentPhone').if(isStudentRole), "Parent's mobile number")
     .bail()
     .custom((parent, { req }) => {
       if (!parent || !req.body.phone) return true;
@@ -818,13 +817,15 @@ router.post(
     .withMessage('Department is required'),
   // Staff "class in charge" section, optional.
   body('section').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' }).trim().toUpperCase().isIn(SECTIONS).withMessage('Choose a valid section'),
-  phoneRule(body('phone').optional({ values: 'falsy' })),
+  // Students: exactly 10 digits (optional). Staff keep the free-form rule.
+  mobile10(body('phone').if(isStudentRole).optional({ values: 'falsy' }), 'Student mobile number'),
+  phoneRule(body('phone').if((_v, { req }) => !isStudentRole(_v, { req })).optional({ values: 'falsy' })),
   // Policy Assignment: "none" (role access only, the default) or "custom"
   // (additional policies, checked against the caller's authority in the controller).
   body('policyMode').optional().isIn(POLICY_MODES).withMessage('Choose a policy option'),
   body('policies').optional().isArray({ max: 40 }).withMessage('Policies must be a list'),
   validate,
-  // A Super Admin adding policies re-enters its password, as in the Policies dialog.
+  // IT support adding policies re-enters its password, as in the Policies dialog.
   (req, res, next) => (req.user.role === SUPER_ADMIN_ROLE && req.body.policyMode === 'custom' ? requireRecentReauth(req, res, next) : next()),
   admin.createUser
 );
@@ -836,6 +837,7 @@ router.patch(
   body('email').optional().isString().trim().isEmail().withMessage('Enter a valid college email').normalizeEmail({ gmail_remove_dots: false }),
   body('title').optional().isIn(TITLES).withMessage('Choose Ms, Mr or Dr'),
   body('gender').optional().isIn(GENDERS).withMessage('Choose a gender'),
+  flagAdminRoleAttempt,
   body('role').optional().isIn(ADMIN_ASSIGNABLE_ROLES).withMessage('That role cannot be assigned here'),
   body('isActive').optional().isBoolean(),
   body('department').optional({ values: 'null' }).trim().isLength({ max: 80 }),
@@ -906,13 +908,13 @@ router.get('/admin/users/:id/policies', idParam('id'), authorize('admin', SUPER_
     next(err);
   }
 });
-// A Super Admin changing a staff account's policies re-enters its password
+// IT support changing a staff account's policies re-enters its password
 // (as for Admin policies); Admins are limited by their own authority instead.
 const reauthIfSuperAdmin = (req, res, next) => (req.user?.role === SUPER_ADMIN_ROLE ? requireRecentReauth(req, res, next) : next());
 // Admins this admin may assign policies to, showing only what it may delegate.
 router.get('/admin/policy-targets', authorize('admin'), async (req, res, next) => {
   try {
-    if (!isPolicyManaged(req.user)) throw new ApiError(403, 'Admin policies are managed by a Super Admin');
+    if (!isPolicyManaged(req.user)) throw new ApiError(403, 'Admin policies are managed by IT support');
     res.set('Cache-Control', 'no-store');
     res.json({ items: await listPolicyTargets(req.user) });
   } catch (err) {
@@ -1004,7 +1006,7 @@ router.get(
   validate,
   security.listSecurityLogs
 );
-// Parent-OTP cards moved to the Super Admin console: GET /super-admin/security/otps
+// Parent-OTP cards moved to the console: GET /console/security/otps
 // (routes/superAdminRoutes.js). Admins no longer see OTP status.
 
 // ── Class In-Charge: students of their own class ───────────────────
@@ -1130,6 +1132,18 @@ router.get(
   chat.groupClassStudents
 );
 router.get('/chat/conversations/:id', idParam('id'), chat.getConversation);
+// End-to-end encrypted chat: this device's public key, and a conversation's keys (docs/chat-e2e.md).
+router.post(
+  '/chat/e2e/devices',
+  writeLimiter,
+  body('publicKey').isString().isLength({ min: 40, max: 200 }),
+  body('platform').isIn(['web', 'android', 'ios']),
+  validate,
+  chat.registerChatDevice
+);
+router.get('/chat/e2e/devices', chat.listChatDevices);
+router.delete('/chat/e2e/devices/:deviceId', param('deviceId').isUUID(), validate, chat.revokeChatDevice);
+router.get('/chat/conversations/:id/e2e-keys', idParam('id'), chat.getConversationKeys);
 // Rename / delete a group — its group admin (the creator) only.
 router.patch(
   '/chat/conversations/:id',
@@ -1152,7 +1166,9 @@ router.post(
   '/chat/conversations/:id/messages',
   writeLimiter,
   idParam('id'),
-  body('body').trim().isLength({ min: 1, max: 5000 }).withMessage('Message cannot be empty'),
+  // Either end-to-end encrypted (`e2e`, checked in services/chatE2e.js) or plain `body`.
+  body('e2e').optional().isObject(),
+  body('body').if(body('e2e').not().exists()).trim().isLength({ min: 1, max: 5000 }).withMessage('Message cannot be empty'),
   body('replyTo').optional({ values: 'falsy' }).isMongoId(),
   body('attachment.url')
     .optional({ values: 'falsy' })
@@ -1169,7 +1185,8 @@ router.patch(
   '/chat/conversations/:id/messages/:msgId',
   writeLimiter,
   idParam('id', 'msgId'),
-  body('body').trim().isLength({ min: 1, max: 5000 }).withMessage('Message cannot be empty'),
+  body('e2e').optional().isObject(),
+  body('body').if(body('e2e').not().exists()).trim().isLength({ min: 1, max: 5000 }).withMessage('Message cannot be empty'),
   validate,
   chat.editMessage
 );
@@ -1234,7 +1251,15 @@ router.get('/attendance/my', ...rangeQuery, query('semester').optional().isInt({
 router.get('/attendance/records', ...rangeQuery, query('semester').optional().isInt({ min: 1, max: 12 }), validate, attendance.getAttendanceRecords);
 router.get('/attendance/trends', ...rangeQuery, validate, attendance.getAttendanceTrends);
 router.get('/attendance/sessions', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.listSessions);
-router.get('/attendance/low', authorize(...ATTENDANCE_VIEW_ROLES), ...rangeQuery, validate, attendance.getLowAttendance);
+router.get(
+  '/attendance/low',
+  authorize(...ATTENDANCE_VIEW_ROLES),
+  ...rangeQuery,
+  query('year').optional({ values: 'falsy' }).isInt({ min: 1, max: 4 }).withMessage('Unknown year'),
+  query('q').optional({ values: 'falsy' }).isString().isLength({ max: 60 }),
+  validate,
+  attendance.getLowAttendance
+);
 router.post(
   '/attendance/notify/:id',
   idParam('id'),

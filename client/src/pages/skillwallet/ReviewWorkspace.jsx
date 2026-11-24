@@ -16,13 +16,15 @@ import {
 } from '../../services/skillWallet';
 import { displayName, errMsg, fmtClassDay, fmtDateTime, titleCase } from '../../utils/format';
 import { Dates, SafeExternalLink, SectionNote, StatusBadge } from './components';
+import { useDebounced } from '../../utils/useDebounced';
 
 function ProjectQueue() {
   const [status, setStatus] = useState('submitted');
   const [mine, setMine] = useState(false);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  const { data, isLoading, error, refetch } = useGetSwReviewQueueQuery({ status, mine: mine ? 'true' : undefined, q: q || undefined, page });
+  const debouncedQ = useDebounced(q);
+  const { data, isLoading, error, refetch } = useGetSwReviewQueueQuery({ status, mine: mine ? 'true' : undefined, q: debouncedQ || undefined, page });
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -128,7 +130,8 @@ function CertQueue() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState(null);
-  const { data, isLoading, error, refetch } = useGetSwCertQueueQuery({ status, q: q || undefined, page });
+  const debouncedQ = useDebounced(q);
+  const { data, isLoading, error, refetch } = useGetSwCertQueueQuery({ status, q: debouncedQ || undefined, page });
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">

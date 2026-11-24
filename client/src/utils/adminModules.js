@@ -3,7 +3,7 @@
  * server (server/src/constants/adminModules.js) and reaches the client
  * through the API:
  *   GET /api/account/modules            → { policyManaged, modules, catalogue, sections }
- *   GET /api/super-admin/policies/catalogue → { adminModules, adminModuleSections, modules }
+ *   GET /api/console/policies/catalogue → { adminModules, adminModuleSections, modules }
  * These helpers only decide what to show; the server refuses every API call
  * of an unticked module whatever the UI does.
  */

@@ -50,7 +50,7 @@ export const securitySummary = asyncHandler(async (_req, res) => {
 export const listSecurityLogs = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req, 25, 100);
   const { q, event, role, success, client } = req.query;
-  // Routine view: Super Admin identities and operations are excluded (they are
+  // Routine view: IT support identities and operations are excluded (they are
   // kept in the protected audit trail instead). Applied before paging, search
   // and filters, so no query parameter can bring them back.
   const clauses = [ROUTINE_ONLY];

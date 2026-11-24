@@ -18,7 +18,7 @@ import { catStyle } from '../utils/constants';
 export function GlassTooltip({ active, payload, label, labelFormatter }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="glass-strong rounded-2xl px-3.5 py-2.5 text-xs">
+    <div className="glass-strong rounded-2xl bg-white/90 px-3.5 py-2.5 text-xs backdrop-blur-none dark:bg-ink/90">
       {label !== undefined && <p className="mb-1 font-bold">{labelFormatter ? labelFormatter(label) : label}</p>}
       {payload.map((p) => (
         <p key={p.dataKey || p.name} className="flex items-center gap-2 capitalize">

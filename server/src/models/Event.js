@@ -57,14 +57,13 @@ eventSchema.index(
   { weights: { title: 6, tags: 3, venue: 1, description: 1 }, name: 'event_text' }
 );
 
-eventSchema.pre('validate', function checkDates(next) {
+eventSchema.pre('validate', function checkDates() {
   if (this.startDate && this.endDate && this.endDate < this.startDate) {
     this.invalidate('endDate', 'End date must be after start date');
   }
   if (this.registrationDeadline && this.endDate && this.registrationDeadline > this.endDate) {
     this.invalidate('registrationDeadline', 'Registration deadline must be before the event ends');
   }
-  next();
 });
 
 export default mongoose.model('Event', eventSchema);

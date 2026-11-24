@@ -173,15 +173,15 @@ export default function AlumniDashboard() {
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white backdrop-blur">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
                 <GraduationCap className="h-3.5 w-3.5" /> Alumni Portal
               </span>
               {profile.isVerified ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/25 px-2.5 py-0.5 text-[10px] font-bold text-emerald-100 backdrop-blur">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/25 px-2.5 py-0.5 text-[10px] font-bold text-emerald-100 backdrop-blur-sm">
                   <ShieldCheck className="h-3 w-3" /> Verified Alumnus
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/25 px-2.5 py-0.5 text-[10px] font-bold text-amber-100 backdrop-blur">
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/25 px-2.5 py-0.5 text-[10px] font-bold text-amber-100 backdrop-blur-sm">
                   <Clock className="h-3 w-3" /> Verification Pending
                 </span>
               )}
@@ -207,7 +207,7 @@ export default function AlumniDashboard() {
 
               <Button
                 variant="plain"
-                className={`border border-white/30 backdrop-blur font-bold transition-all ${
+                className={`border border-white/30 backdrop-blur-sm font-bold transition-all ${
                   profile.mentorshipAvailable
                     ? 'bg-emerald-500/25 text-emerald-100 hover:bg-emerald-500/35'
                     : 'bg-white/15 text-white hover:bg-white/25'
@@ -221,7 +221,7 @@ export default function AlumniDashboard() {
 
               <Link
                 to="/alumni?tab=jobs"
-                className="btn btn-outline border-white/30 bg-white/15 text-white backdrop-blur hover:bg-white/25 font-bold"
+                className="btn btn-outline border-white/30 bg-white/15 text-white backdrop-blur-sm hover:bg-white/25 font-bold"
               >
                 <Briefcase className="mr-1.5 h-4 w-4" /> Share Job Opening
               </Link>

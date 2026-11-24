@@ -58,7 +58,7 @@ import {
   useGetPendingODLeaveReviewsQuery,
 } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { useGetMyPoliciesQuery } from '../../services/superAdmin';
+import { useGetMyPoliciesQuery } from '../../services/consoleApi';
 import { STAFF_GRANT_ROLES, attendanceGrantOf } from '../../utils/delegation';
 
 /** This account's additional Attendance policy, if any (server-enforced; only shapes the UI). */
@@ -346,7 +346,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
 
       {/* Today's Quick Mark Widget (For Faculty & HOD teaching classes) */}
       {todayPeriods.length > 0 && (
-        <Card className="p-4 border border-white/10 shadow-lg backdrop-blur-md">
+        <Card className="p-4 border border-white/10 shadow-lg">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary-400" />
@@ -367,7 +367,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                 <div
                   key={p.slotId}
                   className={cn(
-                    'flex-shrink-0 w-64 rounded-2xl p-3.5 transition-all border flex flex-col justify-between',
+                    'shrink-0 w-64 rounded-2xl p-3.5 transition-all border flex flex-col justify-between',
                     p.holiday
                       ? 'bg-rose-500/10 border-rose-500/30'
                       : exam
@@ -555,7 +555,7 @@ function ClassSelectionWizard({
       ];
 
   return (
-    <Card className="p-5 border border-white/10 shadow-lg backdrop-blur-md space-y-4">
+    <Card className="p-5 border border-white/10 shadow-lg space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
         <div>
           <h3 className="text-base font-bold flex items-center gap-2">
@@ -985,7 +985,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
           />
         </Card>
       ) : roster ? (
-        <Card className="p-0 overflow-hidden border border-white/10 shadow-xl backdrop-blur-md">
+        <Card className="p-0 overflow-hidden border border-white/10 shadow-xl">
           {/* Roster Header */}
           <div className="border-b border-white/10 p-5 bg-white/[0.02]">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1149,7 +1149,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
                       }));
                     }}
                     className={cn(
-                      'group relative flex flex-col items-center justify-between rounded-2xl p-4 text-center transition-all duration-200 border-2 shadow-sm text-left select-none',
+                      'group relative flex flex-col items-center justify-between rounded-2xl p-4 text-center transition-all duration-200 border-2 shadow-xs text-left select-none',
                       isOD
                         ? 'bg-sky-500/10 border-sky-500/40 hover:border-sky-500/80 shadow-sky-500/5'
                         : isPresent
@@ -1201,7 +1201,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
                     {/* Big Tap Toggle Pill */}
                     <div
                       className={cn(
-                        'mt-3.5 flex items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-extrabold shadow-sm transition-transform group-hover:scale-105',
+                        'mt-3.5 flex items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-extrabold shadow-xs transition-transform group-hover:scale-105',
                         isOD
                           ? 'bg-sky-500 text-white'
                           : isPresent
@@ -1359,7 +1359,7 @@ function Sessions({ onOpen }) {
   }, [data, search]);
 
   return (
-    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-5 bg-white/[0.02]">
         <div>
           <h3 className="text-base font-extrabold tracking-tight">Class Attendance History</h3>
@@ -1590,7 +1590,7 @@ function LowAttendance() {
   }, [data, threshold]);
 
   return (
-    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg">
       {/* Header Bar */}
       <div className="border-b border-white/10 p-5 bg-white/[0.02]">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1647,7 +1647,7 @@ function LowAttendance() {
                 className={cn(
                   'rounded-xl px-3 py-1.5 text-xs font-bold transition-all',
                   severityFilter === btn.id
-                    ? 'bg-ink/10 text-ink font-bold shadow-sm ring-1 ring-ink/20 dark:bg-white/20 dark:text-white dark:ring-white/30'
+                    ? 'bg-ink/10 text-ink font-bold shadow-xs ring-1 ring-ink/20 dark:bg-white/20 dark:text-white dark:ring-white/30'
                     : 'bg-black/5 text-ink-soft hover:bg-black/10 dark:bg-white/5 dark:text-ink-soft dark:hover:bg-white/10'
                 )}
               >
@@ -1803,7 +1803,7 @@ function Corrections() {
   }, [data, search]);
 
   return (
-    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg">
       {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-5 bg-white/[0.02]">
         <div>
@@ -1872,7 +1872,7 @@ function Corrections() {
           {filteredRequests.map((c) => (
             <div
               key={c._id}
-              className="rounded-2xl border border-white/10 bg-white/[0.02] p-4.5 transition-all hover:border-white/20 shadow-sm"
+              className="rounded-2xl border border-white/10 bg-white/[0.02] p-4.5 transition-all hover:border-white/20 shadow-xs"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -1982,7 +1982,7 @@ function ClassOverview() {
   }, [data, search]);
 
   return (
-    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+    <Card className="p-0 overflow-hidden border border-white/10 shadow-lg">
       <div className="border-b border-white/10 p-5 bg-white/[0.02]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -2263,7 +2263,7 @@ export default function StaffAttendance() {
                         className={cn(
                           'flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold transition-all',
                           active
-                            ? 'bg-primary-500 text-white font-bold shadow-sm'
+                            ? 'bg-primary-500 text-white font-bold shadow-xs'
                             : 'text-ink-soft dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-white/10 hover:text-ink dark:hover:text-white'
                         )}
                       >

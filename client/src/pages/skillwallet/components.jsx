@@ -52,7 +52,7 @@ export function Dates({ startedAt, endedAt, stage }) {
 /** Card for a project the viewer is a member of. */
 export function MyProjectCard({ p }) {
   return (
-    <Card hover as={Link} to={`/skill-wallet/projects/${p._id}`} className="flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+    <Card hover as={Link} to={`/skill-wallet/projects/${p._id}`} className="flex flex-col gap-3 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-500">
       {p.imageUrl ? <FullImage src={p.imageUrl} alt="" fit className="h-36 w-full rounded-2xl" /> : <div className="flex h-36 items-center justify-center rounded-2xl bg-primary-500/5 text-sm muted">No image</div>}
       <div className="min-w-0">
         <p className="truncate font-bold">{p.title}</p>
@@ -70,7 +70,7 @@ export function MyProjectCard({ p }) {
 /** Card for a published (gallery) project. */
 export function GalleryCard({ p, to }) {
   return (
-    <Card hover as={Link} to={to} className="flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+    <Card hover as={Link} to={to} className="flex flex-col gap-3 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-500">
       {p.imageUrl ? <FullImage src={p.imageUrl} alt="" fit className="h-40 w-full rounded-2xl" /> : <div className="flex h-40 items-center justify-center rounded-2xl bg-primary-500/5 text-sm muted">No image</div>}
       <div className="min-w-0">
         <p className="line-clamp-2 font-bold">{p.title}</p>
@@ -133,7 +133,7 @@ export function ProjectImagePicker({ label = 'Project image', currentUrl, onUplo
       <div className="relative flex aspect-[16/9] w-full items-center justify-center overflow-hidden rounded-3xl border-2 border-dashed border-primary-300/60 bg-white/40 dark:border-primary-400/30 dark:bg-white/5">
         {shown ? <FullImage src={shown} alt="Selected project image" fit className="absolute inset-0 h-full w-full" /> : <ImagePlus className="h-8 w-8 text-primary-400" aria-hidden="true" />}
         {state.phase === 'uploading' && (
-          <div className="absolute inset-x-4 bottom-4 rounded-2xl bg-black/60 p-3 text-white backdrop-blur" role="status" aria-live="polite">
+          <div className="absolute inset-x-4 bottom-4 rounded-2xl bg-black/60 p-3 text-white backdrop-blur-sm" role="status" aria-live="polite">
             <div className="flex items-center justify-between text-xs font-bold">
               <span>Uploading…</span>
               <span>{state.progress}%</span>

@@ -71,7 +71,7 @@ before(async () => {
   clock.now = () => at(DAY, '11:00');
   // Existing ECE attendance, recorded by the Admin.
   assert.equal((await markEce(admin)).status, 200);
-  await req('POST', '/super-admin/reauth', sa, { password: PASSWORD });
+  await req('POST', '/console/reauth', sa, { password: PASSWORD });
 });
 after(async () => {
   clock.now = realNow;
@@ -92,7 +92,7 @@ test('the staff catalogue offers Attendance view and create, campus-wide or one 
   assert.equal((await put(VIEW({ scope: 'department', department: 'NOPE' }))).status, 422);
   // Admin attendance policies stay campus-wide only.
   const policyAdmin = await ctx.createUser({ role: 'admin', employeeId: 'E-PA', policyManaged: true, policies: [] });
-  assert.equal((await req('PUT', `/super-admin/admins/${policyAdmin._id}/policies`, sa, { policies: VIEW({ scope: 'department', department: ECE }) })).status, 422);
+  assert.equal((await req('PUT', `/console/admins/${policyAdmin._id}/policies`, sa, { policies: VIEW({ scope: 'department', department: ECE }) })).status, 422);
   await setGrant(facNs, []);
 });
 

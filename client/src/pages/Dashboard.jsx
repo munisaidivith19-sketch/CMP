@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { format } from 'date-fns';
@@ -25,11 +25,14 @@ import {
 } from 'lucide-react';
 import { selectUser } from '../features/authSlice';
 import { useGetAchievementsDashboardQuery, useGetAttendanceSummaryQuery, useGetDashboardQuery, useGetSecurityDashboardQuery } from '../services/api';
-import { useGetAccountModulesQuery } from '../services/superAdmin';
+import { useGetAccountModulesQuery } from '../services/consoleApi';
 import { isModuleRestricted } from '../utils/adminModules';
 import { Avatar, Badge, Button, Card, CardHeader, CategoryBadge, EmptyState, ErrorState, PageHeader, Skeleton, StatCard, cn } from '../components/ui/primitives';
 import { AnnouncementDetail, AnnouncementItem } from '../components/domain';
-import { CategoryDonut, EngagementChart } from '../components/charts';
+// The charts library is large: load it only when a chart is on screen, so the
+// login page and the first paint of the Dashboard do not wait for it.
+const CategoryDonut = lazy(() => import('../components/charts').then((m) => ({ default: m.CategoryDonut })));
+const EngagementChart = lazy(() => import('../components/charts').then((m) => ({ default: m.EngagementChart })));
 import TodayStrip from '../components/TodayStrip';
 import { ACHIEVEMENT_BLOCKED_ROLES, STAFF_VIEW, SUMMARY_VIEW, catStyle } from '../utils/constants';
 import { friendlyDay, fmtTime, displayName } from '../utils/format';
@@ -98,7 +101,7 @@ function PopoverStat({ id, open, onToggle, card, title, viewAll, children }) {
     <div ref={ref} className={cn('relative', open && 'z-30')}>
       <button
         type="button"
-        className="block w-full rounded-[28px] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+        className="block w-full rounded-[28px] text-left focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-400"
         aria-expanded={open}
         aria-controls={`pop-${id}`}
         onClick={() => onToggle(open ? null : id)}
@@ -273,7 +276,7 @@ export default function Dashboard() {
         <div className="absolute -bottom-24 right-40 h-56 w-56 rounded-full bg-sky-300/20 blur-3xl" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-xl">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white backdrop-blur">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">
               <Sparkles className="h-3 w-3" /> {format(new Date(), 'EEEE, dd MMMM')}
             </span>
             <h2 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">
@@ -290,7 +293,7 @@ export default function Dashboard() {
               <Button to="/events" variant="plain" className="bg-white text-primary-700 shadow-lg hover:bg-white hover:-translate-y-0.5 font-bold" icon={CalendarDays}>
                 Browse events
               </Button>
-              <Button to="/clubs" variant="plain" className="border border-white/30 bg-white/15 text-white backdrop-blur hover:bg-white/25 font-bold" icon={Shapes}>
+              <Button to="/clubs" variant="plain" className="border border-white/30 bg-white/15 text-white backdrop-blur-sm hover:bg-white/25 font-bold" icon={Shapes}>
                 Explore clubs
               </Button>
             </div>
@@ -518,7 +521,9 @@ export default function Dashboard() {
 
         <Card>
           <CardHeader title="Participation by category" subtitle="All-time registrations" />
-          <CategoryDonut data={data.participationByCategory} height={180} />
+          <Suspense fallback={<Skeleton className="h-[180px] w-full" />}>
+            <CategoryDonut data={data.participationByCategory} height={180} />
+          </Suspense>
         </Card>
       </div>
 
@@ -538,7 +543,9 @@ export default function Dashboard() {
             </div>
           }
         />
-        <EngagementChart data={data.registrationTrend} />
+        <Suspense fallback={<Skeleton className="h-[260px] w-full" />}>
+          <EngagementChart data={data.registrationTrend} />
+        </Suspense>
       </Card>
 
       {isStaff && (

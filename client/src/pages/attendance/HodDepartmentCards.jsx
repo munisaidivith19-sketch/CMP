@@ -41,7 +41,7 @@ function GroupRow({ title, children, onClick }) {
       {...(onClick ? { type: 'button', onClick } : {})}
       className={cn(
         'flex w-full flex-wrap items-center gap-3 rounded-2xl border border-white/60 bg-white/50 p-3 text-left dark:border-white/10 dark:bg-white/5',
-        onClick && 'transition hover:border-primary-400/50 hover:bg-primary-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400'
+        onClick && 'transition hover:border-primary-400/50 hover:bg-primary-500/5 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-400'
       )}
     >
       <p className="min-w-[7rem] flex-1 text-sm font-extrabold">{title}</p>

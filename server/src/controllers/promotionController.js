@@ -218,7 +218,7 @@ export const getPromotion = asyncHandler(async (req, res) => {
  */
 export const undoPromotion = asyncHandler(async (req, res) => {
   await requirePassword(req);
-  const claimed = await PromotionBatch.findOneAndUpdate({ _id: req.params.id, status: 'applied' }, { $set: { status: 'undoing' } }, { new: true });
+  const claimed = await PromotionBatch.findOneAndUpdate({ _id: req.params.id, status: 'applied' }, { $set: { status: 'undoing' } }, { returnDocument: 'after' });
   if (!claimed) {
     if (!(await PromotionBatch.exists({ _id: req.params.id }))) throw new ApiError(404, 'Promotion not found');
     throw new ApiError(409, 'This promotion has already been undone');

@@ -287,7 +287,7 @@ export const respondContact = asyncHandler(async (req, res) => {
   const r = await ProjectContactRequest.findOneAndUpdate(
     { _id: req.params.id, owner: req.user._id, status: 'pending' },
     { $set: { status, respondedAt: new Date() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!r) throw new ApiError(404, 'Contact request not found or already answered');
   notifySkillWallet([r.requester], {

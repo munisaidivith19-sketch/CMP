@@ -190,7 +190,7 @@ export default function AlumniClaim() {
               type="checkbox"
               checked={accept}
               onChange={(e) => setAccept(e.target.checked)}
-              className="mt-0.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              className="mt-0.5 rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
               required
             />
             <span>

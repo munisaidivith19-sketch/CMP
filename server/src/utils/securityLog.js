@@ -1,6 +1,7 @@
 import SecurityLog from '../models/SecurityLog.js';
 import { isMobileClient } from './tokens.js';
 import { parseBrowser, parseDevice, parseOs } from './device.js';
+import { securityAlert } from '../services/securityAlerts.js';
 
 // Keys that must never reach a security record, however they are nested.
 const SECRET_KEY = /password|passwd|hash|token|secret|cookie|jti|authorization|api[-_]?key|^otp$|^code$/i;
@@ -50,6 +51,18 @@ const idOf = (v) => v?._id || v || undefined;
  */
 export function logSecurity(req, event, { actor, target, success = true, reason, identifier, entityType, entityId, details } = {}) {
   const who = actor === undefined ? req?.user : actor;
+  const client = clientInfo(req);
+  securityAlert('security', event, {
+    actorRole: who?.role,
+    actorId: idOf(who) && String(idOf(who)),
+    actorEmail: who?.email,
+    targetRole: target?.role,
+    account: target?.email || identifier || who?.email,
+    success,
+    reason,
+    details,
+    client,
+  });
   return SecurityLog.create({
     event,
     success,
@@ -62,6 +75,6 @@ export function logSecurity(req, event, { actor, target, success = true, reason,
     entityType,
     entityId: idOf(entityId),
     details: details ? scrub(details) : undefined,
-    ...clientInfo(req),
+    ...client,
   }).catch((err) => console.error('[security-log] failed:', err.message));
 }

@@ -100,7 +100,7 @@ flowchart LR
 | **Communication** | Private and group chat, encrypted at rest, with typing indicators, read receipts and online status. Real-time notifications. Push notifications through FCM or Expo |
 | **Transport** | Live bus tracking on a map, routes and stops, ETAs, stop arrival detection, trip history, a staff-phone GPS source and an HMAC-signed tracker webhook |
 | **Growth** | Student achievements. Skill Wallet: projects, NPTEL certificates, team invitations and rubric reviews. Innovation Gallery. Alumni network with jobs, events and mentorship. AI Study Assistant (Groq) |
-| **Administration** | User management, admin policies (deny by default), Super Admin console, Security & Logs, audit trail, analytics dashboards, moderation queue, SOC / error tracking, emergency platform mode |
+| **Administration** | User management, admin policies (deny by default), console, Security & Logs, audit trail, analytics dashboards, moderation queue, SOC / error tracking, emergency platform mode |
 
 Details for the more complex modules are in [Module reference](#14-module-reference).
 
@@ -110,8 +110,8 @@ Details for the more complex modules are in [Module reference](#14-module-refere
 
 Roles are defined in [server/src/constants.js](server/src/constants.js): `student`, `club_admin`, `faculty`, `hod`, `principal`, `admin`, `security`, `dean`, `ao`, `chairman`, `warden`, `alumni`, `coe`, `office`, `transport` and `super_admin`.
 
-- **Super Admin** can only be created with `server/scripts/create-super-admin.mjs`. No API creates or promotes one. See [docs/SUPER_ADMIN.md](docs/SUPER_ADMIN.md).
-- **Admins** are created by the Super Admin. Policy-managed admins can use only the modules and actions ticked in their policies (deny by default).
+- **IT support** can only be created with `server/scripts/create-IT support.mjs`. No API creates or promotes one. See [docs/CONSOLE.md](docs/CONSOLE.md).
+- **Admins** are created by IT support. Policy-managed admins can use only the modules and actions ticked in their policies (deny by default).
 - **College-wide academic visibility** is limited to `admin`, `principal`, `chairman`, `dean` and `ao`. Everyone else sees only their own department (HOD), their own teaching assignments (faculty) or their own class (student).
 - **Confined roles** (`coe`, `office`, `super_admin` and others) go through a deny-by-default route guard.
 - Club-admin rights apply **per club**. Accounts are created by admins or Class In-Charges. Public self-sign-up is off unless `ALLOW_SELF_SIGNUP=true`.
@@ -226,7 +226,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Uploads survive redeploys. Without these, files go to local disk, which Render wipes on every deploy |
 | `SKILL_WALLET_ASSET_URL_SECRET` | A separate signing key for private-file URLs (otherwise one is derived from the access-token secret) |
 | `APP_TIMEZONE` | Campus time zone for attendance, digests and the keep-alive window (default `Asia/Kolkata`) |
-| `BACKUP_STATUS_FILE` | Lets the Super Admin console show backup status (see [Backups](#backups)) |
+| `BACKUP_STATUS_FILE` | Lets the console show backup status (see [Backups](#backups)) |
 | `SOC_ENVIRONMENT` | Label on recorded errors, e.g. `production` or `staging` |
 
 ### Optional integrations
@@ -254,7 +254,7 @@ Client-side and mobile builds contain **no secrets**. CI checks the built bundle
 - [ ] `FORCE_HTTPS` left on (the default in production), `TRUST_PROXY=1` behind a proxy
 - [ ] MongoDB: a dedicated database user with least privilege, network access restricted where the host allows it, automated backups enabled and a restore tested
 - [ ] Cloudinary configured if the host's disk is not persistent
-- [ ] A Super Admin provisioned with `create-super-admin.mjs`, and **no seed/demo accounts** in the production database
+- [ ] IT support provisioned with `create-IT support.mjs`, and **no seed/demo accounts** in the production database
 - [ ] The placeholders in the Terms and Conditions and Privacy Policy completed by the College ([docs/LEGAL_POLICIES.md](docs/LEGAL_POLICIES.md))
 - [ ] SMS gateway credentials set if `OTP_SMS_ENABLED=true`. Use an `https://` vendor endpoint where one exists
 - [ ] `CHAT_ENCRYPTION_KEY` stored in a password manager or vault (losing it loses all chat history)
@@ -349,7 +349,7 @@ Users can repoint either Android app at a different server from the login screen
 ### Health and monitoring
 
 - `GET /api/health` returns `{ "status": "ok", "time": "…" }`. Point your uptime monitor at it.
-- **SOC / error tracking:** server errors are captured into MongoDB and shown in the Super Admin console with diagnostics and fix verification (`SOC_*` variables). See [docs/SOC.md](docs/SOC.md).
+- **SOC / error tracking:** server errors are captured into MongoDB and shown in the console with diagnostics and fix verification (`SOC_*` variables). See [docs/SOC.md](docs/SOC.md).
 - Every API request carries a correlation ID, and request metrics are recorded.
 - **Security & Logs** (Admin) and the audit log record sign-ins, session and password events, admin actions and gate-pass security events. Passwords, hashes, tokens and OTP values are never recorded. The audit trail is kept for 180 days (TTL index).
 
@@ -361,7 +361,7 @@ Users can repoint either Android app at a different server from the login screen
 mongodump --uri="$MONGO_URI" --gzip --archive=/backups/campus-$(date +%F).gz
 ```
 
-After each run, have the job write a status file and point `BACKUP_STATUS_FILE` at it, so the Super Admin console can show backup health:
+After each run, have the job write a status file and point `BACKUP_STATUS_FILE` at it, so the console can show backup health:
 
 ```json
 { "lastBackupAt": "2026-11-07T00:30:00Z", "lastVerifiedAt": "2026-11-07T00:45:00Z", "lastResult": "ok" }
@@ -373,9 +373,9 @@ Also back up the secrets (`CHAT_ENCRYPTION_KEY` especially), local `uploads/` an
 
 | Task | Command / location |
 |---|---|
-| Create or reset the Super Admin | `cd server && SUPER_ADMIN_EMAIL=… SUPER_ADMIN_NAME="…" SUPER_ADMIN_PASSWORD='…' node scripts/create-super-admin.mjs [--reset-password] [--force-change]` |
+| Create or reset IT support | `cd server && SUPER_ADMIN_EMAIL=… SUPER_ADMIN_NAME="…" SUPER_ADMIN_PASSWORD='…' node scripts/create-IT support.mjs [--reset-password] [--force-change]` |
 | Show or force the platform mode | `node server/scripts/platform-mode.mjs [normal]`, or set `PLATFORM_MODE_OVERRIDE=normal` (break-glass) |
-| Emergency mode / recovery | Super Admin console. See [docs/SUPER_ADMIN.md](docs/SUPER_ADMIN.md) |
+| Emergency mode / recovery | console. See [docs/CONSOLE.md](docs/CONSOLE.md) |
 | Reset a user's password | The student's Class In-Charge or an Admin: `POST /api/users/:id/reset-password`. This signs the user out on every device |
 | Data migrations | `npm run migrate:* --prefix server`. Run a dry run first and back up before `--apply`. The break-period fix also runs automatically at startup and is safe to repeat |
 | Realtime smoke test | `node server/scripts/realtime-smoke.mjs` against a running server |
@@ -442,13 +442,13 @@ Don't merge to `main` unless CI passes.
 ├── render.yaml             # Render Blueprint (production service definition)
 ├── server/                 # Express API + Socket.IO
 │   ├── .env.example        # full configuration reference
-│   ├── scripts/            # super admin, platform mode, migrations, smoke test, bus simulator
+│   ├── scripts/            # IT support, platform mode, migrations, smoke test, bus simulator
 │   ├── tests/              # node:test integration + security suites
 │   └── src/
 │       ├── server.js       # HTTP + Socket.IO bootstrap, graceful shutdown
 │       ├── app.js          # security middleware, /api routes, static hosting of client/dist
 │       ├── config/         # env, db, socket
-│       ├── routes/         # REST routes + validation (index, skill wallet, alumni, super admin, gate scanner)
+│       ├── routes/         # REST routes + validation (index, skill wallet, alumni, IT support, gate scanner)
 │       ├── controllers/    # business logic per module
 │       ├── models/         # Mongoose schemas
 │       ├── middleware/     # auth/RBAC, policy guards, rate limits, CSRF, errors
@@ -489,7 +489,7 @@ All routes are prefixed with `/api`. Every route except the public ones (health,
 | Transport | `/transport/*` · `GET /transport/config` · `POST /transport/tracker/locations` (HMAC-signed) |
 | Growth | `/achievements/*` · `/skill-wallet/*` · `/alumni/*` · `/mentorship/*` |
 | Analytics | `/analytics/*` · `/admin/analytics` |
-| Admin | `/admin/*` · `/super-admin/*` |
+| Admin | `/admin/*` · `/IT support/*` |
 | Uploads | `POST /uploads?kind=image\|document` (multipart field `file`) |
 
 **Socket.IO:** `notification` (to a user's room), chat events, `discussion:reply`, and id-only change broadcasts such as `announcement:changed` and `event:changed`. Clients re-read the data through REST under their own permissions.
@@ -589,7 +589,7 @@ A detailed error catalogue is in [error_handling/](error_handling/) and [docs/de
 
 | Document | Topic |
 |---|---|
-| [docs/SUPER_ADMIN.md](docs/SUPER_ADMIN.md) | Super Admin, admin policies, emergency and recovery modes, backup status |
+| [docs/CONSOLE.md](docs/CONSOLE.md) | IT support, admin policies, emergency and recovery modes, backup status |
 | [docs/SOC.md](docs/SOC.md) | Error capture, diagnostics, fix verification |
 | [docs/SKILL_WALLET.md](docs/SKILL_WALLET.md) | Skill Wallet design, permissions, API |
 | [docs/GATE_SCANNER.md](docs/GATE_SCANNER.md) | Gate Scanner architecture, setup, update and rollback |

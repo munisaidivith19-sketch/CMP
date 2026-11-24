@@ -8,18 +8,18 @@ import { setSidebar } from '../../features/uiSlice';
 
 import { SW_STAFF_ROLES } from '../../utils/constants';
 import { useGetSwReviewerRolesQuery } from '../../services/skillWallet';
-import { useGetAccountModulesQuery, useGetMyPoliciesQuery } from '../../services/superAdmin';
+import { useGetAccountModulesQuery, useGetMyPoliciesQuery } from '../../services/consoleApi';
 import { STAFF_GRANT_ROLES } from '../../utils/delegation';
 import { sidebarSections } from './navItems';
 
 function NavItem({ item, onClick, badge }) {
   const Icon = item.icon;
   return (
-    <NavLink to={item.to} end={item.end} onClick={onClick} className={({ isActive }) => cn('nav-link', isActive && 'nav-link-active')}>
+    <NavLink to={item.to} end={item.end} onClick={onClick} className={({ isActive }) => cn('nav-link text-black dark:text-white', isActive && 'nav-link-active')}>
       <Icon className="h-[18px] w-[18px]" />
       <span className="flex-1">{item.label}</span>
       {badge > 0 && (
-        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-rose-700 px-1.5 text-[10px] font-extrabold text-white shadow-sm" aria-label={`${badge} unread`}>
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-rose-700 px-1.5 text-[10px] font-extrabold text-white shadow-xs" aria-label={`${badge} unread`}>
           {badge > 99 ? '99+' : badge}
         </span>
       )}
@@ -49,7 +49,7 @@ export default function Sidebar() {
   return (
     <>
       <div
-        className={cn('fixed inset-0 z-30 bg-[#8a7256]/20 backdrop-blur-sm transition-opacity lg:hidden', open ? 'opacity-100' : 'pointer-events-none opacity-0')}
+        className={cn('fixed inset-0 z-30 bg-[#8a7256]/20 backdrop-blur-xs transition-opacity lg:hidden', open ? 'opacity-100' : 'pointer-events-none opacity-0')}
         onClick={close}
       />
       <aside
@@ -66,7 +66,7 @@ export default function Sidebar() {
             </div>
             <div>
               <p className="text-[20px] font-extrabold leading-tight tracking-tight">J.N.N </p>
-              <p className="text-[10px] font-semibold text-ink-soft dark:text-ink-muted">INSTITUTE OF ENGINEERING</p>
+              <p className="text-[10px] font-semibold text-black dark:text-white">INSTITUTE OF ENGINEERING</p>
             </div>
           </Link>
           <button className="btn-icon btn-ghost lg:hidden" onClick={close} aria-label="Close menu">
@@ -75,17 +75,17 @@ export default function Sidebar() {
         </div>
 
         <nav className="-mx-1 flex-1 space-y-1 overflow-y-auto px-1 pb-2 scrollbar-none">
-          <p className="px-3.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft dark:text-ink-muted">Menu</p>
+          <p className="px-3.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-black dark:text-white">Menu</p>
           {mainItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} />
           ))}
-          <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft dark:text-ink-muted">{isAlumni ? 'Connect' : 'Campus'}</p>
+          {campusItems.length > 0 && <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-black dark:text-white">{isAlumni ? 'Connect' : 'Campus'}</p>}
           {campusItems.map((i) => (
             <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'chat' ? unread?.total : 0} />
           ))}
           {adminItems.length > 0 && (
             <>
-              <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft dark:text-ink-muted">Administration</p>
+              <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-black dark:text-white">Administration</p>
               {adminItems.map((i) => (
                 <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'groups' ? groupRequests?.length : 0} />
               ))}

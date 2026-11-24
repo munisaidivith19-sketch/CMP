@@ -199,7 +199,7 @@ export const submitReview = asyncHandler(async (req, res) => {
   const updated = await InnovationProject.findOneAndUpdate(
     { _id: project._id, isDeleted: false, revision, 'review.submittedRevision': revision },
     { $set: set, $inc: { __v: 1 } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) {
     await ProjectReview.deleteOne({ _id: review._id });

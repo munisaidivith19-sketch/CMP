@@ -12,7 +12,7 @@ import useSignOut from './useSignOut';
 const NO_PROFILE_ROLES = [COE, OFFICE, TRANSPORT, SUPER_ADMIN];
 
 const itemCls =
-  'flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-primary-500/10 focus:bg-primary-500/10 focus:outline-none dark:hover:bg-white/10 dark:focus:bg-white/10';
+  'flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-primary-500/10 focus:bg-primary-500/10 focus:outline-hidden dark:hover:bg-white/10 dark:focus:bg-white/10';
 
 export default function UserMenu() {
   const user = useSelector(selectUser);

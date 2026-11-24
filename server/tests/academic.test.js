@@ -218,6 +218,22 @@ test('attendance: staff views — low attendance, trends, faculty scope', async 
   assert.equal((await ctx.request('GET', `/attendance/student/${s1.u._id}`, { token: fac2.token })).status, 403);
 });
 
+test('attendance: low attendance filters by year and name / roll-number search', async () => {
+  const get = (qs) => ctx.request('GET', `/attendance/low${qs}`, { token: admin.token });
+  const names = (r) => r.body.students.map((x) => x.student.name);
+  assert.ok(names(await get('')).includes('Stu Two'));
+  assert.deepEqual(names(await get('?q=two')), ['Stu Two'], 'case-insensitive name search');
+  assert.deepEqual(names(await get(`?q=${encodeURIComponent(s2.u.rollNo)}`)), ['Stu Two'], 'roll number search');
+  assert.deepEqual(names(await get('?q=nobody')), []);
+  assert.deepEqual(names(await get('?q=.*')), [], 'search text is literal, not a pattern');
+  assert.ok(names(await get(`?year=${s2.u.year}`)).includes('Stu Two'));
+  assert.deepEqual(names(await get(`?year=${s2.u.year === 1 ? 2 : 1}`)), []);
+  assert.ok(names(await get(`?year=${s2.u.year}&section=A&department=CSE&q=stu`)).includes('Stu Two'), 'filters combine');
+  assert.equal((await get('?year=9')).status, 422);
+  // A faculty search never reaches beyond the classes they teach.
+  assert.deepEqual((await ctx.request('GET', '/attendance/low?q=stu', { token: fac2.token })).body.students, []);
+});
+
 test('attendance: correction request → faculty approval updates the record with an audit entry', async () => {
   const req = await ctx.request('POST', '/attendance/corrections', {
     token: s1.token,

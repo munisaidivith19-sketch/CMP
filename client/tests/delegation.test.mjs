@@ -7,7 +7,7 @@ const CREATOR = [
   { module: 'staff_management', actions: ['create', 'edit', 'view'], scope: 'campus' },
 ];
 
-test('Admin and Super Admin are never delegatable roles', () => {
+test('Admin and IT support are never delegatable roles', () => {
   assert.ok(!DELEGATABLE_ROLES.includes('admin'));
   assert.ok(!DELEGATABLE_ROLES.includes('super_admin'));
 });
@@ -95,7 +95,7 @@ test('creationPolicyAccess: only staff roles can hold additional policies', asyn
   assert.equal(creationPolicyAccess('super_admin', { staffCatalogue: STAFF_CAT }, 'hod', 'CSE').allowed, true);
 });
 
-test('creationPolicyAccess: Super Admin sees the whole staff catalogue; a delegating Admin only its cap', async () => {
+test('creationPolicyAccess: IT support sees the whole staff catalogue; a delegating Admin only its cap', async () => {
   const { creationPolicyAccess } = await import('../src/utils/delegation.js');
   assert.deepEqual(Object.keys(creationPolicyAccess('super_admin', { staffCatalogue: STAFF_CAT }, 'faculty', 'CSE').catalogue), Object.keys(STAFF_CAT));
   const r = creationPolicyAccess('admin', delegator(), 'hod', 'CSE');

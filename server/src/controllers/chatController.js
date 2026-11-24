@@ -11,6 +11,16 @@ import { notifyRoles, notifyUsers } from '../utils/notify.js';
 import { open, seal } from '../utils/cipher.js';
 import { markConversationRead } from '../services/chatService.js';
 import { pushNow, sendPushToUsers } from '../services/pushService.js';
+import {
+  E2E_PLACEHOLDER,
+  acceptEnvelope,
+  conversationKeys,
+  envelopeFor,
+  listMyDevices,
+  myDeviceIds,
+  registerDevice,
+  revokeDevice,
+} from '../services/chatE2e.js';
 
 const CHAT_USER_FIELDS = `${PUBLIC_USER_FIELDS} lastSeenAt`;
 const isParticipant = (conv, userId) => conv.participants.some((p) => sameId(p._id || p, userId));
@@ -36,21 +46,32 @@ const unreadFor = (conv, userId) => {
 
 const plainOf = (doc) => (doc && typeof doc.toObject === 'function' ? doc.toObject() : doc);
 
+/**
+ * Text for an authorised reader: server-encrypted bodies are decrypted here;
+ * end-to-end encrypted ones stay sealed (`e2e`, opened by the reader's device)
+ * with a placeholder `body` for apps that cannot open them. `deviceIds`, when
+ * given, trims the envelope to the reader's own devices.
+ */
+function openText(m, deviceIds) {
+  if (m?.e2e) return { ...m, body: E2E_PLACEHOLDER, e2e: deviceIds ? envelopeFor(m.e2e, deviceIds) : m.e2e };
+  return { ...m, body: open(m.body) };
+}
+
 /** Decrypt a message (and the message it replies to) for an authorised reader. */
-function openMsg(doc) {
+function openMsg(doc, deviceIds) {
   const m = plainOf(doc);
   if (!m) return m;
-  const out = { ...m, body: open(m.body) };
-  if (m.replyTo && typeof m.replyTo === 'object') out.replyTo = { ...m.replyTo, body: open(m.replyTo.body) };
+  const out = openText(m, deviceIds);
+  if (m.replyTo && typeof m.replyTo === 'object') out.replyTo = openText(m.replyTo, deviceIds);
   return out;
 }
 
-function withPresence(conv, userId) {
+function withPresence(conv, userId, deviceIds) {
   const plain = plainOf(conv);
   const { unreadCounts: _counts, ...rest } = plain; // per-user counters stay private
   return {
     ...rest,
-    lastMessage: plain.lastMessage ? { ...plain.lastMessage, body: open(plain.lastMessage.body) } : plain.lastMessage,
+    lastMessage: plain.lastMessage?.e2e || plain.lastMessage?.body ? openText(plain.lastMessage, deviceIds) : plain.lastMessage,
     unreadCount: unreadFor(conv, userId),
     participants: (plain.participants || []).map((p) => ({ ...p, online: isUserOnline(p._id) })),
   };
@@ -59,7 +80,7 @@ function withPresence(conv, userId) {
 const populateMessage = (query) =>
   query
     .populate('sender', 'name avatar role')
-    .populate({ path: 'replyTo', select: 'body sender deletedAt', populate: { path: 'sender', select: 'name' } });
+    .populate({ path: 'replyTo', select: 'body e2e sender deletedAt', populate: { path: 'sender', select: 'name' } });
 
 const otherOf = (conv, userId) => (conv.participants || []).map((p) => p._id || p).find((p) => !sameId(p, userId));
 
@@ -161,7 +182,8 @@ export const listConversations = asyncHandler(async (req, res) => {
     .sort({ 'lastMessage.sentAt': -1, updatedAt: -1 })
     .lean();
 
-  let result = (await visibleConversations(req.user, conversations)).map((c) => withPresence(c, req.user._id));
+  const devices = await myDeviceIds(req.user);
+  let result = (await visibleConversations(req.user, conversations)).map((c) => withPresence(c, req.user._id, devices));
   const q = String(req.query.search || '').trim().toLowerCase();
   if (q) {
     result = result.filter(
@@ -335,7 +357,7 @@ export const reviewGroupRequest = asyncHandler(async (req, res) => {
         ...(approve ? {} : { rejectReason: reason || '' }),
       },
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!conv) throw new ApiError(404, 'This request was not found or has already been reviewed');
 
@@ -359,7 +381,30 @@ export const reviewGroupRequest = asyncHandler(async (req, res) => {
 export const getConversation = asyncHandler(async (req, res) => {
   const conv = await loadMemberConversation(req.params.id, req.user);
   await conv.populate('participants', CHAT_USER_FIELDS);
-  res.json(withPresence(conv, req.user._id));
+  res.json(withPresence(conv, req.user._id, await myDeviceIds(req.user)));
+});
+
+// ── End-to-end encryption: device keys (docs/chat-e2e.md) ──────────
+
+export const registerChatDevice = asyncHandler(async (req, res) => {
+  const { deviceId, created } = await registerDevice(req.user, { publicKey: req.body.publicKey, platform: req.body.platform });
+  res.status(created ? 201 : 200).json({ deviceId });
+});
+
+export const listChatDevices = asyncHandler(async (req, res) => {
+  res.json(await listMyDevices(req.user));
+});
+
+export const revokeChatDevice = asyncHandler(async (req, res) => {
+  await revokeDevice(req.user, req.params.deviceId);
+  res.status(204).end();
+});
+
+/** Public keys of every participant's devices, to encrypt a message for this conversation. */
+export const getConversationKeys = asyncHandler(async (req, res) => {
+  const conv = await loadMemberConversation(req.params.id, req.user);
+  res.set('Cache-Control', 'no-store');
+  res.json(await conversationKeys(participantIds(conv)));
 });
 
 // ── Send message ───────────────────────────────────────────────────
@@ -372,11 +417,14 @@ export const sendMessage = asyncHandler(async (req, res) => {
     if (!parent) throw new ApiError(422, 'You can only reply to a message in this conversation');
   }
 
-  const text = String(req.body.body);
+  // End-to-end encrypted (the server cannot read it) or, from apps without
+  // end-to-end support, plain text that is encrypted at rest here.
+  const e2e = req.body.e2e ? await acceptEnvelope(req.body.e2e, participantIds(conv)) : null;
+  const text = e2e ? null : String(req.body.body);
   const msg = await Message.create({
     conversation: conv._id,
     sender: req.user._id,
-    body: seal(text),
+    ...(e2e ? { e2e } : { body: seal(text) }),
     replyTo: req.body.replyTo || undefined,
     attachment: req.body.attachment?.url ? req.body.attachment : undefined,
     readBy: [req.user._id],
@@ -388,7 +436,9 @@ export const sendMessage = asyncHandler(async (req, res) => {
     { _id: conv._id },
     {
       $set: {
-        lastMessage: { body: seal(text.slice(0, 200)), sender: req.user._id, sentAt: msg.createdAt },
+        lastMessage: e2e
+          ? { e2e, sender: req.user._id, sentAt: msg.createdAt }
+          : { body: seal(text.slice(0, 200)), sender: req.user._id, sentAt: msg.createdAt },
         [`unreadCounts.${req.user._id}`]: 0,
       },
       $inc: unreadInc,
@@ -398,13 +448,15 @@ export const sendMessage = asyncHandler(async (req, res) => {
   const populated = openMsg(await populateMessage(Message.findById(msg._id)));
   emitToUsers(participantIds(conv), 'chat:message', { conversationId: String(conv._id), message: populated });
 
+  // The server cannot read an end-to-end encrypted message, so its push has no text.
+  const preview = e2e ? 'New message' : text;
   const title = conv.type === 'private' ? req.user.name : `${req.user.name} · ${conv.name}`;
   // Legacy Expo devices that are not connected get a push notification.
   const offline = recipients.filter((id) => !isUserOnline(id));
   if (offline.length) {
     sendPushToUsers(offline, {
       title,
-      body: text,
+      body: preview,
       data: { type: 'chat', conversationId: String(conv._id), link: `/chat/${conv._id}` },
     });
   }
@@ -412,7 +464,7 @@ export const sendMessage = asyncHandler(async (req, res) => {
   // chat preference — being "online" (a web tab, or the app still connected in
   // the background) must not stop the phone from popping it up. The app itself
   // shows an in-app banner instead while it is open, and hides the text on the lock screen.
-  if (recipients.length) pushNow(recipients, { title, body: text.slice(0, 200), link: `/chat/${conv._id}`, category: 'chat' });
+  if (recipients.length) pushNow(recipients, { title, body: preview.slice(0, 200), link: `/chat/${conv._id}`, category: 'chat' });
 
   res.status(201).json(populated);
 });
@@ -436,7 +488,8 @@ export const getMessages = asyncHandler(async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(SEARCH_WINDOW)
       .lean();
-    const hits = recent.map(openMsg).filter((m) => String(m.body).toLowerCase().includes(q));
+    // End-to-end encrypted messages cannot be searched here (apps search what they decrypted).
+    const hits = recent.filter((m) => !m.e2e).map((m) => openMsg(m)).filter((m) => String(m.body).toLowerCase().includes(q));
     return res.json({ messages: hits.slice(skip, skip + limit).reverse(), pagination: pageMeta(hits.length, page, limit) });
   }
 
@@ -445,7 +498,8 @@ export const getMessages = asyncHandler(async (req, res) => {
     Message.countDocuments(filter),
   ]);
 
-  res.json({ messages: messages.map(openMsg).reverse(), pagination: pageMeta(total, page, limit) });
+  const devices = await myDeviceIds(req.user);
+  res.json({ messages: messages.map((m) => openMsg(m, devices)).reverse(), pagination: pageMeta(total, page, limit) });
 });
 
 /** Search messages across every conversation the user belongs to. */
@@ -461,7 +515,7 @@ export const searchMessages = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .limit(SEARCH_WINDOW)
     .lean();
-  res.json(recent.map(openMsg).filter((m) => String(m.body).toLowerCase().includes(q)).slice(0, 30));
+  res.json(recent.filter((m) => !m.e2e).map((m) => openMsg(m)).filter((m) => String(m.body).toLowerCase().includes(q)).slice(0, 30));
 });
 
 // ── Delete message (disabled) ──────────────────────────────────────
@@ -492,17 +546,26 @@ export const editMessage = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Messages can only be edited within 5 minutes of sending');
   }
 
-  const newText = String(req.body.body || '').trim();
-  if (!newText) throw new ApiError(422, 'Message cannot be empty');
+  const e2e = req.body.e2e ? await acceptEnvelope(req.body.e2e, participantIds(conv)) : null;
+  const newText = e2e ? null : String(req.body.body || '').trim();
+  if (!e2e && !newText) throw new ApiError(422, 'Message cannot be empty');
 
-  msg.body = seal(newText);
+  if (e2e) {
+    msg.e2e = e2e;
+    msg.body = undefined;
+  } else {
+    msg.body = seal(newText);
+    msg.e2e = undefined;
+  }
   msg.editedAt = new Date();
   await msg.save();
 
   if (conv.lastMessage?.sentAt && conv.lastMessage.sentAt.getTime() === msg.createdAt.getTime()) {
     await Conversation.updateOne(
       { _id: conv._id },
-      { $set: { 'lastMessage.body': seal(newText.slice(0, 200)) } }
+      e2e
+        ? { $set: { 'lastMessage.e2e': e2e }, $unset: { 'lastMessage.body': 1 } }
+        : { $set: { 'lastMessage.body': seal(newText.slice(0, 200)) }, $unset: { 'lastMessage.e2e': 1 } }
     );
   }
 

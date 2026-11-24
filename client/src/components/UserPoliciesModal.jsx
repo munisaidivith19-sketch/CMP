@@ -3,9 +3,9 @@ import toast from 'react-hot-toast';
 import { ShieldCheck } from 'lucide-react';
 import { Badge, Button, Skeleton } from './ui/primitives';
 import { Modal } from './ui/Modal';
-import PolicyEditor from './superadmin/PolicyEditor';
-import { reportError, useReauth } from './superadmin/Reauth';
-import { useGetUserPoliciesQuery, useSetUserPoliciesMutation } from '../services/superAdmin';
+import PolicyEditor from './console/PolicyEditor';
+import { reportError, useReauth } from './console/Reauth';
+import { useGetUserPoliciesQuery, useSetUserPoliciesMutation } from '../services/consoleApi';
 import { ROLE_LABELS } from '../utils/constants';
 import { restrictCatalogue } from '../utils/delegation';
 import { displayName, errMsg } from '../utils/format';
@@ -58,7 +58,7 @@ export default function UserPoliciesModal({ user, onClose }) {
           <p className="rounded-xl bg-amber-500/10 p-3 text-sm">{errMsg(error)}</p>
         ) : (
           <div className="space-y-3">
-            {data?.hiddenActions > 0 && <Badge color="neutral">{data.hiddenActions} other permission(s) managed by a Super Admin</Badge>}
+            {data?.hiddenActions > 0 && <Badge color="neutral">{data.hiddenActions} other permission(s) managed by IT support</Badge>}
             {Object.keys(catalogue).length === 0 ? (
               <p className="text-sm">You have no permissions you may give to this account.</p>
             ) : (
@@ -66,7 +66,7 @@ export default function UserPoliciesModal({ user, onClose }) {
             )}
             <p className="text-xs muted">
               Only Attendance (view, mark / edit), User Management, Staff Management (view), Security Logs and Activity Logs can be given to staff accounts.
-              Changing roles, managing staff accounts and assigning policies always stay with Admins and the Super Admin.
+              Changing roles, managing staff accounts and assigning policies always stay with Admins and IT support.
             </p>
           </div>
         )}

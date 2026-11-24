@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   GraduationCap,
   Layers,
+  Search,
   Users,
   XCircle,
 } from 'lucide-react';
@@ -42,7 +43,8 @@ import {
   StatusBadge,
   rangeParams,
 } from '../../components/insights';
-import { DEPARTMENTS, SECTIONS } from '../../utils/constants';
+import { ACADEMIC_YEARS, DEPARTMENTS, SECTIONS, YEAR_LABELS } from '../../utils/constants';
+import { useDebounced } from '../../utils/useDebounced';
 import { fmtClassDay, displayName } from '../../utils/format';
 
 /* ── Skeleton placeholder ──────────────────────────────────────── */
@@ -296,15 +298,53 @@ function DepartmentOverview({ params, canPickDepartment }) {
 }
 
 /* ── Low attendance list tab ───────────────────────────────────── */
-function LowAttendanceList({ params }) {
+function LowAttendanceList({ params, canPickDepartment }) {
+  const [department, setDepartment] = useState('');
+  const [year, setYear] = useState('');
   const [section, setSection] = useState('');
-  const { data, isLoading, error, refetch } = useGetLowAttendanceQuery({ ...params, section: section || undefined });
+  const [q, setQ] = useState('');
+  const search = useDebounced(q.trim());
+  const filtered = Boolean(department || year || section || search);
+  const { data, isLoading, isFetching, error, refetch } = useGetLowAttendanceQuery({
+    ...params,
+    department: department || undefined,
+    year: year || undefined,
+    section: section || undefined,
+    q: search || undefined,
+  });
 
   return (
     <div className="space-y-5">
-      <Card className="flex flex-wrap items-center gap-3">
+      <Card className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[220px] flex-1">
+          <label className="label" htmlFor="la-search">Search</label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+            <input id="la-search" className="input w-full pl-9" type="search" placeholder="Student name or roll number" value={q} onChange={(e) => setQ(e.target.value)} maxLength={60} />
+          </div>
+        </div>
+        {canPickDepartment && (
+          <div>
+            <label className="label" htmlFor="la-dept">Department</label>
+            <select id="la-dept" className="input w-48" value={department} onChange={(e) => setDepartment(e.target.value)}>
+              <option value="">All departments</option>
+              {DEPARTMENTS.map((d) => (
+                <option key={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
-          <label className="label" htmlFor="la-section">Filter by section</label>
+          <label className="label" htmlFor="la-year">Year</label>
+          <select id="la-year" className="input w-32" value={year} onChange={(e) => setYear(e.target.value)}>
+            <option value="">All years</option>
+            {ACADEMIC_YEARS.map((y) => (
+              <option key={y} value={y}>{YEAR_LABELS[y]}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="la-section">Section</label>
           <select id="la-section" className="input w-28" value={section} onChange={(e) => setSection(e.target.value)}>
             <option value="">All</option>
             {SECTIONS.map((s) => (
@@ -312,6 +352,20 @@ function LowAttendanceList({ params }) {
             ))}
           </select>
         </div>
+        {filtered && (
+          <button
+            type="button"
+            className="mb-2 text-sm font-semibold text-primary-600 hover:underline dark:text-primary-400"
+            onClick={() => {
+              setDepartment('');
+              setYear('');
+              setSection('');
+              setQ('');
+            }}
+          >
+            Clear filters
+          </button>
+        )}
       </Card>
 
       {isLoading ? (
@@ -320,22 +374,27 @@ function LowAttendanceList({ params }) {
         <ErrorState error={error} onRetry={refetch} />
       ) : !data.students.length ? (
         <Card>
-          <EmptyState icon={CheckCircle2} title={`Everyone is at or above ${data.threshold}% 🎉`} text="No students are below the minimum attendance threshold." />
+          {filtered ? (
+            <EmptyState icon={Search} title="No matching students" text={`No student matching these filters is below ${data.threshold}%.`} />
+          ) : (
+            <EmptyState icon={CheckCircle2} title={`Everyone is at or above ${data.threshold}% 🎉`} text="No students are below the minimum attendance threshold." />
+          )}
         </Card>
       ) : (
         <Card>
           <CardHeader
             title={`${data.students.length} student${data.students.length > 1 ? 's' : ''} below ${data.threshold}%`}
-            subtitle="Sorted by lowest attendance first"
+            subtitle={`Sorted by lowest attendance first${isFetching ? ' · updating…' : ''}`}
           />
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
+            <table className="w-full min-w-[600px] text-sm">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-ink-muted">
                   <th className="px-3 py-2.5">#</th>
                   <th className="px-3 py-2.5">Student</th>
                   <th className="px-3 py-2.5">Roll no.</th>
                   <th className="px-3 py-2.5">Department</th>
+                  <th className="px-3 py-2.5">Year</th>
                   <th className="px-3 py-2.5">Section</th>
                   <th className="px-3 py-2.5 text-right">Present / Total</th>
                   <th className="px-3 py-2.5 text-right">%</th>
@@ -353,6 +412,7 @@ function LowAttendanceList({ params }) {
                     </td>
                     <td className="px-3 py-2.5 muted">{r.student.rollNo || '—'}</td>
                     <td className="px-3 py-2.5 muted">{r.student.department || '—'}</td>
+                    <td className="px-3 py-2.5 muted">{YEAR_LABELS[r.student.year] || '—'}</td>
                     <td className="px-3 py-2.5 muted">{r.student.section || '—'}</td>
                     <td className="px-3 py-2.5 text-right">
                       <span className="font-bold text-emerald-700 dark:text-emerald-400">{r.present}</span>
@@ -429,16 +489,20 @@ function CorrectionsSummary() {
   );
 }
 
+const NO_OWN_CLASSES = ['admin', 'chairman', 'principal', 'ao', 'dean'];
+
 /* ── Main page ─────────────────────────────────────────────────── */
 export default function AttendanceDashboard() {
   const me = useSelector(selectUser);
   const [range, setRange] = useState({ range: 'month' });
-  const [tab, setTab] = useState('overview');
   const params = rangeParams(range);
   const isAdmin = me.role === 'admin';
+  // College-level roles do not teach their own classes here: no "My Classes" tab.
+  const ownClasses = !NO_OWN_CLASSES.includes(me.role);
+  const [tab, setTab] = useState(ownClasses ? 'overview' : 'department');
 
   const tabs = [
-    { value: 'overview', label: 'My Classes' },
+    ...(ownClasses ? [{ value: 'overview', label: 'My Classes' }] : []),
     { value: 'department', label: isAdmin ? 'Departments' : 'My Department' },
     { value: 'low', label: 'Low Attendance' },
     { value: 'corrections', label: 'Corrections' },
@@ -455,9 +519,9 @@ export default function AttendanceDashboard() {
 
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
 
-      {tab === 'overview' && <FacultyOverview params={params} />}
+      {tab === 'overview' && ownClasses && <FacultyOverview params={params} />}
       {tab === 'department' && <DepartmentOverview params={params} canPickDepartment={isAdmin} />}
-      {tab === 'low' && <LowAttendanceList params={params} />}
+      {tab === 'low' && <LowAttendanceList params={params} canPickDepartment={!ownClasses} />}
       {tab === 'corrections' && <CorrectionsSummary />}
     </div>
   );

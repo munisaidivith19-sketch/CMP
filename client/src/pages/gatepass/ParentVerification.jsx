@@ -39,6 +39,8 @@ export function ParentVerification({ pass, onVerified }) {
   // The number the OTP goes to: the registered parent mobile unless the faculty edits it.
   const [mobile, setMobile] = useState(null);
   const [reason, setReason] = useState('');
+  // Parent not answering: the faculty switches to a temporary number while an OTP is still live.
+  const [changing, setChanging] = useState(false);
 
   const state = sent || data;
   const registered = data?.parentMobile || pass.parentPhone || '';
@@ -63,6 +65,7 @@ export function ParentVerification({ pass, onVerified }) {
     try {
       const res = await send(edited ? { id: pass._id, mobile: typedMobile.trim(), reason: reason.trim() } : pass._id).unwrap();
       setSent(res);
+      setChanging(false);
       setOtp('');
       setProblem('');
       toast.success(res.message || 'OTP sent to the registered parent mobile number');
@@ -127,7 +130,7 @@ export function ParentVerification({ pass, onVerified }) {
           <p className="text-sm text-rose-600" role="alert">
             {errMsg(error)}
           </p>
-        ) : live ? (
+        ) : live && !changing ? (
           <form onSubmit={submit} noValidate>
             <p className="text-sm">
               {state.alternateMobile ? `OTP sent to the alternate number ${state.maskedMobile}.` : 'OTP sent to the registered parent mobile number.'}
@@ -171,6 +174,13 @@ export function ParentVerification({ pass, onVerified }) {
             <p className="mt-2 text-xs muted">
               <span className="font-bold tabular-nums">{mmss(expiresIn)}</span> remaining · {state.attemptsLeft} attempt{state.attemptsLeft === 1 ? '' : 's'} left
             </p>
+            <button
+              type="button"
+              className="mt-2 text-xs font-bold text-primary-600 underline"
+              onClick={() => { setChanging(true); setProblem(''); setOtp(''); }}
+            >
+              Parent not answering? Send the OTP to a temporary number
+            </button>
           </form>
         ) : (
           <div className="flex flex-col gap-3">
@@ -196,8 +206,15 @@ export function ParentVerification({ pass, onVerified }) {
                     <button type="button" className="font-bold text-primary-600 underline" onClick={() => { setMobile(null); setReason(''); }}>
                       Use the registered number
                     </button>
+                  ) : changing ? (
+                    'Type the temporary number (another parent or guardian), 10 digits'
                   ) : (
                     'Registered parent number · edit it if the parent is not reachable'
+                  )}
+                  {changing && live && (
+                    <button type="button" className="ml-2 font-bold text-primary-600 underline" onClick={() => { setChanging(false); setProblem(''); }}>
+                      Back to entering the OTP
+                    </button>
                   )}
                 </p>
               </div>

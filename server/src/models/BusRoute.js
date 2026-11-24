@@ -62,9 +62,8 @@ const routeSchema = new Schema(
   { timestamps: true, toJSON: { versionKey: false } }
 );
 
-routeSchema.pre('validate', function sortStops(next) {
+routeSchema.pre('validate', function sortStops() {
   if (this.stops?.length) this.stops.sort((a, b) => a.sequence - b.sequence);
-  next();
 });
 
 routeSchema.index({ name: 1 }, { unique: true, partialFilterExpression: { isActive: true }, name: 'unique_active_route_name' });

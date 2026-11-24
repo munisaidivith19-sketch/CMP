@@ -14,6 +14,7 @@ import { parseDevice } from '../utils/device.js';
 import { logSecurity } from '../utils/securityLog.js';
 import { getPlatformState, maintenanceBody, platformAllows } from '../services/platformState.js';
 import { SUPER_ADMIN_ROLE } from '../constants.js';
+import { consoleNetworkAllowed, requestOrigin } from '../utils/consoleNetwork.js';
 import { withLegal } from '../services/legal.js';
 import {
   readRefreshCookie,
@@ -312,10 +313,15 @@ export const login = asyncHandler(async (req, res) => {
   if (clientLock.locked) throw lockedOut(clientLock.lockUntil);
 
   // 5. Password Verification
-  const ok = await user.comparePassword(password);
+  // IT support works only from CONSOLE_ALLOWED_NETWORKS (default: the server
+  // itself). Anywhere else the right password is answered exactly like a wrong
+  // one (same message, same strikes), so the account looks like any other.
+  const passwordOk = await user.comparePassword(password);
+  const outsideNetwork = user.role === SUPER_ADMIN_ROLE && !consoleNetworkAllowed(requestOrigin(req));
+  const ok = passwordOk && !outsideNetwork;
   if (!ok) {
     await recordIpFailure(req.ip);
-    logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'invalid_password' });
+    logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: outsideNetwork ? 'outside_allowed_network' : 'invalid_password', details: outsideNetwork ? { credentialsCorrect: passwordOk } : undefined });
     // Running total across every network (drives the backstop and the admin view).
     user.failedLogins = (user.failedLogins || 0) + 1;
     user.lastFailedLoginAt = new Date();
@@ -391,11 +397,11 @@ export const login = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'This account has been suspended. Contact the administrator.');
   }
 
-  // Super Admin signs in on the web console only: the Android app has no
-  // Super Admin screens, and keeping the role off mobile narrows its exposure.
+  // IT support signs in on the web console only: the Android app has no
+  // IT support screens, and keeping the role off mobile narrows its exposure.
   if (user.role === SUPER_ADMIN_ROLE && isMobileClient(req)) {
     logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'super_admin_web_only' });
-    throw new ApiError(403, 'Sign in to the Super Admin console from the web dashboard.');
+    throw new ApiError(403, 'Sign in from the web dashboard.');
   }
   // The Windows Gate Scanner is for the Security role only (role read from the database).
   if (isGateDesktopClient(req) && user.role !== GATE_SCANNER_ROLE) {
@@ -403,7 +409,7 @@ export const login = asyncHandler(async (req, res) => {
     logSecurity(req, 'LOGIN_FAILED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'gate_scanner_role' });
     throw new ApiError(403, GATE_SCANNER_ROLE_MESSAGE, undefined, { code: 'GATE_SCANNER_ROLE_REQUIRED' });
   }
-  // Maintenance / lockdown / recovery: correct credentials, but only a Super Admin gets a session.
+  // Maintenance / lockdown / recovery: correct credentials, but only IT support gets a session.
   if (!(await platformAllows(user))) {
     logSecurity(req, 'MAINTENANCE_BLOCKED', { actor: null, target: user, success: false, identifier: normalizedEmail, reason: 'login' });
     throw new ApiError(503, maintenanceBody(await getPlatformState()).message, undefined, { code: 'MAINTENANCE', maintenance: true });
@@ -497,6 +503,13 @@ export const refresh = asyncHandler(async (req, res) => {
     throw err;
   }
 
+  // An IT support session refreshed from outside CONSOLE_ALLOWED_NETWORKS ends for good.
+  if (user.role === SUPER_ADMIN_ROLE && !consoleNetworkAllowed(requestOrigin(req))) {
+    await revokeSessions({ _id: session._id }, 'outside_allowed_network');
+    logSecurity(req, 'REFRESH_FAILED', { actor: null, target: user, success: false, reason: 'outside_allowed_network', entityType: 'session', entityId: session._id });
+    throw fail('Session is no longer valid');
+  }
+
   // An idle web session cannot be revived by its refresh token: it is revoked
   // here, so this and every older refresh token for it are dead for good.
   if (isIdleExpired(session, idleTimeoutFor(session.client, user.role))) {
@@ -506,7 +519,7 @@ export const refresh = asyncHandler(async (req, res) => {
     throw err;
   }
 
-  // Outside normal mode only a Super Admin session is renewed (the session itself is kept).
+  // Outside normal mode only IT support session is renewed (the session itself is kept).
   if (!(await platformAllows(user))) {
     throw new ApiError(503, maintenanceBody(await getPlatformState()).message, undefined, { code: 'MAINTENANCE', maintenance: true });
   }

@@ -14,6 +14,7 @@ import AnnouncementForm from './AnnouncementForm';
 import { selectIsModerator, selectUser } from '../../features/authSlice';
 import { PRIORITIES } from '../../utils/constants';
 import { errMsg } from '../../utils/format';
+import { useDebounced } from '../../utils/useDebounced';
 
 const SCOPE_TABS = [
   { value: '', label: 'All' },
@@ -35,7 +36,8 @@ export default function Announcements() {
   const [editing, setEditing] = useState(null); // null | 'new' | announcement
   const [deleting, setDeleting] = useState(null);
 
-  const { data, isFetching, error, refetch } = useGetAnnouncementsQuery({ priority: priority || undefined, scope: scope || undefined, q: q || undefined, page });
+  const debouncedQ = useDebounced(q);
+  const { data, isFetching, error, refetch } = useGetAnnouncementsQuery({ priority: priority || undefined, scope: scope || undefined, q: debouncedQ || undefined, page });
   const [pin] = useTogglePinAnnouncementMutation();
   const [remove, { isLoading: removing }] = useDeleteAnnouncementMutation();
   // Main: Principal. Department / year / section: Principal + HOD. Clubs: club managers.

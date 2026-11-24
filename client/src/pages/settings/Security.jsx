@@ -1,6 +1,6 @@
 import { PASSWORD_HINT, passwordProblem } from '../../utils/password';
 import { useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { CheckCircle2, KeyRound, LaptopMinimal, LogOut, ShieldCheck, Smartphone, XCircle } from 'lucide-react';
@@ -23,7 +23,7 @@ const REASONS = {
   account_suspended: 'Account suspended',
 };
 
-function ChangePasswordCard() {
+export function ChangePasswordCard({ onChanged } = {}) {
   const dispatch = useDispatch();
   const [change, { isLoading }] = useChangePasswordMutation();
   const {
@@ -40,6 +40,7 @@ function ChangePasswordCard() {
       dispatch(setCredentials(session));
       reset();
       toast.success('Password changed. Your other devices were signed out.');
+      onChanged?.();
     } catch (e) {
       toast.error(errMsg(e));
     }
@@ -200,15 +201,10 @@ function LoginHistoryCard() {
 }
 
 export default function Security() {
-  const mustChange = useSelector((s) => s.auth.user?.mustChangePassword);
+  // A pending temporary-password change shows RequiredPasswordChange instead of this page (App.jsx).
   return (
     <div>
       <PageHeader icon={ShieldCheck} title="Account security" subtitle="Password, signed-in devices and sign-in history." />
-      {mustChange && (
-        <Card className="mb-5 border border-amber-400/50">
-          <p className="text-sm font-semibold">You are signed in with a temporary password. Choose your own password below to continue using VEXON.</p>
-        </Card>
-      )}
       <div className="grid gap-5 xl:grid-cols-2">
         <div className="space-y-5">
           <ChangePasswordCard />

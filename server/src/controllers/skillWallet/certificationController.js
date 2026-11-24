@@ -133,7 +133,7 @@ async function claimHallTicket(hash, studentId) {
     const before = await HallTicketClaim.findOneAndUpdate(
       { hash },
       { $setOnInsert: { hash, student: studentId } },
-      { upsert: true, new: false }
+      { upsert: true, returnDocument: 'before' }
     ).lean();
     if (before && !sameId(before.student, studentId)) {
       throw new ApiError(409, 'This hall ticket number is already registered to another student. Contact your Class In-Charge if it is yours.');
@@ -362,7 +362,7 @@ export const decideCertification = asyncHandler(async (req, res) => {
   const updated = await NptelCertification.findOneAndUpdate(
     { _id: cert._id, isDeleted: false, status: 'pending', __v: version },
     { $set: { status: decision, decidedBy: req.user._id, decidedAt: new Date(), decisionReason: reason }, $inc: { __v: 1 } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'This certificate is not waiting for verification (it may have been decided or changed already)');
   await CertificationReview.create({ certification: cert._id, student: cert.student, actor: req.user._id, action: decision, reason });

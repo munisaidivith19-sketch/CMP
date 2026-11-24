@@ -54,17 +54,17 @@ const ALLOWED = {
     ...ACCOUNT,
     [/^\/transport(\/|$)/, ANY],
   ],
-  // Super Admin: platform administration, account management for every role,
+  // IT support: platform administration, account management for every role,
   // and READ-ONLY views of attendance, gate passes and the hostel. GET only
   // there, so it can never mark attendance or act on a gate pass. Chats are
-  // read through /super-admin/chats (no send path exists for this role).
+  // read through /console/chats (no send path exists for this role).
   [SUPER_ADMIN_ROLE]: [
     [/^\/auth\//, ANY],
     [/^\/users\/me(\/avatar)?$/, ['PUT']],
     [/^\/notifications(\/|$)/, ANY],
     [/^\/client-errors$/, ['POST']],
-    [/^\/super-admin(\/|$)/, ANY],
-    // User accounts (all ordinary and staff roles; Admin accounts via /super-admin/admins).
+    [/^\/console(\/|$)/, ANY],
+    // User accounts (all ordinary and staff roles; Admin accounts via /console/admins).
     [/^\/admin\/users(\/[^/]+)?$/, ['GET', 'POST', 'PATCH', 'DELETE']],
     // Additional policies for staff accounts (and own effective permissions).
     [/^\/admin\/users\/[^/]+\/policies$/, ['GET', 'PUT']],
@@ -82,7 +82,7 @@ const MESSAGE = {
   [COE_ROLE]: 'The Controller of Examinations can only use the Timetable and Attendance dashboards',
   [OFFICE_ROLE]: 'The Office account can only view attendance and attendance reports',
   [TRANSPORT_ROLE]: 'The transport account can only use Bus Tracking',
-  [SUPER_ADMIN_ROLE]: 'The Super Admin account can only use the Super Admin console',
+  [SUPER_ADMIN_ROLE]: 'This account can only use the console',
 };
 
 export function confinedRoleGuard(req, _res, next) {
@@ -94,6 +94,9 @@ export function confinedRoleGuard(req, _res, next) {
   const ok = rules.some(([re, methods]) => re.test(path) && methods.includes(req.method));
   return ok ? next() : next(new ApiError(403, MESSAGE[req.user.role]));
 }
+
+/** Roles confined to an allowlist of API routes (also checked on socket events). */
+export const isConfinedRole = (role) => Object.hasOwn(ALLOWED, role);
 
 // Kept for existing imports.
 export const coeRouteGuard = confinedRoleGuard;

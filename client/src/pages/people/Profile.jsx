@@ -1,4 +1,5 @@
 import { passwordProblem } from '../../utils/password';
+import { mobileOk, sameMobile, toMobile } from '../../components/ui/MobileInput';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
@@ -103,7 +104,27 @@ function EditProfile({ open, onClose, user }) {
         ) : (
           <Input label="Designation" {...register('designation')} />
         )}
-        <Input label="Phone" {...register('phone')} />
+        {isStudent ? (
+          <Input
+            label="Mobile"
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="10-digit mobile"
+            hint="10 digits · must be different from your parent's number"
+            error={errors.phone}
+            {...register('phone', {
+              setValueAs: (raw) => toMobile(raw),
+              validate: (val) => {
+                if (!mobileOk(val)) return 'Enter exactly 10 digits';
+                if (val && sameMobile(val, user.parentPhone)) return "This is your parent's number. Enter your own mobile";
+                return true;
+              },
+            })}
+          />
+        ) : (
+          <Input label="Phone" {...register('phone')} />
+        )}
         <Textarea className="sm:col-span-2" label="Bio" rows={3} maxLength={500} {...register('bio')} />
         <Controller name="interests" control={control} render={({ field }) => <TagInput label="Interests" hint="e.g. technical, hackathon, cultural, sports" value={field.value} onChange={field.onChange} />} />
         <Controller name="skills" control={control} render={({ field }) => <TagInput label="Skills" value={field.value} onChange={field.onChange} />} />
@@ -437,7 +458,7 @@ export default function Profile() {
             <ul className="divide-y divide-black/5 dark:divide-white/10">
               {ABOUT_ENTRIES.map((e) => (
                 <li key={e.key}>
-                  <Link to={e.to} className="flex items-center justify-between gap-3 rounded-2xl px-2 py-3 text-sm font-semibold hover:bg-white/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:bg-white/5">
+                  <Link to={e.to} className="flex items-center justify-between gap-3 rounded-2xl px-2 py-3 text-sm font-semibold hover:bg-white/60 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-400 dark:hover:bg-white/5">
                     {e.label}
                     <ChevronRight className="h-4 w-4 text-ink-muted" aria-hidden />
                   </Link>

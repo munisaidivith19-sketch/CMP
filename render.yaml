@@ -73,6 +73,22 @@ services:
         generateValue: true
       - key: CHAT_ENCRYPTION_KEY
         generateValue: true
+      # Old chat keys (comma-separated), only for reading messages saved with them.
+      - key: CHAT_ENCRYPTION_KEYS_OLD
+        sync: false
+      # The IT support account works only from these networks; on Render nobody
+      # is "local", so it is unusable here by design (use the college server).
+      - key: CONSOLE_ALLOWED_NETWORKS
+        value: 127.0.0.1,::1
+      # Security alert emails through Resend (IT support sign-ins, failed sign-ins,
+      # Admin creation, recovery, Emergency Control). Set the key and recipients
+      # in the Render dashboard; never commit them.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SECURITY_ALERT_TO
+        sync: false
+      - key: SECURITY_ALERT_FROM
+        value: J.N.N Security <tech@jnn.edu.in>
       # Optional: set these (from cloudinary.com, free tier) so uploaded photos
       # survive restarts — Render's own disk is wiped on every deploy/restart.
       - key: CLOUDINARY_CLOUD_NAME

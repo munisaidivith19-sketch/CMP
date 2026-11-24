@@ -81,7 +81,7 @@ export async function issueReturnCredential(passId, studentId, now = new Date(),
       const pass = await GatePass.findOneAndUpdate(
         { _id: passId, student: studentId, status: 'active', actualExit: { $ne: null } },
         { $set: { returnToken: token, returnCode: code, returnCredentialExpiresAt: expiresAt, ...stamp } },
-        { new: true }
+        { returnDocument: 'after' }
       );
       if (!pass) throw new ApiError(409, 'This gate pass is no longer waiting for your return');
       return { token, code, expiresAt };
@@ -124,7 +124,7 @@ export async function assignedFacultyIds(student) {
   return assigned.filter(Boolean);
 }
 
-const fmtParts = (date) => {
+export const fmtParts = (date) => {
   const tz = env.timezone;
   return {
     date: new Intl.DateTimeFormat('en-GB', { timeZone: tz, day: '2-digit', month: '2-digit', year: 'numeric' }).format(date),

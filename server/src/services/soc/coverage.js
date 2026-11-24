@@ -47,7 +47,7 @@ const TEST_FILE_WORDS = {
   ai_assistant: ['study-assistant'],
   bus_tracking: ['transport'],
   user_admin: ['people', 'roles', 'role-assignments', 'user-title', 'profiles'],
-  super_admin: ['super-admin'],
+  super_admin: ['console'],
   alumni: ['alumni'],
   sos: ['sos'],
   hostel: ['hostel'],

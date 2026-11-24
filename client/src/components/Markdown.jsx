@@ -35,7 +35,7 @@ function inline(text, keyBase = 'i') {
       );
     } else if (m[7]) {
       out.push(
-        <sup key={key} className="mx-0.5 rounded bg-primary-500/15 px-1 text-[0.65rem] font-bold text-primary-600 dark:text-primary-300" title="Source cited below">
+        <sup key={key} className="mx-0.5 rounded-sm bg-primary-500/15 px-1 text-[0.65rem] font-bold text-primary-600 dark:text-primary-300" title="Source cited below">
           {m[7].slice(1, -1)}
         </sup>
       );

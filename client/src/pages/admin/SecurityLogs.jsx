@@ -368,8 +368,8 @@ function OtpTab() {
 }
 
 /**
- * The parent-OTP dashboard. Shown only in the Super Admin console (the API
- * is Super Admin only); Admin → Security & Logs no longer has it.
+ * The parent-OTP dashboard. Shown only in the console (the API
+ * is IT support only); Admin → Security & Logs no longer has it.
  */
 export { OtpTab };
 

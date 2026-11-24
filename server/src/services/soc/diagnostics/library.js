@@ -473,17 +473,17 @@ registerDiagnostic({
 registerDiagnostic({
   id: 'auth.sessions',
   name: 'Session store',
-  purpose: 'Checks that the session collection can be read and counts active sessions and Super Admin accounts.',
+  purpose: 'Checks that the session collection can be read and counts active sessions and IT support accounts.',
   supports: { codes: [], services: ['api'] },
   preconditions: ['Database connected.'],
   timeoutMs: 5000,
   expectedDurationMs: 50,
   limits: 'Two indexed count queries.',
-  output: 'PASS when readable and at least one active Super Admin exists; FAIL when no active Super Admin exists; SKIPPED without a database.',
+  output: 'PASS when readable and at least one active IT support account exists; FAIL when none exists; SKIPPED without a database.',
   evidence: '{ activeSessions, activeSuperAdmins }',
   nextSteps: {
     PASS: ['Sign-in sessions are readable.'],
-    FAIL: ['Create a Super Admin with server/scripts/create-super-admin.mjs so the recovery path stays available.'],
+    FAIL: ['Create IT support with server/scripts/create-console-account.mjs so the recovery path stays available.'],
     SKIPPED: ['Fix database connectivity first.'],
   },
   verification: 'PASS means sessions are readable and recovery access exists.',
@@ -494,8 +494,8 @@ registerDiagnostic({
       User.countDocuments({ role: 'super_admin', isActive: true }),
     ]);
     const evidence = { activeSessions, activeSuperAdmins };
-    if (!activeSuperAdmins) return result('FAIL', 'Session store and recovery access', 'No active Super Admin account.', 'Nobody can reach emergency recovery.', evidence);
-    return result('PASS', 'Session store and recovery access', `${activeSessions} active session(s); ${activeSuperAdmins} active Super Admin(s).`, 'Readable; recovery access exists.', evidence);
+    if (!activeSuperAdmins) return result('FAIL', 'Session store and recovery access', 'No active IT support account.', 'Nobody can reach emergency recovery.', evidence);
+    return result('PASS', 'Session store and recovery access', `${activeSessions} active session(s); ${activeSuperAdmins} active IT support account(s).`, 'Readable; recovery access exists.', evidence);
   },
 });
 

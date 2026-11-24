@@ -57,6 +57,10 @@ const looksLikeFile = (p) => p.split('/').some((seg) => seg.includes('.'));
 
 export function createApp({ forceHttps = forceHttpsEnabled() } = {}) {
   const app = express();
+  // Keep Express 4's query parsing (Express 5 defaults to "simple"), so a
+  // tampered parameter such as ?q[$ne]=x still reaches validation as an object
+  // and is rejected, instead of silently becoming an unrelated key.
+  app.set('query parser', 'extended');
   const mapOrigins = mapCspOrigins();
   // The sign-in CAPTCHA (Cloudflare Turnstile) loads its script and iframe from this origin only when configured.
   const captchaOrigins = turnstileEnabled() ? ['https://challenges.cloudflare.com'] : [];
@@ -119,6 +123,15 @@ export function createApp({ forceHttps = forceHttpsEnabled() } = {}) {
     })
   );
   app.use(express.urlencoded({ extended: false, limit: '50kb' }));
+  // Express 5 leaves req.body undefined when nothing was parsed and makes
+  // req.query a read-only getter. Restore the Express 4 shape (an empty body
+  // object, a plain writable query object) so the sanitizers below can clean
+  // both in place and handlers can always destructure req.body.
+  app.use((req, _res, next) => {
+    if (req.body === undefined) req.body = {};
+    Object.defineProperty(req, 'query', { value: { ...req.query }, writable: true, configurable: true, enumerable: true });
+    next();
+  });
   app.use(cookieParser());
   app.use(mongoSanitize()); // strips $ and . keys → blocks NoSQL operator injection
   app.use(inputHygieneGuard); // HPP defense + null-byte stripping + pagination hard-cap
@@ -175,7 +188,7 @@ export function createApp({ forceHttps = forceHttpsEnabled() } = {}) {
     app.use('/.well-known', express.static(path.join(CLIENT_DIST, '.well-known'), { index: false, dotfiles: 'deny', fallthrough: true }));
     app.use((req, res, next) => (/\.map$/i.test(req.path) ? notFound(req, res) : next()));
     app.use(express.static(CLIENT_DIST, { index: false, maxAge: '1h', dotfiles: 'ignore' }));
-    app.get('*', (req, res, next) => (looksLikeFile(req.path) ? next() : res.sendFile(path.join(CLIENT_DIST, 'index.html'))));
+    app.get('/{*splat}', (req, res, next) => (looksLikeFile(req.path) ? next() : res.sendFile(path.join(CLIENT_DIST, 'index.html'))));
   }
 
   app.use(notFound);

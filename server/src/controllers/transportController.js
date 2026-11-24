@@ -561,7 +561,7 @@ export const upsertAssignment = asyncHandler(async (req, res) => {
   const a = await TransportAssignment.findOneAndUpdate(
     { user: user._id },
     { $set: { route: route._id, bus: busId || null, stop: stopId || null, assignedBy: req.user._id } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   );
   logActivity(req, 'transport.assignment_set', { entityType: 'transport_assignment', entityId: a._id, summary: `${user.name} → ${route.name}` });
   res.json({ assignment: a });

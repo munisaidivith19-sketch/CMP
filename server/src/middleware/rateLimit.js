@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { env } from '../config/env.js';
 import { turnstileEnabled } from '../services/turnstile.js';
 import { isNativeClient } from '../utils/tokens.js';
@@ -23,7 +23,7 @@ export const locationLimiter = rateLimit({
   limit: Number(process.env.LOCATION_RATE_LIMIT) || 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => (req.user?._id ? `user:${req.user._id}` : req.ip),
+  keyGenerator: (req) => (req.user?._id ? `user:${req.user._id}` : ipKeyGenerator(req.ip)),
   message: json('Location updates are arriving too fast'),
 });
 
@@ -34,7 +34,7 @@ export const routingLimiter = rateLimit({
   limit: Number(process.env.ROUTING_RATE_LIMIT) || 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => `routing:${req.user?._id || req.ip}`,
+  keyGenerator: (req) => `routing:${req.user?._id || ipKeyGenerator(req.ip)}`,
   message: json('Too many route generations. Wait a minute and try again.'),
 });
 
@@ -104,34 +104,44 @@ export const uploadLimiter = rateLimit({
 });
 
 // Password-reset requests: generous enough for typos, tight enough to stop mail bombing.
-// Super Admin password re-entry: per account, so a stolen session cannot be
-// used to brute-force the password through /super-admin/reauth.
+// IT support password re-entry: per account, so a stolen session cannot be
+// used to brute-force the password through /console/reauth.
 export const reauthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => (req.user?._id ? `reauth:${req.user._id}` : req.ip),
+  keyGenerator: (req) => (req.user?._id ? `reauth:${req.user._id}` : ipKeyGenerator(req.ip)),
   message: json('Too many password confirmations. Try again in a few minutes.'),
 });
 
-// Sensitive Super Admin writes (admin accounts, policies, resets, emergency).
+// Sensitive IT support writes (admin accounts, policies, resets, emergency).
 export const superAdminWriteLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => (req.user?._id ? `sa:${req.user._id}` : req.ip),
+  keyGenerator: (req) => (req.user?._id ? `sa:${req.user._id}` : ipKeyGenerator(req.ip)),
   message: json('Too many administrative changes. Please wait a few minutes.'),
 });
 
-// SOC: diagnostic runs, verification and forced health checks, per Super Admin.
+// SOC: diagnostic runs, verification and forced health checks, per IT support.
+// Troubleshooting → SMS / OTP test: each run sends two real (paid) SMS.
+export const smsTestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.SMS_TEST_RATE_LIMIT) || 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => `smstest:${req.user?._id || ipKeyGenerator(req.ip)}`,
+  message: json('Too many SMS tests. Wait a few minutes and try again.'),
+});
+
 export const socRunLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: Number(process.env.SOC_RUN_RATE_LIMIT) || 60,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => `soc:${req.user?._id || req.ip}`,
+  keyGenerator: (req) => `soc:${req.user?._id || ipKeyGenerator(req.ip)}`,
   message: json('Too many diagnostic runs. Wait a few minutes and try again.'),
 });
 
@@ -141,7 +151,7 @@ export const clientErrorLimiter = rateLimit({
   limit: 30,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => `client-err:${req.user?._id || req.ip}`,
+  keyGenerator: (req) => `client-err:${req.user?._id || ipKeyGenerator(req.ip)}`,
   message: json('Too many error reports.'),
 });
 
@@ -170,7 +180,7 @@ export const gateScanLimiter = rateLimit({
   limit: Number(process.env.GATE_SCAN_RATE_LIMIT) || 90,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => `gate-scan:${req.user?._id || req.ip}`,
+  keyGenerator: (req) => `gate-scan:${req.user?._id || ipKeyGenerator(req.ip)}`,
   message: json('Scans are arriving too fast. Wait a few seconds and scan again.'),
 });
 
@@ -181,7 +191,7 @@ export const otpLimiter = rateLimit({
   limit: 30,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => `otp:${req.user?._id || req.ip}`,
+  keyGenerator: (req) => `otp:${req.user?._id || ipKeyGenerator(req.ip)}`,
   message: json('Too many OTP requests. Please wait a few minutes.'),
 });
 
@@ -191,7 +201,7 @@ export const returnLocationLimiter = rateLimit({
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  keyGenerator: (req) => `return:${req.user?._id || req.ip}`,
+  keyGenerator: (req) => `return:${req.user?._id || ipKeyGenerator(req.ip)}`,
   message: json('Too many location checks. Please wait a few minutes and try again.'),
 });
 
@@ -212,7 +222,7 @@ const perUser = (prefix, windowMs, limit, message) =>
     limit,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    keyGenerator: (req) => `${prefix}:${req.user?._id || req.ip}`,
+    keyGenerator: (req) => `${prefix}:${req.user?._id || ipKeyGenerator(req.ip)}`,
     message: json(message),
   });
 export const skillWalletWriteLimiter = perUser('sw-write', 60 * 1000, Number(process.env.SKILL_WALLET_WRITE_LIMIT) || 60, 'You are making changes too fast. Please wait a moment.');
@@ -238,7 +248,7 @@ const aiLimiter = (windowMs, limit, message) =>
     limit,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    keyGenerator: (req) => `ai:${req.user?._id || req.ip}`,
+    keyGenerator: (req) => `ai:${req.user?._id || ipKeyGenerator(req.ip)}`,
     message: json(message),
   });
 

@@ -112,7 +112,7 @@ export default function ODLeaveReviewQueue() {
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/70 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/70 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/10 p-3 shadow-xs">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-ink-muted flex items-center gap-1.5 mr-1">
             <Filter className="h-3.5 w-3.5" /> Filters:
@@ -194,8 +194,8 @@ export default function ODLeaveReviewQueue() {
               <div
                 key={req._id}
                 className={cn(
-                  'group relative rounded-2xl border p-4 transition-all duration-300 shadow-sm',
-                  'bg-white/80 dark:bg-[#131427]/80 backdrop-blur-xl',
+                  'group relative rounded-2xl border p-4 transition-all duration-300 shadow-xs',
+                  'bg-white/80 dark:bg-[#131427]/80',
                   canReview
                     ? 'border-primary-500/40 ring-1 ring-primary-500/20 shadow-md'
                     : 'border-slate-200/80 dark:border-white/10'

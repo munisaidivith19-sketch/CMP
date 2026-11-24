@@ -153,7 +153,7 @@ function ResponderAlertCard({ alert, onResolve }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3.5">
           <div
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm transition-all ${
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-xs transition-all ${
               isActive
                 ? 'bg-rose-600 text-white animate-pulse'
                 : 'bg-primary-500/10 text-primary-700 dark:bg-primary-500/20 dark:text-primary-300'

@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { ShieldCheck, UserCog } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, Skeleton } from '../../components/ui/primitives';
-import PolicyEditor from '../../components/superadmin/PolicyEditor';
-import { useGetPolicyTargetsQuery, useSetDelegatedPoliciesMutation } from '../../services/superAdmin';
+import PolicyEditor from '../../components/console/PolicyEditor';
+import { useGetPolicyTargetsQuery, useSetDelegatedPoliciesMutation } from '../../services/consoleApi';
 import { ROLE_LABELS } from '../../utils/constants';
 import { restrictCatalogue, rolesSummary } from '../../utils/delegation';
 import { errMsg } from '../../utils/format';
@@ -17,7 +17,7 @@ import { errMsg } from '../../utils/format';
  */
 /**
  * Role policies tab for every Admin: its own effective permissions, then the
- * delegated assignment tool when authorized, or what a Super Admin must grant.
+ * delegated assignment tool when authorized, or what IT support must grant.
  */
 export function RolePoliciesTab({ myPolicies, isLoading }) {
   if (isLoading || !myPolicies) return <Skeleton className="h-40" />;
@@ -32,7 +32,7 @@ export function RolePoliciesTab({ myPolicies, isLoading }) {
         {!managed ? (
           <p className="text-sm muted">
             You are a legacy Admin: user management is unrestricted for you, but you cannot assign policies to other Admins.
-            To do that, a Super Admin must switch your account to module policies and grant <b>User Management → policies</b>.
+            To do that, IT support must switch your account to module policies and grant <b>User Management → policies</b>.
           </p>
         ) : (
           <dl className="grid gap-2 text-sm sm:grid-cols-[200px_1fr]">
@@ -50,7 +50,7 @@ export function RolePoliciesTab({ myPolicies, isLoading }) {
             <dd>{!d?.canAssignPolicies ? 'Nothing (needs User Management → policies)' : d.grantablePolicies.length ? d.grantablePolicies.map((p) => `${label(p.module)}: ${p.actions.join(', ')}`).join(' · ') : 'Nothing'}</dd>
           </dl>
         )}
-        <p className="mt-3 text-xs muted">Any other role or permission requires Super Admin authorization. Super Admin and protected platform policies are never shown here.</p>
+        <p className="mt-3 text-xs muted">Any other role or permission requires IT support authorization. IT support and protected platform policies are never shown here.</p>
       </Card>
       {canDelegate ? (
         <AdminPoliciesTab myPolicies={myPolicies} />
@@ -58,8 +58,8 @@ export function RolePoliciesTab({ myPolicies, isLoading }) {
         <Card>
           <h3 className="mb-1 text-base font-extrabold">Assign policies to other Admins</h3>
           <p className="text-sm muted">
-            Read-only for your account. To assign these to other Admins, ask a Super Admin to grant you <b>User Management → policies</b>
-            {managed ? ' and, if needed, set the permissions you may delegate.' : ' after switching your account to module policies (Super Admin → Admin accounts → your account → Module policies).'}
+            Read-only for your account. To assign these to other Admins, ask IT support to grant you <b>User Management → policies</b>
+            {managed ? ' and, if needed, set the permissions you may delegate.' : ' after switching your account to module policies (IT support → Admin accounts → your account → Module policies).'}
           </p>
         </Card>
       )}
@@ -116,7 +116,7 @@ export default function AdminPoliciesTab({ myPolicies }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
       <Card className="!p-3">
-        <p className="mb-2 px-2 text-xs muted">Admins you may assign policies to. Super Admin and legacy Admin accounts are managed by a Super Admin only.</p>
+        <p className="mb-2 px-2 text-xs muted">Admins you may assign policies to. IT support and legacy Admin accounts are managed by IT support only.</p>
         {!data?.items?.length ? (
           <EmptyState icon={UserCog} title="No Admin accounts" text="There are no policy-managed Admins to manage." />
         ) : (
@@ -159,11 +159,11 @@ function TargetEditor({ target, catalogue }) {
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h3 className="text-base font-extrabold">{target.name}</h3>
-        {target.hiddenActions > 0 && <Badge color="neutral">{target.hiddenActions} other permission(s) managed by a Super Admin</Badge>}
+        {target.hiddenActions > 0 && <Badge color="neutral">{target.hiddenActions} other permission(s) managed by IT support</Badge>}
       </div>
       <p className="mb-3 text-xs muted">
         Can create: {rolesSummary(target.limits.createRoles, ROLE_LABELS, 'no limit set')} · Can assign: {rolesSummary(target.limits.assignRoles, ROLE_LABELS, 'no limit set')}.
-        Granting account creation, role changes or policy assignment needs a Super Admin to set this Admin’s limits first, inside yours.
+        Granting account creation, role changes or policy assignment needs IT support to set this Admin’s limits first, inside yours.
       </p>
       {Object.keys(catalogue).length === 0 ? (
         <p className="text-sm">You have no permissions you may delegate.</p>

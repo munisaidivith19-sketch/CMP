@@ -9,6 +9,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input, Select, TagInput, Textarea } from '../../components/ui/form';
 import { DISCUSSION_CATEGORIES } from '../../utils/constants';
 import { errMsg, timeAgo, displayName } from '../../utils/format';
+import { useDebounced } from '../../utils/useDebounced';
 
 function NewDiscussion({ open, onClose }) {
   const navigate = useNavigate();
@@ -88,7 +89,8 @@ export default function Discussions() {
     }
   }, [params, setParams]);
 
-  const { data, isFetching, error, refetch } = useGetDiscussionsQuery({ sort, category: category || undefined, q: q || undefined, page });
+  const debouncedQ = useDebounced(q);
+  const { data, isFetching, error, refetch } = useGetDiscussionsQuery({ sort, category: category || undefined, q: debouncedQ || undefined, page });
 
   return (
     <div>

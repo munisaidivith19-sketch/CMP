@@ -173,7 +173,7 @@ export const respondToRequest = asyncHandler(async (req, res) => {
     const reqDoc = await MentorshipRequest.findOneAndUpdate(
       { _id: id, alumni: alumniId, status: 'pending' },
       { $set: { status: 'accepted', respondedAt: now, response: response?.trim() } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!reqDoc) throw new ApiError(409, 'Request is no longer pending or does not belong to you');
 
@@ -211,7 +211,7 @@ export const respondToRequest = asyncHandler(async (req, res) => {
   const reqDoc = await MentorshipRequest.findOneAndUpdate(
     { _id: id, alumni: alumniId, status: 'pending' },
     { $set: { status: 'declined', respondedAt: now, response: response?.trim() } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!reqDoc) throw new ApiError(409, 'Request is no longer pending or does not belong to you');
 
@@ -503,7 +503,7 @@ export const bookSession = asyncHandler(async (req, res) => {
   const slot = await MentorshipSlot.findOneAndUpdate(
     { _id: slotId, alumni: mentReq.alumni, status: 'open' },
     { $set: { status: 'booked', bookedBy: studentId } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!slot) throw new ApiError(409, 'This slot is no longer available');
 
@@ -598,7 +598,7 @@ export const rescheduleSession = asyncHandler(async (req, res) => {
   const newSlot = await MentorshipSlot.findOneAndUpdate(
     { _id: newSlotId, alumni: session.alumni, status: 'open' },
     { $set: { status: 'booked', bookedBy: session.student } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!newSlot) throw new ApiError(409, 'New slot is no longer available');
 

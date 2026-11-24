@@ -1,5 +1,7 @@
 package com.vexon.campus
 
+import com.vexon.campus.core.E2e
+import kotlinx.coroutines.launch
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -154,6 +156,8 @@ fun AppRoot() {
     // One socket per signed-in session.
     LaunchedEffect(userId) {
         if (userId == null) return@LaunchedEffect
+        // Register this phone for end-to-end encrypted chat, so others can send it encrypted messages.
+        E2e.scope.launch { runCatching { E2e.ensureDevice() } }
         Realtime.connect(onUnauthorized = {
             when (Auth.refreshSession()) {
                 is RefreshResult.Ok -> true

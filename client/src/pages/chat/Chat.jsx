@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
@@ -24,6 +24,7 @@ import {
   useCreateConversationMutation,
   useEditMessageMutation,
   useGetConversationQuery,
+  useGetChatKeysQuery,
   useGetConversationsQuery,
   useGetGroupRequestsQuery,
   useGetMessagesQuery,
@@ -40,6 +41,10 @@ import { ROLE_LABELS } from '../../utils/constants';
 import { errMsg, fmtTime, timeAgo, displayName } from '../../utils/format';
 import HodGroupModal from './HodGroupModal';
 import GroupInfoModal from './GroupInfoModal';
+import { useDebounced } from '../../utils/useDebounced';
+import { ensureDevice, sendSecure, useDecrypted } from '../../services/e2e';
+
+const convIdOf = (c) => c._id;
 
 /** Who may start a group chat. Faculty groups wait for an admin, HOD groups for the principal. */
 const GROUP_CREATORS = ['admin', 'hod', 'faculty'];
@@ -106,7 +111,8 @@ function NewChatModal({ open, onClose, me, onHodGroup }) {
   // 'picker' context: looking someone up to start a conversation with. The
   // server scopes it by the chat rules — a student only ever finds their
   // classmates and the academic staff — so this list is already the limit.
-  const { data, isFetching } = useGetUsersQuery({ q: q || undefined, limit: 20, context: 'picker', ...scope }, { skip: !open });
+  const debouncedQ = useDebounced(q);
+  const { data, isFetching } = useGetUsersQuery({ q: debouncedQ || undefined, limit: 20, context: 'picker', ...scope }, { skip: !open });
   const [create, { isLoading }] = useCreateConversationMutation();
   const people = (data?.items || []).filter((u) => !sameId(u, me));
 
@@ -220,6 +226,8 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
   const [search, setSearch] = useState('');
   const { data, isLoading, error, refetch } = useGetConversationsQuery(search ? { search } : undefined);
   const { data: requests = [] } = useGetGroupRequestsQuery(undefined, { skip: !['hod', 'faculty'].includes(me.role) });
+  // End-to-end encrypted previews are decrypted on this device.
+  const conversations = useDecrypted(data, convIdOf);
 
   return (
     <div className="flex h-full flex-col">
@@ -260,7 +268,7 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
               </div>
             </div>
           ))}
-        {data?.map((c) => {
+        {conversations.map((c) => {
           const d = describe(c, me);
           const online = d.other ? presence[d.other._id] ?? d.other.online : false;
           const isTyping = typing[c._id]?.length > 0;
@@ -309,7 +317,8 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
 }
 
 /* ── Thread ─────────────────────────────────────────────────────── */
-function MessageBubble({ m, mine, showAuthor, readState, onReply, onEdit, group }) {
+// Memoised: typing in the composer re-renders the thread, not every bubble.
+const MessageBubble = memo(function MessageBubble({ m, mine, showAuthor, readState, onReply, onEdit, group }) {
   const deleted = Boolean(m.deletedAt);
   // In group chats only, the sender can edit their message within 5 minutes of sending
   const canEdit = mine && group && !deleted && Date.now() - new Date(m.createdAt).getTime() <= 5 * 60 * 1000;
@@ -320,7 +329,7 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onEdit, group 
         {showAuthor && !mine && group && <span className="mb-0.5 px-2 text-[11px] font-bold text-primary-600 dark:text-primary-400">{displayName(m.sender)}</span>}
         <div
           className={cn(
-            'relative min-w-0 max-w-full rounded-3xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
+            'relative min-w-0 max-w-full rounded-3xl px-4 py-2.5 text-sm leading-relaxed shadow-xs',
             mine ? 'rounded-br-lg bg-gradient-to-br from-primary-400 to-primary-600 text-white' : 'rounded-bl-lg bg-white/85 text-ink dark:bg-slate-800/90 dark:text-slate-100 dark:border dark:border-white/10',
             deleted && 'italic opacity-70'
           )}
@@ -354,7 +363,7 @@ function MessageBubble({ m, mine, showAuthor, readState, onReply, onEdit, group 
       )}
     </div>
   );
-}
+});
 
 function Thread({ id, me, presence, typingUsers }) {
   const navigate = useNavigate();
@@ -364,6 +373,9 @@ function Thread({ id, me, presence, typingUsers }) {
   const [send, { isLoading: sending }] = useSendMessageMutation();
   const [editMsg, { isLoading: editing }] = useEditMessageMutation();
   const [messages, setMessages] = useState([]);
+  // Readable copy of `messages`: end-to-end encrypted ones decrypted on this device.
+  const view = useDecrypted(messages, useCallback(() => id, [id]));
+  const { data: keys, refetch: refetchKeys } = useGetChatKeysQuery(id);
   const [hasMore, setHasMore] = useState(false);
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
@@ -412,7 +424,7 @@ function Thread({ id, me, presence, typingUsers }) {
   });
   useSocketEvent('chat:messageEdited', ({ conversationId, message }) => {
     if (conversationId !== id) return;
-    setMessages((prev) => prev.map((m) => (m._id === message._id ? { ...m, body: message.body, editedAt: message.editedAt } : m)));
+    setMessages((prev) => prev.map((m) => (m._id === message._id ? { ...m, body: message.body, e2e: message.e2e, editedAt: message.editedAt } : m)));
   });
   useSocketEvent('chat:messageDeleted', ({ conversationId, messageId }) => {
     if (conversationId !== id) return;
@@ -447,7 +459,7 @@ function Thread({ id, me, presence, typingUsers }) {
     stopTyping();
     if (editingMessage) {
       try {
-        const updated = await editMsg({ id, msgId: editingMessage._id, body }).unwrap();
+        const updated = await sendSecure(id, body, (payload) => editMsg({ id, msgId: editingMessage._id, ...payload }).unwrap());
         setMessages((prev) => prev.map((m) => (m._id === updated._id ? { ...m, ...updated } : m)));
         setEditingMessage(null);
         setText('');
@@ -457,7 +469,7 @@ function Thread({ id, me, presence, typingUsers }) {
       return;
     }
     try {
-      const msg = await send({ id, body, replyTo: replyTo?._id }).unwrap();
+      const msg = await sendSecure(id, body, (payload) => send({ id, ...payload, replyTo: replyTo?._id }).unwrap());
       setMessages((prev) => (prev.some((x) => x._id === msg._id) ? prev : [...prev, msg]));
       setText('');
       setReplyTo(null);
@@ -492,8 +504,29 @@ function Thread({ id, me, presence, typingUsers }) {
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return needle ? messages.filter((m) => !m.deletedAt && m.body.toLowerCase().includes(needle)) : messages;
-  }, [messages, q]);
+    return needle ? view.filter((m) => !m.deletedAt && m.body.toLowerCase().includes(needle)) : view;
+  }, [view, q]);
+
+  // Set this browser up for encrypted chat, then re-read who can receive encrypted messages.
+  useEffect(() => {
+    ensureDevice()
+      .then(() => refetchKeys())
+      .catch(() => {});
+  }, [id, refetchKeys]);
+  const e2eOn = Boolean(keys?.complete);
+  const withoutKeys = keys && !keys.complete
+    ? (conv?.participants || []).filter((p) => !keys.devices.some((d) => sameId(d.userId, p))).map((p) => (sameId(p, me) ? 'you' : p.name?.split(' ')[0]))
+    : [];
+
+  const onReply = useCallback((target) => {
+    setEditingMessage(null);
+    setReplyTo(target);
+  }, []);
+  const onEdit = useCallback((target) => {
+    setReplyTo(null);
+    setEditingMessage(target);
+    setText(target.body);
+  }, []);
 
   if (convError) return <ErrorState error={convError} onRetry={refetch} />;
 
@@ -558,9 +591,18 @@ function Thread({ id, me, presence, typingUsers }) {
         )}
         {error && <ErrorState error={error} />}
         {!hasMore && !error && !isLoading && (
-          <p className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-[11px] font-semibold text-amber-800 dark:text-amber-300">
-            <Lock className="h-3 w-3" /> Messages are encrypted before they are stored
-          </p>
+          e2eOn ? (
+            <p className="mx-auto flex w-fit max-w-full items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-center text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
+              <Lock className="h-3 w-3 shrink-0" /> Messages are end-to-end encrypted. Only the people in this chat can read them.
+            </p>
+          ) : (
+            <p className="mx-auto flex w-fit max-w-full items-center gap-1.5 rounded-2xl bg-amber-500/10 px-3 py-1 text-center text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+              <Lock className="h-3 w-3 shrink-0" />
+              {withoutKeys.length
+                ? `Not end-to-end encrypted yet: ${withoutKeys.slice(0, 3).join(', ')}${withoutKeys.length > 3 ? ` and ${withoutKeys.length - 3} more` : ''} must open the updated app first. Until then messages are encrypted on the server.`
+                : 'Messages are encrypted before they are stored.'}
+            </p>
+          )
         )}
         {!isLoading && !messages.length && !error && (
           <EmptyState icon={MessageCircle} title="Say hello 👋" text="Messages are delivered instantly on the web and the Android app." />
@@ -583,15 +625,8 @@ function Thread({ id, me, presence, typingUsers }) {
                 group={d.group}
                 showAuthor={showAuthor}
                 readState={mine ? readStateOf(m) : null}
-                onReply={(target) => {
-                  setEditingMessage(null);
-                  setReplyTo(target);
-                }}
-                onEdit={(target) => {
-                  setReplyTo(null);
-                  setEditingMessage(target);
-                  setText(target.body);
-                }}
+                onReply={onReply}
+                onEdit={onEdit}
               />
             </div>
           );

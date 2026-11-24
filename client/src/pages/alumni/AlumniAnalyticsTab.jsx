@@ -327,7 +327,7 @@ export default function AlumniAnalyticsTab() {
               {mentorship.topMentors.map((m, i) => (
                 <div
                   key={i}
-                  className="flex items-center justify-between p-3 rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-white/10 dark:bg-white/5"
+                  className="flex items-center justify-between p-3 rounded-2xl border border-slate-200/80 bg-white shadow-xs dark:border-white/10 dark:bg-white/5"
                 >
                   <div>
                     <p className="font-bold text-xs text-ink">{m.name}</p>

@@ -35,6 +35,7 @@ import {
   Users,
   UsersRound,
   Wallet,
+  Wrench,
 } from 'lucide-react';
 import { COE, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TIMETABLE_ROLES, TRANSPORT, TRANSPORT_VIEW, TRIP_SHARERS } from '../../utils/constants.js';
 import { grantedPages } from '../../utils/delegation.js';
@@ -138,15 +139,15 @@ const TRANSPORT_MAIN = [
 
 const ALUMNI_CAMPUS = [{ to: '/chat', label: 'Chat', icon: MessageCircle, badge: 'chat' }];
 
-// Super Admin: its console only. The Emergency Control page is deliberately
-// absent from every menu.
+// IT support: its console only. The Emergency Control page is deliberately
+// absent from every menu, and so are the read-only Attendance, Gate passes and
+// Hostel views: they stay open by typing their address (/attendance,
+// /gate-pass, /hostel — allowed for this role in App.jsx CONFINED).
 const SUPER_ADMIN_MAIN = [
-  { to: '/super-admin', label: 'Super Admin', icon: Crown, end: true },
-  { to: '/super-admin/soc', label: 'Security Ops', icon: ShieldAlert },
+  { to: '/console', label: 'IT support', icon: Crown, end: true },
+  { to: '/console/soc', label: 'Security Ops', icon: ShieldAlert },
+  { to: '/console/troubleshooting', label: 'Troubleshooting', icon: Wrench },
   { to: '/admin/users', label: 'Users', icon: UserCog },
-  { to: '/attendance', label: 'Attendance (view)', icon: ClipboardCheck },
-  { to: '/gate-pass', label: 'Gate passes (view)', icon: DoorOpen },
-  { to: '/hostel', label: 'Hostel (view)', icon: BedDouble },
   { to: '/notifications', label: 'Notifications', icon: Bell },
 ];
 

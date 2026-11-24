@@ -23,7 +23,7 @@ const sessionSchema = new Schema(
     // sign-in from the bound client type and the role; used by the sweeper.
     idleTimeoutMs: { type: Number, default: null },
     expiresAt: { type: Date, required: true },
-    // Last successful password re-entry on this session. Super Admin sensitive
+    // Last successful password re-entry on this session. IT support sensitive
     // actions require it to be recent (middleware/reauth.js).
     reauthAt: Date,
     revokedAt: Date,

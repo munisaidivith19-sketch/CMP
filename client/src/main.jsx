@@ -8,7 +8,7 @@ import { api } from './services/api';
 import { createErrorReporter, setErrorReporter } from './services/errorReporter';
 import './index.css';
 
-// Report uncaught errors to the Super Admin SOC (signed-in users only).
+// Report uncaught errors to IT support SOC (signed-in users only).
 const reporter = createErrorReporter({
   send: (body) => store.dispatch(api.endpoints.reportClientError.initiate(body)).unwrap(),
   isSignedIn: () => Boolean(store.getState().auth.accessToken),

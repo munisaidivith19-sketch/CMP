@@ -119,7 +119,7 @@ export async function stopTrip(user, tripId, reason = 'completed') {
   const updated = await BusTrip.findOneAndUpdate(
     { _id: trip._id, status: 'active' },
     { $set: { status: reason === 'completed' ? 'completed' : 'stopped', endedAt: new Date(), endedBy: user._id, endReason: String(reason).slice(0, 120) } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (updated) {
     announce(updated);
@@ -141,7 +141,7 @@ export async function sweepTrips(now = Date.now()) {
     const updated = await BusTrip.findOneAndUpdate(
       { _id: t._id, status: 'active' },
       { $set: { status: 'timeout', endedAt: new Date(now), endReason: t.startedAt < tooOld ? 'Maximum trip duration reached' : 'No location received — ended automatically' } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (updated) {
       announce(updated);

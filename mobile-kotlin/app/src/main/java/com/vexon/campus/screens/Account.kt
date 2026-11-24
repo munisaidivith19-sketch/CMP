@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.vexon.campus.core.ParentMobile
 import com.vexon.campus.core.Api
 import com.vexon.campus.core.PasswordRule
 import com.vexon.campus.core.ApiException
@@ -196,7 +197,7 @@ private val TEXT_FIELDS = mapOf(
 /**
  * Roles this admin may create, from /admin/my-policies: a legacy admin (no
  * delegation in the response) keeps every role; a policy-managed admin gets
- * only the roles a Super Admin delegated. The server enforces this anyway.
+ * only the roles IT support delegated. The server enforces this anyway.
  */
 internal fun creatableRoles(myPolicies: JsonElement?, all: Collection<String>): List<String> {
     val delegation = myPolicies["delegation"] ?: return all.toList()
@@ -232,21 +233,32 @@ fun CreateUserScreen() {
     if (creatable.isEmpty()) {
         Screen {
             Header("Create login", back = true)
-            Card(Wide) { EmptyState(title = "No account types delegated", text = "A Super Admin must authorize you to create accounts first.") }
+            Card(Wide) { EmptyState(title = "No account types delegated", text = "IT support must authorize you to create accounts first.") }
         }
         return
     }
 
     val fields = FORMS.getValue(role)
     fun value(k: String) = v[k].orEmpty()
+    val studentForm = role == "student" || role == "club_admin"
+    val mobileKeys = setOf("phone", "parentPhone")
     fun set(k: String, value: String) {
-        v[k] = value
+        v[k] = if (studentForm && k in mobileKeys) ParentMobile.digits10(value) else value
+        if (k in mobileKeys) errors.remove(k)
         // The in-charge semester must belong to the in-charge year (year 3 → 5 or 6).
         if (k == "inChargeYear" && value("inChargeSemester").toIntOrNull() !in semestersOfYear(value.toIntOrNull())) v["inChargeSemester"] = ""
     }
     val missing = fields.filter { k -> k in REQUIRED && if (k == "teachingYears") teachingYears.isEmpty() else value(k).isBlank() }
 
     fun submit() {
+        if (studentForm) {
+            if (!ParentMobile.ok10(value("phone"))) errors["phone"] = "Enter exactly 10 digits"
+            if (value("parentPhone").isEmpty() || !ParentMobile.ok10(value("parentPhone"))) errors["parentPhone"] = "Enter exactly 10 digits"
+            if ("phone" !in errors && "parentPhone" !in errors && ParentMobile.same(value("phone"), value("parentPhone"))) {
+                errors["parentPhone"] = "Cannot be the same as the student mobile number"
+            }
+            if ("phone" in errors || "parentPhone" in errors) return
+        }
         val body = linkedMapOf<String, Any?>("role" to role)
         fields.forEach { k ->
             if (k == "teachingYears") {
@@ -305,7 +317,7 @@ fun CreateUserScreen() {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             creatable.forEach { r -> Chip(ROLE_LABELS[r] ?: r, role == r) { role = r; errors.clear() } }
         }
-        if (creatable.size < FORMS.size) Small("Only the account types delegated to you are shown. Other roles need Super Admin authorization.")
+        if (creatable.size < FORMS.size) Small("Only the account types delegated to you are shown. Other roles need IT support authorization.")
         Card(Wide, gap = 12.dp) {
             fields.forEach { k ->
                 when (k) {
@@ -318,9 +330,13 @@ fun CreateUserScreen() {
                     else -> {
                         val spec = TEXT_FIELDS.getValue(k)
                         val label = if (k == "phone" && role == "student") "Student mobile" else spec.label
+                        val mobile10 = studentForm && k in mobileKeys
                         Input(
                             value(k), { set(k, it) }, label = label + if (k in REQUIRED) " *" else "", error = errors[k],
-                            keyboardType = spec.keyboard, placeholder = spec.placeholder, maxLength = spec.maxLength, hint = spec.hint,
+                            keyboardType = if (mobile10) KeyboardType.Number else spec.keyboard,
+                            placeholder = if (mobile10) "10-digit mobile" else spec.placeholder,
+                            maxLength = if (mobile10) 10 else spec.maxLength,
+                            hint = if (mobile10) (if (k == "parentPhone") "10 digits · gate-pass OTPs go to this number" else "10 digits · different from the parent's number") else spec.hint,
                         )
                     }
                 }

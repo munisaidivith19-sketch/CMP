@@ -136,6 +136,19 @@ object ParentMobile {
         if (d.length == 12 && d.startsWith("91")) d = d.drop(2) else if (d.length == 11 && d.startsWith("0")) d = d.drop(1)
         return Regex("""^[6-9]\d{9}$""").matches(d)
     }
+
+    /** What a mobile field keeps while typing: digits only, at most 10 (a +91 / leading 0 is dropped). */
+    fun digits10(raw: String?): String {
+        var d = (raw ?: "").filter { it.isDigit() }
+        if (d.length > 10 && d.startsWith("91")) d = d.drop(2) else if (d.length > 10 && d.startsWith("0")) d = d.drop(1)
+        return d.take(10)
+    }
+
+    /** Empty, or exactly 10 digits — the rule for student and parent numbers. */
+    fun ok10(v: String?) = v.isNullOrEmpty() || Regex("""^\d{10}$""").matches(v)
+
+    /** The same number written two ways. */
+    fun same(a: String?, b: String?) = last10(a).length == 10 && last10(a) == last10(b)
 }
 
 /** Leave-window text for the Security home lists (Students in / out / Left today). */

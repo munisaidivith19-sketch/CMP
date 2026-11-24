@@ -66,7 +66,7 @@ function Filters({ value, onChange, canPickDepartment, classFilters = false, yea
   };
 
   return (
-    <Card className="flex flex-wrap items-center justify-between gap-4 p-4 border border-white/10 shadow-sm backdrop-blur-md">
+    <Card className="flex flex-wrap items-center justify-between gap-4 p-4 border border-white/10 shadow-xs">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-primary-500" />
@@ -196,7 +196,7 @@ function PrincipalDailySummary() {
   return (
     <div className="space-y-5 animate-fade-in">
       <Filters value={filters} onChange={setFilters} canPickDepartment classFilters yearOnly />
-      <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+      <Card className="p-0 overflow-hidden border border-white/10 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-white/[0.02] p-4">
           <div>
             <h3 className="text-sm font-extrabold">Department-wise attendance</h3>
@@ -335,7 +335,7 @@ function StaffDailySummary() {
         </div>
       ) : null}
 
-      <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+      <Card className="p-0 overflow-hidden border border-white/10 shadow-lg">
         {/* Controls Bar */}
         <div className="flex flex-col gap-3 border-b border-white/10 p-4 md:flex-row md:items-center md:justify-between bg-white/[0.02]">
           <div className="flex flex-wrap items-center gap-3">
@@ -384,7 +384,7 @@ function StaffDailySummary() {
                     className={cn(
                       'flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all',
                       active
-                        ? 'bg-ink/10 text-ink font-bold ring-1 ring-ink/20 shadow-sm dark:bg-white/20 dark:text-white dark:ring-white/30'
+                        ? 'bg-ink/10 text-ink font-bold ring-1 ring-ink/20 shadow-xs dark:bg-white/20 dark:text-white dark:ring-white/30'
                         : 'bg-black/5 text-ink-soft hover:bg-black/10 hover:text-ink dark:bg-white/5 dark:text-ink-soft dark:hover:bg-white/10 dark:hover:text-ink'
                     )}
                   >
@@ -619,7 +619,7 @@ export function FacultyMarking() {
           />
         </Card>
       ) : (
-        <Card className="p-0 overflow-hidden border border-white/10 shadow-lg backdrop-blur-md">
+        <Card className="p-0 overflow-hidden border border-white/10 shadow-lg">
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 p-5 bg-white/[0.02]">
             <div>

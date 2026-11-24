@@ -16,7 +16,7 @@ before(async () => {
     ctx.createUser({ name: 'Rahul Sharma', department: 'CSE', section: 'A', rollNo: 'CSE101' }),
     ctx.createUser({ name: 'Priya Patel', department: 'ECE', section: 'B', rollNo: 'ECE102' }),
     ctx.createUser({ role: 'security', name: 'Campus Security Office' }),
-    ctx.createUser({ role: 'admin', name: 'Super Admin' }),
+    ctx.createUser({ role: 'admin', name: 'IT support' }),
     ctx.createUser({ role: 'hod', name: 'HOD CSE', department: 'CSE' }),
     ctx.createUser({ role: 'faculty', name: 'Prof. Anitha', department: 'CSE' }),
   ]);

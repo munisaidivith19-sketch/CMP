@@ -5,7 +5,7 @@ import { startServer, PASSWORD, sleep } from './helpers.js';
 /**
  * Additional policies for individual staff accounts (faculty, HOD, principal,
  * dean, AO, chairman, office, COE): they ADD admin-module access on top of the
- * role, are assigned by a Super Admin or by an Admin within its own limits, and
+ * role, are assigned by IT support or by an Admin within its own limits, and
  * can never be used to escalate (no role changes, no policy assignment).
  */
 let ctx;
@@ -13,7 +13,7 @@ let sa;
 let n = 0;
 
 const req = (method, path, who, body) => ctx.request(method, path, { token: who?.token, body });
-const reauth = () => req('POST', '/super-admin/reauth', sa, { password: PASSWORD });
+const reauth = () => req('POST', '/console/reauth', sa, { password: PASSWORD });
 const uniq = () => `${Date.now().toString(36)}${(n++).toString(36)}`;
 const settle = () => sleep(150);
 
@@ -27,7 +27,7 @@ const studentBody = (extra = {}) => {
   const id = uniq();
   return { role: 'student', name: `New ${id}`, email: `s.${id}@test.edu`, password: 'Welcome@123', rollNo: `R${id}`.toUpperCase(), department: 'CSE', year: 3, section: 'A', stayType: 'hosteler', parentPhone: '9111111111', ...extra };
 };
-// One password re-entry covers the Super Admin's 5-minute window (re-auth is rate-limited).
+// One password re-entry covers the IT support's 5-minute window (re-auth is rate-limited).
 async function grant(who, target, policies) {
   return req('PUT', `/admin/users/${target.u?._id || target._id}/policies`, who, { policies });
 }
@@ -39,7 +39,7 @@ before(async () => {
 });
 after(async () => ctx.stop());
 
-test('Super Admin adds User Management access to one HOD; the role itself is unchanged', async () => {
+test('IT support adds User Management access to one HOD; the role itself is unchanged', async () => {
   const hod = await staff('hod', { department: 'CSE' });
   const other = await staff('hod', { department: 'ECE' });
   await kid();
@@ -84,7 +84,7 @@ test('only safe modules and actions can be given to staff; never delegating powe
   assert.equal((await grant(sa, s, [{ module: 'security_logs', actions: ['view'] }])).status, 404);
   const guard = await staff('security');
   assert.equal((await grant(sa, guard, [{ module: 'security_logs', actions: ['view'] }])).status, 404);
-  // Super Admin changes need a recent password re-entry.
+  // IT support changes need a recent password re-entry.
   await ctx.models.Session.updateMany({ user: sa.u._id }, { $unset: { reauthAt: 1 } });
   const noReauth = await req('PUT', `/admin/users/${fac.u._id}/policies`, sa, { policies: [] });
   assert.equal(noReauth.status, 403);
@@ -132,7 +132,7 @@ test('a staff grant can never escalate: no role changes, deletes, suspensions or
   assert.equal((await req('DELETE', `/admin/users/${s._id}`, hod)).status, 403);
   assert.equal((await req('PUT', `/admin/users/${other.u._id}/policies`, hod, { policies: [{ module: 'user_management', actions: ['view'] }] })).status, 403);
   assert.equal((await req('PUT', `/admin/users/${hod.u._id}/policies`, hod, { policies: [{ module: 'security_logs', actions: ['view'] }] })).status, 403, 'not even its own');
-  assert.equal((await req('GET', '/super-admin/admins', hod)).status, 403);
+  assert.equal((await req('GET', '/console/admins', hod)).status, 403);
   assert.equal((await req('GET', '/admin/policy-targets', hod)).status, 403);
   assert.equal((await ctx.models.User.findById(s._id).lean()).role, 'student');
 });
@@ -155,7 +155,7 @@ test('Admins assign staff policies only within their own authority', async () =>
   assert.equal((await put(facCse, [{ module: 'user_management', actions: ['create', 'view'] }])).status, 200, 'can create every ordinary role itself');
 
   // Once its create roles are limited, it can no longer hand out account creation.
-  assert.equal((await req('PUT', `/super-admin/admins/${admin.u._id}/delegation`, sa, { delegation: { createRoles: ['student'] } })).status, 200);
+  assert.equal((await req('PUT', `/console/admins/${admin.u._id}/delegation`, sa, { delegation: { createRoles: ['student'] } })).status, 200);
   assert.equal((await put(facCse, [{ module: 'user_management', actions: ['view'] }])).status, 200, 'revoking is fine');
   assert.equal((await put(facCse, [{ module: 'user_management', actions: ['create', 'view'] }])).status, 403);
 

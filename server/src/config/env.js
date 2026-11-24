@@ -49,6 +49,13 @@ export const env = {
   refreshSecret: secret('JWT_REFRESH_SECRET', 'dev_refresh_secret_do_not_use_in_production'),
   // Encrypts chat message bodies at rest. Changing it makes older messages unreadable.
   chatKey: secret('CHAT_ENCRYPTION_KEY', 'dev_chat_key_do_not_use_in_production'),
+  // Earlier chat keys, comma-separated: still used to READ messages saved with
+  // them (new messages always use CHAT_ENCRYPTION_KEY). Lets two servers that
+  // once had different keys, or a key rotation, keep every message readable.
+  chatOldKeys: (process.env.CHAT_ENCRYPTION_KEYS_OLD || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter((k) => k && !k.startsWith('replace_with')),
   // Public student sign-up (POST /auth/register). Off: accounts are created by
   // the administrator, who also sets the student's class and parent number.
   allowSelfSignup: process.env.ALLOW_SELF_SIGNUP === 'true',
@@ -68,6 +75,16 @@ export const env = {
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || 'CampusConnect <no-reply@campus.local>',
+  },
+  // Where the IT support account works (utils/consoleNetwork.js): addresses or
+  // CIDR ranges, comma-separated. Default: the server itself only.
+  consoleAllowedNetworks: (process.env.CONSOLE_ALLOWED_NETWORKS || '127.0.0.1,::1').split(',').map((s) => s.trim()).filter(Boolean),
+  // Security alert emails through Resend (services/securityAlerts.js): IT support
+  // sign-ins, failed sign-ins, Admin account creation, recovery and Emergency Control.
+  securityAlerts: {
+    apiKey: process.env.RESEND_API_KEY || '',
+    from: process.env.SECURITY_ALERT_FROM || 'J.N.N Security <tech@jnn.edu.in>',
+    to: (process.env.SECURITY_ALERT_TO || '').split(',').map((s) => s.trim()).filter(Boolean),
   },
   // Optional: Expo push access token (only needed if "enhanced push security" is on).
   expoAccessToken: process.env.EXPO_ACCESS_TOKEN || '',

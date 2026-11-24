@@ -58,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -358,14 +359,16 @@ fun Input(
     imeAction: ImeAction = if (multiline) ImeAction.Default else ImeAction.Done,
     onSubmit: (() -> Unit)? = null,
     minLines: Int = if (multiline) 3 else 1,
+    labelColor: Color = Color.Unspecified,
+    placeholderColor: Color? = null,
 ) {
     Column(modifier) {
-        if (label != null) Label(label, Modifier.padding(bottom = 6.dp))
+        if (label != null) Label(label, Modifier.padding(bottom = 6.dp), labelColor)
         OutlinedTextField(
             value = value,
             onValueChange = { v -> onValueChange(if (maxLength != null) v.take(maxLength) else v) },
             modifier = Modifier.fillMaxWidth().then(if (multiline) Modifier.heightIn(min = 90.dp) else Modifier),
-            placeholder = placeholder?.let { { Text(it, color = C.muted, fontFamily = Jakarta, fontSize = 14.sp) } },
+            placeholder = placeholder?.let { { Text(it, color = placeholderColor ?: C.muted, fontFamily = Jakarta, fontSize = 14.sp) } },
             textStyle = TextStyle(fontFamily = Jakarta, fontSize = 14.sp, color = C.ink),
             singleLine = !multiline,
             minLines = minLines,
@@ -387,8 +390,8 @@ fun Input(
                 unfocusedContainerColor = C.glass(0.92f),
                 disabledContainerColor = C.glass(0.6f),
                 errorContainerColor = C.glass(0.92f),
-                focusedPlaceholderColor = C.muted,
-                unfocusedPlaceholderColor = C.muted,
+                focusedPlaceholderColor = placeholderColor ?: C.muted,
+                unfocusedPlaceholderColor = placeholderColor ?: C.muted,
                 focusedTrailingIconColor = C.soft,
                 unfocusedTrailingIconColor = C.soft,
                 selectionColors = TextSelectionColors(handleColor = C.primary, backgroundColor = C.primary.copy(alpha = 0.3f)),
@@ -533,7 +536,12 @@ fun Avatar(user: JsonElement? = null, name: String? = null, uri: String? = null,
 @Composable
 fun IconTile(icon: ImageVector, gradient: List<Color> = Grad.primary, size: Dp = 44.dp) {
     val shape = RoundedCornerShape(size * 0.36f)
-    Box(Modifier.size(size).clip(shape).background(Brush.linearGradient(gradient)).border(1.dp, Glass.shine, shape), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.size(size).clip(shape).background(Brush.linearGradient(gradient))
+            .drawBehind { drawRect(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f), Color.Transparent), endY = this.size.height * 0.55f)) }
+            .border(1.dp, Glass.shine, shape),
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(icon, null, Modifier.size(size * 0.45f), tint = Color.White)
     }
 }

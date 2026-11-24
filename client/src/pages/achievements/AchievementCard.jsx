@@ -50,6 +50,8 @@ export default function AchievementCard({ achievement: a, compact = false }) {
             <img
               src={cover}
               alt={a.title}
+              loading="lazy"
+              decoding="async"
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-smooth group-hover:scale-105"
             />
           ) : (
@@ -61,11 +63,11 @@ export default function AchievementCard({ achievement: a, compact = false }) {
 
           {/* Badges on banner */}
           <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[11px] font-bold text-ink shadow dark:bg-slate-900/90 dark:text-primary-100">
+            <span className="inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-0.5 text-[11px] font-bold text-ink shadow-sm dark:bg-slate-900/90 dark:text-primary-100">
               <Award className="h-3 w-3 text-amber-500" />
               {positionLabel}
             </span>
-            <Badge color={levelColor} onDark className="shadow-sm">
+            <Badge color={levelColor} onDark className="shadow-xs">
               {levelLabel}
             </Badge>
           </div>

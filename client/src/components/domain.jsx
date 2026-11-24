@@ -83,12 +83,12 @@ export function EventCard({ event, delay = 0 }) {
           ) : (
             <div className="absolute inset-0 opacity-30 [background:radial-gradient(circle_at_20%_20%,white_0,transparent_40%),radial-gradient(circle_at_80%_70%,white_0,transparent_35%)]" />
           )}
-          <div className="glass-strong absolute left-3 top-3 flex h-14 w-14 flex-col items-center justify-center rounded-2xl text-center">
+          <div className="glass-strong absolute left-3 top-3 flex h-14 w-14 backdrop-blur-none flex-col items-center justify-center rounded-2xl text-center">
             <span className="text-[10px] font-bold uppercase text-primary-700 dark:text-primary-300">{format(start, 'MMM')}</span>
             <span className="text-xl font-extrabold leading-none">{format(start, 'dd')}</span>
           </div>
           {event.isFeatured && (
-            <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold text-amber-800 shadow dark:bg-slate-900/90 dark:text-amber-300">
+            <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold text-amber-800 shadow-sm dark:bg-slate-900/90 dark:text-amber-300">
               <Star className="h-3 w-3 fill-amber-500 text-amber-500 dark:fill-amber-400 dark:text-amber-400" /> Featured
             </span>
           )}
@@ -142,7 +142,7 @@ export function ClubCard({ club, delay = 0 }) {
     <Link to={`/clubs/${club.slug}`} className="group block animate-fade-up" style={{ animationDelay: `${delay}ms` }}>
       <Card hover className="h-full overflow-hidden p-0">
         <div className={cn('relative h-24 bg-gradient-to-br', style.grad)}>
-          {club.coverImage && <img src={club.coverImage} alt="" className="h-full w-full object-cover" />}
+          {club.coverImage && <img src={club.coverImage} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}
         </div>
         <div className="relative px-5 pb-5">
           <Avatar name={club.name} src={club.logo} size="lg" ring className="-mt-8" />
@@ -201,7 +201,7 @@ export function AnnouncementItem({ a, compact, actions, onOpen }) {
       onKeyDown={open ? (e) => e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open()) : undefined}
       className={cn(
         'relative flex gap-4 overflow-hidden rounded-3xl bg-white/50 p-4 transition-all duration-300 hover:bg-white/80 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]',
-        open && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400'
+        open && 'cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-400'
       )}
     >
       <span className={cn('absolute inset-y-3 left-0 w-1 rounded-r-full bg-gradient-to-b', p.bar)} />

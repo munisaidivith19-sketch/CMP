@@ -56,8 +56,8 @@ export const environmentName = () => (process.env.SOC_ENVIRONMENT || process.env
 
 // Path prefix (below /api) → module, for the modules that exist in routes/.
 const MODULES = [
-  [/^\/super-admin\/soc(\/|$)/, 'soc'],
-  [/^\/super-admin(\/|$)/, 'super_admin'],
+  [/^\/console\/soc(\/|$)/, 'soc'],
+  [/^\/console(\/|$)/, 'super_admin'],
   [/^\/client-errors$/, 'soc'],
   [/^\/auth(\/|$)/, 'authentication'],
   [/^\/attendance\/(faculty|staff)/, 'staff_attendance'],
@@ -243,7 +243,7 @@ export function captureError(o = {}) {
       $push: { correlationIds: push },
       $addToSet: { ...(actorRole ? { actorRoles: actorRole } : {}), clients: client },
     };
-    const write = () => ErrorEvent.findOneAndUpdate({ fingerprint }, update, { upsert: true, new: true, projection: { status: 1, resolvedAt: 1 } });
+    const write = () => ErrorEvent.findOneAndUpdate({ fingerprint }, update, { upsert: true, returnDocument: 'after', projection: { status: 1, resolvedAt: 1 } });
     // Two processes inserting the same new fingerprint at once: the loser retries as an update.
     write()
       .catch((e) => (e?.code === 11000 ? write() : Promise.reject(e)))

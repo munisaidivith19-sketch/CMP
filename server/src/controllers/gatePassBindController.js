@@ -196,7 +196,7 @@ export const bindGatePass = asyncHandler(async (req, res) => {
     const claimed = await GatePassBindGroup.findOneAndUpdate(
       { _id: group._id, status: 'open', department: { $in: [null, ''] } },
       { $set: { department: cls.department, year: cls.year, section: cls.section, ...(cls.semester != null ? { semester: cls.semester } : {}) } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!claimed) {
       const fresh = await loadGroup(group._id);
@@ -209,7 +209,7 @@ export const bindGatePass = asyncHandler(async (req, res) => {
   const updated = await GatePass.findOneAndUpdate(
     { _id: pass._id, status: 'parent_verified', bindGroup: null },
     { $set: { bindGroup: group._id } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'This request changed just now — refresh and try again');
   // The group may have been sent between the checks above and the bind.
@@ -231,7 +231,7 @@ export const unbindGatePass = asyncHandler(async (req, res) => {
   if (!(isAdmin(req.user) || sameId(group.createdBy, req.user))) throw new ApiError(403, 'Only the faculty who created the group can change it');
   if (group.status !== 'open') throw new ApiError(422, 'The group has already been sent — the HOD or principal can reject single students instead');
   // Only a request still waiting with the faculty — never one the group already carried on.
-  const updated = await GatePass.findOneAndUpdate({ _id: pass._id, bindGroup: group._id, status: { $in: ['pending_faculty', 'parent_verified'] } }, { $unset: { bindGroup: 1 } }, { new: true });
+  const updated = await GatePass.findOneAndUpdate({ _id: pass._id, bindGroup: group._id, status: { $in: ['pending_faculty', 'parent_verified'] } }, { $unset: { bindGroup: 1 } }, { returnDocument: 'after' });
   if (!updated) throw new ApiError(409, 'This request changed just now — refresh and try again');
   // An empty group forgets its class so it can be reused for another one.
   if (!(await GatePass.exists({ bindGroup: group._id }))) {
@@ -255,7 +255,7 @@ export const submitBindGroup = asyncHandler(async (req, res) => {
   const sent = await GatePassBindGroup.findOneAndUpdate(
     { _id: group._id, status: 'open' },
     { $set: { status: 'pending_hod', sentToHodAt: now } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!sent) throw new ApiError(422, 'This group was just sent');
 
@@ -307,7 +307,7 @@ async function rejectGroup(req, group, stage) {
   const closed = await GatePassBindGroup.findOneAndUpdate(
     { _id: group._id, status: STAGE_STATUS[stage] },
     { $set: { status: 'rejected', rejectedStage: stage, rejectedReason: reason, [`${stage}Review`]: review } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!closed) throw new ApiError(422, 'This group was just decided by someone else');
   const members = await GatePass.find({ bindGroup: group._id, status: STAGE_STATUS[stage] }).select('student').lean();
@@ -342,7 +342,7 @@ export const hodReviewBindGroup = asyncHandler(async (req, res) => {
     if (!members.length) throw new ApiError(422, 'No students are left in this group — reject it instead');
     const now = new Date();
     const review = { by: req.user._id, at: now, action: 'forwarded', reason: (req.body.reason || '').trim() };
-    const moved = await GatePassBindGroup.findOneAndUpdate({ _id: group._id, status: 'pending_hod' }, { $set: { status: 'pending_principal', hodReview: review } }, { new: true });
+    const moved = await GatePassBindGroup.findOneAndUpdate({ _id: group._id, status: 'pending_hod' }, { $set: { status: 'pending_principal', hodReview: review } }, { returnDocument: 'after' });
     if (!moved) throw new ApiError(422, 'This group was just decided by someone else');
     await GatePass.updateMany({ bindGroup: group._id, status: 'pending_hod' }, { $set: { status: 'pending_principal', hodReview: review } });
     logActivity(req, 'gate_pass.bind_group_hod_forward', { entityType: 'gate_pass_bind_group', entityId: group._id, summary: `${group.name} · ${members.length} student(s)` });
@@ -383,7 +383,7 @@ export const principalReviewBindGroup = asyncHandler(async (req, res) => {
   if (!members.length) throw new ApiError(422, 'No students are left in this group — reject it instead');
   const now = new Date();
   const review = { by: req.user._id, at: now, action: 'approved', reason: (req.body.reason || '').trim() };
-  const approved = await GatePassBindGroup.findOneAndUpdate({ _id: group._id, status: 'pending_principal' }, { $set: { status: 'approved', principalReview: review } }, { new: true });
+  const approved = await GatePassBindGroup.findOneAndUpdate({ _id: group._id, status: 'pending_principal' }, { $set: { status: 'approved', principalReview: review } }, { returnDocument: 'after' });
   if (!approved) throw new ApiError(422, 'This group was just decided by someone else');
 
   // Roll-number order, so a class's codes come out in a predictable order.
@@ -440,7 +440,7 @@ export const rejectBindMember = asyncHandler(async (req, res) => {
   const pass = await GatePass.findOneAndUpdate(
     { _id: req.params.passId, bindGroup: group._id, status: STAGE_STATUS[stage] },
     { $set: { status: 'rejected', rejectedStage: stage, rejectedReason: reason, [`${stage}Review`]: review } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!pass) throw new ApiError(404, 'That student is not waiting in this group');
 

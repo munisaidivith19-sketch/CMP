@@ -60,11 +60,10 @@ const examSchema = new Schema(
   { timestamps: true, toJSON: { versionKey: false } }
 );
 
-examSchema.pre('validate', function checkTimes(next) {
+examSchema.pre('validate', function checkTimes() {
   if (this.startTime && this.endTime && this.endTime <= this.startTime) {
     this.invalidate('endTime', 'End time must be after start time');
   }
-  next();
 });
 
 // Lookups by date (attendance blocking, overlap checks) and by department.

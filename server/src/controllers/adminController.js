@@ -9,7 +9,7 @@ import Session from '../models/Session.js';
 import { disconnectSessions } from '../config/socket.js';
 import { env } from '../config/env.js';
 import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate } from '../utils/http.js';
-import { ADMIN_ASSIGNABLE_ROLES, ROLES, SUPER_ADMIN_ROLE, normalizePhoneDigits, yearOfSemester } from '../constants.js';
+import { ADMIN_ASSIGNABLE_ROLES, ROLES, SUPER_ADMIN_ROLE, normalizePhoneDigits, studentMobileProblem, toMobile10, yearOfSemester } from '../constants.js';
 import { adminAllows, isPolicyManaged, moduleForRole, userListScope, withinRoleLimit } from '../policies.js';
 import { logAudit } from '../utils/auditLog.js';
 import { auditCreationPolicies, validateCreationPolicies } from '../services/adminPolicies.js';
@@ -203,7 +203,7 @@ export const listUsers = asyncHandler(async (req, res) => {
   if (role) filter.role = role;
   if (status === 'active') filter.isActive = true;
   if (status === 'suspended') filter.isActive = false;
-  // Super Admin accounts never appear here; policy-managed admins see only the
+  // IT support accounts never appear here; policy-managed admins see only the
   // account types and departments their policies cover (applied before paging).
   filter.$and = [userListScope(req.user, 'view')];
 
@@ -251,19 +251,19 @@ const CREATE_FIELDS = {
 function requirePolicy(req, module, action, department, target) {
   if (module && adminAllows(req.user, module, action, department)) return;
   logSecurity(req, 'POLICY_DENIED', { success: false, target, reason: module ? `${module}.${action}` : 'admin_account_target', entityType: 'user', entityId: target?._id });
-  throw new ApiError(403, module ? 'Your administrator policies do not include this action' : 'Admin accounts are managed by a Super Admin');
+  throw new ApiError(403, module ? 'Your administrator policies do not include this action' : 'Admin accounts are managed by IT support');
 }
 
 /**
  * Refuse (and record in the protected audit trail) a role outside the
- * delegation limit a Super Admin set for this admin (policies.js → withinRoleLimit).
+ * delegation limit IT support set for this admin (policies.js → withinRoleLimit).
  */
 function requireRoleLimit(req, kind, role, target) {
   if (withinRoleLimit(req.user, kind, role)) return;
   const reason = `role_${kind}_outside_delegation`;
   logAudit(req, 'PRIVILEGE_ESCALATION_BLOCKED', { outcome: 'denied', target, reason, details: { role } });
   logSecurity(req, 'POLICY_DENIED', { success: false, target, reason, entityType: 'user', entityId: target?._id });
-  throw new ApiError(403, `You are not authorized to ${kind} ${role} accounts. Ask a Super Admin to add this role to your delegation.`, undefined, { code: 'DELEGATION_EXCEEDED' });
+  throw new ApiError(403, `You are not authorized to ${kind} ${role} accounts. Ask IT support to add this role to your delegation.`, undefined, { code: 'DELEGATION_EXCEEDED' });
 }
 
 export const createUser = asyncHandler(async (req, res) => {
@@ -344,7 +344,7 @@ export const updateUser = asyncHandler(async (req, res) => {
 
   const { role, isActive, unlock, unlockAccount } = req.body;
 
-  // Admin and Super Admin accounts are managed only by a Super Admin, and no
+  // Admin and IT support accounts are managed only by IT support, and no
   // one can be promoted to either here (also enforced by the route validator).
   const targetModule = moduleForRole(user.role);
   if (!targetModule) requirePolicy(req, null, null, null, user);
@@ -394,16 +394,21 @@ export const updateUser = asyncHandler(async (req, res) => {
     }
   }
 
-  // Student vs Parent mobile number uniqueness check
-  const effPhone = req.body.phone !== undefined ? req.body.phone : user.phone;
-  const effParentPhone = req.body.parentPhone !== undefined ? req.body.parentPhone : user.parentPhone;
-  if (effPhone && effParentPhone) {
-    const p1 = normalizePhoneDigits(effPhone);
-    const p2 = normalizePhoneDigits(effParentPhone);
-    if (p1 && p2 && p1 === p2) {
-      throw new ApiError(422, 'Student mobile number and parent mobile number cannot be the same');
+  // Student accounts: each number exactly 10 digits (stored bare) and the two
+  // never the same. Only numbers being changed are format-checked, so an older
+  // record is not blocked from unrelated edits.
+  const effRole = role !== undefined ? role : user.role;
+  if (['student', 'club_admin'].includes(effRole)) {
+    for (const key of ['phone', 'parentPhone']) {
+      if (typeof req.body[key] === 'string' && req.body[key].trim()) req.body[key] = toMobile10(req.body[key]);
     }
   }
+  const effPhone = req.body.phone !== undefined ? req.body.phone : user.phone;
+  const effParentPhone = req.body.parentPhone !== undefined ? req.body.parentPhone : user.parentPhone;
+  const mobileProblem = ['student', 'club_admin'].includes(effRole)
+    ? studentMobileProblem({ phone: effPhone, parentPhone: effParentPhone, checkPhone: req.body.phone !== undefined, checkParent: req.body.parentPhone !== undefined })
+    : studentMobileProblem({ phone: effPhone, parentPhone: effParentPhone, checkPhone: false, checkParent: false });
+  if (mobileProblem) throw new ApiError(422, mobileProblem);
 
   // Manual admin unlock override
   if (unlock || unlockAccount) {
@@ -512,7 +517,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
   }
   const user = await User.findById(req.params.id);
   if (!user) throw new ApiError(404, 'User not found');
-  // Admin / Super Admin accounts: Super Admin only (deactivate, never delete).
+  // Admin / IT support accounts: IT support only (deactivate, never delete).
   if (!moduleForRole(user.role)) requirePolicy(req, null, null, null, user);
   requirePolicy(req, moduleForRole(user.role), 'delete', user.department, user);
 
@@ -548,7 +553,7 @@ export const listActivity = asyncHandler(async (req, res) => {
   const { page, limit, skip } = paginate(req, 25, 100);
   const filter = {};
   if (req.query.action) filter.action = new RegExp(`^${escapeRegex(req.query.action)}`);
-  // Super Admin activity stays out of the routine view (it is in the protected audit trail).
+  // IT support activity stays out of the routine view (it is in the protected audit trail).
   const supers = await User.find({ role: SUPER_ADMIN_ROLE }).distinct('_id');
   filter.user = req.query.user ? { $eq: req.query.user, $nin: supers } : { $nin: supers };
   const [items, total] = await Promise.all([

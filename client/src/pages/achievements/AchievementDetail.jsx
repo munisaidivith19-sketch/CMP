@@ -194,11 +194,11 @@ export default function AchievementDetail() {
 
           <div className="relative z-10 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <CategoryBadge category={a.category} onDark className="shadow-sm" />
-              <Badge color={levelColor} onDark className="shadow-sm">
+              <CategoryBadge category={a.category} onDark className="shadow-xs" />
+              <Badge color={levelColor} onDark className="shadow-xs">
                 {levelLabel} Level
               </Badge>
-              <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-ink shadow dark:bg-slate-900/90 dark:text-primary-100">
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-ink shadow-sm dark:bg-slate-900/90 dark:text-primary-100">
                 <Award className="h-3.5 w-3.5 text-amber-500" />
                 {positionLabel}
               </span>
@@ -226,7 +226,7 @@ export default function AchievementDetail() {
               {a.eventName && <span>• {a.eventName}</span>}
               {a.organizer && <span>• Organized by {a.organizer}</span>}
               {a.departments?.length > 0 && (
-                <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] backdrop-blur">
+                <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] backdrop-blur-sm">
                   {a.departments.join(', ')}
                 </span>
               )}
@@ -249,7 +249,7 @@ export default function AchievementDetail() {
                     : 'border-transparent opacity-70 hover:opacity-100'
                 )}
               >
-                <img src={img.url} alt="" className="h-full w-full object-cover" />
+                <img src={img.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
               </button>
             ))}
           </div>

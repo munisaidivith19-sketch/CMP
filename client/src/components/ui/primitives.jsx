@@ -236,7 +236,7 @@ export function StatCard({ icon: Icon, label, value, hint, gradient = 'from-prim
       onClick={onClick}
       className={cn(
         'group relative overflow-hidden animate-fade-up text-left w-full',
-        onClick && 'cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 transition-transform active:scale-[0.98]',
+        onClick && 'cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary-500 transition-transform active:scale-[0.98]',
         className
       )}
       style={{ animationDelay: `${delay}ms` }}
@@ -325,11 +325,12 @@ export function FullImage({ src, alt = '', className, imgClassName, fit }) {
   if (!src) return null;
   return (
     <div className={cn('relative overflow-hidden bg-black/5 dark:bg-white/5', className)}>
-      <img src={src} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />
+      <img src={src} alt="" aria-hidden="true" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />
       <img
         src={src}
         alt={alt}
         loading="lazy"
+        decoding="async"
         className={cn('relative mx-auto block object-contain', fit ? 'h-full w-full' : 'h-auto max-h-[inherit] w-auto max-w-full', imgClassName)}
       />
     </div>

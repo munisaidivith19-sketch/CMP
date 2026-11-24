@@ -383,7 +383,7 @@ export const api = createApi({
     // Admin → Security & Logs (admin only on the server).
     getSecuritySummary: b.query({ query: () => '/admin/security/summary', providesTags: ['Security'], keepUnusedDataFor: 0 }),
     getSecurityLogs: b.query({ query: (params) => ({ url: '/admin/security/logs', params }), providesTags: ['Security'], keepUnusedDataFor: 0 }),
-    getSecurityOtps: b.query({ query: (params) => ({ url: '/super-admin/security/otps', params }), keepUnusedDataFor: 0 }), // Super Admin only
+    getSecurityOtps: b.query({ query: (params) => ({ url: '/console/security/otps', params }), keepUnusedDataFor: 0 }), // IT support only
 
     // ── Admin → Role Assignments & Class In-Charge Handover / Swap ──
     getRoleAssignmentsOverview: b.query({
@@ -431,7 +431,11 @@ export const api = createApi({
       providesTags: (_r, _e, { id }) => [{ type: 'ChatMessages', id }],
     }),
     sendMessage: b.mutation({ query: ({ id, ...body }) => ({ url: `/chat/conversations/${id}/messages`, method: 'POST', body }) }),
-    editMessage: b.mutation({ query: ({ id, msgId, body }) => ({ url: `/chat/conversations/${id}/messages/${msgId}`, method: 'PATCH', body: { body } }) }),
+    // `body` (plain) or `e2e` (end-to-end encrypted envelope, services/e2e.js).
+    editMessage: b.mutation({ query: ({ id, msgId, ...body }) => ({ url: `/chat/conversations/${id}/messages/${msgId}`, method: 'PATCH', body }) }),
+    // End-to-end encryption (docs/chat-e2e.md).
+    registerChatDevice: b.mutation({ query: (body) => ({ url: '/chat/e2e/devices', method: 'POST', body }) }),
+    getChatKeys: b.query({ query: (id) => `/chat/conversations/${id}/e2e-keys`, keepUnusedDataFor: 30 }),
     deleteMessage: b.mutation({ query: ({ id, msgId }) => ({ url: `/chat/conversations/${id}/messages/${msgId}`, method: 'DELETE' }) }),
     markConversationRead: b.mutation({ query: (id) => ({ url: `/chat/conversations/${id}/read`, method: 'PATCH' }), invalidatesTags: ['Chat'] }),
     searchMessages: b.query({ query: (q) => ({ url: '/chat/search', params: { q } }) }),
@@ -1134,6 +1138,8 @@ export const {
   useLazyGetMessagesQuery,
   useSendMessageMutation,
   useEditMessageMutation,
+  useGetChatKeysQuery,
+  useRegisterChatDeviceMutation,
   useDeleteMessageMutation,
   useMarkConversationReadMutation,
   useSearchMessagesQuery,

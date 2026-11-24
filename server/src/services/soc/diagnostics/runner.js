@@ -13,7 +13,7 @@ import './library.js';
  *  - only registered, read-only tests run (validated here, not just in the route);
  *  - each run has a hard timeout (the test's timeoutMs, max 30 s) → TIMED_OUT;
  *  - at most MAX_CONCURRENT runs at once in this process, MAX_PER_USER per
- *    Super Admin, and one run of the same test for the same error at a time;
+ *    IT support, and one run of the same test for the same error at a time;
  *  - a run can be cancelled; the test receives an AbortSignal;
  *  - any exception inside a test becomes INCONCLUSIVE with the (redacted)
  *    error message — never PASS.
@@ -85,7 +85,7 @@ async function execute(runId, test, errorEvent, controller) {
       }, test.timeoutMs);
     });
     const cancelled = new Promise((resolve) => {
-      controller.signal.addEventListener('abort', () => !timedOut && resolve({ status: 'CANCELLED', checked: test.name, observed: 'Cancelled before it finished.', reason: 'Cancelled by a Super Admin; no conclusion.' }), { once: true });
+      controller.signal.addEventListener('abort', () => !timedOut && resolve({ status: 'CANCELLED', checked: test.name, observed: 'Cancelled before it finished.', reason: 'Cancelled by IT support; no conclusion.' }), { once: true });
     });
     const work = Promise.resolve()
       .then(() => test.run({ signal: controller.signal, errorEvent }))
@@ -115,7 +115,7 @@ async function execute(runId, test, errorEvent, controller) {
       finishedAt,
       durationMs: finishedAt - startedAt,
     };
-    return await DiagnosticRun.findOneAndUpdate({ _id: runId }, { $set: update }, { new: true, lean: true });
+    return await DiagnosticRun.findOneAndUpdate({ _id: runId }, { $set: update }, { returnDocument: 'after', lean: true });
   } catch (err) {
     // Storage failure: record if possible; nothing pretends the test passed.
     if (mongoose.connection.readyState === 1) {
@@ -131,8 +131,8 @@ async function execute(runId, test, errorEvent, controller) {
 export async function cancelRun(runId, user) {
   const run = await DiagnosticRun.findOneAndUpdate(
     { _id: runId, status: { $in: ['QUEUED', 'RUNNING'] } },
-    { $set: { status: 'CANCELLED', cancelledBy: user._id, finishedAt: new Date(), observed: 'Cancelled before it finished.', reason: 'Cancelled by a Super Admin; no conclusion.' } },
-    { new: true, lean: true }
+    { $set: { status: 'CANCELLED', cancelledBy: user._id, finishedAt: new Date(), observed: 'Cancelled before it finished.', reason: 'Cancelled by IT support; no conclusion.' } },
+    { returnDocument: 'after', lean: true }
   );
   active.get(String(runId))?.controller.abort();
   return run;

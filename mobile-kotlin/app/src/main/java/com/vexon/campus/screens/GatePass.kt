@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.QrCode
 import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Shield
@@ -165,7 +166,7 @@ private fun statusLabel(s: String?, pass: JsonElement?): String =
 private fun regardingLabel(r: String?) = GATE_PASS_REGARDING[r] ?: Fmt.titleCase(r)
 /** A day scholar's same-day Outing (no destination, no return step). */
 fun isOuting(p: JsonElement?) = p["dayScholarOuting"].bool
-private fun passTitle(p: JsonElement?) = when {
+internal fun passTitle(p: JsonElement?) = when {
     isEmergency(p) -> "Emergency gate pass"
     isOuting(p) -> "Outing · ${p["subject"].str ?: ""}"
     else -> regardingLabel(p["regarding"].str)
@@ -303,11 +304,14 @@ fun GatePassScreen() {
 private fun StudentGatePasses() {
     val requestLabel = if (me()["stayType"].str == "day_scholar") "Request outing" else "Request gate pass"
     val q = Api.gatePasses(mapOf("limit" to 20))
+    // The open pass is fetched by status: the list is sorted by status name, so with a
+    // long history it can fall outside the first page.
+    val openQ = Api.gatePasses(mapOf("limit" to 1, "status" to OPEN.joinToString(",")))
     val cancel = rememberMutation()
     val passes = q.data["passes"].list
-    val current = passes.firstOrNull { it["status"].str in OPEN }
+    val current = openQ.data["passes"].list.firstOrNull() ?: passes.firstOrNull { it["status"].str in OPEN }
 
-    Screen(refreshing = q.isFetching && !q.isLoading, onRefresh = { q.refetch() }) {
+    Screen(refreshing = q.isFetching && !q.isLoading, onRefresh = { q.refetch(); openQ.refetch() }) {
         Header("Gate pass", "Leave campus with an approved pass.", back = true, right = if (current == null) ({
             Button("Request", { Nav.push("/gate-pass/new") }, icon = Icons.Rounded.Add, small = true)
         }) else null)
@@ -358,7 +362,7 @@ private fun StudentGatePasses() {
                             action = { Button(requestLabel, { Nav.push("/gate-pass/new") }, icon = Icons.Rounded.Add) })
                     }
                 }
-                val history = passes.filter { it !== current }
+                val history = passes.filter { current == null || it.id != current.id }
                 if (history.isNotEmpty()) SectionTitle("History")
                 history.forEach { p ->
                     Card(Wide, onClick = { Nav.push("/gate-pass/${p.id}") }, gap = 4.dp) {
@@ -1098,6 +1102,8 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
     // The number the OTP goes to: the registered parent mobile unless the faculty edits it.
     var mobile by remember { mutableStateOf<String?>(null) }
     var reason by remember { mutableStateOf("") }
+    // Parent not answering: switch to a temporary number while an OTP is still live.
+    var changing by remember { mutableStateOf(false) }
 
     val state = sent ?: q.data
     val registered = q.data["parentMobile"].text ?: pass["parentPhone"].str.orEmpty()
@@ -1114,6 +1120,7 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
         if (edited && reason.trim().length < 3) { problem = "Say why the OTP is going to a different number (e.g. parent not reachable)"; return }
         send.launch(onError = { Dialogs.alert("Could not send OTP", errMsg(it)); q.refetch() }) {
             sent = if (edited) Api.requestParentOtp(id, typedMobile.trim(), reason.trim()) else Api.requestParentOtp(id)
+            changing = false
             otp = ""
             problem = ""
         }
@@ -1153,7 +1160,7 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
         when {
             q.data == null && q.error != null && sent == null -> Small(errMsg(q.error), color = C.danger)
             q.data == null && sent == null -> Loading()
-            live -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            live && !changing -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Small(
                     if (state["alternateMobile"].bool) "OTP sent to the alternate number ${state["maskedMobile"].str.orEmpty()}."
                     else "OTP sent to the registered parent mobile number.",
@@ -1167,12 +1174,20 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
                 Button(if (resendIn > 0) "Resend OTP in ${resendIn}s" else "Resend OTP", ::sendOtp, Wide, variant = Variant.Outline, icon = Icons.Rounded.Refresh, enabled = resendIn <= 0, loading = send.isLoading)
                 val attempts = state["attemptsLeft"].int ?: 0
                 Small("${mmss(expiresIn)} remaining · $attempts attempt${if (attempts == 1) "" else "s"} left", color = C.muted)
+                Button(
+                    "Parent not answering? Use a temporary number", { changing = true; otp = ""; problem = "" }, Wide,
+                    variant = Variant.Ghost, small = true, icon = Icons.Rounded.Phone,
+                )
             }
             else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Input(
                     typedMobile, { v -> mobile = v.filter { it.isDigit() || it == '+' || it == ' ' || it == '-' }.take(16); problem = "" },
                     label = "Send OTP to", placeholder = "10-digit mobile number", keyboardType = KeyboardType.Phone, maxLength = 16,
-                    hint = if (edited) null else "Registered parent number · edit it if the parent is not reachable",
+                    hint = when {
+                        edited -> null
+                        changing -> "Type the temporary number (another parent or guardian), 10 digits"
+                        else -> "Registered parent number · edit it if the parent is not reachable"
+                    },
                 )
                 if (edited) {
                     Input(
@@ -1188,6 +1203,7 @@ private fun ParentVerification(pass: JsonElement, onVerified: () -> Unit) {
                     if (resendIn > 0) "Send new OTP in ${resendIn}s" else if (status != null && status != "none") "Send new OTP" else "Send OTP",
                     ::sendOtp, Wide, icon = Icons.AutoMirrored.Rounded.Send, enabled = resendIn <= 0, loading = send.isLoading,
                 )
+                if (changing && live) Button("Back to entering the OTP", { changing = false; problem = "" }, Wide, variant = Variant.Ghost, small = true)
             }
         }
     }

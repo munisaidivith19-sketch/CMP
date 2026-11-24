@@ -12,14 +12,16 @@ import { selectUser } from '../../features/authSlice';
 import CreateUserModal from '../../components/CreateUserModal';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
 import RestrictionPopupModal from '../../components/RestrictionPopupModal';
+import MobileInput, { MOBILE_HINT, mobileOk, toMobile } from '../../components/ui/MobileInput';
 import FacultyRoleAssignmentsTab from './FacultyRoleAssignmentsTab';
 import { RolePoliciesTab } from './AdminPoliciesTab';
-import { useGetMyPoliciesQuery } from '../../services/superAdmin';
+import { useGetMyPoliciesQuery } from '../../services/consoleApi';
 import { STAFF_GRANT_ROLES, allowedRoles, holdsGrant, moduleForRole } from '../../utils/delegation';
 import UserPoliciesModal from '../../components/UserPoliciesModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
 import { downloadProfilesPdf } from '../../services/reports';
+import { useDebounced } from '../../utils/useDebounced';
 
 const TITLE_OPTIONS = ['Ms', 'Mr', 'Dr'].map((t) => ({ value: t, label: t }));
 const GENDER_OPTIONS = [
@@ -111,6 +113,7 @@ const classFormValues = (user) => ({
 function ClassModal({ user, onClose }) {
   const [update, { isLoading }] = useUpdateAdminUserMutation();
   const [restrictionPopup, setRestrictionPopup] = useState(null);
+  const [mobileErrors, setMobileErrors] = useState({});
   // Filled from the user on the very first render: the Save button reads
   // v.name / v.email immediately, so an empty first render crashed the page.
   const [v, setV] = useState(() => classFormValues(user));
@@ -133,7 +136,18 @@ function ClassModal({ user, onClose }) {
       if (k === 'inChargeYear' && !semestersOfYear(Number(e.target.value)).includes(Number(s.inChargeSemester))) next.inChargeSemester = '';
       return next;
     });
+  const setMobile = (k) => (val) => {
+    setV((s) => ({ ...s, [k]: val }));
+    setMobileErrors((e) => ({ ...e, [k]: undefined }));
+  };
   const save = async () => {
+    if (isStudent) {
+      const bad = {};
+      if (!mobileOk(toMobile(v.phone))) bad.phone = 'Enter exactly 10 digits';
+      if (!v.parentPhone || !mobileOk(toMobile(v.parentPhone))) bad.parentPhone = 'Enter exactly 10 digits';
+      setMobileErrors(bad);
+      if (Object.keys(bad).length) return;
+    }
     if (v.phone && v.parentPhone) {
       const p1 = normalizeDigits(v.phone);
       const p2 = normalizeDigits(v.parentPhone);
@@ -256,11 +270,15 @@ function ClassModal({ user, onClose }) {
         <Select label="Gender" placeholder="Select gender" options={GENDER_OPTIONS} value={v.gender} onChange={set('gender')} />
         <Input label="Full name" maxLength={80} value={v.name} onChange={set('name')} />
         <Input label="College email (username)" type="email" value={v.email} onChange={set('email')} />
-        <Input label={isStudent ? 'Student mobile' : 'Mobile'} type="tel" maxLength={20} value={v.phone} onChange={set('phone')} />
+        {isStudent ? (
+          <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setMobile('phone')} error={mobileErrors.phone} />
+        ) : (
+          <Input label="Mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} />
+        )}
         {isStaff && <Input label="Employee ID" maxLength={30} className="uppercase" value={v.employeeId} onChange={set('employeeId')} />}
         {isStudent && (
           <>
-            <Input label="Parent mobile" type="tel" maxLength={20} hint="Gate-pass OTPs go only to this number." value={v.parentPhone} onChange={set('parentPhone')} />
+            <MobileInput label="Parent mobile" required hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} value={v.parentPhone} onValue={setMobile('parentPhone')} error={mobileErrors.parentPhone} />
             <Select label="Stay" placeholder="—" options={Object.entries(STAY_TYPES).map(([value, label]) => ({ value, label }))} value={v.stayType} onChange={set('stayType')} />
           </>
         )}
@@ -336,7 +354,8 @@ export default function AdminUsers() {
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState(null);
   const [downloading, setDownloading] = useState(false);
-  const { data, isLoading } = useGetAdminUsersQuery({ q: q || undefined, role: role || undefined, status: status || undefined, page });
+  const debouncedQ = useDebounced(q);
+  const { data, isLoading } = useGetAdminUsersQuery({ q: debouncedQ || undefined, role: role || undefined, status: status || undefined, page });
   // What this admin may assign / delegate (server-enforced; this only shapes the UI).
   const { data: myPolicies, isLoading: policiesLoading } = useGetMyPoliciesQuery(undefined, { skip: !['admin', 'super_admin', ...STAFF_GRANT_ROLES].includes(me?.role) });
   const assignable = allowedRoles(myPolicies, 'assign');
@@ -509,12 +528,12 @@ export default function AdminUsers() {
                         <select
                           value={u.role}
                           disabled={self || saving || !assignable.includes(u.role)}
-                          title={assignable.includes(u.role) ? 'Change role' : 'Changing this role requires Super Admin authorization'}
+                          title={assignable.includes(u.role) ? 'Change role' : 'Changing this role requires IT support authorization'}
                           aria-label={`Role of ${displayName(u)}`}
                           onChange={(e) => apply(u._id, { role: e.target.value }, `Role changed to ${ROLE_LABELS[e.target.value]}`)}
                           className="input w-auto rounded-xl py-1.5 text-xs"
                         >
-                          {/* Admin accounts are created and promoted only from the Super Admin console;
+                          {/* Admin accounts are created and promoted only from the console;
                               other roles appear only when delegated to this admin. */}
                           {ROLES.filter((r) => r === u.role || assignable.includes(r)).map((r) => (
                             <option key={r} value={r}>

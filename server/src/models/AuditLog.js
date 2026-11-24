@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 /**
- * Protected audit trail for privileged (Super Admin) operations: admin account
+ * Protected audit trail for privileged (IT support) operations: admin account
  * changes, policy changes, password resets, session revocations, re-auth and
  * every emergency-mode operation.
  *
@@ -32,6 +32,7 @@ export const AUDIT_ACTIONS = [
   'PRIVILEGE_ESCALATION_BLOCKED',
   'EMERGENCY_TRANSITION',
   'EMERGENCY_HEALTH_CHECK',
+  'RECOVERY_VIEWED',
   'PROTECTED_AUDIT_VIEWED',
   'CHAT_VIEWED',
   // SOC and troubleshooting (controllers/socController.js)
@@ -77,8 +78,8 @@ auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 auditLogSchema.index({ target: 1, createdAt: -1 });
 
-const refuse = function refuseChange(next) {
-  next(new Error('Protected audit records cannot be modified or deleted'));
+const refuse = async function refuseChange() {
+  throw new Error('Protected audit records cannot be modified or deleted');
 };
 for (const op of [
   'updateOne', 'updateMany', 'findOneAndUpdate', 'replaceOne', 'findOneAndReplace',
@@ -88,9 +89,8 @@ for (const op of [
 }
 // Document-level deleteOne() as well as the query form.
 auditLogSchema.pre('deleteOne', { document: true, query: false }, refuse);
-auditLogSchema.pre('save', function onlyInsert(next) {
-  if (!this.isNew) return next(new Error('Protected audit records cannot be modified or deleted'));
-  next();
+auditLogSchema.pre('save', async function onlyInsert() {
+  if (!this.isNew) throw new Error('Protected audit records cannot be modified or deleted');
 });
 
 export default mongoose.model('AuditLog', auditLogSchema);

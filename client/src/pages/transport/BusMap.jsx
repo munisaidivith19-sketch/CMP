@@ -217,9 +217,9 @@ export default function BusMap({ styleUrl, attribution, thresholds, buses, locat
       <div ref={container} className="h-full w-full" role="application" aria-label="Live bus map" />
       {(approximate || offRoute) && (
         <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[70%] flex-col items-start gap-1" role="status">
-          {approximate && <p className="pointer-events-auto cursor-default select-none rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow">Approximate path — straight lines between stops, not the road</p>}
+          {approximate && <p className="pointer-events-auto cursor-default select-none rounded-lg bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">Approximate path — straight lines between stops, not the road</p>}
           {offRoute && (
-            <p className="pointer-events-auto cursor-default select-none rounded-lg bg-amber-50/95 px-2 py-1 text-[11px] font-semibold text-amber-800 shadow">
+            <p className="pointer-events-auto cursor-default select-none rounded-lg bg-amber-50/95 px-2 py-1 text-[11px] font-semibold text-amber-800 shadow-sm">
               {detour.status === 'ok' ? 'Bus is off its route — orange line is the road back to the route' : 'Bus is off its route — road path back not available yet'}
             </p>
           )}

@@ -68,11 +68,11 @@ test('A1 the department-scope DENY on role assignments applies to a department-s
   assert.equal(res.body.code, 'POLICY_DENIED');
 });
 
-test('A1 an Admin created by the Super Admin is policy-managed, so it holds only the policies given', async () => {
+test('A1 an Admin created by IT support is policy-managed, so it holds only the policies given', async () => {
   const sa = await login({ role: 'super_admin', name: 'A1 Owner' });
-  assert.equal((await call('POST', '/super-admin/reauth', sa, { password: 'Password@123' })).status, 200);
+  assert.equal((await call('POST', '/console/reauth', sa, { password: 'Password@123' })).status, 200);
   const email = `a1.ops.${uniq()}@test.edu`;
-  const made = await call('POST', '/super-admin/admins', sa, { name: 'A1 Ops', email, employeeId: `E-${uniq()}`, password: 'Password@123', policies: [{ module: 'events', actions: ['view'] }] });
+  const made = await call('POST', '/console/admins', sa, { name: 'A1 Ops', email, employeeId: `E-${uniq()}`, password: 'Password@123', policies: [{ module: 'events', actions: ['view'] }] });
   assert.equal(made.status, 201, JSON.stringify(made.body));
   const saved = await ctx.models.User.findOne({ email }).lean();
   assert.equal(saved.policyManaged, true);
@@ -189,7 +189,7 @@ test('B2 unknown and known accounts fail identically and keep their count for th
 
 // ── B3: platform lockdown gate ─────────────────────────────────────
 
-test('B3 in lockdown a garbage (or any non-Super-Admin) bearer token does not open the public gate', async () => {
+test('B3 in lockdown a garbage (or any non-IT support) bearer token does not open the public gate', async () => {
   const student = await login({ name: 'B3 Student' });
   const sa = await login({ role: 'super_admin', name: 'B3 Owner' });
   const gallery = (token) => ctx.request('GET', '/skill-wallet/public/gallery', { token });
@@ -205,7 +205,7 @@ test('B3 in lockdown a garbage (or any non-Super-Admin) bearer token does not op
     const forged = jwt.sign({ sub: String(sa.u._id), sid: '0123456789abcdef01234567' }, 'not-the-secret');
     assert.ok([401, 503].includes((await gallery(forged)).status), 'forged token blocked');
     assert.equal((await gallery(student.token)).status, 503, 'a valid ordinary session is still blocked');
-    assert.equal((await gallery(sa.token)).status, 200, 'the Super Admin still gets through');
+    assert.equal((await gallery(sa.token)).status, 200, 'IT support still gets through');
   } finally {
     await ctx.models.PlatformState.updateOne({ _id: 'platform' }, { $set: { mode: 'normal' } });
     invalidatePlatformCache();

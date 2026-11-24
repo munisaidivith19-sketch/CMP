@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Play, Square } from 'lucide-react';
 import { Badge, Button, cn } from '../ui/primitives';
-import { useCancelSocRunMutation, useGetSocRunQuery, useRunSocDiagnosticMutation, errorMessage } from '../../services/superAdmin';
-import { STATUS_MEANING, isFinal, statusTone } from '../../pages/superadmin/socModel';
+import { useCancelSocRunMutation, useGetSocRunQuery, useRunSocDiagnosticMutation, errorMessage } from '../../services/consoleApi';
+import { STATUS_MEANING, isFinal, statusTone } from '../../pages/console/socModel';
 import { fmtDateTime } from '../../utils/format';
 
 /** Shared SOC building blocks. Everything renders text — never HTML from the server. */

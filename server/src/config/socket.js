@@ -12,6 +12,8 @@ import { busFilter, canViewBus, viewerScope } from '../services/transport/access
 import { platformAllows } from '../services/platformState.js';
 import { attachSocketMonitor } from '../services/soc/monitors.js';
 import { forceHttpsEnabled, isSecureRawRequest } from '../middleware/https.js';
+import { isConfinedRole } from '../middleware/coeGuard.js';
+import { clientAddress } from '../utils/consoleNetwork.js';
 
 let io = null;
 
@@ -54,8 +56,9 @@ export function initSocket(httpServer) {
   // Every socket must present a valid access token bound to a live session.
   io.use(async (socket, next) => {
     try {
-      const { user, sessionId, client } = await authenticateAccessToken(socket.handshake.auth?.token, socket.handshake.address);
-      // Maintenance / lockdown / recovery: only the Super Admin recovery path stays connected.
+      const origin = { remoteAddress: socket.handshake.address, headers: socket.handshake.headers };
+      const { user, sessionId, client } = await authenticateAccessToken(socket.handshake.auth?.token, clientAddress(origin), origin);
+      // Maintenance / lockdown / recovery: only IT support recovery path stays connected.
       if (!(await platformAllows(user))) return next(new Error('maintenance'));
       // The Gate Scanner polls its own endpoints; its session never joins the realtime channels.
       if (client === 'gate_desktop') return next(new Error('unauthorized'));
@@ -94,6 +97,8 @@ export function initSocket(httpServer) {
 
     // ── Discussions (public threads; hidden ones only for moderators) ──
     socket.on('discussion:join', async (id, cb) => {
+      // IT support, COE, Office and Transport have no Discussions access (the REST API answers 403).
+      if (isConfinedRole(role)) return ack(cb, { ok: false, error: 'forbidden' });
       if (!mongoose.isValidObjectId(id)) return ack(cb, { ok: false });
       const d = await Discussion.findById(id).select('isHidden').lean().catch(() => null);
       if (!d || (d.isHidden && !['admin', 'faculty', 'hod', 'principal'].includes(role))) return ack(cb, { ok: false });

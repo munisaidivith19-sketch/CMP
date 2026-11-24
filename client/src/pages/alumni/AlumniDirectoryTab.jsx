@@ -14,10 +14,9 @@ import {
   ExternalLink,
   Mail,
   Phone,
-  Linkedin,
-  Github,
   X,
 } from 'lucide-react';
+import { Linkedin, Github } from '../../components/ui/brandIcons';
 import toast from 'react-hot-toast';
 import {
   useGetAlumniQuery,
@@ -215,7 +214,7 @@ export default function AlumniDirectoryTab() {
                 setMentorshipOnly(e.target.checked);
                 setPage(1);
               }}
-              className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
             />
             <span className="font-medium text-slate-700 dark:text-slate-300">
               Available for Mentoring only
@@ -230,7 +229,7 @@ export default function AlumniDirectoryTab() {
                 setReferralsOnly(e.target.checked);
                 setPage(1);
               }}
-              className="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              className="rounded-sm border-slate-300 text-primary-600 focus:ring-primary-500"
             />
             <span className="font-medium text-slate-700 dark:text-slate-300">
               Open to Job Referrals only

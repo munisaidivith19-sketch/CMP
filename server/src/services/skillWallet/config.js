@@ -49,7 +49,7 @@ export async function getConfig() {
   const doc = await SkillWalletConfig.findOneAndUpdate(
     { key: 'default' },
     { $setOnInsert: { key: 'default', domains: DEFAULT_DOMAINS, institutions: DEFAULT_INSTITUTIONS, rubric: DEFAULT_RUBRIC } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   ).lean();
   return doc;
 }

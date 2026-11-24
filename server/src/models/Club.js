@@ -55,9 +55,8 @@ clubSchema.virtual('memberCount').get(function memberCount() {
   return this.members?.length || 0;
 });
 
-clubSchema.pre('validate', function makeSlug(next) {
+clubSchema.pre('validate', function makeSlug() {
   if (this.isModified('name') || !this.slug) this.slug = slugify(this.name);
-  next();
 });
 
 export default mongoose.model('Club', clubSchema);

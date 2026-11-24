@@ -8,7 +8,7 @@ import { logActivity } from '../utils/activity.js';
 import { canViewProfile, peopleScopeFilter, studentClass } from '../utils/peopleScope.js';
 import { chatContactFilter } from '../utils/chatScope.js';
 import { ownDepartment, STUDENT_ROLES } from '../utils/academicScope.js';
-import { ACADEMIC_YEARS, COLLEGE_WIDE_ROLES, DEPARTMENTS } from '../constants.js';
+import { ACADEMIC_YEARS, COLLEGE_WIDE_ROLES, DEPARTMENTS, studentMobileProblem, toMobile10 } from '../constants.js';
 
 const DIRECTORY_FIELDS = 'name title gender role department year section semester avatar designation employeeId skills interests bio';
 
@@ -159,6 +159,12 @@ export const updateMe = asyncHandler(async (req, res) => {
     throw new ApiError(403, 'Department, year, roll number, parent’s mobile number and stay type are set by the administrator');
   }
   const updates = pick(req.body, PROFILE_FIELDS);
+  // A student's own mobile: exactly 10 digits and not the parent's number.
+  if (['student', 'club_admin'].includes(req.user.role) && typeof updates.phone === 'string' && updates.phone.trim()) {
+    updates.phone = toMobile10(updates.phone);
+    const problem = studentMobileProblem({ phone: updates.phone, parentPhone: req.user.parentPhone, checkParent: false });
+    if (problem) throw new ApiError(422, problem);
+  }
   Object.assign(req.user, updates);
   await req.user.save();
   logActivity(req, 'profile.update', { entityType: 'user', entityId: req.user._id });

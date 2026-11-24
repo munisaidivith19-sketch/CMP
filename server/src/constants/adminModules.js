@@ -1,5 +1,5 @@
 /**
- * Admin dashboard modules — the single list behind the Super Admin's
+ * Admin dashboard modules — the single list behind the IT support's
  * per-module checkboxes for policy-managed Admins.
  *
  * Each module is one checkbox. It names:
@@ -17,7 +17,7 @@
  * `use`, and adminPolicy.js guards its `api` prefixes with it.
  *
  * The client never hardcodes this list: it reads it from the API
- * (GET /api/account/modules and GET /api/super-admin/policies/catalogue).
+ * (GET /api/account/modules and GET /api/console/policies/catalogue).
  */
 export const ADMIN_MODULE_SECTIONS = [
   { key: 'menu', label: 'Menu' },

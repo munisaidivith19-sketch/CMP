@@ -12,7 +12,7 @@ beforeEach(async () => {
 /**
  * Policy Assignment at user creation (POST /admin/users → policyMode):
  *   "none"   — the role's own access, nothing extra stored (the default),
- *   "custom" — additional policies, only from a Super Admin or an Admin that
+ *   "custom" — additional policies, only from IT support or an Admin that
  *              may delegate them, validated before the account exists.
  * Every rule is exercised against the API directly (no UI involved).
  */
@@ -21,7 +21,7 @@ let sa;
 let n = 0;
 
 const req = (method, path, who, body) => ctx.request(method, path, { token: who?.token, body });
-const reauth = () => req('POST', '/super-admin/reauth', sa, { password: PASSWORD });
+const reauth = () => req('POST', '/console/reauth', sa, { password: PASSWORD });
 const uniq = () => `${Date.now().toString(36)}${(n++).toString(36)}`;
 const settle = () => sleep(150);
 
@@ -82,7 +82,7 @@ test('1/11. No Additional Policies keeps the role access exactly as before and s
   assert.equal((await create(sa, 'student')).status, 201);
 });
 
-test('2/12. Super Admin adds policies at creation: re-auth protected, effective, persisted across sign-ins, audited', async () => {
+test('2/12. IT support adds policies at creation: re-auth protected, effective, persisted across sign-ins, audited', async () => {
   await ctx.models.Session.updateMany({ user: sa.u._id }, { $unset: { reauthAt: 1 } });
   const b = body('hod', { policyMode: 'custom', policies: LOGS });
   const noReauth = await req('POST', '/admin/users', sa, b);
@@ -176,7 +176,7 @@ test('5. Institutional roles cannot create accounts with policies or assign them
   assert.equal((await create(hod, 'hod', { policyMode: 'custom', policies: LOGS })).status, 403);
 });
 
-test('6/7/8. Crafted requests are rejected: no silent drops, no Super Admin, no mass assignment, catalogue only', async () => {
+test('6/7/8. Crafted requests are rejected: no silent drops, no IT support, no mass assignment, catalogue only', async () => {
   const cases = [
     ['policies sent with "none"', body('hod', { policyMode: 'none', policies: LOGS }), 422],
     ['policies sent without a mode', body('hod', { policies: LOGS }), 422],
@@ -189,7 +189,7 @@ test('6/7/8. Crafted requests are rejected: no silent drops, no Super Admin, no 
     ['bad department scope', body('hod', { policyMode: 'custom', policies: [{ module: 'user_management', actions: ['view'], scope: 'department', department: 'NOPE' }] }), 422],
     ['not a list', body('hod', { policyMode: 'custom', policies: { module: 'security_logs' } }), 422],
     ['role without policies', body('student', { policyMode: 'custom', policies: LOGS }), 422],
-    ['Super Admin role', body('principal', { role: 'super_admin', policyMode: 'custom', policies: LOGS }), 422],
+    ['IT support role', body('principal', { role: 'super_admin', policyMode: 'custom', policies: LOGS }), 422],
     ['Admin role', body('principal', { role: 'admin' }), 422],
   ];
   await reauth();
@@ -204,7 +204,7 @@ test('6/7/8. Crafted requests are rejected: no silent drops, no Super Admin, no 
   const u = await stored(b.email);
   assert.equal(u.policyManaged, false);
   assert.equal(u.delegation?.createRoles ?? null, null);
-  assert.equal(await ctx.models.User.countDocuments({ role: 'super_admin' }), 1, 'no new Super Admin');
+  assert.equal(await ctx.models.User.countDocuments({ role: 'super_admin' }), 1, 'no new IT support');
 });
 
 test('9. Individual grants affect only the intended account', async () => {

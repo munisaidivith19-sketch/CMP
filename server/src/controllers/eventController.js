@@ -283,14 +283,14 @@ export const registerForEvent = asyncHandler(async (req, res) => {
       $or: [{ capacity: 0 }, { $expr: { $lt: ['$registeredCount', '$capacity'] } }],
     },
     { $push: { registrations: { user: uid, status: 'registered' } }, $inc: { registeredCount: 1 } },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (!seated) {
     const waitlisted = await Event.findOneAndUpdate(
       { _id: event._id, 'registrations.user': { $ne: uid } },
       { $push: { registrations: { user: uid, status: 'waitlisted' } } },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!waitlisted) throw new ApiError(409, 'You are already registered');
     status = 'waitlisted';

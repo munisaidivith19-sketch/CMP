@@ -15,7 +15,7 @@ import { ApiError } from '../../utils/http.js';
  *   - certificate verifiers: COE (campus), HOD (own department), the Class
  *     In-Charge of the student's class, or a designated verifier in scope;
  *   - innovation coordinators are designated by the Principal. The Principal
- *     and the Super Admin get NO review / verification / publication rights
+ *     and IT support get NO review / verification / publication rights
  *     from their role.
  */
 

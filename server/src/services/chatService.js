@@ -11,7 +11,7 @@ export async function markConversationRead(userId, conversationId) {
   const conv = await Conversation.findOneAndUpdate(
     { _id: conversationId, participants: userId, isActive: true },
     { $set: { [`unreadCounts.${userId}`]: 0 } },
-    { new: true, projection: { participants: 1 } }
+    { returnDocument: 'after', projection: { participants: 1 } }
   ).lean();
   if (!conv) return false;
 

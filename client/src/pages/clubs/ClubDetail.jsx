@@ -8,8 +8,6 @@ import {
   Check,
   Crown,
   Globe,
-  Instagram,
-  Linkedin,
   LogOut,
   Mail,
   Megaphone,
@@ -21,6 +19,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { Instagram, Linkedin } from '../../components/ui/brandIcons';
 import {
   useCancelJoinMutation,
   useDeleteClubMutation,

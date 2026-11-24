@@ -3,7 +3,7 @@ import { reportClientError } from '../services/errorReporter';
 
 /**
  * Catches render crashes below it, shows a recovery screen instead of a
- * blank page, and reports the crash to the Super Admin SOC. `resetKey`
+ * blank page, and reports the crash to IT support SOC. `resetKey`
  * (the current path) clears the error when the user navigates away.
  */
 export default class ErrorBoundary extends Component {

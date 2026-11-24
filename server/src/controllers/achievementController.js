@@ -287,7 +287,7 @@ export const congratulate = asyncHandler(async (req, res) => {
   const updated = await Achievement.findOneAndUpdate(
     { _id: req.params.id },
     has ? { $pull: { congratulations: req.user._id } } : { $addToSet: { congratulations: req.user._id } },
-    { new: true }
+    { returnDocument: 'after' }
   ).select('congratulations');
   res.json({ congratulated: !has, congratulationCount: updated.congratulations.length });
 });

@@ -9,7 +9,7 @@ import { refreshSession } from './services/api';
 import { sessionChecked, setCredentials } from './features/authSlice';
 import { setMaintenance } from './features/uiSlice';
 import { STAFF_GRANT_ROLES, grantedPages } from './utils/delegation';
-import { useGetAccountModulesQuery, useGetMyPoliciesQuery } from './services/superAdmin';
+import { useGetAccountModulesQuery, useGetMyPoliciesQuery } from './services/consoleApi';
 import { moduleForPath, routeAllowed } from './utils/adminModules';
 import { ABOUT_PATH, PRIVACY_PATH, PUBLIC_LEGAL_PATHS, TERMS_PATH } from './utils/legal';
 import { COE, EMERGENCY_CONTROL_PATH, HOSTEL_ROLES, OFFICE, PEOPLE_DIRECTORY, ROLES, STAFF_VIEW, STUDENT_ROLES, SUPER_ADMIN, SW_COLLEGE_ROLES, SW_STAFF_ROLES, SW_STUDENT_ROLES, TRANSPORT, TRANSPORT_HISTORY_VIEW, TRANSPORT_MANAGERS, TRANSPORT_VIEW, TRIP_SHARERS } from './utils/constants';
@@ -52,6 +52,7 @@ const Promotions = lazy(() => import('./pages/principal/Promotions'));
 const SecurityLogs = lazy(() => import('./pages/admin/SecurityLogs'));
 const ClassStudents = lazy(() => import('./pages/class/ClassStudents'));
 const Security = lazy(() => import('./pages/settings/Security'));
+const RequiredPasswordChange = lazy(() => import('./pages/settings/RequiredPasswordChange'));
 const Chat = lazy(() => import('./pages/chat/Chat'));
 const Timetable = lazy(() => import('./pages/timetable/Timetable'));
 const StudyMaterials = lazy(() => import('./pages/materials/StudyMaterials'));
@@ -73,10 +74,11 @@ const Transport = lazy(() => import('./pages/transport/Transport'));
 const TransportAdmin = lazy(() => import('./pages/transport/TransportAdmin'));
 const ShareLocation = lazy(() => import('./pages/transport/ShareLocation'));
 const TransportHistory = lazy(() => import('./pages/transport/TransportHistory'));
-const SuperAdmin = lazy(() => import('./pages/superadmin/SuperAdmin'));
-const EmergencyControl = lazy(() => import('./pages/superadmin/EmergencyControl'));
-const SocDashboard = lazy(() => import('./pages/superadmin/Soc'));
-const SocErrorDetail = lazy(() => import('./pages/superadmin/SocErrorDetail'));
+const SuperAdmin = lazy(() => import('./pages/console/Console'));
+const EmergencyControl = lazy(() => import('./pages/console/EmergencyControl'));
+const SocDashboard = lazy(() => import('./pages/console/Soc'));
+const Troubleshooting = lazy(() => import('./pages/console/Troubleshooting'));
+const SocErrorDetail = lazy(() => import('./pages/console/SocErrorDetail'));
 const SkillWallet = lazy(() => import('./pages/skillwallet/SkillWallet'));
 const SwProjectDetail = lazy(() => import('./pages/skillwallet/ProjectDetail'));
 const SwGallery = lazy(() => import('./pages/skillwallet/Gallery'));
@@ -126,7 +128,7 @@ const CONFINED = {
   [COE]: { home: '/timetable', pages: ['/timetable', '/attendance', '/skill-wallet/review', '/notifications', '/settings/security'] },
   [OFFICE]: { home: '/attendance', pages: ['/attendance', '/notifications', '/settings/security'] },
   [TRANSPORT]: { home: '/transport', pages: ['/transport', '/notifications', '/settings/security'] },
-  [SUPER_ADMIN]: { home: '/super-admin', pages: ['/super-admin', EMERGENCY_CONTROL_PATH, '/admin/users', '/attendance', '/gate-pass', '/hostel', '/notifications', '/settings/security'] },
+  [SUPER_ADMIN]: { home: '/console', pages: ['/console', EMERGENCY_CONTROL_PATH, '/admin/users', '/attendance', '/gate-pass', '/hostel', '/notifications', '/settings/security'] },
 };
 
 function CoeConfine({ children }) {
@@ -136,9 +138,9 @@ function CoeConfine({ children }) {
   // Office / COE accounts may also open admin pages granted to them as additional policies.
   const { data: myPolicies } = useGetMyPoliciesQuery(undefined, { skip: ![COE, OFFICE].includes(role) });
   const extra = grantedPages(myPolicies);
-  // A temporary password (set by a Super Admin) must be replaced first; the
+  // A temporary password (set by IT support) must be replaced first; the
   // server refuses everything else until then.
-  if (user?.mustChangePassword && pathname !== '/settings/security') return <Navigate to="/settings/security?required=1" replace />;
+  if (user?.mustChangePassword) return <RequiredPasswordChange />;
   const rule = CONFINED[role];
   if (rule && ![...rule.pages, ...extra].some((p) => pathname === p || pathname.startsWith(`${p}/`))) return <Navigate to={rule.home} replace />;
   return children;
@@ -146,7 +148,7 @@ function CoeConfine({ children }) {
 
 /**
  * Policy-managed Admins: a page of a module that is not ticked (or was just
- * unticked by a Super Admin) sends them to the Dashboard with a message. The
+ * unticked by IT support) sends them to the Dashboard with a message. The
  * module list is live: re-read every minute and at once whenever the server
  * refuses a module (services/api.js). The server refuses the API either way.
  */
@@ -159,7 +161,7 @@ function ModuleGuard({ children }) {
   useEffect(() => {
     if (blocked) {
       const removed = had.current.has(blocked.key);
-      toast.error(removed ? `Your access to ${blocked.label} was turned off by a Super Admin.` : `You do not have access to ${blocked.label}.`, { id: `module-${blocked.key}` });
+      toast.error(removed ? `Your access to ${blocked.label} was turned off by IT support.` : `You do not have access to ${blocked.label}.`, { id: `module-${blocked.key}` });
     }
     if (account?.modules) had.current = new Set(account.modules);
   }, [blocked, account]);
@@ -240,7 +242,7 @@ export default function App() {
 
   const staff = STAFF_VIEW;
 
-  // Signed-in ordinary users get the maintenance screen; the Super Admin keeps
+  // Signed-in ordinary users get the maintenance screen; IT support keeps
   // working (the server lets only that role through).
   if (maintenance && user && user.role !== SUPER_ADMIN && !PUBLIC_LEGAL_PATHS.includes(location.pathname)) {
     return <MaintenanceScreen message={maintenance} onRetry={() => checkPlatform().then((msg) => (msg ? dispatch(setMaintenance(msg)) : window.location.reload()))} />;
@@ -336,9 +338,10 @@ export default function App() {
             <Route path="skill-wallet/review" element={<RequireAuth roles={[...SW_STAFF_ROLES, COE]}><SwReviewWorkspace /></RequireAuth>} />
             <Route path="skill-wallet/review/projects/:id" element={<RequireAuth roles={SW_STAFF_ROLES}><SwReviewProject /></RequireAuth>} />
             <Route path="skill-wallet/manage" element={<RequireAuth roles={SW_STAFF_ROLES}><SwManagement /></RequireAuth>} />
-            <Route path="super-admin" element={<RequireAuth roles={[SUPER_ADMIN]}><SuperAdmin /></RequireAuth>} />
-            <Route path="super-admin/soc" element={<RequireAuth roles={[SUPER_ADMIN]}><SocDashboard /></RequireAuth>} />
-            <Route path="super-admin/soc/errors/:id" element={<RequireAuth roles={[SUPER_ADMIN]}><SocErrorDetail /></RequireAuth>} />
+            <Route path="console" element={<RequireAuth roles={[SUPER_ADMIN]}><SuperAdmin /></RequireAuth>} />
+            <Route path="console/soc" element={<RequireAuth roles={[SUPER_ADMIN]}><SocDashboard /></RequireAuth>} />
+            <Route path="console/troubleshooting" element={<RequireAuth roles={[SUPER_ADMIN]}><Troubleshooting /></RequireAuth>} />
+            <Route path="console/soc/errors/:id" element={<RequireAuth roles={[SUPER_ADMIN]}><SocErrorDetail /></RequireAuth>} />
             {/* Unlinked: no navigation points here. The server authorizes every API behind it. */}
             <Route path={EMERGENCY_CONTROL_PATH.slice(1)} element={<RequireAuth roles={[SUPER_ADMIN]}><EmergencyControl /></RequireAuth>} />
             <Route path="*" element={<NotFound />} />

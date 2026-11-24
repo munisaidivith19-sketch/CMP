@@ -249,7 +249,7 @@ export const closeJob = asyncHandler(async (req, res) => {
 
   // Only a live posting can be closed: closing a removed job would let its
   // poster "reopen" what staff took down.
-  const closed = await AlumniJob.findOneAndUpdate({ _id: job._id, status: { $in: ['open', 'pending_review'] } }, { $set: { status: 'closed' } }, { new: true });
+  const closed = await AlumniJob.findOneAndUpdate({ _id: job._id, status: { $in: ['open', 'pending_review'] } }, { $set: { status: 'closed' } }, { returnDocument: 'after' });
   if (!closed) throw new ApiError(409, `A ${job.status.replace('_', ' ')} job cannot be closed`);
   res.json({ ok: true, message: 'Job closed' });
 });
@@ -281,7 +281,7 @@ export const reopenJob = asyncHandler(async (req, res) => {
 
   // Conditional on the status just checked, so a concurrent staff removal wins.
   const from = user.role === 'admin' ? { $ne: 'open' } : { $in: ['closed', 'expired'] };
-  const reopened = await AlumniJob.findOneAndUpdate({ _id: job._id, status: from }, { $set: { status: 'open' } }, { new: true });
+  const reopened = await AlumniJob.findOneAndUpdate({ _id: job._id, status: from }, { $set: { status: 'open' } }, { returnDocument: 'after' });
   if (!reopened) throw new ApiError(409, 'This job changed while you were reopening it. Refresh and try again.');
   res.json({ ok: true, message: 'Job reopened' });
 });
@@ -465,7 +465,7 @@ export const updateApplication = asyncHandler(async (req, res) => {
   const set = { status, statusChangedAt: new Date() };
   if (posterNote !== undefined) set.posterNote = String(posterNote).slice(0, 500);
   // Conditional: a withdrawal landing at the same moment wins.
-  const updated = await JobApplication.findOneAndUpdate({ _id: app._id, status: { $ne: 'withdrawn' } }, { $set: set }, { new: true });
+  const updated = await JobApplication.findOneAndUpdate({ _id: app._id, status: { $ne: 'withdrawn' } }, { $set: set }, { returnDocument: 'after' });
   if (!updated) throw new ApiError(409, 'This application was withdrawn by the student');
   Object.assign(app, set);
 

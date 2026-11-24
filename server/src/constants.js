@@ -1,10 +1,10 @@
 export const ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'admin', 'security', 'dean', 'ao', 'chairman', 'warden', 'alumni', 'coe', 'office', 'transport', 'super_admin'];
-// Platform-level Super Admin (policies.js, controllers/superAdminController.js).
+// Platform-level IT support (policies.js, controllers/superAdminController.js).
 // Never assignable from the admin panel or any request body: provisioned only
-// with server/scripts/create-super-admin.mjs, and confined to /super-admin/*.
+// with server/scripts/create-console-account.mjs, and confined to /console/*.
 export const SUPER_ADMIN_ROLE = 'super_admin';
 // Roles an ordinary Admin may hand out. Admin accounts are created and managed
-// by a Super Admin only; Super Admin is never assignable over the API.
+// by IT support only; IT support is never assignable over the API.
 export const ADMIN_ASSIGNABLE_ROLES = ROLES.filter((r) => r !== 'admin' && r !== SUPER_ADMIN_ROLE);
 // Can mark attendance, moderate content and see beyond their own record.
 export const MODERATOR_ROLES = ['admin', 'faculty', 'hod', 'principal'];
@@ -36,7 +36,7 @@ export const COE_ROLE = 'coe';
 export const OFFICE_ROLE = 'office';
 // Campus-wide academic READ: attendance and attendance reports (and, for all
 // but the Office, the class timetable).
-// The Super Admin reads attendance campus-wide too, read-only (its confined-role
+// IT support reads attendance campus-wide too, read-only (its confined-role
 // guard allows GET only; the timetable stays closed to it).
 export const ACADEMIC_OVERSIGHT_ROLES = [...COLLEGE_WIDE_ROLES, COE_ROLE, OFFICE_ROLE, SUPER_ADMIN_ROLE];
 // Roles whose attendance access is read-only (they never mark or edit).
@@ -81,6 +81,31 @@ export const normalizePhoneDigits = (val) => {
   if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
   return digits;
 };
+/**
+ * A student's or parent's mobile number as typed: spaces, dashes, brackets and a
+ * +91 / 91 / 0 prefix are dropped, leaving the bare digits (10 when valid).
+ */
+export const toMobile10 = (v) => {
+  const d = String(v ?? '').replace(/[\s\-()]/g, '');
+  if (d.startsWith('+91')) return d.slice(3);
+  if (/^91\d{10}$/.test(d)) return d.slice(2);
+  if (/^0\d{10}$/.test(d)) return d.slice(1);
+  return d;
+};
+export const isMobile10 = (v) => /^\d{10}$/.test(toMobile10(v));
+/**
+ * Student accounts: the student's own mobile (optional) and the parent's mobile
+ * must each be exactly 10 digits and must not be the same number. Returns the
+ * first problem as a message, or null. Pass only the numbers being set.
+ */
+export function studentMobileProblem({ phone, parentPhone, checkPhone = true, checkParent = true } = {}) {
+  if (checkPhone && phone && !isMobile10(phone)) return 'Student mobile number must be exactly 10 digits';
+  if (checkParent && parentPhone && !isMobile10(parentPhone)) return "Parent's mobile number must be exactly 10 digits";
+  const p1 = normalizePhoneDigits(phone);
+  const p2 = normalizePhoneDigits(parentPhone);
+  if (p1 && p2 && p1 === p2) return 'Student mobile number and parent mobile number cannot be the same';
+  return null;
+}
 // Honorific shown before a person's name (Ms. / Mr. / Dr.) and their gender.
 // Mr needs male and Ms needs female; Dr may be either.
 export const TITLES = ['Ms', 'Mr', 'Dr'];
@@ -347,7 +372,7 @@ export const ACHIEVEMENT_POSITIONS = [
 // Students own projects, NPTEL certificates and profile links.
 export const SKILL_WALLET_STUDENT_ROLES = ['student', 'club_admin'];
 // "College-only" content is visible to these signed-in roles. Confined roles
-// (COE, Office, Transport, Super Admin), Security, Warden and Alumni are outside.
+// (COE, Office, Transport, IT support), Security, Warden and Alumni are outside.
 export const SKILL_WALLET_COLLEGE_ROLES = ['student', 'club_admin', 'faculty', 'hod', 'principal', 'dean', 'ao', 'chairman', 'admin'];
 // Staff who may receive a Skill Wallet designation (reviewer, verifier, coordinator).
 export const SKILL_WALLET_STAFF_ROLES = ['faculty', 'hod', 'principal', 'dean'];

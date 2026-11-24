@@ -15,7 +15,7 @@ import { SUPER_ADMIN_ROLE } from '../constants.js';
  *   request gets a conflict instead of interleaving, and asking for the mode
  *   the platform is already in is a no-op (idempotent).
  * - Nothing here deletes or alters data, sessions aside (lockdown revokes
- *   ordinary sessions, done by the caller). Super Admin access is never
+ *   ordinary sessions, done by the caller). IT support access is never
  *   blocked, so the recovery path cannot be switched off from inside the app.
  *
  * Break-glass: PLATFORM_MODE_OVERRIDE=normal in the server environment forces
@@ -70,7 +70,7 @@ export async function publicStatus() {
   return s.mode === 'normal' ? { mode: 'normal' } : { mode: 'maintenance', message: s.message || DEFAULT_MESSAGE };
 }
 
-/** May this user use the application in the current mode? Super Admin always may. */
+/** May this user use the application in the current mode? IT support always may. */
 export async function platformAllows(user) {
   if (user?.role === SUPER_ADMIN_ROLE) return true;
   const s = await getPlatformState().catch(() => ({ mode: 'normal' }));
@@ -120,7 +120,7 @@ export async function transition({ to, expectedVersion, actorId, reason, message
   const updated = await PlatformState.findOneAndUpdate(
     { _id: 'platform', version: current.version || 0, mode: current.mode },
     { $set: set, $inc: { version: 1 } },
-    { new: true, lean: true }
+    { returnDocument: 'after', lean: true }
   );
   invalidatePlatformCache();
   if (!updated) {
@@ -170,7 +170,7 @@ export async function runHealthChecks() {
   add('database', dbReady && pingOk, 'critical', dbReady && pingOk ? 'Connected and responding' : 'Database is not responding');
 
   const supers = await User.countDocuments({ role: SUPER_ADMIN_ROLE, isActive: true }).catch(() => 0);
-  add('recovery_access', supers > 0, 'critical', supers > 0 ? `${supers} active Super Admin account(s)` : 'No active Super Admin account');
+  add('recovery_access', supers > 0, 'critical', supers > 0 ? `${supers} active IT support account(s)` : 'No active IT support account');
 
   const backup = await backupStatus();
   const backupAge = backup.lastBackupAt ? Date.now() - new Date(backup.lastBackupAt).getTime() : null;

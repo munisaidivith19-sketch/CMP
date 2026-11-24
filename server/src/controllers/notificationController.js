@@ -50,7 +50,7 @@ export const updatePreferences = asyncHandler(async (req, res) => {
   const set = {};
   if (Array.isArray(req.body.disabled)) set['notificationPrefs.disabled'] = [...new Set(req.body.disabled)].filter((c) => OPTIONAL_NOTIFICATION_CATEGORIES.includes(c));
   if (req.body.reminderMinutes !== undefined) set['notificationPrefs.reminderMinutes'] = Number(req.body.reminderMinutes);
-  const u = await User.findByIdAndUpdate(req.user._id, { $set: set }, { new: true, runValidators: true }).select('notificationPrefs').lean();
+  const u = await User.findByIdAndUpdate(req.user._id, { $set: set }, { returnDocument: 'after', runValidators: true }).select('notificationPrefs').lean();
   res.json(prefsOf(u));
 });
 

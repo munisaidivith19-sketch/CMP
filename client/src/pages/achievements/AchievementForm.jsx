@@ -210,7 +210,7 @@ export default function AchievementForm({ open, onClose, achievement }) {
 
           {/* Dropdown search results */}
           {studentSearch.trim().length > 0 && (
-            <div className="mt-1.5 max-h-48 divide-y divide-white/20 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 p-1 shadow-lg backdrop-blur dark:border-white/10 dark:bg-ink/95">
+            <div className="mt-1.5 max-h-48 divide-y divide-white/20 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 p-1 shadow-lg backdrop-blur-sm dark:border-white/10 dark:bg-ink/95">
               {(studentResults?.items || []).length === 0 ? (
                 <p className="p-3 text-center text-xs text-ink-muted">
                   No matching students found in {isPrincipal ? 'college' : me?.department}.
@@ -346,7 +346,7 @@ export default function AchievementForm({ open, onClose, achievement }) {
             {images.map((img, idx) => (
               <div
                 key={img.url + idx}
-                className="group relative h-20 w-24 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-sm"
+                className="group relative h-20 w-24 overflow-hidden rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-xs"
               >
                 <img src={img.url} alt={img.name || 'Achievement photo'} className="h-full w-full object-cover" />
                 <button

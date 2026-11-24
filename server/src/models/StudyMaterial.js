@@ -55,13 +55,12 @@ studyMaterialSchema.index({ subject: 1, isActive: 1 });
 studyMaterialSchema.index({ title: 'text', subjectName: 'text', subjectCode: 'text' }, { name: 'study_material_text' });
 
 // Year always follows the semester, so class scoping by year never misses a material.
-studyMaterialSchema.pre('validate', function deriveYear(next) {
+studyMaterialSchema.pre('validate', function deriveYear() {
   if (this.semester) {
     const expected = yearOfSemester(this.semester);
     if (this.year == null) this.year = expected;
     else if (this.year !== expected) this.invalidate('year', `Semester ${this.semester} belongs to year ${expected}, not year ${this.year}`);
   }
-  next();
 });
 
 export default mongoose.model('StudyMaterial', studyMaterialSchema);

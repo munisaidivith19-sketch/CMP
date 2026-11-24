@@ -176,7 +176,7 @@ export const decideMilestone = asyncHandler(async (req, res) => {
   const updated = await ProjectMilestone.findOneAndUpdate(
     { _id: m._id, status: 'claimed' },
     { $set: { status: req.body.decision, decidedBy: req.user._id, decidedAt: new Date(), decisionNote: note } },
-    { new: true }
+    { returnDocument: 'after' }
   );
   if (!updated) throw new ApiError(409, 'This milestone was already decided');
   logAudit(req, 'SKILL_WALLET_MILESTONE_DECISION', { target: project?.owner, details: { milestone: String(m._id), decision: req.body.decision } });
@@ -335,7 +335,7 @@ export const grantDesignation = asyncHandler(async (req, res) => {
 export const revokeDesignation = asyncHandler(async (req, res) => {
   requireGrantor(req);
   assertObjectId(req.params.id, 'designation id');
-  const d = await SkillWalletDesignation.findOneAndUpdate({ _id: req.params.id, revokedAt: null }, { $set: { revokedAt: new Date(), revokedBy: req.user._id } }, { new: true });
+  const d = await SkillWalletDesignation.findOneAndUpdate({ _id: req.params.id, revokedAt: null }, { $set: { revokedAt: new Date(), revokedBy: req.user._id } }, { returnDocument: 'after' });
   if (!d) throw new ApiError(404, 'Designation not found');
   logAudit(req, 'SKILL_WALLET_DESIGNATION_CHANGED', { target: d.user, details: { capability: d.capability, scope: d.scope, department: d.department, change: 'revoked' } });
   res.json({ ok: true });
@@ -364,7 +364,7 @@ export const updateConfig = asyncHandler(async (req, res) => {
   }
   if (req.body.rubric !== undefined) set.rubric = normaliseRubric(req.body.rubric, current.rubric);
   if (!Object.keys(set).length) throw new ApiError(422, 'Nothing to change');
-  const updated = await SkillWalletConfig.findOneAndUpdate({ key: 'default' }, { $set: { ...set, updatedBy: req.user._id } }, { new: true }).lean();
+  const updated = await SkillWalletConfig.findOneAndUpdate({ key: 'default' }, { $set: { ...set, updatedBy: req.user._id } }, { returnDocument: 'after' }).lean();
   logAudit(req, 'SKILL_WALLET_CONFIG_CHANGED', { target: null, details: { changed: Object.keys(set), rubricVersion: updated.rubric.version } });
   res.json({ domains: updated.domains, institutions: updated.institutions, rubric: updated.rubric });
 });

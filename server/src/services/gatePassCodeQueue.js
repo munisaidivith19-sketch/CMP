@@ -56,7 +56,7 @@ async function issueOne(pass, now, render) {
       const updated = await GatePass.findOneAndUpdate(
         { _id: pass._id, status: 'approved', 'codeIssue.state': 'processing', verificationCode: { $exists: false } },
         { $set: { verificationCode: code, 'codeIssue.state': 'issued', 'codeIssue.issuedAt': now }, $unset: { 'codeIssue.lastError': 1, 'codeIssue.claimedAt': 1 } },
-        { new: true }
+        { returnDocument: 'after' }
       );
       if (updated) return 'issued';
       // Revoked / expired / already issued while it waited — nothing to issue.
@@ -86,7 +86,7 @@ export async function processCodeQueue({ now = new Date(), limit = batchSize(), 
     const pass = await GatePass.findOneAndUpdate(
       { status: 'approved', 'codeIssue.state': 'queued', 'codeIssue.scheduledAt': { $lte: now } },
       { $set: { 'codeIssue.state': 'processing', 'codeIssue.claimedAt': now } },
-      { sort: { 'codeIssue.scheduledAt': 1, _id: 1 }, new: true, projection: { student: 1, codeIssue: 1 } }
+      { sort: { 'codeIssue.scheduledAt': 1, _id: 1 }, returnDocument: 'after', projection: { student: 1, codeIssue: 1 } }
     );
     if (!pass) break;
     claimed.push(pass);

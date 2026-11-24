@@ -43,7 +43,7 @@ const holidaySchema = new Schema(
 
 // The controller validates all of this first with friendlier messages; the
 // model re-checks so no write path can ever store an inconsistent holiday.
-holidaySchema.pre('validate', function check(next) {
+holidaySchema.pre('validate', function check() {
   if (this.startDate && this.endDate && this.startDate > this.endDate) {
     this.invalidate('endDate', 'The end date cannot be before the start date');
   }
@@ -53,7 +53,6 @@ holidaySchema.pre('validate', function check(next) {
   // The scope is a hierarchy: a year needs a department, a section needs a year.
   if (this.year != null && !this.department) this.invalidate('year', 'Choose a department before a year');
   if (this.section && this.year == null) this.invalidate('section', 'Choose a year before a section');
-  next();
 });
 
 // "Which active holidays touch this date range?" — every lookup starts here.

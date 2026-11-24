@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { GROUP_CATEGORIES } from '../constants.js';
+import { e2eSchema } from './Message.js';
 
 const { Schema } = mongoose;
 
@@ -19,6 +20,7 @@ const conversationSchema = new Schema(
     // Denormalised for the conversation list.
     lastMessage: {
       body: { type: String, maxlength: 400 }, // encrypted preview
+      e2e: e2eSchema, // or the whole end-to-end encrypted message (only devices can open it)
       sender: { type: Schema.Types.ObjectId, ref: 'User' },
       sentAt: Date,
     },

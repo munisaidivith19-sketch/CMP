@@ -16,11 +16,12 @@ import { computeAlerts, overview as socOverview, rangeSince } from '../services/
 import { systemHealth } from '../services/soc/health.js';
 import { explainError } from '../services/soc/explain.js';
 import { coverageReport } from '../services/soc/coverage.js';
+import { runSmsTest } from '../services/soc/smsTest.js';
 import { redactLine, redactObject, redactText, routeTemplate } from '../services/soc/sanitize.js';
 import * as groq from '../services/ai/groqService.js';
 
 /**
- * Super Admin SOC and troubleshooting (mounted under /api/super-admin/soc,
+ * IT support SOC and troubleshooting (mounted under /api/console/soc,
  * behind protect → authorize('super_admin')). Read endpoints are bounded and
  * paginated; every state change and diagnostic run is written to the
  * protected AuditLog. Nothing here edits campus data.
@@ -117,7 +118,7 @@ export const setErrorStatus = asyncHandler(async (req, res) => {
   const updated = await ErrorEvent.findOneAndUpdate(
     { _id: e._id, status: e.status },
     { $set: set, $push: { notes: { $each: [{ at, by: req.user._id, kind: 'status', text: `${e.status} → ${to}${note ? `: ${note}` : ''}` }], $slice: -100 } } },
-    { new: true, lean: true }
+    { returnDocument: 'after', lean: true }
   );
   if (!updated) throw new ApiError(409, 'The error changed since you loaded it. Reload and try again.');
   await logAudit(req, 'SOC_ERROR_STATUS_CHANGED', { reason: note || undefined, details: { error: String(e._id), code: e.code, from: e.status, to } });
@@ -207,6 +208,17 @@ export const listDiagnostics = asyncHandler(async (req, res) => {
   res.json({ items: tests.map(publicDiagnostic) });
 });
 
+/** Troubleshooting → SMS / OTP test: one SMS of each template to the number given. */
+export const smsTest = asyncHandler(async (req, res) => {
+  const result = await runSmsTest(req.body.phone);
+  if (result.error) throw new ApiError(422, result.error);
+  logAudit(req, 'SOC_DIAGNOSTIC_RUN', {
+    outcome: result.ok ? 'success' : 'failed',
+    details: { test: 'sms.otp_and_exit', to: result.to, results: result.results.map(({ name, status }) => `${name}: ${status}`) },
+  });
+  res.json(result);
+});
+
 export const runDiagnostic = asyncHandler(async (req, res) => {
   const test = getDiagnostic(req.body.testId);
   if (!test) throw new ApiError(404, 'Unknown diagnostic test');
@@ -275,9 +287,9 @@ async function validRefs(Model, ids = []) {
 
 async function superAdminOrNull(id) {
   if (!id) return null;
-  if (!mongoose.isValidObjectId(id)) throw new ApiError(422, 'Assignee must be a Super Admin');
+  if (!mongoose.isValidObjectId(id)) throw new ApiError(422, 'Assignee must be IT support');
   const u = await User.findOne({ _id: id, role: SUPER_ADMIN_ROLE, isActive: true }).select('_id').lean();
-  if (!u) throw new ApiError(422, 'Assignee must be an active Super Admin');
+  if (!u) throw new ApiError(422, 'Assignee must be an active IT support account');
   return u._id;
 }
 
@@ -445,7 +457,7 @@ export const coverage = asyncHandler(async (_req, res) => {
   res.json(await coverageReport());
 });
 
-// ── Client error intake (any signed-in user; mounted outside /super-admin) ──
+// ── Client error intake (any signed-in user; mounted outside /console) ──
 export const CLIENT_KINDS = ['render', 'unhandled_rejection', 'window_error', 'network', 'api'];
 
 export const reportClientError = asyncHandler(async (req, res) => {

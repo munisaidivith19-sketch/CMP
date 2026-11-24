@@ -8,6 +8,7 @@ import { Input, Select } from '../../components/ui/form';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
 import { PASSWORD_HINT, suggestPassword } from '../../utils/password';
 import RestrictionPopupModal from '../../components/RestrictionPopupModal';
+import MobileInput, { MOBILE_HINT, mobileOk } from '../../components/ui/MobileInput';
 import { ACADEMIC_YEARS, SECTIONS, STAY_TYPES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, timeAgo, displayName } from '../../utils/format';
 
@@ -32,40 +33,6 @@ const withPair = (s, k, value) => {
   if (k === 'gender' && TITLE_OF_GENDER[value]) next.title = TITLE_OF_GENDER[value];
   return next;
 };
-
-const MOBILE_HINT = '10 digits';
-/** Digits only, at most 10 (a pasted +91 / leading 0 is dropped first). */
-const toMobile = (raw) => {
-  let d = String(raw || '').replace(/\D/g, '');
-  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
-  else if (d.length > 10 && d.startsWith('0')) d = d.slice(1);
-  return d.slice(0, 10);
-};
-const mobileOk = (v) => !v || /^\d{10}$/.test(v);
-
-/**
- * Mobile number field: only digits, never more than 10 — typed, pasted or
- * autofilled. The server checks the same rule.
- */
-function MobileInput({ value, onValue, ...props }) {
-  return (
-    <Input
-      type="tel"
-      inputMode="numeric"
-      autoComplete="off"
-      maxLength={10}
-      pattern="\d{10}"
-      placeholder="10-digit mobile"
-      value={value}
-      onChange={(e) => onValue(toMobile(e.target.value))}
-      onPaste={(e) => {
-        e.preventDefault();
-        onValue(toMobile(e.clipboardData.getData('text')));
-      }}
-      {...props}
-    />
-  );
-}
 
 /**
  * College email field. Paste is handled here (inserted once, trimmed) and the
@@ -257,8 +224,8 @@ function CreateStudentModal({ open, scope, onClose }) {
             onChange={set('stayType')}
             error={errors.stayType}
           />
-          <Input label="Parent mobile" type="tel" maxLength={20} required hint="Gate-pass OTPs go only to this number." value={v.parentPhone} onChange={set('parentPhone')} error={errors.parentPhone} />
-          <Input label="Student mobile" type="tel" maxLength={20} value={v.phone} onChange={set('phone')} error={errors.phone} />
+          <MobileInput label="Parent mobile" required hint={`${MOBILE_HINT} · Gate-pass OTPs go only to this number.`} value={v.parentPhone} onValue={setValue('parentPhone')} error={errors.parentPhone} />
+          <MobileInput label="Student mobile" hint={MOBILE_HINT} value={v.phone} onValue={setValue('phone')} error={errors.phone} />
           <div className="flex items-start gap-2 sm:col-span-2">
             <Input
               label="Set password"

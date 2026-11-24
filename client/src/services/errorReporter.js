@@ -1,5 +1,5 @@
 /**
- * Web client error reporting for the Super Admin SOC (POST /api/client-errors).
+ * Web client error reporting for IT support SOC (POST /api/client-errors).
  *
  * Kept small and dependency-free so it can be unit-tested:
  *  - the same error (kind + message shape + route) is sent at most once per

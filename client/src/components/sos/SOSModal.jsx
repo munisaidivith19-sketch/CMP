@@ -129,14 +129,14 @@ export default function SOSModal({ open, onClose, onSubmitted }) {
                   onClick={() => setType(opt.type)}
                   className={`flex items-start gap-3 rounded-2xl border p-3 text-left transition-all ${
                     selected
-                      ? 'border-rose-500 bg-rose-500/10 shadow-sm dark:border-rose-400 dark:bg-rose-500/20'
+                      ? 'border-rose-500 bg-rose-500/10 shadow-xs dark:border-rose-400 dark:bg-rose-500/20'
                       : 'border-slate-200/70 bg-white/40 hover:bg-white/80 dark:border-white/10 dark:bg-ink/30 dark:hover:bg-ink/50'
                   }`}
                 >
                   <span
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors ${
                       selected
-                        ? 'bg-rose-500 text-white shadow-sm'
+                        ? 'bg-rose-500 text-white shadow-xs'
                         : 'bg-slate-200/70 text-slate-700 dark:bg-white/10 dark:text-slate-300'
                     }`}
                   >

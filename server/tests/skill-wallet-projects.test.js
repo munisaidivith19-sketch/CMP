@@ -44,7 +44,7 @@ before(async () => {
     mk({ role: 'principal', name: 'Principal' }),
     mk({ role: 'faculty', name: 'Coordinator', department: 'ECE' }),
     mk({ role: 'faculty', name: 'Reviewer', department: 'ECE' }),
-    mk({ role: 'super_admin', name: 'Super Admin' }),
+    mk({ role: 'super_admin', name: 'IT support' }),
   ]);
   const login = async (u) => ({ u, ...(await ctx.loginWeb(u)) });
   [owner, mate, stranger, hodCse, hodEce, faculty, principal, coordinator, reviewer] = await Promise.all(users.slice(0, 9).map(login));
@@ -172,7 +172,7 @@ test('Owner / team authorization and IDOR: private projects are invisible to oth
   assert.equal((await req('POST', '/skill-wallet/projects', faculty, valid())).status, 403);
 });
 
-test('Super Admin and confined roles get no Skill Wallet access from their role', async () => {
+test('IT support and confined roles get no Skill Wallet access from their role', async () => {
   for (const who of [superAdmin, policyAdmin]) {
     for (const path of ['/skill-wallet/gallery', '/skill-wallet/review/queue', '/skill-wallet/management/overview', '/skill-wallet/projects']) {
       assert.equal((await req('GET', path, who)).status, 403, `${who.u.name} ${path}`);

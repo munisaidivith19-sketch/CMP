@@ -186,7 +186,7 @@ export default function GatePassListModal({ type, open, onClose, passes = [], li
               return (
                 <div
                   key={p._id}
-                  className="group flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/70 p-4 shadow-sm transition hover:border-primary-500/30 hover:bg-white dark:border-white/5 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+                  className="group flex flex-col gap-3 rounded-2xl border border-white/60 bg-white/70 p-4 shadow-xs transition hover:border-primary-500/30 hover:bg-white dark:border-white/5 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     {/* Student Info */}

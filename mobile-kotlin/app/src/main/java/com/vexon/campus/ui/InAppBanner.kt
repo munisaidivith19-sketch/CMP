@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.vexon.campus.core.Auth
+import com.vexon.campus.core.E2e
 import com.vexon.campus.core.Realtime
 import com.vexon.campus.core.get
 import com.vexon.campus.core.id
@@ -51,6 +52,7 @@ import com.vexon.campus.core.text
 import com.vexon.campus.nav.Nav
 import com.vexon.campus.push.Push
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -80,8 +82,15 @@ object InAppBanner {
                 if (sameId(message["sender"], Auth.user.id)) return
                 // Reading that conversation right now.
                 if (Nav.stack.lastOrNull()?.route?.path == "/chat/$conversation") return
+                val title = message["sender"]["name"].str ?: "New message"
+                val env = message["e2e"]
+                if (env != null) {
+                    // End-to-end encrypted: decrypt on this phone, then show it.
+                    E2e.scope.launch { current.value = Banner(nextKey++, title, E2e.open(conversation, env), "/chat/$conversation", true) }
+                    return
+                }
                 val text = message["body"].text ?: if (message["attachments"].list.isNotEmpty()) "📎 Attachment" else null
-                Banner(nextKey++, message["sender"]["name"].str ?: "New message", text, "/chat/$conversation", true)
+                Banner(nextKey++, title, text, "/chat/$conversation", true)
             }
             else -> return
         }

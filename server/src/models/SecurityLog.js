@@ -64,6 +64,8 @@ export const SECURITY_EVENTS = [
   'GATE_PASS_EXIT_CONFIRMED',
   'GATE_PASS_RETURN_CONFIRMED',
   'GATE_PASS_RETURN_OVERRIDE',
+  // Downloads of personal data (directory exports …)
+  'DATA_EXPORTED',
 ];
 
 const RETAIN_DAYS = 365;

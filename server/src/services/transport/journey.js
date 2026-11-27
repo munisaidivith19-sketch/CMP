@@ -313,6 +313,62 @@ export function stopEtas({ planStops, path, state, fresh, speed, history, now, c
   return out;
 }
 
+const hhmm = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+
+/**
+ * The planned run of a whole route: each stop's road distance from the first
+ * stop and from the previous one, and the time to reach it. Per stop-to-stop
+ * leg the best supported time is used:
+ *   history       — median measured time (plus dwell) from earlier GPS-recorded trips;
+ *   timetable     — the difference between the two stops' scheduled times;
+ *   assumed_speed — distance ÷ ETA_DEFAULT_SPEED_KMH plus a dwell (approximate).
+ * Without road geometry the straight stop-to-stop distance is scaled by
+ * ROAD_FACTOR and the result is marked approximate (exact: false).
+ */
+export function planLegs({ planStops, path, history, cfg }) {
+  const factor = path.exact ? 1 : ROAD_FACTOR;
+  const v = cfg.etaDefaultSpeedKmh / 3.6;
+  const methods = new Set();
+  let secsTotal = 0;
+  const stops = planStops.map((s, i) => {
+    if (i === 0) return { order: 0, fromStartM: 0, fromPrevM: 0, minutesFromStart: 0, minutesFromPrev: 0, method: null };
+    const prev = planStops[i - 1];
+    const legM = Math.max(0, path.stopAlong[i] - path.stopAlong[i - 1]) * factor;
+    const dwell = i - 1 === 0 ? 0 : history?.dwell?.get(String(prev.stop)) ?? cfg.etaDwellSeconds;
+    const seg = history?.segments?.get(`${prev.stop}>${s.stop}`);
+    const sched = prev.scheduledTime && s.scheduledTime ? hhmm(s.scheduledTime) - hhmm(prev.scheduledTime) : null;
+    let secs;
+    let method;
+    if (seg != null) {
+      secs = dwell + seg;
+      method = 'history';
+    } else if (sched != null && sched > 0 && sched <= 240) {
+      secs = sched * 60;
+      method = 'timetable';
+    } else {
+      secs = dwell + legM / v;
+      method = 'assumed_speed';
+    }
+    methods.add(method);
+    secsTotal += secs;
+    return {
+      order: i,
+      fromStartM: Math.round(Math.max(0, path.stopAlong[i] - path.stopAlong[0]) * factor),
+      fromPrevM: Math.round(legM),
+      minutesFromStart: Math.round(secsTotal / 60),
+      minutesFromPrev: Math.round(secs / 60),
+      method,
+    };
+  });
+  return {
+    distanceM: stops.length ? stops[stops.length - 1].fromStartM : 0,
+    minutes: Math.round(secsTotal / 60),
+    exact: Boolean(path.exact),
+    method: methods.size === 1 ? [...methods][0] : methods.size ? 'mixed' : null,
+    stops,
+  };
+}
+
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   const m = Math.floor(s.length / 2);

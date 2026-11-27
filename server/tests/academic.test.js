@@ -69,7 +69,7 @@ test('timetable: only admins can edit; conflicts are rejected', async () => {
     body: slot({ subject: String(other._id), section: 'B', room: 'LH-2' }),
   });
   assert.equal(facultyClash.status, 409, 'faculty cannot teach two sections at once');
-  assert.match(facultyClash.body.message, /already assigned during this time/);
+  assert.match(facultyClash.body.message, /is already assigned to/);
 
   // Cross-department teaching is allowed: an ECE faculty member can take a CSE
   // period, and is linked to the subject so they can mark its attendance.

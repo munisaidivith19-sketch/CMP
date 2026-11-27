@@ -153,9 +153,13 @@ export async function exportAchievementsFile(params = {}, format = 'csv') {
 /**
  * Export institutional user profiles directory to PDF for Principal and Admin only.
  */
-export async function downloadProfilesPdf() {
+export async function downloadProfilesPdf(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') query.set(k, String(v));
+  });
   const send = () =>
-    fetch('/api/users/export-pdf', {
+    fetch(`/api/users/export-pdf${query.toString() ? `?${query}` : ''}`, {
       credentials: 'include',
       headers: {
         accept: 'application/pdf',
@@ -332,3 +336,49 @@ export async function downloadEventParticipantsPdf(eventId) {
   return a.download;
 }
 
+
+/**
+ * Download the weekly class timetable as a PDF or Word (.docx) file. The
+ * server builds it from the same class the Week view shows (and checks the
+ * viewer may see it); the filename comes from its Content-Disposition.
+ */
+export async function downloadTimetable(params = {}, format = 'pdf') {
+  const query = new URLSearchParams({ format: format === 'docx' ? 'docx' : 'pdf' });
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') query.set(k, String(v));
+  });
+  const accept = format === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf';
+  const send = () =>
+    fetch(`/api/timetable/export?${query}`, {
+      credentials: 'include',
+      headers: {
+        accept,
+        ...(store.getState().auth.accessToken ? { authorization: `Bearer ${store.getState().auth.accessToken}` } : {}),
+      },
+    });
+  let res = await send();
+  if (res.status === 401) {
+    const session = await refreshSession();
+    if (!session?.accessToken) {
+      store.dispatch(loggedOut());
+      throw Object.assign(new Error('Your session has expired. Please sign in again.'), { status: 401 });
+    }
+    store.dispatch(setCredentials(session));
+    res = await send();
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw Object.assign(new Error(data?.message || 'Could not export the timetable'), { status: res.status });
+  }
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') || '');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = match ? match[1] : `timetable.${format === 'docx' ? 'docx' : 'pdf'}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return a.download;
+}

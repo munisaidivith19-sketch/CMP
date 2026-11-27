@@ -324,7 +324,7 @@ test('manual entry of a bare exit code works only with the direction chosen', as
   assert.equal(ok.body.code, 'EXIT_RECORDED');
 });
 
-test('approval, opening time and expiry are enforced exactly as on the web OUT screen', async () => {
+test('approval and opening time are enforced (passes never expire) exactly as on the web OUT screen', async () => {
   // Not yet open: a pass for a future day.
   const future = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
   const later = await approvedNormal({ fromDate: future });
@@ -333,14 +333,13 @@ test('approval, opening time and expiry are enforced exactly as on the web OUT s
   assert.equal(early.body.code, 'NOT_YET_OPEN');
   assert.equal((await ctx.models.GatePass.findById(later.id)).status, 'approved');
 
-  // Expired verification window.
+  // No expiry: an old verification date is ignored and the pass still lets the student out.
   const old = await approvedNormal();
   const payload = await exitPayload(old.id, old.student);
   await ctx.models.GatePass.updateOne({ _id: old.id }, { verificationExpiry: new Date(Date.now() - 1000) });
-  const expired = await scan(payload);
-  assert.equal(expired.body.outcome, 'rejected');
-  assert.equal(expired.body.code, 'UNKNOWN_CREDENTIAL');
-  assert.equal((await ctx.models.GatePass.findById(old.id)).status, 'expired');
+  const stillValid = await scan(payload);
+  assert.notEqual(stillValid.body.code, 'UNKNOWN_CREDENTIAL', JSON.stringify(stillValid.body));
+  assert.notEqual((await ctx.models.GatePass.findById(old.id)).status, 'expired');
 
   // Revoked.
   const rev = await approvedNormal();
@@ -370,6 +369,28 @@ test('rapid scans of different students are all processed independently', async 
     results.map(() => 'EXIT_RECORDED')
   );
   for (const p of passes) assert.equal((await ctx.models.GatePass.findById(p.id)).status, 'active');
+});
+
+test('fast camera scan from the web Security session: one call records exit, then the return; no verify/confirm step', async () => {
+  const { id, student } = await approvedEmergency(); // no parent OTP: keeps the suite under the faculty OTP limit
+  const web = (payload, scanId = newScanId()) => ctx.request('POST', '/gate-scanner/scans', { token: staff.security.token, body: { scanId, payload, source: 'camera' } });
+  const out = await web(await exitPayload(id, student));
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal(out.body.code, 'EXIT_RECORDED');
+  assert.equal(out.body.source, 'camera');
+  assert.equal(out.body.student.name, student.u.name);
+  assert.equal((await ctx.models.GatePass.findById(id)).status, 'active');
+  // The same QR still in view a moment later records nothing more.
+  const again = await web(await exitPayload(id, student).catch(() => 'CCGP:ZZZZ'));
+  assert.notEqual(again.body.outcome, 'success');
+  const back = await web(await returnPayload(id, student));
+  assert.equal(back.body.code, 'RETURN_RECORDED', JSON.stringify(back.body));
+  assert.equal((await ctx.models.GatePass.findById(id)).status, 'completed');
+});
+
+test('a burst of 40 scans in a second is not throttled for one guard', async () => {
+  const results = await Promise.all(Array.from({ length: 40 }, () => scan('CCGP:QQ9Q', { who: staff.security2 })));
+  assert.deepEqual([...new Set(results.map((r) => r.status))], [200]);
 });
 
 test('uncertain outcome: a scan id can be settled later; other guards cannot read it', async () => {

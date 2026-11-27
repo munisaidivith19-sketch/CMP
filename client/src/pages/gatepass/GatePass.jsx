@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Users,
   XCircle,
+  Zap,
 } from 'lucide-react';
 import {
   useCancelGatePassMutation,
@@ -48,6 +49,7 @@ import { fmtStamp as fmtMoment } from '../../utils/format';
 import { GATE_PASS_REGARDING, INDIAN_STATES, STUDENT_ROLES } from '../../utils/constants';
 import { ParentVerification } from './ParentVerification';
 import QrScannerModal from '../../components/QrScannerModal';
+import FastGateScan from '../../components/FastGateScan';
 import { isCompleteGateCode, scanProblem } from '../../utils/gateQr';
 import { ReturnStatus } from './ReturnStatus';
 import { AUTHORITY_LABELS, EmergencyApprovedCode, EmergencyBadge, EmergencyDetails, EmergencyRequestForm, isEmergency } from './EmergencyGatePass';
@@ -185,7 +187,7 @@ function IssuedQr({ pass }) {
         <img src={data.qr} alt="Gate pass code" className="h-52 w-52" />
       </div>
       <p className="mt-3 font-mono text-4xl font-extrabold tracking-[0.3em]">{data.code}</p>
-      <p className="mt-1 text-xs muted">Tell this code to security at the gate · valid until {fmtClassDay(data.expiresAt, 'dd MMM, h:mm a')}</p>
+      <p className="mt-1 text-xs muted">Tell this code to security at the gate · valid until you use it</p>
     </div>
   );
 }
@@ -1164,6 +1166,7 @@ function SecurityConsole() {
   const { data: dash, isLoading, error, refetch } = useGetSecurityDashboardQuery(undefined, { pollingInterval: 30000 });
   const [code, setCode] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+  const [fastOpen, setFastOpen] = useState(false);
   const [result, setResult] = useState(null);
   const [verify, { isLoading: verifying }] = useVerifyGatePassMutation();
   const [out, { isLoading: outLoading }] = useRecordGateOutMutation();
@@ -1218,9 +1221,15 @@ function SecurityConsole() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader title="Verify a gate pass" subtitle="Scan the student’s QR code, or enter their 4-character code." />
-          <Button type="button" icon={ScanLine} className="mb-3 w-full" onClick={() => setScanOpen(true)}>
-            Scan QR code
-          </Button>
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <Button type="button" icon={ScanLine} className="w-full" onClick={() => setScanOpen(true)}>
+              Scan QR code
+            </Button>
+            <Button type="button" variant="success" icon={Zap} className="w-full" onClick={() => setFastOpen(true)}>
+              Fast scan (no taps)
+            </Button>
+          </div>
+          <p className="mb-2 text-center text-[11px] muted">Fast scan keeps the camera on and records each student's exit or return as soon as their QR is seen.</p>
           <p className="mb-2 text-center text-xs muted">or enter code manually</p>
           <form onSubmit={check} className="flex gap-2">
             <input
@@ -1294,6 +1303,13 @@ function SecurityConsole() {
           )}
         </Card>
       </div>
+      <FastGateScan
+        open={fastOpen}
+        onClose={() => {
+          setFastOpen(false);
+          refetch();
+        }}
+      />
       <QrScannerModal
         open={scanOpen}
         onClose={() => setScanOpen(false)}

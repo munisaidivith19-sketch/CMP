@@ -9,7 +9,8 @@ import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Skeleton, cn }
 import { accuracyText, agoText, busStatus, etaText, initialFit } from './busGeo';
 import { createLocator } from './myLocation';
 import JourneyPanel from './JourneyPanel';
-import { DIRECTION_LABEL, passedFromJourney } from './journeyFormat';
+import { RoutePlanSummary } from './RoutePlan';
+import { DIRECTION_LABEL, distanceText, durationText, passedFromJourney, planApproximate } from './journeyFormat';
 
 // Console logging of the raw device readings: on in development, or with
 // ?locdebug=1 (or localStorage "vexon:locdebug" = "1"). Never sent anywhere.
@@ -341,14 +342,24 @@ export default function Transport() {
               {detail?.route && (
                 <div>
                   <p className="label">Stops</p>
+                  {detail.route.stats && <RoutePlanSummary stats={detail.route.stats} className="mb-2" />}
                   <ol className="space-y-1 text-sm">
                     {detail.route.stops.map((s) => {
                       const isSel = String(s._id) === String(eta?.stop?._id || stopId);
+                      const leg = detail.route.stats?.stops?.find((x) => String(x.stopId) === String(s._id));
+                      const approx = planApproximate(detail.route.stats) ? '~' : '';
                       return (
                         <li key={s._id}>
                           <button type="button" onClick={() => select(selectedId, s._id)} className={cn('flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-white/50 dark:hover:bg-white/5', isSel && 'bg-primary-500/10 font-bold')} aria-current={isSel ? 'true' : undefined}>
                             <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold', passed.has(s.sequence) ? 'bg-slate-300 text-slate-700' : 'bg-primary-500 text-white')}>{s.sequence}</span>
-                            <span className={cn('flex-1', passed.has(s.sequence) && 'text-slate-400 dark:text-slate-500')}>{s.name}</span>
+                            <span className={cn('min-w-0 flex-1', passed.has(s.sequence) && 'text-slate-400 dark:text-slate-500')}>
+                              {s.name}
+                              {leg && (
+                                <span className="block text-[11px] font-normal muted">
+                                  {leg.order === 0 ? 'Start' : `${approx}${distanceText(leg.fromStartM)} from start · ${approx}${distanceText(leg.fromPrevM)} from previous · usually ${durationText(leg.minutesFromStart)}`}
+                                </span>
+                              )}
+                            </span>
                             {s.scheduledTime && <span className="text-[11px] muted">{s.scheduledTime}</span>}
                           </button>
                         </li>

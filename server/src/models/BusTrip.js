@@ -31,7 +31,17 @@ const tripSchema = new Schema(
     route: { type: Schema.Types.ObjectId, ref: 'BusRoute' },
     source: { type: String, enum: BUS_GPS_SOURCES, required: true },
     sharedBy: { type: Schema.Types.ObjectId, ref: 'User' }, // phone source only
-    startedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    // Nobody starts an automatic tracker trip, so it has no starter.
+    startedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: function startedByRequired() {
+        return !this.autoStarted;
+      },
+    },
+    autoStarted: { type: Boolean, default: false },
+    // Automatic end: where the bus has been standing since `at` (tracker trips).
+    parkAnchor: { lat: Number, lng: Number, at: Date },
     startedAt: { type: Date, default: Date.now },
     status: { type: String, enum: ['active', 'completed', 'stopped', 'timeout'], default: 'active' },
     endedAt: Date,

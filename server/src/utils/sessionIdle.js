@@ -1,7 +1,7 @@
 /**
  * Web-portal idle-session policy — the single source of truth.
  *
- * A web session of a non-exempt role ends after WEB_IDLE_TIMEOUT_MS without
+ * A web session of a student or IT support (WEB_IDLE_ROLES) ends after WEB_IDLE_TIMEOUT_MS without
  * reported USER ACTIVITY. For those sessions `Session.lastUsedAt` means
  * "last reported user activity" (server clock), and only two things move it:
  *   - signing in (the session is created), and
@@ -16,7 +16,7 @@
  * are disconnected even if the tab sends no HTTP requests at all. The
  * browser's own 2-minute timer is only a user-experience layer on top.
  *
- * Mobile sessions, and the exempt roles' web sessions, keep the existing rule
+ * Mobile sessions, and every other role's web sessions, keep the existing rule
  * (7 days idle, lastUsedAt written at most every 5 minutes) unchanged.
  */
 import '../config/env.js'; // loads .env so WEB_IDLE_TIMEOUT_MINUTES is read
@@ -35,8 +35,9 @@ export const WEB_IDLE_TIMEOUT_MS = (Number.isFinite(idleMinutes) && idleMinutes 
 export const ACTIVITY_WRITE_THROTTLE_MS = 25 * 1000;
 // How often the server sweeps for idle web sessions (socket clean-up).
 export const IDLE_SWEEP_INTERVAL_MS = 30 * 1000;
-// Roles whose web sessions keep the existing behaviour.
-export const WEB_IDLE_EXEMPT_ROLES = ['faculty', 'hod', 'admin', 'principal', 'ao', 'dean', 'chairman', 'warden', 'security'];
+// The ONLY roles whose web sessions end after the idle limit: students (club
+// admins are students) and IT support. Every other role keeps the long rule.
+export const WEB_IDLE_ROLES = ['student', 'club_admin', 'super_admin'];
 
 export const IDLE_MESSAGE = 'Your session expired due to inactivity. Please log in again.';
 
@@ -47,7 +48,7 @@ export const IDLE_MESSAGE = 'Your session expired due to inactivity. Please log 
  * claim or the client).
  */
 export const idleTimeoutFor = (client, role) =>
-  client === 'web' && !WEB_IDLE_EXEMPT_ROLES.includes(role) ? WEB_IDLE_TIMEOUT_MS : null;
+  client === 'web' && WEB_IDLE_ROLES.includes(role) ? WEB_IDLE_TIMEOUT_MS : null;
 
 /** True when the session has gone longer than its idle limit without reported activity. */
 export function isIdleExpired(session, idleMs, now = new Date()) {

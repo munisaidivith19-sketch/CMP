@@ -1,6 +1,6 @@
 import { AlertTriangle, Flag, MapPin } from 'lucide-react';
 import { Badge, cn } from '../../components/ui/primitives';
-import { METHOD_LABEL, campusTime, directionText, etaLine, stopLine } from './journeyFormat';
+import { METHOD_LABEL, campusTime, directionText, distanceText, durationText, etaLine, planApproximate, planSummary, stopLine } from './journeyFormat';
 
 const DOT = {
   departed: 'bg-slate-400 text-white',
@@ -19,12 +19,31 @@ export default function JourneyPanel({ journey, tz, selectedStopId, onSelectStop
   if (!journey) return null;
   const { currentStop, nextStop, followingStop, college } = journey;
   const nextMethod = nextStop?.eta?.status === 'ok' ? METHOD_LABEL[nextStop.eta.method] : null;
+  const away = (eta) => (eta?.status === 'ok' && Number.isFinite(eta.distanceMeters) ? `${eta.approximate ? '~' : ''}${distanceText(eta.distanceMeters)} away` : '');
+  // What is left of the trip: the last stop's live estimate.
+  const last = journey.stops?.[journey.stops.length - 1];
+  const left = last?.status === 'upcoming' && last.eta?.status === 'ok' ? last.eta : null;
+  const approx = planApproximate(journey.plan) ? '~' : '';
   return (
     <section className="space-y-3" aria-label="Journey">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Badge color={journey.directionAssumed ? 'warning' : 'primary'}>{directionText(journey)}</Badge>
         {journey.tripStartedAt && <span className="muted">Trip started {campusTime(journey.tripStartedAt, tz)}</span>}
       </div>
+      {journey.plan && (
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="rounded-2xl bg-white/40 p-2.5 dark:bg-white/5">
+            <p className="muted">Whole trip</p>
+            <p className="font-bold">{planSummary(journey.plan)}</p>
+            <p className="text-[11px] muted">{journey.stops.length} stops · usual time</p>
+          </div>
+          <div className="rounded-2xl bg-white/40 p-2.5 dark:bg-white/5">
+            <p className="muted">Still to go</p>
+            <p className="font-bold">{left ? `${left.approximate ? '~' : ''}${distanceText(left.distanceMeters)} · about ${durationText(left.minutes)}` : journey.status === 'active' ? '—' : 'Trip ended'}</p>
+            {left && <p className="text-[11px] muted">to {last.name}</p>}
+          </div>
+        </div>
+      )}
       {journey.directionAssumed && (
         <p className="text-[11px] muted">The person sharing did not choose a direction, so “towards college” is assumed. Stops may be in the wrong order until they correct it.</p>
       )}
@@ -46,14 +65,14 @@ export default function JourneyPanel({ journey, tz, selectedStopId, onSelectStop
         <div className={cn('rounded-2xl p-3', nextStop?.eta?.status === 'ok' ? 'bg-primary-500/10' : 'bg-white/40 dark:bg-white/5')}>
           <dt className="text-xs muted">Next stop</dt>
           <dd className="font-bold">{nextStop ? nextStop.name : journey.status === 'active' ? 'No stops left on this trip' : '—'}</dd>
-          {nextStop?.eta && <dd className="text-xs">{etaLine(nextStop.eta, tz)}</dd>}
+          {nextStop?.eta && <dd className="text-xs">{etaLine(nextStop.eta, tz)}{away(nextStop.eta) && <strong> · {away(nextStop.eta)}</strong>}</dd>}
           {nextMethod && <dd className="text-[11px] muted">Predicted {nextMethod}{nextStop.eta.confidence ? ` · ${nextStop.eta.confidence} confidence` : ''}</dd>}
         </div>
         {followingStop && (
           <div className="rounded-2xl bg-white/40 p-3 dark:bg-white/5">
             <dt className="text-xs muted">Then</dt>
             <dd className="font-semibold">{followingStop.name}</dd>
-            {followingStop.eta && <dd className="text-xs">{etaLine(followingStop.eta, tz)}</dd>}
+            {followingStop.eta && <dd className="text-xs">{etaLine(followingStop.eta, tz)}{away(followingStop.eta) && ` · ${away(followingStop.eta)}`}</dd>}
           </div>
         )}
         {college && (
@@ -88,9 +107,15 @@ export default function JourneyPanel({ journey, tz, selectedStopId, onSelectStop
                     </span>
                     <span className="block text-[11px] muted">
                       {stopLine(s, tz)}
+                      {s.status === 'upcoming' && away(s.eta) && ` · ${away(s.eta)}`}
                       {(s.arrivalSource === 'manual' || s.departureSource === 'manual') && ' · recorded by staff'}
                       {s.scheduledTime && ` · timetable ${s.scheduledTime}`}
                     </span>
+                    {Number.isFinite(s.fromStartM) && (
+                      <span className="block text-[11px] muted">
+                        {s.order === 0 ? 'Start of the trip' : `${approx}${distanceText(s.fromStartM)} from start · ${approx}${distanceText(s.fromPrevM)} from previous stop · usually ${durationText(s.plannedMinutesFromStart)} after the start`}
+                      </span>
+                    )}
                   </span>
                 </button>
               </li>

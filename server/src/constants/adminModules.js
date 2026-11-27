@@ -42,7 +42,7 @@ export const ADMIN_MODULES = [
   { key: 'notifications', label: 'Notifications', section: 'menu', nav: ['/notifications'], api: ['/notifications'], policies: ['notifications'] },
 
   // ── Campus
-  { key: 'chat', label: 'Chat', section: 'campus', nav: ['/chat', '/admin/chat-requests'], api: ['/chat'], policies: ['chat'] },
+  { key: 'chat', label: 'Chat', section: 'campus', nav: ['/chat'], api: ['/chat'], policies: ['chat'] },
   { key: 'timetable', label: 'Timetable', section: 'campus', nav: ['/timetable', '/admin/academics'], api: ['/timetable', '/subjects', '/exams'], policies: ['timetable'] },
   { key: 'transport', label: 'Bus Tracking', section: 'campus', nav: ['/transport'], api: ['/transport'], policies: ['transport'] },
   { key: 'studyMaterials', label: 'Study Materials', section: 'campus', nav: ['/study-materials'], api: ['/study-materials', '/ai/study-assistant'], policies: ['study_materials'] },

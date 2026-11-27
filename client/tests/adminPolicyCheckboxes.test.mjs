@@ -27,7 +27,7 @@ test('ticked modules show every sidebar item they cover, in the sidebar\'s own s
   assert.deepEqual(r.main, ['Dashboard', 'People']);
   // An Admin manages grievances from the admin section (below), not the student-facing campus entry.
   assert.deepEqual(r.campus, ['Chat']);
-  assert.deepEqual(r.admin, ['Analytics', 'Grievances', 'Users', 'Group requests', 'Security & Logs']);
+  assert.deepEqual(r.admin, ['Analytics', 'Grievances', 'Users', 'Security & Logs']);
 });
 
 test('nothing ticked: Dashboard only; module list not loaded yet: Dashboard only (no flash of hidden items)', () => {

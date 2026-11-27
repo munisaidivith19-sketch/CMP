@@ -9,6 +9,7 @@ import { errorMessage, useGetSocCatalogQuery, useGetSocDiagnosticsQuery, useGetS
 import { fmtDateTime } from '../../utils/format';
 
 import { severityTone } from './socModel';
+import AiDoubtsControl from './AiDoubtsControl';
 
 const words = (str) => String(str || '').replace(/_/g, ' ');
 
@@ -17,6 +18,7 @@ const TABS = [
   { value: 'health', label: 'System health' },
   { value: 'diagnostics', label: 'Diagnostics' },
   { value: 'catalog', label: 'Error catalog' },
+  { value: 'ai', label: 'AI Doubts' },
 ];
 
 /** Troubleshooting: tabs of read-only tools. Diagnostics: the registered tests and their run history. */
@@ -25,11 +27,12 @@ export default function Troubleshooting() {
   const tab = TABS.some((t) => t.value === params.get('tab')) ? params.get('tab') : TABS[0].value;
   return (
     <div>
-      <PageHeader icon={Wrench} title="Troubleshooting" subtitle="System health, diagnostic tests and the error catalog." />
+      <PageHeader icon={Wrench} title="Troubleshooting" subtitle="System health, diagnostic tests, the error catalog and the AI Doubts emergency stop." />
       <Tabs tabs={TABS} value={tab} onChange={(v) => setParams({ tab: v }, { replace: true })} className="mb-6" />
       {tab === 'health' && <Health />}
       {tab === 'diagnostics' && <Diagnostics />}
       {tab === 'catalog' && <Catalog />}
+      {tab === 'ai' && <AiDoubtsControl />}
     </div>
   );
 }

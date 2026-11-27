@@ -26,7 +26,7 @@ async function webUser(role, extra = {}) {
 
 // ── Who the rule applies to ────────────────────────────────────────
 
-for (const role of ['student']) {
+for (const role of ['student', 'club_admin', 'super_admin']) {
   test(`${role}: web session ends after 2 minutes without activity — server-side`, async () => {
     const w = await webUser(role);
     assert.equal((await ctx.request('GET', '/auth/me', { token: w.token })).status, 200);
@@ -47,7 +47,7 @@ for (const role of ['student']) {
   });
 }
 
-for (const role of ['faculty', 'hod', 'dean', 'ao', 'warden', 'chairman', 'security', 'admin', 'principal']) {
+for (const role of ['faculty', 'hod', 'dean', 'ao', 'warden', 'chairman', 'security', 'admin', 'principal', 'coe', 'office', 'transport']) {
   test(`${role} is exempt: web session survives long inactivity`, async () => {
     const w = await webUser(role);
     await age(w.sid, 60 * 60 * 1000);

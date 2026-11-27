@@ -20,6 +20,15 @@ const busSchema = new Schema(
     trackerDeviceId: { type: String, trim: true, maxlength: 80 },
     // Staff allowed to start a trip and share their phone's location for this bus.
     trackingStaff: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
+    // Tracker buses: start and end trips by themselves (services/transport/autoTrips.js).
+    autoTrips: { type: Boolean, default: true },
+    autoTrip: {
+      // Where the bus was last seen standing / on its last trip; moving far
+      // enough from here starts a trip.
+      anchor: { lat: Number, lng: Number, at: Date },
+      // After a manager stops a tracker trip by hand, no automatic start until then.
+      pausedUntil: Date,
+    },
     lastLocation: {
       lat: Number,
       lng: Number,

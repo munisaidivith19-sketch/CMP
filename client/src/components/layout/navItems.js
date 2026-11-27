@@ -33,7 +33,6 @@ import {
   Trophy,
   UserCog,
   Users,
-  UsersRound,
   Wallet,
   Wrench,
 } from 'lucide-react';
@@ -84,17 +83,15 @@ export const CAMPUS = [
   { to: '/complaints', label: 'Grievances', icon: MessageSquareWarning, excludeRoles: ['club_admin', 'admin', 'chairman'] },
   { to: '/alumni', label: 'Alumni Network', icon: GraduationCap, excludeRoles: ['warden', 'security'] },
   { to: '/sos', label: 'Emergency SOS', icon: AlertOctagon, excludeRoles: ['student', 'club_admin'] },
-  { to: '/analytics', label: 'Insights', icon: LineChart },
+  { to: '/analytics', label: 'Insights', icon: LineChart, excludeRoles: ['principal'] },
 ];
 
 export const ADMIN = [
-  { to: '/admin', label: 'Analytics', icon: BarChart3, roles: STAFF_VIEW, end: true },
-  { to: '/admin/attendance', label: 'Attendance', icon: ClipboardCheck, roles: STAFF_VIEW },
+  { to: '/admin', label: 'Analytics', icon: BarChart3, roles: STAFF_VIEW.filter((r) => r !== 'principal'), end: true },
   { to: '/admin/reports', label: 'Moderation', icon: ShieldAlert, roles: STAFF_VIEW },
   { to: '/admin/complaints', label: 'Grievances', icon: MessageSquareWarning, roles: ['admin', 'chairman'] },
   { to: '/admin/users', label: 'Users', icon: UserCog, roles: ['admin'] },
   // Admin approves faculty groups; the principal approves HOD groups.
-  { to: '/admin/chat-requests', label: 'Group requests', icon: UsersRound, roles: ['admin', 'principal'], badge: 'groups' },
   { to: '/principal/promotions', label: 'Promotions', icon: GraduationCap, roles: ['principal'] },
   { to: '/admin/clubs', label: 'Club approvals', icon: BadgeCheck, roles: ['admin'] },
   { to: '/admin/academics', label: 'Academics', icon: BookOpenCheck, roles: ['admin', 'hod'] },

@@ -56,6 +56,12 @@ export const AUDIT_ACTIONS = [
   'SKILL_WALLET_CONFIG_CHANGED',
   'SKILL_WALLET_MILESTONE_DECISION',
   'SKILL_WALLET_RECOMMENDATION',
+  // Self-hosted AI Doubts model (server/ai): emergency stop from Troubleshooting.
+  'AI_EMERGENCY_STOP',
+  'AI_TRIPWIRE',
+  'AI_DOUBTS_BLOCKED',
+  'AI_DOUBTS_UNBLOCKED',
+  'AI_CREDITS_GRANTED',
 ];
 
 const auditLogSchema = new Schema(

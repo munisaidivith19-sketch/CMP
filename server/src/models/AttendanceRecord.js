@@ -28,7 +28,12 @@ const attendanceRecordSchema = new Schema(
     // `triggerPeriod`); `markedBy` is the person who marked that trigger
     // period. This is still REGULAR period attendance — no exam-attendance
     // record is ever created.
-    source: { type: String, enum: ['AUTO_EXAM_PERIOD_PRESENT'] },
+    // DAY_WISE_COPY = day-wise flow: copied from the class's morning period
+    // (`copiedFrom` = that morning session) and not yet changed by a person.
+    // Once a person saves this period the tag is removed, so a later copy
+    // never overwrites their correction.
+    source: { type: String, enum: ['AUTO_EXAM_PERIOD_PRESENT', 'DAY_WISE_COPY'] },
+    copiedFrom: { type: Schema.Types.ObjectId, ref: 'AttendanceSession' },
     exam: { type: Schema.Types.ObjectId, ref: 'Exam' },
     triggerSession: { type: Schema.Types.ObjectId, ref: 'AttendanceSession' },
     triggerPeriod: { type: Number, min: 1, max: 12 },

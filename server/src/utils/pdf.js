@@ -257,7 +257,8 @@ Q`);
   }
 
   /**
-   * A table. `columns` is [{ header, width (share of content width), align }].
+   * A table. `columns` is [{ header, width (share of content width), align, shrink }].
+   * `shrink: true` shrinks the font of a too-long value instead of cutting it.
    * The header row repeats automatically on every page the table spills onto.
    */
   table({ columns, rows, size = 9, headerSize = 8.5, zebra = true, grid = false, minRowHeight = null }) {
@@ -348,8 +349,13 @@ Q`);
         const lineSpacing = size + 2;
         const startY = this.y + rowHeight - 4 - size;
         lines.forEach((lineObj, lIdx) => {
-          const lSize = lineObj.size || (lIdx === 0 ? size : Math.max(size - 1, 6.5));
+          let lSize = lineObj.size || (lIdx === 0 ? size : Math.max(size - 1, 6.5));
           const lBold = lineObj.bold ?? (lIdx === 0 ? Boolean(c.bold) : false);
+          // `shrink` columns (roll numbers, IDs) must never be cut: step the
+          // font down until the value fits; only below 5.5 pt does it truncate.
+          if (c.shrink) {
+            while (lSize > 5.5 && widthOf(asciiSafe(lineObj.text), lSize, lBold) > widths[i] - 6) lSize -= 0.25;
+          }
           const lColor = lineObj.color || (lIdx === 0 ? null : [0.35, 0.35, 0.4]);
           const text = fit(lineObj.text, widths[i] - 6, lSize, lBold);
           const drawY = startY - lIdx * lineSpacing;

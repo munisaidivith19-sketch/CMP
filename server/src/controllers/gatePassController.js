@@ -41,8 +41,12 @@ const securityView = (pass) => ({
   student: pass.student && typeof pass.student === 'object' && pass.student.name !== undefined ? pickStudent(pass.student) : pass.student,
   parentPhone: pass.parentPhone ? otpService.maskMobile(pass.parentPhone) : pass.parentPhone,
 });
-/** When an approved pass's code stops working: the end of its return day, plus the grace period. */
-export const verificationExpiryFor = (toDate) => new Date(new Date(toDate).getTime() + DAY + GRACE_AFTER_RETURN_MS);
+/**
+ * Gate passes never expire (the Principal's decision): an approved pass's code
+ * works until it is used, cancelled or revoked. Kept as a function so callers
+ * stay unchanged; it always answers "no expiry".
+ */
+export const verificationExpiryFor = () => null;
 const REVIEWER_FIELDS = 'name role';
 
 const isAdmin = (user) => user.role === 'admin';
@@ -121,24 +125,13 @@ export async function notifyStage(filter, payload) {
   return ids;
 }
 
-/** Mark passes whose window has closed as expired. Runs on a timer and lazily on verify. */
+/**
+ * Gate passes no longer expire: neither approved passes nor pending requests
+ * are ever moved to 'expired'. Kept (as a no-op) because the sweep timer and
+ * the verify paths still call it; passes already marked expired stay so.
+ */
 export async function expireGatePasses() {
-  const now = new Date();
-  const stale = await GatePass.find({
-    $or: [
-      { status: 'approved', verificationExpiry: { $lt: now } },
-      { status: { $in: GATE_PASS_PENDING_STATUSES }, toDate: { $lt: new Date(now.getTime() - DAY) } },
-    ],
-  })
-    .select('student status')
-    .lean();
-  if (!stale.length) return 0;
-  await GatePass.updateMany(
-    { _id: { $in: stale.map((p) => p._id) }, status: { $in: ['approved', ...GATE_PASS_PENDING_STATUSES] } },
-    { $set: { status: 'expired' }, $unset: { verificationCode: 1 } }
-  );
-  stale.forEach((p) => publish({ ...p, status: 'expired' }));
-  return stale.length;
+  return 0;
 }
 
 async function loadPass(id) {
@@ -492,14 +485,10 @@ export const getGatePassQr = asyncHandler(async (req, res) => {
   if (!['approved', 'active'].includes(pass.status) || !pass.verificationCode) {
     throw new ApiError(422, 'This pass has no active verification code');
   }
-  if (pass.verificationExpiry && pass.verificationExpiry < new Date()) {
-    await expireGatePasses();
-    throw new ApiError(410, 'This pass has expired');
-  }
   const payload = `${QR_PREFIX}${pass.verificationCode}`;
   const qr = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'M', margin: 1, width: 320 });
   res.set('Cache-Control', 'no-store');
-  res.json({ code: pass.verificationCode, qr, payload, expiresAt: pass.verificationExpiry, status: pass.status });
+  res.json({ code: pass.verificationCode, qr, payload, expiresAt: null, status: pass.status });
 });
 
 // ── Approval chain: faculty → HOD → principal ───────────────────────
@@ -541,9 +530,8 @@ async function reviewStage(req, res, { stage, from, forwardFrom = from, forwardB
   if (forwarding) {
     set.status = approving ? 'approved' : to;
     if (approving) {
-      // toDate is stored as the start (UTC midnight) of the return day, so the code
-      // must stay valid through the END of that day, plus a grace period after.
-      set.verificationExpiry = new Date(new Date(pass.toDate).getTime() + DAY + GRACE_AFTER_RETURN_MS);
+      // No expiry: the code works until the pass is used, cancelled or revoked.
+      set.verificationExpiry = verificationExpiryFor(pass.toDate);
     }
   } else {
     set.status = 'rejected';
@@ -891,7 +879,6 @@ export function problemsFor(pass) {
     pending_authority: 'This pass has not been approved yet',
   };
   if (messages[pass.status]) problems.push(messages[pass.status]);
-  if (pass.verificationExpiry && now > pass.verificationExpiry) problems.push('The verification window has closed');
   // An emergency pass has an exact leaving time (exit opens an hour before it).
   // Every other pass has a "from" calendar day, stored as UTC midnight: it opens
   // when that campus day begins (00:00 campus time), never on the day before.
@@ -1501,7 +1488,6 @@ export const massApproveGatePass = asyncHandler(async (req, res) => {
   }
 
   const now = new Date();
-  const expiry = new Date(to.getTime() + DAY + GRACE_AFTER_RETURN_MS);
   const passesToInsert = eligibleHostellers.map((student, idx) => ({
     student: student._id,
     department: student.department,
@@ -1521,7 +1507,7 @@ export const massApproveGatePass = asyncHandler(async (req, res) => {
       reason: description.trim() || 'Institutional Mass Outpass',
     },
     verificationCode: generatedCodes[idx],
-    verificationExpiry: expiry,
+    verificationExpiry: verificationExpiryFor(to),
   }));
 
   const inserted = await GatePass.insertMany(passesToInsert);

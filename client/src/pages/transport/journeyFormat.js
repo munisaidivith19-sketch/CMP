@@ -105,3 +105,37 @@ export function campusLocalToIso(local, tz) {
   const offset = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - guess;
   return new Date(guess - offset).toISOString();
 }
+
+/** "850 m", "2.2 km", "124 km"; '' when unknown. */
+export function distanceText(m) {
+  if (m == null || !Number.isFinite(Number(m))) return '';
+  const v = Math.max(0, Number(m));
+  if (v < 1000) return `${Math.round(v / 10) * 10} m`;
+  return v < 100000 ? `${(v / 1000).toFixed(1)} km` : `${Math.round(v / 1000)} km`;
+}
+
+/** "7 min", "1 h 25 min", "2 h"; '' when unknown. */
+export function durationText(minutes) {
+  if (minutes == null || !Number.isFinite(Number(minutes))) return '';
+  const m = Math.max(0, Math.round(Number(minutes)));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+}
+
+export const PLAN_METHOD_LABEL = {
+  history: 'measured on earlier trips',
+  timetable: 'from the route timetable',
+  assumed_speed: 'estimated at an average bus speed',
+  mixed: 'measured trips, timetable and estimates',
+};
+
+/** A planned run is approximate without a road line or when timed only by an assumed speed. */
+export const planApproximate = (plan) => Boolean(plan) && (plan.exact === false || plan.method === 'assumed_speed');
+
+/** "2.2 km · about 7 min" for a route or trip plan ('' without one). */
+export function planSummary(plan) {
+  if (!plan || !Number.isFinite(plan.distanceM)) return '';
+  const approx = planApproximate(plan) ? '~' : '';
+  return `${approx}${distanceText(plan.distanceM)} · about ${durationText(plan.minutes)}`;
+}

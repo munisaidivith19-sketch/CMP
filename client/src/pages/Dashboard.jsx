@@ -548,7 +548,7 @@ export default function Dashboard() {
         </Suspense>
       </Card>
 
-      {isStaff && (
+      {isStaff && user.role !== 'principal' && (
         <p className="text-center text-xs muted">
           Looking for campus-wide numbers?{' '}
           <Link to="/admin" className="font-bold text-primary-600 hover:underline dark:text-primary-300">

@@ -13,7 +13,10 @@
     "seed:alumni": "node src/seed/alumniUsers.js",
     "migrate:academic": "node scripts/migrate-academic-year.mjs",
     "migrate:break-periods": "node scripts/fix-break-periods.mjs",
-    "test": "node --test --test-concurrency=1 \"tests/*.test.js\""
+    "test": "node --test --test-concurrency=1 \"tests/*.test.js\"",
+    "ai:status": "node ai/aictl.mjs status",
+    "ai:stop": "node ai/aictl.mjs stop",
+    "ai:resume": "node ai/aictl.mjs resume"
   },
   "engines": {
     "node": "24.x"

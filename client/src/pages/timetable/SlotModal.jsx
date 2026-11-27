@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
-import { useCreateSlotMutation, useGetSubjectsQuery, useGetTimetableFacultyOptionsQuery, useUpdateSlotMutation } from '../../services/api';
+import { useCreateSlotMutation, useGetSubjectsQuery, useGetTimetableFacultyBusyQuery, useGetTimetableFacultyOptionsQuery, useUpdateSlotMutation } from '../../services/api';
 import { Button } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select, TimeInput } from '../../components/ui/form';
@@ -9,6 +9,20 @@ import { WEEKDAYS, YEAR_LABELS, yearOfSemester } from '../../utils/constants';
 import { errMsg, titleCase } from '../../utils/format';
 
 const MAX_PERIOD = 12;
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** "09:50" → "9:50 AM". */
+const to12h = (t) => {
+  const [h, m] = t.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+/** Where a busy faculty member already is: "22CYP502 · CSE · Year 3 · Sec A · 9:00 AM–10:00 AM". */
+export function clashText(c) {
+  return [c.subjectCode, c.department, c.year && `Year ${c.year}`, c.section && `Sec ${c.section}`, `${to12h(c.startTime)}–${to12h(c.endTime)}`]
+    .filter(Boolean)
+    .join(' · ');
+}
 const NO_SLOTS = [];
 
 /**
@@ -45,6 +59,24 @@ export default function SlotModal({ slot, klass, preset, classSlots = NO_SLOTS, 
   const isBreak = watch('isBreak');
   const dayOfWeek = watch('dayOfWeek');
   const startTime = watch('startTime');
+  const endTime = watch('endTime');
+  const chosenFaculty = watch('faculty');
+  // Who already teaches at an overlapping time that day (any class, college-wide).
+  // 9:50–10:40 overlaps 9:00–10:00; back-to-back periods do not.
+  const timeReady = Boolean(dayOfWeek && HHMM.test(startTime || '') && HHMM.test(endTime || '') && endTime > startTime);
+  const { data: busyList = [], isFetching: checkingBusy } = useGetTimetableFacultyBusyQuery(
+    { dayOfWeek, startTime, endTime, excludeId: slot?._id },
+    { skip: !open || isBreak || !timeReady }
+  );
+  const busy = useMemo(() => {
+    const map = new Map();
+    if (timeReady) busyList.forEach((c) => map.has(c.faculty) || map.set(c.faculty, c));
+    return map;
+  }, [busyList, timeReady]);
+  const clash = !isBreak && chosenFaculty ? busy.get(chosenFaculty) : null;
+  const clashMessage = clash
+    ? `${clash.facultyName || 'This faculty member'} is already assigned at this time — ${clashText(clash)} (${titleCase(clash.dayOfWeek)}). Choose another faculty member or change the time.`
+    : null;
   const noSubjects = !loadingSubjects && !subjects.length;
   // A new class, or a break being turned into a class, gets its number from the timetable.
   const autoNumber = !slot || slot.isBreak;
@@ -112,7 +144,7 @@ export default function SlotModal({ slot, klass, preset, classSlots = NO_SLOTS, 
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={creating || updating} onClick={handleSubmit(onSubmit)}>
+          <Button loading={creating || updating} disabled={Boolean(clash)} onClick={handleSubmit(onSubmit)}>
             Save
           </Button>
         </>
@@ -144,9 +176,18 @@ export default function SlotModal({ slot, klass, preset, classSlots = NO_SLOTS, 
               label="Faculty"
               keepCase
               placeholder={facultyList.length ? 'Select faculty' : 'No active faculty'}
-              options={facultyList.map((f) => ({ value: f._id, label: f.department ? `${f.name} — ${f.department}` : f.name }))}
-              error={errors.faculty}
-              {...register('faculty', { required: 'Select a faculty member' })}
+              options={facultyList.map((f) => {
+                const c = busy.get(String(f._id));
+                const name = f.department ? `${f.name} — ${f.department}` : f.name;
+                // A busy faculty member cannot be picked (unless already chosen, so the warning stays visible).
+                return { value: f._id, label: c ? `${name} (Busy: ${clashText(c)})` : name, disabled: Boolean(c) && String(f._id) !== chosenFaculty };
+              })}
+              error={errors.faculty || clashMessage}
+              hint={timeReady ? (checkingBusy ? 'Checking who is free at this time…' : busy.size ? `${busy.size} faculty already have a class at this time and are greyed out.` : 'Everyone is free at this time.') : 'Pick the day and time to see who is free.'}
+              {...register('faculty', {
+                required: 'Select a faculty member',
+                validate: (v) => !busy.get(v) || 'This faculty member is already assigned at this time',
+              })}
             />
           </>
         )}

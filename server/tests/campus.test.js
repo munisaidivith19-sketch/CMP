@@ -171,7 +171,7 @@ test('gate pass: security verifies the code and records OUT then IN; class facul
   assert.ok(notified.body.items.some((n) => n.title === '🔔 Student Returned to Campus'));
 });
 
-test('gate pass: student can cancel while pending; admin/principal can revoke; expired requests are swept', async () => {
+test('gate pass: student can cancel while pending; admin/principal can revoke; passes never expire', async () => {
   const body = gateBody();
   const p1 = await ctx.request('POST', '/gate-pass', { token: student.token, body });
   assert.equal((await ctx.request('PATCH', `/gate-pass/${p1.body._id}/cancel`, { token: other.token })).status, 404);
@@ -188,7 +188,7 @@ test('gate pass: student can cancel while pending; admin/principal can revoke; e
   assert.equal(rv.body.status, 'revoked');
   assert.equal((await ctx.request('POST', '/gate-pass/verify', { token: security.token, body: { code: qr.body.code } })).status, 404, 'revoked code is dead');
 
-  // An approved pass whose window closed becomes expired.
+  // Gate passes never expire: the sweep changes nothing.
   const p3 = await ctx.request('POST', '/gate-pass', { token: student.token, body });
   await verifyParent(p3.body._id);
   await ctx.request('PATCH', `/gate-pass/${p3.body._id}/faculty-review`, { token: staff.token, body: { action: 'forward' } });
@@ -196,8 +196,8 @@ test('gate pass: student can cancel while pending; admin/principal can revoke; e
   await ctx.request('PATCH', `/gate-pass/${p3.body._id}/principal-review`, { token: principal.token, body: { action: 'approve' } });
   await ctx.models.GatePass.updateOne({ _id: p3.body._id }, { verificationExpiry: new Date(Date.now() - 1000) });
   const { expireGatePasses } = await import('../src/controllers/gatePassController.js');
-  assert.equal(await expireGatePasses(), 1);
-  assert.equal((await ctx.request('GET', `/gate-pass/${p3.body._id}`, { token: student.token })).body.status, 'expired');
+  assert.equal(await expireGatePasses(), 0);
+  assert.equal((await ctx.request('GET', `/gate-pass/${p3.body._id}`, { token: student.token })).body.status, 'approved');
 });
 
 // ── Lost & found ──────────────────────────────────────────────────

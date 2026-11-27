@@ -41,7 +41,14 @@ const OUTCOMES = {
 function scopeLabel(scope) {
   if (scope.kind === 'college') return 'Whole college';
   if (scope.kind === 'student') return `Particular students (${scope.rollNos?.length || 0})`;
-  return [scope.department, scope.year && YEAR_LABELS[scope.year], scope.section && `Section ${scope.section}`].filter(Boolean).join(' · ');
+  return [
+    scope.department,
+    scope.year && YEAR_LABELS[scope.year],
+    scope.section && `Section ${scope.section}`,
+    scope.semester && (scope.semester >= FINAL_SEMESTER ? `Semester ${scope.semester} → Graduate` : `Semester ${scope.semester} → ${scope.semester + 1}`),
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 const countsLine = (c) =>
@@ -63,8 +70,11 @@ function buildScope(f) {
     return rollNos.length ? { kind: 'student', rollNos } : null;
   }
   if (f.kind === 'department') return f.department ? { kind: 'department', department: f.department } : null;
-  if (f.kind === 'year') return f.year ? { kind: 'year', year: Number(f.year), ...(f.department ? { department: f.department } : {}) } : null;
-  return f.department && f.year && f.section ? { kind: 'section', department: f.department, year: Number(f.year), section: f.section } : null;
+  if (f.kind === 'year')
+    return f.year && f.semester ? { kind: 'year', year: Number(f.year), semester: Number(f.semester), ...(f.department ? { department: f.department } : {}) } : null;
+  return f.department && f.year && f.section && f.semester
+    ? { kind: 'section', department: f.department, year: Number(f.year), section: f.section, semester: Number(f.semester) }
+    : null;
 }
 
 /** Hold-back and move lists for the server, from each row's choice. */
@@ -121,7 +131,7 @@ function PasswordModal({ open, title, onClose, onConfirm, loading, confirmText, 
 }
 
 function PromoteTab({ onDone }) {
-  const [form, setForm] = useState({ kind: 'section', department: '', year: '', section: '', rollNos: '' });
+  const [form, setForm] = useState({ kind: 'section', department: '', year: '', section: '', semester: '', rollNos: '' });
   const [choices, setChoices] = useState({});
   const [plan, setPlan] = useState(null);
   const [scope, setScope] = useState(null);
@@ -132,7 +142,8 @@ function PromoteTab({ onDone }) {
   const [apply, { isLoading: applying }] = useApplyPromotionMutation();
 
   const set = (key) => (e) => {
-    setForm((f) => ({ ...f, [key]: e.target.value }));
+    // A new year has different semesters, so the semester is chosen again.
+    setForm((f) => ({ ...f, [key]: e.target.value, ...(key === 'year' ? { semester: '' } : {}) }));
     setPlan(null);
     setChoices({});
   };
@@ -181,7 +192,7 @@ function PromoteTab({ onDone }) {
   return (
     <div className="space-y-5">
       <Card>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Select label="Who to promote" keepCase options={SCOPES} value={form.kind} onChange={set('kind')} />
           {['section', 'year', 'department'].includes(form.kind) && (
             <Select label={form.kind === 'year' ? 'Department (optional)' : 'Department'} placeholder="Select department" keepCase options={DEPARTMENTS} value={form.department} onChange={set('department')} />
@@ -190,6 +201,20 @@ function PromoteTab({ onDone }) {
             <Select label="Year" placeholder="Select year" keepCase options={ACADEMIC_YEARS.map((y) => ({ value: String(y), label: YEAR_LABELS[y] }))} value={form.year} onChange={set('year')} />
           )}
           {form.kind === 'section' && <Select label="Section" placeholder="Select section" keepCase options={SECTIONS} value={form.section} onChange={set('section')} />}
+          {['section', 'year'].includes(form.kind) && (
+            <Select
+              label="From semester"
+              placeholder={form.year ? 'Select semester' : 'Choose year first'}
+              keepCase
+              disabled={!form.year}
+              options={(form.year ? [2 * form.year - 1, 2 * form.year] : []).map((s) => ({
+                value: String(s),
+                label: s >= FINAL_SEMESTER ? `Semester ${s} → Graduate` : `Semester ${s} → Semester ${s + 1}`,
+              }))}
+              value={form.semester}
+              onChange={set('semester')}
+            />
+          )}
           {form.kind === 'student' && (
             <Input className="sm:col-span-2 lg:col-span-3" label="Roll numbers" hint="Separate with spaces or commas." value={form.rollNos} onChange={set('rollNos')} />
           )}

@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { ArrowDown, ArrowUp, Bus, Navigation, Plus, Route as RouteIcon, Trash2, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bus, MapPin, Navigation, Plus, Radio, Route as RouteIcon, Trash2, Users } from 'lucide-react';
 import {
   useCreateBusMutation,
   useCreateBusRouteMutation,
   useDeleteTransportAssignmentMutation,
   useGetBusesQuery,
+  useGetTrackerStatusQuery,
   useGetTransportAssignmentsQuery,
   useGetTransportConfigQuery,
   useGetTransportRouteQuery,
@@ -20,8 +21,11 @@ import {
 import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, Tabs } from '../../components/ui/primitives';
 import { Modal } from '../../components/ui/Modal';
 import { Input, Select, Textarea } from '../../components/ui/form';
-import { errMsg } from '../../utils/format';
+import { errMsg, timeAgo } from '../../utils/format';
 import { routeSummary, stopsSignature } from './busGeo';
+import { parseCoordinates } from './coordPaste';
+import { planSummary } from './journeyFormat';
+import RoutePlan from './RoutePlan';
 
 // MapLibre loads only when a route form is opened.
 const RoutePreviewMap = lazy(() => import('./RoutePreviewMap'));
@@ -67,6 +71,82 @@ function PersonPicker({ kind, label, onPick }) {
 
 /* ── Buses ─────────────────────────────────────────────────────── */
 
+const TRACKER_LOOK = {
+  live: { color: 'success', label: 'Live', box: 'border-emerald-500/40 bg-emerald-500/10' },
+  stale: { color: 'warning', label: 'Stale', box: 'border-amber-500/40 bg-amber-500/10' },
+  offline: { color: 'neutral', label: 'Offline', box: 'border-slate-400/40 bg-slate-500/10' },
+  never: { color: 'neutral', label: 'No data yet', box: 'border-slate-400/40 bg-slate-500/10' },
+  unlinked: { color: 'warning', label: 'Receiving · not linked', box: 'border-amber-500/40 bg-amber-500/10' },
+  other_bus: { color: 'danger', label: 'Used by another bus', box: 'border-rose-500/40 bg-rose-500/10' },
+  rejected: { color: 'danger', label: 'Positions refused', box: 'border-rose-500/40 bg-rose-500/10' },
+  disabled: { color: 'danger', label: 'Connection off', box: 'border-rose-500/40 bg-rose-500/10' },
+};
+
+/** Live dot + label for a bus's tracking state (bus list and test result). */
+function LiveBadge({ state }) {
+  if (state === 'live') {
+    return (
+      <Badge color="success">
+        <span className="relative mr-0.5 flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+        </span>
+        Live
+      </Badge>
+    );
+  }
+  return <Badge color={state === 'stale' ? 'warning' : 'neutral'}>{state === 'stale' ? 'Stale' : 'Offline'}</Badge>;
+}
+
+/**
+ * "Test tracker": asks the server whether data arrives from this device ID,
+ * whether it is linked, and whether the bus is live. Re-checks every 10 s
+ * while open, so switching the tracker on shows "Live" without pressing again.
+ */
+function TrackerTest({ deviceId, busId }) {
+  const { data, error, isFetching, refetch } = useGetTrackerStatusQuery({ deviceId, busId }, { pollingInterval: 10000, refetchOnMountOrArgChange: true });
+  if (error) return <p className="mt-2 text-xs text-rose-600">{errMsg(error)}</p>;
+  if (!data) return <p className="mt-2 text-xs muted">Checking the tracker…</p>;
+  const look = TRACKER_LOOK[data.status] || TRACKER_LOOK.never;
+  const loc = data.location;
+  return (
+    <div className={`mt-2 rounded-2xl border p-3 text-sm ${look.box}`} role="status" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {['live', 'stale', 'offline'].includes(data.status) ? <LiveBadge state={data.status} /> : <Badge color={look.color}>{look.label}</Badge>}
+          {data.status === 'live' && <span className="font-bold text-emerald-700 dark:text-emerald-300">Vehicle is live</span>}
+        </div>
+        <Button size="sm" variant="ghost" loading={isFetching} onClick={() => refetch()}>Check again</Button>
+      </div>
+      <p className="mt-2">{data.message}</p>
+      <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+        <div><dt className="inline muted">Last data received: </dt><dd className="inline font-semibold">{data.lastSeenAt ? timeAgo(data.lastSeenAt) : 'never'}</dd></div>
+        <div><dt className="inline muted">Last accepted position: </dt><dd className="inline font-semibold">{data.lastAcceptedAt ? timeAgo(data.lastAcceptedAt) : '—'}</dd></div>
+        {loc && (
+          <div className="sm:col-span-2">
+            <dt className="inline muted">Position: </dt>
+            <dd className="inline font-semibold">
+              <a className="text-primary-600 underline" href={`https://www.google.com/maps?q=${loc.lat},${loc.lng}`} target="_blank" rel="noreferrer">{loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}</a>
+              {loc.speed != null && ` · ${Math.round(loc.speed * 3.6)} km/h`}
+              {loc.accuracy != null && ` · ±${Math.round(loc.accuracy)} m`}
+            </dd>
+          </div>
+        )}
+        {data.trip && (
+          <div className="sm:col-span-2"><dt className="inline muted">Trip: </dt><dd className="inline font-semibold">running {data.trip.direction === 'towards_home' ? 'towards home' : 'towards college'}{data.trip.auto ? ' (started automatically)' : ''} · since {timeAgo(data.trip.startedAt)}</dd></div>
+        )}
+        {data.received > 0 && <div className="sm:col-span-2"><dt className="inline muted">Positions: </dt><dd className="inline">{data.accepted} accepted of {data.received} received</dd></div>}
+      </dl>
+      {data.lastRejects?.length > 0 && data.status !== 'live' && (
+        <ul className="mt-2 list-disc pl-5 text-xs">
+          {data.lastRejects.map((r, i) => <li key={`${r.code}-${i}`}>{r.reason}</li>)}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] muted">Re-checking every 10 seconds while this is open.</p>
+    </div>
+  );
+}
+
 function BusForm({ bus, routes, onClose }) {
   const [v, setV] = useState({
     number: bus?.number || '',
@@ -74,8 +154,11 @@ function BusForm({ bus, routes, onClose }) {
     route: bus?.route?._id || '',
     gpsSource: bus?.gpsSource || 'phone',
     trackerDeviceId: bus?.trackerDeviceId || '',
+    autoTrips: bus ? bus.autoTrips !== false : true,
     isActive: bus ? bus.isActive : true,
   });
+  // The device ID being tested (null = no test shown). Editing the ID closes the test.
+  const [testing, setTesting] = useState(null);
   const [staff, setStaff] = useState((bus?.trackingStaff || []).map((s) => (typeof s === 'object' ? { _id: s._id, name: s.name } : { _id: s, name: 'Staff member' })));
   const [create, { isLoading: c }] = useCreateBusMutation();
   const [update, { isLoading: u }] = useUpdateBusMutation();
@@ -90,7 +173,26 @@ function BusForm({ bus, routes, onClose }) {
         <Input label="Registration number (optional)" value={v.registrationNumber} maxLength={20} onChange={(e) => setV({ ...v, registrationNumber: e.target.value })} />
         <Select label="Route" keepCase placeholder="No route" options={routes.map((r) => ({ value: r._id, label: r.name }))} value={v.route} onChange={(e) => setV({ ...v, route: e.target.value })} />
         <Select label="GPS source" keepCase options={[{ value: 'phone', label: 'Staff phone during a trip' }, { value: 'tracker', label: 'Vehicle GPS tracker' }]} value={v.gpsSource} onChange={(e) => setV({ ...v, gpsSource: e.target.value })} />
-        {v.gpsSource === 'tracker' && <Input label="Tracker device ID" className="sm:col-span-2" hint="The id the tracker sends to the webhook (see README)." value={v.trackerDeviceId} onChange={(e) => setV({ ...v, trackerDeviceId: e.target.value })} />}
+        {v.gpsSource === 'tracker' && (
+          <div className="sm:col-span-2">
+            <div className="flex items-end gap-2">
+              <Input label="Tracker device ID" className="flex-1" hint="Usually the tracker’s 15-digit IMEI — the id it sends to the server." value={v.trackerDeviceId} onChange={(e) => { setV({ ...v, trackerDeviceId: e.target.value }); setTesting(null); }} />
+              <Button variant="soft" icon={Radio} className="mb-6 shrink-0" disabled={!v.trackerDeviceId.trim()} onClick={() => setTesting(v.trackerDeviceId.trim())}>
+                Test tracker
+              </Button>
+            </div>
+            {testing && <TrackerTest deviceId={testing} busId={bus?._id} />}
+          </div>
+        )}
+        {v.gpsSource === 'tracker' && (
+          <label className="flex items-start gap-2 text-sm sm:col-span-2">
+            <input type="checkbox" className="mt-0.5" checked={v.autoTrips} onChange={(e) => setV({ ...v, autoTrips: e.target.checked })} />
+            <span>
+              <span className="font-semibold">Start and end trips automatically</span>
+              <span className="block text-xs muted">A trip starts when the bus moves off (about 500 m) and ends at the final stop or after it stays parked for 10 minutes. Leaving the college means a trip towards home.</span>
+            </span>
+          </label>
+        )}
         <div className="sm:col-span-2">
           <PersonPicker kind="sharers" label="Staff who may share this bus’s location" onPick={(p) => setStaff((s) => (s.some((x) => x._id === p._id) ? s : [...s, p]))} />
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -120,8 +222,8 @@ function BusesTab() {
         <ul className="divide-y divide-white/10 text-sm">
           {buses.map((b) => (
             <li key={b._id} className="flex flex-wrap items-center gap-3 py-2">
-              <span className="flex-1 min-w-[12rem]"><strong>{b.number}</strong> · {b.route?.name || 'no route'} <span className="text-xs muted">· {b.gpsSource === 'tracker' ? `tracker ${b.trackerDeviceId || '(no device id)'}` : `${b.trackingStaff?.length || 0} trip sharer(s)`}</span></span>
-              {!b.isActive && <Badge color="neutral">Inactive</Badge>}
+              <span className="flex-1 min-w-[12rem]"><strong>{b.number}</strong> · {b.route?.name || 'no route'} <span className="text-xs muted">· {b.gpsSource === 'tracker' ? `tracker ${b.trackerDeviceId || '(no device id)'}${b.autoTrips === false ? ' · manual trips' : ' · auto trips'}` : `${b.trackingStaff?.length || 0} trip sharer(s)`}</span></span>
+              {!b.isActive ? <Badge color="neutral">Inactive</Badge> : <LiveBadge state={b.tracking} />}
               {b.trip?.status === 'active' && (
                 <>
                   <Badge color="success">Trip running</Badge>
@@ -172,11 +274,56 @@ function RouteForm({ route, onClose }) {
   const [create, { isLoading: c }] = useCreateBusRouteMutation();
   const [update, { isLoading: u }] = useUpdateBusRouteMutation();
   const setStop = (i, patch) => setStops((s) => s.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-  const move = (i, d) => setStops((s) => {
-    const n = [...s];
-    [n[i], n[i + d]] = [n[i + d], n[i]];
-    return n;
-  });
+  const move = (i, d) => {
+    setPickIndex(null);
+    setStops((s) => {
+      const n = [...s];
+      [n[i], n[i + d]] = [n[i + d], n[i]];
+      return n;
+    });
+  };
+
+  // ── Positions: paste "lat, lng" / a Google Maps link, or use the map ──
+  // The stop the next map click places: the one picked, else the first without a position, else a new stop.
+  const [pickIndex, setPickIndex] = useState(null);
+  const mapBox = useRef(null);
+  const hasPos = (s) => String(s.lat).trim() !== '' && String(s.lng).trim() !== '' && Number.isFinite(Number(s.lat)) && Number.isFinite(Number(s.lng));
+  const firstMissing = stops.findIndex((s) => !hasPos(s));
+  const target = pickIndex ?? (firstMissing >= 0 ? firstMissing : null);
+  const setPos = (i, lat, lng) => setStop(i, { lat: String(lat), lng: String(lng) });
+  /** Fills both boxes when the pasted text is a position; true when the paste was handled. */
+  const pastePosition = (i, text) => {
+    const r = parseCoordinates(text);
+    if (!r) return false;
+    if (r.error) toast.error(r.error);
+    else setPos(i, r.lat, r.lng);
+    return true;
+  };
+  // Typed (not pasted) "13.08, 80.27" in one box is split when leaving it.
+  const splitTyped = (i, value) => {
+    const r = parseCoordinates(value);
+    if (r && !r.error) setPos(i, r.lat, r.lng);
+  };
+  const placeOnMap = (lat, lng) => {
+    if (target != null) {
+      setPos(target, lat, lng);
+      setPickIndex(null);
+      return;
+    }
+    // A new stop goes before the college when the college is the last stop.
+    setStops((s) => {
+      const at = s.length && s[s.length - 1].isCollege ? s.length - 1 : s.length;
+      return [...s.slice(0, at), { ...emptyStop(), lat: String(lat), lng: String(lng) }, ...s.slice(at)];
+    });
+    toast.success('Stop added — type its name');
+  };
+  const pickOnMap = (i) => {
+    setPickIndex(i);
+    mapBox.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  const mapHint = target != null
+    ? `Click the map to place stop ${target + 1}${stops[target]?.name ? ` · ${stops[target].name}` : ''}`
+    : 'Click the map to add a stop · drag a pin to move it';
 
   const stored = full?.route?.geometry?.length >= 2 ? full.route.geometry : null;
   const info = full?.geometryInfo;
@@ -236,18 +383,41 @@ function RouteForm({ route, onClose }) {
           <Input label="Code (optional)" value={code} maxLength={20} onChange={(e) => setCode(e.target.value)} />
         </div>
         <p className="label">Stops, in travel order</p>
+        <p className="text-xs muted">
+          Paste <span className="font-mono">13.08271, 80.27069</span> or a Google Maps link into a Latitude or Longitude box — both are filled in.
+          {config?.mapStyleUrl ? ' Or click the map below to place stops, and drag a pin to move one.' : ''}
+        </p>
         {stops.map((s, i) => (
-          <div key={i} className="grid grid-cols-2 gap-2 rounded-2xl border border-white/20 p-2 sm:grid-cols-[2rem_1fr_7rem_7rem_6rem_auto]">
+          <div key={i} className={`grid grid-cols-2 gap-2 rounded-2xl border p-2 sm:grid-cols-[2rem_1fr_7rem_7rem_6rem_auto] ${pickIndex === i ? 'border-amber-500 ring-2 ring-amber-500/40' : 'border-white/20'}`}>
             <span className="self-center text-center text-xs font-bold">{i + 1}</span>
             <Input aria-label={`Stop ${i + 1} name`} placeholder="Stop name" value={s.name} onChange={(e) => setStop(i, { name: e.target.value })} />
-            <Input aria-label={`Stop ${i + 1} latitude`} placeholder="Latitude" inputMode="decimal" value={s.lat} onChange={(e) => setStop(i, { lat: e.target.value })} />
-            <Input aria-label={`Stop ${i + 1} longitude`} placeholder="Longitude" inputMode="decimal" value={s.lng} onChange={(e) => setStop(i, { lng: e.target.value })} />
+            <Input
+              aria-label={`Stop ${i + 1} latitude`}
+              placeholder="Latitude"
+              title="Paste “lat, lng” or a Google Maps link here"
+              value={s.lat}
+              onPaste={(e) => { if (pastePosition(i, e.clipboardData.getData('text'))) e.preventDefault(); }}
+              onBlur={(e) => splitTyped(i, e.target.value)}
+              onChange={(e) => setStop(i, { lat: e.target.value })}
+            />
+            <Input
+              aria-label={`Stop ${i + 1} longitude`}
+              placeholder="Longitude"
+              title="Paste “lat, lng” or a Google Maps link here"
+              value={s.lng}
+              onPaste={(e) => { if (pastePosition(i, e.clipboardData.getData('text'))) e.preventDefault(); }}
+              onBlur={(e) => splitTyped(i, e.target.value)}
+              onChange={(e) => setStop(i, { lng: e.target.value })}
+            />
             <Input aria-label={`Stop ${i + 1} scheduled time`} type="time" value={s.scheduledTime} onChange={(e) => setStop(i, { scheduledTime: e.target.value })} />
             <div className="flex items-center gap-1">
               <label className="flex items-center gap-1 text-[11px]"><input type="checkbox" checked={s.isCollege} onChange={(e) => setStop(i, { isCollege: e.target.checked })} /> College</label>
+              {config?.mapStyleUrl && !mapError && (
+                <button type="button" className={`btn-icon btn-ghost ${pickIndex === i ? 'text-amber-600' : ''}`} onClick={() => (pickIndex === i ? setPickIndex(null) : pickOnMap(i))} aria-label={`Place stop ${i + 1} on the map`} aria-pressed={pickIndex === i} title="Place on the map"><MapPin className="h-4 w-4" /></button>
+              )}
               <button type="button" className="btn-icon btn-ghost" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up"><ArrowUp className="h-4 w-4" /></button>
               <button type="button" className="btn-icon btn-ghost" disabled={i === stops.length - 1} onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown className="h-4 w-4" /></button>
-              <button type="button" className="btn-icon btn-ghost" disabled={stops.length <= 2} onClick={() => setStops((x) => x.filter((_, j) => j !== i))} aria-label="Remove stop"><Trash2 className="h-4 w-4" /></button>
+              <button type="button" className="btn-icon btn-ghost" disabled={stops.length <= 2} onClick={() => { setPickIndex(null); setStops((x) => x.filter((_, j) => j !== i)); }} aria-label="Remove stop"><Trash2 className="h-4 w-4" /></button>
             </div>
           </div>
         ))}
@@ -294,9 +464,22 @@ function RouteForm({ route, onClose }) {
             <p role="alert" className="rounded-xl bg-amber-500/15 px-3 py-2 text-xs font-semibold text-amber-700">The stops were edited after this road route was saved, so it may no longer match them. Generate it again.</p>
           )}
           {config?.mapStyleUrl && !mapError ? (
-            <Suspense fallback={<Skeleton className="h-72 w-full" />}>
-              <RoutePreviewMap styleUrl={config.mapStyleUrl} attribution={config.mapAttribution} stops={stops} geometry={shown} onMapError={setMapError} />
-            </Suspense>
+            <div ref={mapBox}>
+              <Suspense fallback={<Skeleton className="h-80 w-full" />}>
+                <RoutePreviewMap
+                  styleUrl={config.mapStyleUrl}
+                  attribution={config.mapAttribution}
+                  stops={stops}
+                  geometry={shown}
+                  onMapError={setMapError}
+                  onPlace={placeOnMap}
+                  onMove={setPos}
+                  onSelect={(i) => setPickIndex((p) => (p === i ? null : i))}
+                  selected={pickIndex}
+                  hint={mapHint}
+                />
+              </Suspense>
+            </div>
           ) : mapError ? (
             <p className="text-xs muted">Map preview unavailable: {mapError}</p>
           ) : null}
@@ -331,15 +514,26 @@ function RoutesTab() {
       {!routes.length ? <EmptyState icon={RouteIcon} title="No routes yet" /> : (
         <ul className="divide-y divide-white/10 text-sm">
           {routes.map((r) => (
-            <li key={r._id} className="flex items-center gap-3 py-2">
-              <span className="flex-1"><strong>{r.name}</strong>{r.code ? ` (${r.code})` : ''} <span className="text-xs muted">· {r.stops.length} stops</span></span>
-              {r.geometryInfo?.points ? (
-                r.geometryInfo.stale ? <Badge color="warning">Road route out of date</Badge> : <Badge color="success">Road route</Badge>
-              ) : (
-                <Badge color="neutral">Approximate path</Badge>
+            <li key={r._id} className="space-y-1 py-2">
+              <div className="flex items-center gap-3">
+                <span className="flex-1">
+                  <strong>{r.name}</strong>{r.code ? ` (${r.code})` : ''} <span className="text-xs muted">· {r.stops.length} stops</span>
+                  {r.stats && <span className="block text-xs font-semibold text-primary-600">{planSummary(r.stats)}</span>}
+                </span>
+                {r.geometryInfo?.points ? (
+                  r.geometryInfo.stale ? <Badge color="warning">Road route out of date</Badge> : <Badge color="success">Road route</Badge>
+                ) : (
+                  <Badge color="neutral">Approximate path</Badge>
+                )}
+                {!r.isActive && <Badge color="neutral">Inactive</Badge>}
+                <Button size="sm" variant="ghost" onClick={() => setEdit(r)}>Edit</Button>
+              </div>
+              {r.stats && (
+                <details className="rounded-xl bg-white/30 px-3 py-2 dark:bg-white/5">
+                  <summary className="cursor-pointer text-xs font-semibold">Distance and time to each stop</summary>
+                  <div className="mt-2"><RoutePlan stats={r.stats} scheduled={Object.fromEntries(r.stops.filter((s) => s.scheduledTime).map((s) => [String(s._id), s.scheduledTime]))} /></div>
+                </details>
               )}
-              {!r.isActive && <Badge color="neutral">Inactive</Badge>}
-              <Button size="sm" variant="ghost" onClick={() => setEdit(r)}>Edit</Button>
             </li>
           ))}
         </ul>

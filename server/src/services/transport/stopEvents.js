@@ -23,7 +23,7 @@ import { ApiError } from '../../utils/http.js';
 import { campusDayStart, toDay } from '../../utils/dates.js';
 import { freshness, transportConfig } from './config.js';
 import { recentSpeed } from './eta.js';
-import { historyFromEvents, initialTracker, nextStops, planFor, stepTracker, stopEtas, tripPath } from './journey.js';
+import { forwardDirection, historyFromEvents, initialTracker, nextStops, planFor, planLegs, stepTracker, stopEtas, tripPath } from './journey.js';
 
 const pathCache = new Map(); // `${tripId}:${route.updatedAt}` → path
 const historyCache = new Map(); // `${routeId}:${direction}` → { at, value }
@@ -64,6 +64,23 @@ export async function historyStats(routeId, direction, cfg = transportConfig(), 
   const value = historyFromEvents(events, cfg.etaHistoryMinTrips);
   historyCache.set(key, { at: now, value });
   return value;
+}
+
+/**
+ * A route's planned run in its own stop order: total road distance and time,
+ * and per stop the distance and time from the first stop and from the
+ * previous one (see planLegs). `route` needs its stops and, for road
+ * distances, its geometry. Null for a route with fewer than two stops.
+ */
+export async function routeStats(route, { now = Date.now() } = {}) {
+  if (!(route?.stops?.length >= 2)) return null;
+  const cfg = transportConfig();
+  const direction = forwardDirection(route);
+  const plan = planFor(route, direction);
+  const path = tripPath(route, plan.stops, plan.mode);
+  const history = await historyStats(route._id, direction, cfg, now);
+  const legs = planLegs({ planStops: plan.stops, path, history, cfg });
+  return { direction, ...legs, stops: legs.stops.map((l, i) => ({ ...l, stopId: plan.stops[i].stop, name: plan.stops[i].name })) };
 }
 
 /** Scheduled time of a planned stop on the trip's campus day, when a real timetable exists. */
@@ -211,10 +228,11 @@ export async function journeyView(trip, bus, { now = Date.now() } = {}) {
   const active = trip.status === 'active';
   const fresh = active ? freshness(bus?.lastLocation?.at, now, cfg) : 'offline';
   let etas = new Map();
+  const path = await pathFor(trip);
+  const history = await historyStats(trip.route, trip.direction, cfg, now);
+  const legs = planLegs({ planStops: trip.plan, path, history, cfg });
   if (active) {
-    const path = await pathFor(trip);
     const speed = fresh === 'live' ? await recentSpeed(trip.bus, now) : null;
-    const history = await historyStats(trip.route, trip.direction, cfg, now);
     etas = stopEtas({ planStops: trip.plan, path, state, fresh, speed, history, now, cfg });
   }
   const byKey = new Map(events.map((e) => [`${e.type}:${e.order}`, e]));
@@ -244,6 +262,11 @@ export async function journeyView(trip, bus, { now = Date.now() } = {}) {
       departureSource: dep?.source || null,
       predictedArrivalAt: eta?.status === 'ok' ? eta.predictedArrivalAt : null,
       eta,
+      // The planned run: road distance and usual time from the first stop and from the previous one.
+      fromStartM: legs.stops[order].fromStartM,
+      fromPrevM: legs.stops[order].fromPrevM,
+      plannedMinutesFromStart: legs.stops[order].minutesFromStart,
+      plannedMinutesFromPrev: legs.stops[order].minutesFromPrev,
     };
   });
   const ns = active ? nextStops(state, trip.plan, fresh) : { currentOrder: null, nextOrder: null, followingOrder: null, uncertain: false, reason: null };
@@ -272,6 +295,8 @@ export async function journeyView(trip, bus, { now = Date.now() } = {}) {
     followingStop: pick(ns.followingOrder),
     nextStopUncertain: ns.uncertain,
     uncertainReason: ns.reason,
+    // The whole trip as planned: total road distance and usual time (method: history / timetable / assumed_speed / mixed).
+    plan: { distanceM: legs.distanceM, minutes: legs.minutes, exact: legs.exact, method: legs.method },
     college: college ? { order: college.order, name: college.name, actualArrivalAt: college.actualArrivalAt, predictedArrivalAt: college.predictedArrivalAt, eta: college.eta } : null,
     stops,
     computedAt: new Date(now).toISOString(),

@@ -412,7 +412,19 @@ router.get('/users', query('context').optional().isIn(['picker']), validate, use
 // The People filter dropdowns this account may use, derived from its own role
 // and department — so the UI can never offer an out-of-scope option.
 router.get('/users/people-filters', authorize(...PEOPLE_DIRECTORY_ROLES), users.peopleFilters);
-router.get('/users/export-pdf', authorize('admin', 'principal'), users.exportProfilesPdf);
+// Profiles directory PDF: one group, department and (students) year / section.
+// Every download — and every refused attempt — is written to the security log.
+router.get(
+  '/users/export-pdf',
+  users.logDeniedDirectoryExport,
+  authorize(...users.DIRECTORY_EXPORT_ROLES),
+  query('role').optional({ values: 'falsy' }).isIn(['student', 'faculty', 'hod', 'staff', 'alumni', 'all']).withMessage('Choose a valid role group'),
+  query('department').optional({ values: 'falsy' }).isIn(DEPARTMENTS).withMessage('Choose a valid department'),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4'),
+  query('section').optional({ values: 'falsy' }).isIn(SECTIONS).withMessage('Choose a valid section'),
+  validate,
+  users.exportProfilesPdf
+);
 router.put(
   '/users/me',
   writeLimiter,
@@ -1216,6 +1228,17 @@ const rangeQuery = [
 // edits, by subject + date + period + section.
 const bySlot = (src) => (_v, { req }) => Boolean(req[src].slotId);
 router.get('/attendance/my-periods', authorize('faculty', 'hod', 'admin'), attendance.getMyPeriods);
+// College-wide attendance flow (period-wise / day-wise): every signed-in user
+// can read it (screens adapt); only the Principal changes it.
+router.get('/attendance/flow', attendance.getAttendanceFlow);
+router.put(
+  '/attendance/flow',
+  writeLimiter,
+  authorize('principal'),
+  body('flow').isIn(['period', 'day']).withMessage('Choose period-wise or day-wise attendance'),
+  validate,
+  attendance.setAttendanceFlow
+);
 router.get(
   '/attendance/roster',
   authorize(...STAFF),
@@ -1569,6 +1592,19 @@ router.get(
   validate,
   timetable.getMyTimetable
 );
+// Weekly class timetable download (PDF or Word): the same scope as GET /timetable.
+router.get(
+  '/timetable/export',
+  authorize(...TIMETABLE_VIEW_ROLES),
+  query('format').optional({ values: 'falsy' }).isIn(['pdf', 'docx']).withMessage('Format must be pdf or docx'),
+  query('year').optional({ values: 'falsy' }).isIn(ACADEMIC_YEARS).withMessage('Year must be 1–4'),
+  query('semester').optional({ values: 'falsy' }).isIn(SEMESTERS).withMessage('Semester must be 1–8'),
+  query('section').optional({ values: 'falsy' }).trim().isLength({ max: 10 }),
+  query('department').optional({ values: 'falsy' }).trim().isLength({ max: 80 }),
+  query('scope').optional({ values: 'falsy' }).isIn(['class', 'handling']).withMessage('Scope must be class or handling'),
+  validate,
+  timetable.exportTimetable
+);
 // Master Timetable: accessible exclusively to HODs.
 router.get(
   '/timetable/master',
@@ -1620,6 +1656,17 @@ router.get(
   timetable.getMySchedule
 );
 router.get('/timetable/faculty-options', authorize(...TIMETABLE_WRITE_ROLES), timetable.listFacultyOptions);
+// Faculty already teaching at an overlapping time — the "Add period" form greys them out.
+router.get(
+  '/timetable/faculty-busy',
+  authorize(...TIMETABLE_WRITE_ROLES),
+  query('dayOfWeek').isIn(WEEKDAYS).withMessage('Choose a day'),
+  query('startTime').matches(HHMM).withMessage('Start time must be HH:mm'),
+  query('endTime').matches(HHMM).withMessage('End time must be HH:mm'),
+  query('excludeId').optional({ values: 'falsy' }).isMongoId(),
+  validate,
+  timetable.listFacultyBusy
+);
 router.get('/timetable/section/:section', authorize(...TIMETABLE_VIEW_ROLES), param('section').trim().isLength({ min: 1, max: 10 }), validate, timetable.getSectionTimetable);
 router.get('/timetable/faculty/:id', authorize(...TIMETABLE_VIEW_ROLES), idParam('id'), timetable.getFacultyTimetable);
 router.get('/subjects', authorize(...TIMETABLE_VIEW_ROLES), timetable.listSubjects);
@@ -1703,6 +1750,7 @@ const busRules = (optional = false) => {
     body('route').optional({ values: 'null' }).isMongoId(),
     body('gpsSource').optional().isIn(['tracker', 'phone']),
     body('trackerDeviceId').optional({ values: 'null' }).isString().trim().isLength({ max: 80 }),
+    body('autoTrips').optional().isBoolean(),
     body('trackingStaff').optional().isArray({ max: 20 }),
     body('trackingStaff.*').optional().isMongoId(),
     body('isActive').optional().isBoolean(),
@@ -1816,6 +1864,15 @@ router.post('/transport/routes', writeLimiter, authorize(...TRANSPORT_MANAGE_ROL
 router.put('/transport/routes/:id', writeLimiter, idParam('id'), authorize(...TRANSPORT_MANAGE_ROLES), ...routeRules(true), transport.updateRoute);
 router.post('/transport/buses', writeLimiter, authorize(...TRANSPORT_MANAGE_ROLES), ...busRules(), transport.createBus);
 router.put('/transport/buses/:id', writeLimiter, idParam('id'), authorize(...TRANSPORT_MANAGE_ROLES), ...busRules(true), transport.updateBus);
+// "Test tracker" on the bus form: is this GPS device sending, linked and live?
+router.get(
+  '/transport/tracker-status',
+  authorize(...TRANSPORT_MANAGE_ROLES),
+  query('deviceId').isString().trim().isLength({ min: 1, max: 80 }).withMessage('Enter the tracker device ID'),
+  query('busId').optional({ values: 'falsy' }).isMongoId(),
+  validate,
+  transport.trackerStatus
+);
 router.get('/transport/assignments', authorize(...TRANSPORT_MANAGE_ROLES), transport.listAssignments);
 router.get('/transport/people', authorize(...TRANSPORT_MANAGE_ROLES), query('q').optional().isString().isLength({ max: 60 }), query('kind').optional().isIn(['riders', 'sharers']), validate, transport.pickPeople);
 router.put(
@@ -2283,6 +2340,7 @@ const promotionRules = [
   body('scope.department').optional({ values: 'falsy' }).isString().isLength({ max: 80 }),
   body('scope.year').optional({ values: 'falsy' }).isInt({ min: 1, max: 4 }),
   body('scope.section').optional({ values: 'falsy' }).isString().isLength({ max: 10 }),
+  body('scope.semester').optional({ values: 'falsy' }).isInt({ min: 1, max: 8 }).withMessage('Semester must be 1 to 8'),
   body('scope.rollNos').optional().isArray({ max: 500 }),
   body('scope.rollNos.*').isString().isLength({ max: 30 }),
   body('holdBack').optional().isArray(),

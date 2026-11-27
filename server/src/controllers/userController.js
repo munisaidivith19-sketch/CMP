@@ -5,6 +5,8 @@ import { ApiError, asyncHandler, escapeRegex, pageMeta, paginate, pick } from '.
 import { persistFile } from '../utils/storage.js';
 import { convertAvatarToWebp } from '../services/skillWallet/imagePipeline.js';
 import { logActivity } from '../utils/activity.js';
+import { logSecurity } from '../utils/securityLog.js';
+import { safeFilename } from '../utils/pdf.js';
 import { canViewProfile, peopleScopeFilter, studentClass } from '../utils/peopleScope.js';
 import { chatContactFilter } from '../utils/chatScope.js';
 import { ownDepartment, STUDENT_ROLES } from '../utils/academicScope.js';
@@ -183,11 +185,50 @@ export const uploadAvatar = asyncHandler(async (req, res) => {
   res.json(user);
 });
 
+export const DIRECTORY_EXPORT_ROLES = ['admin', 'principal'];
+
+/**
+ * Runs before the role check: an export attempt by anyone not allowed is
+ * recorded in the security log (then refused by authorize()).
+ */
+export function logDeniedDirectoryExport(req, _res, next) {
+  if (!DIRECTORY_EXPORT_ROLES.includes(req.user?.role)) {
+    logSecurity(req, 'DATA_EXPORTED', {
+      success: false,
+      reason: 'Role not allowed to export the profiles directory',
+      entityType: 'user_directory',
+      details: { report: 'profiles_directory', format: 'pdf', ...pick(req.query, ['role', 'department', 'year', 'section']) },
+    });
+  }
+  next();
+}
+
+/**
+ * The profiles directory PDF for one group (students, faculty, HODs, staff,
+ * alumni or everyone), optionally one department and — for students — one
+ * year and section. Every download is written to the security log: who, from
+ * which device / IP, which selection and how many accounts it contained.
+ */
 export const exportProfilesPdf = asyncHandler(async (req, res) => {
-  const { generateProfilesPdfBuffer } = await import('../services/profilesPdfService.js');
-  const buffer = await generateProfilesPdfBuffer();
+  const { generateProfilesPdfBuffer, directoryScopeLabel } = await import('../services/profilesPdfService.js');
+  const filters = {
+    role: req.query.role || 'all',
+    department: req.query.department || undefined,
+    year: req.query.year ? Number(req.query.year) : undefined,
+    section: req.query.section ? String(req.query.section).toUpperCase() : undefined,
+  };
+  const { buffer, count } = await generateProfilesPdfBuffer(filters);
+  const scope = directoryScopeLabel(filters);
+
+  logSecurity(req, 'DATA_EXPORTED', {
+    entityType: 'user_directory',
+    details: { report: 'profiles_directory', format: 'pdf', ...filters, scope, records: count },
+  });
+  logActivity(req, 'users.export_directory', { entityType: 'user_directory', summary: `Profiles directory PDF: ${scope} (${count} accounts)` });
+
+  const filename = safeFilename(`Profiles_Directory_${scope.replace(/ · /g, '_')}.pdf`);
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename="CampusConnect_Profiles_Directory.pdf"');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(buffer);
 });

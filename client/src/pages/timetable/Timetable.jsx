@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
-import { CalendarClock, Coffee, Pencil, Plus, Search, ShieldCheck } from 'lucide-react';
+import { CalendarClock, Coffee, Download, FileText, Pencil, Plus, Search, ShieldCheck } from 'lucide-react';
 import { useDeleteSlotMutation, useGetMyScheduleQuery, useGetTimetableQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Tabs, cn } from '../../components/ui/primitives';
@@ -14,6 +14,7 @@ import EditTimetable from './EditTimetable';
 import ExamTimetable from './ExamTimetable';
 import StaffAttendance from '../attendance/StaffAttendance';
 import { errMsg } from '../../utils/format';
+import { downloadTimetable } from '../../services/reports';
 import SlotModal from './SlotModal';
 import { DAYS, DAY_SHORT, SlotCard, WeekGrid, slotState, to12h, todayName, useSlotsByDay } from './TimetableGrid';
 import { HolidayBanner } from '../attendance/Holidays';
@@ -21,6 +22,34 @@ import { HolidayBanner } from '../attendance/Holidays';
 export { DAYS, SlotCard };
 
 const STUDENT_ROLES = ['student', 'club_admin'];
+
+/** Download the class timetable shown on screen as a PDF or Word file (built and scoped by the server). */
+function ExportBar({ params }) {
+  const [busy, setBusy] = useState('');
+  const get = async (format) => {
+    setBusy(format);
+    try {
+      const name = await downloadTimetable(params, format);
+      toast.success(`Downloaded ${name}`);
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setBusy('');
+    }
+  };
+  return (
+    <Card className="flex flex-col gap-2 !py-3 sm:flex-row sm:items-center">
+      <p className="flex flex-1 items-center gap-2 text-sm">
+        <Download className="h-4 w-4 shrink-0 text-primary-500" />
+        <span><strong>Export timetable</strong> <span className="muted">· the whole week, with subjects and faculty</span></span>
+      </p>
+      <div className="flex gap-2">
+        <Button size="sm" variant="soft" icon={FileText} loading={busy === 'pdf'} disabled={Boolean(busy)} onClick={() => get('pdf')}>PDF</Button>
+        <Button size="sm" variant="soft" icon={FileText} loading={busy === 'docx'} disabled={Boolean(busy)} onClick={() => get('docx')}>Word</Button>
+      </div>
+    </Card>
+  );
+}
 
 const nowHHMM = () => {
   const d = new Date();
@@ -62,7 +91,8 @@ export default function Timetable() {
   const [facultyScope, setFacultyScope] = useState('class');
   const scopeChosen = useRef(false);
   const [lookup, setLookup] = useState({
-    department: isHod ? (isFYH ? '' : me.department || '') : (me.department || ''),
+    // Only a real academic department (an admin's "Administration" is not one).
+    department: isHod ? (isFYH ? '' : me.department || '') : (DEPARTMENTS.includes(me.department) ? me.department : ''),
     year: isFYH ? 1 : '',
     section: '',
     semester: isFYH ? 1 : '',
@@ -88,8 +118,11 @@ export default function Timetable() {
           semester: applied.semester || undefined,
         }
       : undefined;
+  // Staff who pick a class see nothing until they press View class — no
+  // college-wide timetable by default.
+  const needsLookup = !isStudent && !isFaculty && !applied?.section;
   const { data, isLoading, isFetching, error, refetch } = useGetTimetableQuery(params, {
-    skip: ['mine', 'master', 'edit', 'exams', 'attendance'].includes(view),
+    skip: needsLookup || ['mine', 'master', 'edit', 'exams', 'attendance'].includes(view),
   });
   // The semesters a faculty member actually teaches, so the one dropdown they
   // have never offers a semester they are not assigned to. Taken from the
@@ -353,7 +386,7 @@ export default function Timetable() {
       {!isStudent && !isFaculty && (
         <Card className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           {(!isHod || isFYH) && (
-            <div className="w-full sm:min-w-[12rem] sm:flex-1">
+            <div className="w-full sm:min-w-[12rem] sm:flex-[1.5]">
               <label className="label" htmlFor="tt-dept">Department</label>
               <select
                 id="tt-dept"
@@ -368,14 +401,14 @@ export default function Timetable() {
                   }
                 }}
               >
-                <option value="">{isFYH ? 'Choose department' : 'Any'}</option>
-                {[...new Set([me.department, ...DEPARTMENTS].filter(Boolean))].map((d) => (
+                <option value="" disabled>Choose department</option>
+                {DEPARTMENTS.map((d) => (
                   <option key={d}>{d}</option>
                 ))}
               </select>
             </div>
           )}
-          <div className="w-full sm:w-32">
+          <div className="w-full sm:min-w-[9.5rem] sm:flex-1">
             <label className="label" htmlFor="tt-year">Year</label>
             <select
               id="tt-year"
@@ -399,7 +432,7 @@ export default function Timetable() {
               ))}
             </select>
           </div>
-          <div className="w-full sm:w-32">
+          <div className="w-full sm:min-w-[9.5rem] sm:flex-1">
             <label className="label" htmlFor="tt-sec">Section</label>
             <select id="tt-sec" className="input" value={lookup.section} onChange={(e) => setLookup((l) => ({ ...l, section: e.target.value }))}>
               <option value="">Choose section</option>
@@ -408,10 +441,10 @@ export default function Timetable() {
               ))}
             </select>
           </div>
-          <div className="w-full sm:w-32">
+          <div className="w-full sm:min-w-[9.5rem] sm:flex-1">
             <label className="label" htmlFor="tt-sem">Semester</label>
             <select id="tt-sem" className="input" value={lookup.semester} disabled={!lookup.year} onChange={(e) => setLookup((l) => ({ ...l, semester: e.target.value ? Number(e.target.value) : '' }))}>
-              <option value="">{lookup.year ? 'Any' : 'Year first'}</option>
+              <option value="" disabled>{lookup.year ? 'Choose semester' : 'Year first'}</option>
               {semestersOfYear(lookup.year).map((s) => (
                 <option key={s} value={s}>
                   Semester {s}
@@ -420,7 +453,7 @@ export default function Timetable() {
             </select>
           </div>
           <div className="flex w-full gap-2 sm:w-auto">
-            <Button icon={Search} loading={isFetching} disabled={!lookup.section || !lookup.year || (isFYH && !lookup.department)} onClick={() => setApplied({ ...lookup })}>
+            <Button icon={Search} loading={isFetching} disabled={!lookup.department || !lookup.section || !lookup.year || !lookup.semester} onClick={() => setApplied({ ...lookup })}>
               View class
             </Button>
             {applied && (
@@ -432,7 +465,7 @@ export default function Timetable() {
         </Card>
       )}
 
-      {isEditor && !canEditClass && (
+      {isEditor && !canEditClass && !needsLookup && (
         <Card className="flex items-center gap-3 !py-3 text-sm">
           <Pencil className="h-4 w-4 shrink-0 text-primary-500" />
           <span className="muted">
@@ -443,7 +476,17 @@ export default function Timetable() {
         </Card>
       )}
 
-      {noOurClass ? (
+      {!needsLookup && !noOurClass && !data?.needsSection && slots.length > 0 && <ExportBar params={params} />}
+
+      {needsLookup ? (
+        <Card>
+          <EmptyState
+            icon={Search}
+            title="Choose a class to see its timetable"
+            text={`Select ${isBrH ? 'a year, section' : 'a department, year, section'} and semester above, then press View class.`}
+          />
+        </Card>
+      ) : noOurClass ? (
         <Card>
           <EmptyState
             icon={CalendarClock}

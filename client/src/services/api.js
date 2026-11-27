@@ -113,6 +113,7 @@ const baseQueryWithReauth = async (args, api, extra) => {
 
 const TAGS = [
   'Me', 'Dashboard', 'User', 'Club', 'Event', 'Announcement', 'Discussion', 'Report', 'Notification', 'Admin',
+  'AttendanceFlow',
   'Session', 'Chat', 'ChatMessages', 'Attendance', 'Correction', 'Timetable', 'Subject', 'GatePass', 'LostFound', 'Analytics',
   'ChatRequest', 'StaffAttendance', 'Complaint', 'StudyMaterial', 'AssistantConversation', 'Holiday',
   'Security', 'ClassStudents', 'ODLeave',
@@ -443,11 +444,6 @@ export const api = createApi({
       query: ({ id, userIds }) => ({ url: `/chat/conversations/${id}/members`, method: 'POST', body: { userIds } }),
       invalidatesTags: ['Chat'],
     }),
-    getGroupRequests: b.query({ query: (params) => ({ url: '/chat/requests', params }), providesTags: ['ChatRequest'] }),
-    reviewGroupRequest: b.mutation({
-      query: ({ id, ...body }) => ({ url: `/chat/requests/${id}`, method: 'PATCH', body }),
-      invalidatesTags: ['ChatRequest', 'Chat', 'Notification'],
-    }),
     leaveConversation: b.mutation({
       query: ({ id, userId }) => ({ url: `/chat/conversations/${id}/members/${userId}`, method: 'DELETE' }),
       invalidatesTags: ['Chat'],
@@ -533,6 +529,8 @@ export const api = createApi({
     getFacultyAvailability: b.query({ query: (params) => ({ url: '/timetable/faculty-availability', params }), providesTags: ['Timetable'] }),
     getCurrentClass: b.query({ query: () => '/timetable/current', providesTags: ['Timetable'] }),
     getTimetableFacultyOptions: b.query({ query: () => '/timetable/faculty-options', providesTags: ['User'] }),
+    // Faculty already teaching at an overlapping time on a day (for the Add period form).
+    getTimetableFacultyBusy: b.query({ query: (params) => ({ url: '/timetable/faculty-busy', params }), providesTags: ['Timetable'], keepUnusedDataFor: 0 }),
     // "My Schedule": always the authenticated user's own teaching periods.
     getMySchedule: b.query({ query: (params) => ({ url: '/timetable/my-schedule', params }), providesTags: ['Timetable'] }),
 
@@ -549,6 +547,8 @@ export const api = createApi({
     // ── College buses (scoped per viewer server-side) ──
     getTransportConfig: b.query({ query: () => '/transport/config', providesTags: ['Transport'] }),
     getBuses: b.query({ query: () => '/transport/buses', providesTags: ['Transport'] }),
+    // "Test tracker" on the bus form (always fresh; polled while the result is open).
+    getTrackerStatus: b.query({ query: ({ deviceId, busId }) => ({ url: '/transport/tracker-status', params: { deviceId, ...(busId ? { busId } : {}) } }), keepUnusedDataFor: 0 }),
     getBus: b.query({ query: ({ id, stopId }) => ({ url: `/transport/buses/${id}`, params: stopId ? { stopId } : undefined }), providesTags: ['Transport'] }),
     searchTransport: b.query({ query: (q) => ({ url: '/transport/search', params: { q } }) }),
     getTransportMe: b.query({ query: () => '/transport/me', providesTags: ['Transport'] }),
@@ -615,7 +615,10 @@ export const api = createApi({
       query: (id) => ({ url: `/ai/study-assistant/conversations/${id}`, method: 'DELETE' }),
       invalidatesTags: ['AssistantConversation'],
     }),
-    getMyPeriods: b.query({ query: () => '/attendance/my-periods', providesTags: ['Attendance', 'Timetable'] }),
+    getMyPeriods: b.query({ query: () => '/attendance/my-periods', providesTags: ['Attendance', 'Timetable', 'AttendanceFlow'] }),
+    // College-wide attendance flow (period-wise / day-wise); only the Principal changes it.
+    getAttendanceFlow: b.query({ query: () => '/attendance/flow', providesTags: ['AttendanceFlow'] }),
+    setAttendanceFlow: b.mutation({ query: (body) => ({ url: '/attendance/flow', method: 'PUT', body }), invalidatesTags: ['AttendanceFlow'] }),
     getSubjects: b.query({ query: (params) => ({ url: '/subjects', params }), providesTags: ['Subject'] }),
     createSubject: b.mutation({ query: (body) => ({ url: '/subjects', method: 'POST', body }), invalidatesTags: ['Subject'] }),
     updateSubject: b.mutation({ query: ({ id, ...body }) => ({ url: `/subjects/${id}`, method: 'PUT', body }), invalidatesTags: ['Subject', 'Timetable'] }),
@@ -655,6 +658,8 @@ export const api = createApi({
     emergencyReviewGatePass: b.mutation({ query: ({ id, ...body }) => ({ url: `/gate-pass/${id}/emergency-review`, method: 'PATCH', body }), invalidatesTags: ['GatePass'] }),
     recordGateIn: b.mutation({ query: ({ id, code }) => ({ url: `/gate-pass/${id}/in`, method: 'PATCH', body: { code } }), invalidatesTags: ['GatePass'] }),
     verifyReturnCredential: b.mutation({ query: (code) => ({ url: '/gate-pass/return/verify', method: 'POST', body: { code } }) }),
+    // Fast scan: one call verifies AND records (exit or return, from the QR itself). Idempotent per scanId.
+    submitGateScan: b.mutation({ query: ({ scanId, payload }) => ({ url: '/gate-scanner/scans', method: 'POST', body: { scanId, payload, source: 'camera' } }) }),
     verifyReturnLocation: b.mutation({ query: ({ id, ...reading }) => ({ url: `/gate-pass/${id}/return-location/verify`, method: 'POST', body: reading }), invalidatesTags: ['GatePass'] }),
     adminReturnOverride: b.mutation({ query: ({ id, reason }) => ({ url: `/gate-pass/${id}/return-override`, method: 'PATCH', body: { reason } }), invalidatesTags: ['GatePass'] }),
     getReturnCredential: b.query({ query: (id) => `/gate-pass/${id}/return-credential`, providesTags: ['GatePass'], keepUnusedDataFor: 0 }),
@@ -1118,8 +1123,6 @@ export const {
   useGetActivityQuery,
   useCreateAdminUserMutation,
   useDeleteAdminUserMutation,
-  useGetGroupRequestsQuery,
-  useReviewGroupRequestMutation,
   useGetAttendanceSummaryQuery,
   useGetSummaryStudentsQuery,
   useGetAttendanceBreakdownQuery,
@@ -1174,6 +1177,7 @@ export const {
   useGetFacultyAvailabilityQuery,
   useGetCurrentClassQuery,
   useGetTimetableFacultyOptionsQuery,
+  useGetTimetableFacultyBusyQuery,
   useGetStudyMaterialsQuery,
   useGetStudyMaterialStatusQuery,
   useGetStudyMaterialQuery,
@@ -1186,6 +1190,8 @@ export const {
   useSendAssistantMessageMutation,
   useDeleteAssistantConversationMutation,
   useGetMyPeriodsQuery,
+  useGetAttendanceFlowQuery,
+  useSetAttendanceFlowMutation,
   useGetSubjectsQuery,
   useCreateSubjectMutation,
   useUpdateSubjectMutation,
@@ -1214,6 +1220,7 @@ export const {
   useHodReviewGatePassMutation,
   useGetParentOtpQuery,
   useVerifyReturnCredentialMutation,
+  useSubmitGateScanMutation,
   useGetReturnCredentialQuery,
   useVerifyReturnLocationMutation,
   useRequestParentOtpMutation,
@@ -1260,6 +1267,7 @@ export const {
   useCancelExamMutation,
   useGetTransportConfigQuery,
   useGetBusesQuery,
+  useGetTrackerStatusQuery,
   useGetBusQuery,
   useSearchTransportQuery,
   useGetTransportMeQuery,

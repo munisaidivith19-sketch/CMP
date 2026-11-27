@@ -11,7 +11,7 @@ import User from '../models/User.js';
 import Event from '../models/Event.js';
 import { ApiError, asyncHandler, escapeRegex, paginate, pageMeta } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
-import { notifyUsers } from '../utils/notify.js';
+import { notifyRoles, notifyUsers } from '../utils/notify.js';
 import { sameId } from '../utils/permissions.js';
 import { emitToUsers } from '../config/socket.js';
 import { addDays, campusParts, dayFilter, dayKey, resolveRange, toDay, weekdayOf } from '../utils/dates.js';
@@ -41,6 +41,21 @@ import { withTransaction } from '../utils/transaction.js';
 import { announceClassAttendance } from '../services/attendanceLive.js';
 import { grantCovers, staffAttendanceGrant } from '../policies.js';
 import { studentTotals } from '../services/attendanceTotals.js';
+import {
+  DAY_WISE_COPY,
+  DAY_WISE_EDIT_FROM,
+  applyDayWiseCopy,
+  classDayPlan,
+  dayWiseMessages,
+  daysSince,
+  facultyWindowOpen,
+  flowFor,
+  flowState,
+  hodWindowOpen,
+  isMorningSlot,
+  prepareDayWiseCopy,
+  setFlow,
+} from '../services/attendanceFlow.js';
 
 export const LOW_ATTENDANCE_THRESHOLD = 75;
 // Club admins are students with extra club permissions.
@@ -224,7 +239,7 @@ export function periodStatus({ startTime, endTime }, time) {
  *   Admin, but only for subjects of the department(s) the grant covers.
  * Future dates, Class Not Conducted, holidays and exams close a sheet for everyone.
  */
-function assertCanWrite(user, { subject, day, slot, session, cover, viaSlot }) {
+function assertCanWrite(user, { subject, day, slot, session, cover, viaSlot, flow, isMorning }) {
   const now = campusNow();
   if (day > now.day) throw new ApiError(422, 'Attendance cannot be marked for a future date');
   const granted = grantCovers(staffAttendanceGrant(user, 'create'), subject.department);
@@ -236,6 +251,11 @@ function assertCanWrite(user, { subject, day, slot, session, cover, viaSlot }) {
   if (user.role === 'admin' || granted) return;
   if (user.role === 'hod') {
     if (subject.department !== user.department) throw new ApiError(403, 'You can only edit attendance for your own department');
+    // Day-wise: the class day itself until 3:00 PM two days later.
+    if (flow === 'day') {
+      if (!hodWindowOpen(day, now)) throw new ApiError(403, dayWiseMessages.hodClosed);
+      return;
+    }
     if (day.getTime() !== now.day.getTime()) throw new ApiError(403, 'HOD can only edit attendance for today’s date');
     return;
   }
@@ -247,6 +267,21 @@ function assertCanWrite(user, { subject, day, slot, session, cover, viaSlot }) {
     const isSubstitute = cover?.kind === 'substitute' && sameId(cover.substitute, user);
     if (!sameId(slot.faculty, user) && !isSubstitute) throw new ApiError(403, 'This period is assigned to another faculty member');
     if (!isSubstitute && cover?.kind === 'substitute') throw new ApiError(403, 'A substitute has been assigned to take this period today');
+    if (flow === 'day') {
+      // Day-wise: only the morning period is taken live (while it runs);
+      // every period can be corrected from 3:00 PM until 3:00 PM next day.
+      if (slot.dayOfWeek !== weekdayOf(day)) throw new ApiError(403, 'Attendance can only be taken on the day of the class');
+      if (daysSince(day, now) === 0 && now.time < DAY_WISE_EDIT_FROM) {
+        if (!isMorning) throw new ApiError(403, dayWiseMessages.waitForCorrection);
+        const window = session || slot;
+        const status = periodStatus(window, now.time);
+        if (status === 'UPCOMING') throw new ApiError(403, `Attendance opens at ${window.startTime}`);
+        if (status === 'COMPLETED') throw new ApiError(403, dayWiseMessages.morningEnded);
+        return;
+      }
+      if (!facultyWindowOpen(day, now)) throw new ApiError(403, dayWiseMessages.facultyClosed);
+      return;
+    }
     if (day.getTime() !== now.day.getTime() || slot.dayOfWeek !== now.weekday) {
       throw new ApiError(403, 'Attendance can only be taken on the day of the class');
     }
@@ -272,7 +307,14 @@ async function resolveClass(user, src) {
     // Faculty are pinned to today, unless an additional Attendance policy lets
     // them work on other classes and dates (assertCanWrite still decides what they may change).
     const pinned = user.role === 'faculty' && !staffAttendanceGrant(user, 'view');
-    const day = pinned || !src.date ? campusNow().day : toDay(src.date);
+    let day = pinned || !src.date ? campusNow().day : toDay(src.date);
+    // Day-wise: faculty may open a past day of their own period (to correct
+    // it inside the 3:00 PM window — assertCanWrite decides). Period-wise
+    // faculty stay pinned to today.
+    if (pinned && src.date) {
+      const asked = toDay(src.date);
+      if (asked.getTime() < day.getTime() && (await flowFor(asked)) === 'day') day = asked;
+    }
     const [session, cover] = await Promise.all([
       AttendanceSession.findOne({ timetableSlot: slot._id, date: day }).lean(),
       PeriodCover.findOne({ timetableSlot: slot._id, date: day, status: 'active' }).lean(),
@@ -281,7 +323,7 @@ async function resolveClass(user, src) {
     // An existing session's snapshot wins over the (possibly edited) slot.
     const subject = await Subject.findById(session?.subject || slot.subject);
     if (!subject) throw new ApiError(404, 'Subject not found');
-    return { slot, session, cover, subject, day, section: session?.section || slot.section, period: session?.period || slot.period, viaSlot: true };
+    return withFlow({ slot, session, cover, subject, day, section: session?.section || slot.section, period: session?.period || slot.period, viaSlot: true });
   }
   const subject = await Subject.findById(oid(src.subjectId, 'subject'));
   if (!subject || !subject.isActive) throw new ApiError(404, 'Subject not found');
@@ -296,7 +338,18 @@ async function resolveClass(user, src) {
         PeriodCover.findOne({ timetableSlot: slot._id, date: day, status: 'active' }).lean(),
       ])
     : [null, null];
-  return { slot, session, cover, subject, day, section, period };
+  return withFlow({ slot, session, cover, subject, day, section, period });
+}
+
+/**
+ * The attendance flow that applies to the class day and, when it is
+ * day-wise, the class's plan for that day (held periods, morning period).
+ */
+async function withFlow(cls) {
+  const flow = await flowFor(cls.day);
+  if (flow !== 'day' || !cls.slot) return { ...cls, flow, plan: null, isMorning: false };
+  const plan = await classDayPlan(classOfSlot(cls.session || cls.slot), cls.day);
+  return { ...cls, flow, plan, isMorning: isMorningSlot(plan, cls.slot._id) };
 }
 
 /**
@@ -443,6 +496,16 @@ export const getRoster = asyncHandler(async (req, res) => {
     slot: slotView,
     sessionId: session?._id || null,
     alreadyMarked: existing.length > 0,
+    flow: cls.flow,
+    dayWise:
+      cls.flow === 'day'
+        ? {
+            isMorning: cls.isMorning,
+            morningPeriod: cls.plan?.morning[0]?.period ?? null,
+            copiedCount: existing.filter((r) => r.source === DAY_WISE_COPY).length,
+            editFrom: DAY_WISE_EDIT_FROM,
+          }
+        : null,
     markedBy: last?.markedBy || null,
     markedAt: last?.markedAt || null,
     editable,
@@ -547,9 +610,13 @@ export const markAttendance = asyncHandler(async (req, res) => {
   }
 
   const existing = await AttendanceRecord.find({ subject: subject._id, date: day, period, student: { $in: ids } })
-    .select('student status')
+    .select('student status source')
     .lean();
   const prev = Object.fromEntries(existing.map((r) => [String(r.student), r.status]));
+  // Day-wise copies of the morning attendance in this period: once a person
+  // saves the period they become that person's marks (never re-copied).
+  const wasCopy = new Set(existing.filter((r) => r.source === DAY_WISE_COPY).map((r) => String(r.student)));
+  const ownCopy = (id) => (wasCopy.has(String(id)) ? { $unset: { source: '', copiedFrom: '' } } : {});
 
   const startOfDay = new Date(day);
   startOfDay.setHours(0, 0, 0, 0);
@@ -633,17 +700,33 @@ export const markAttendance = asyncHandler(async (req, res) => {
           update: {
             $set: { status, markedBy: user._id, markedAt: now },
             $push: { history: { from: prev[id], to: status, by: user._id, at: now, reason: `Edited by ${user.role}` } },
+            ...ownCopy(id),
           },
         },
       });
+    } else if (wasCopy.has(String(id))) {
+      // Confirmed unchanged: still becomes this person's mark.
+      ops.push({ updateOne: { filter: { student: id, subject: subject._id, date: day, period, source: DAY_WISE_COPY }, update: { $unset: { source: '', copiedFrom: '' } } } });
     }
   });
+
+  // Day-wise: saving the morning period copies each student's status to the
+  // class's other periods today (missing records and untouched copies only).
+  const dayWise =
+    cls.flow === 'day' && cls.isMorning
+      ? await prepareDayWiseCopy(
+          { ...cls.plan, morning: cls.plan.morning.map((p) => (sameId(p.slot._id, cls.slot._id) ? { ...p, session } : p)) },
+          day,
+          user
+        )
+      : null;
 
   // First post-exam period: snapshot the exam-blocked periods now (idempotent),
   // then write this period's marks and the automatic Present marks in ONE
   // transaction — either all of them are saved or none, and a failure is an
   // error response, never a false success.
   const examPlanned = await prepareExamAuto({ ...cls, session }, user);
+  let copied = null;
   const examAuto = await withTransaction(async (txn) => {
     if (ops.length) await AttendanceRecord.bulkWrite(ops, { ordered: false, session: txn || undefined });
     // The period-wise teaching record: who actually took this class, and when.
@@ -654,6 +737,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
         { session: txn || undefined }
       );
     }
+    if (dayWise) copied = await applyDayWiseCopy(dayWise, { txn });
     if (!examPlanned) return null;
     return applyExamAuto(examPlanned, {
       statuses: storedStatus,
@@ -703,6 +787,14 @@ export const markAttendance = asyncHandler(async (req, res) => {
 
   const touched = ids.filter((id) => !(id in prev) || prev[id] !== statusById.get(id));
   emitToUsers(touched, 'attendance:updated', { subjectId: String(subject._id), date: dayKey(day), period });
+  if (copied?.written) {
+    emitToUsers(copied.students, 'attendance:updated', { date: dayKey(day), dayWise: true });
+    logActivity(req, 'attendance.day_wise_copy', {
+      entityType: 'attendance_session',
+      entityId: session?._id || subject._id,
+      summary: `${subject.code}${section ? ` ${section}` : ''} ${dayKey(day)} P${period} morning attendance copied to ${copied.periods} period(s): ${copied.written} record(s)`,
+    });
+  }
   // Every staff screen showing this class refreshes live — on every save, so a
   // second device of the same faculty member also catches up.
   const klass = classOf(cls);
@@ -719,6 +811,9 @@ export const markAttendance = asyncHandler(async (req, res) => {
     facultyMarkedPresent,
     // Present in this post-exam period → the student's exam-blocked periods.
     examAuto,
+    flow: cls.flow,
+    // Day-wise morning period: copied to the class's other periods today.
+    dayWise: copied ? { copiedRecords: copied.written, periods: copied.periods } : null,
   });
 });
 
@@ -764,13 +859,16 @@ function reportExamAuto(req, auto, { subject, section, day, session }) {
  * UPCOMING / ACTIVE / COMPLETED computed on the server clock, and whether
  * attendance was already taken. Only ACTIVE periods can be marked.
  */
-export const getMyPeriods = asyncHandler(async (req, res) => {
-  const now = campusNow();
-  // Their own scheduled periods plus any they cover today as a substitute.
-  const asSubstitute = await PeriodCover.find({ substitute: req.user._id, date: now.day, status: 'active', kind: 'substitute' }).lean();
+/**
+ * The caller's periods on one class day: their own scheduled periods plus any
+ * they cover as a substitute that day. `statusOf(window)` gives each period's
+ * UPCOMING / ACTIVE / COMPLETED state.
+ */
+async function periodsOfDay(user, day, weekday, statusOf) {
+  const asSubstitute = await PeriodCover.find({ substitute: user._id, date: day, status: 'active', kind: 'substitute' }).lean();
   const slots = await TimetableSlot.find({
     $or: [
-      { faculty: req.user._id, dayOfWeek: now.weekday },
+      { faculty: user._id, dayOfWeek: weekday },
       { _id: { $in: asSubstitute.map((c) => c.timetableSlot) } },
     ],
     isActive: true,
@@ -780,22 +878,22 @@ export const getMyPeriods = asyncHandler(async (req, res) => {
     .populate('faculty', 'name')
     .sort({ startTime: 1 })
     .lean();
-  const covers = await PeriodCover.find({ timetableSlot: { $in: slots.map((s) => s._id) }, date: now.day, status: 'active' })
+  const covers = await PeriodCover.find({ timetableSlot: { $in: slots.map((s) => s._id) }, date: day, status: 'active' })
     .populate('substitute', 'name')
     .lean();
   const coverOf = Object.fromEntries(covers.map((c) => [String(c.timetableSlot), c]));
-  const sessions = await AttendanceSession.find({ timetableSlot: { $in: slots.map((s) => s._id) }, date: now.day }).lean();
+  const sessions = await AttendanceSession.find({ timetableSlot: { $in: slots.map((s) => s._id) }, date: day }).lean();
   const bySlot = Object.fromEntries(sessions.map((s) => [String(s.timetableSlot), s]));
   const marked = new Set(
     (await AttendanceRecord.find({ session: { $in: sessions.map((s) => s._id) } }).distinct('session')).map(String)
   );
-  const holidays = slots.length ? await holidaysBetween(now.day, now.day) : [];
-  // One exam plan per distinct class taught today (not one query per period).
+  const holidays = slots.length ? await holidaysBetween(day, day) : [];
+  // One exam plan per distinct class taught that day (not one query per period).
   const plans = new Map();
   for (const slot of slots) {
     const cls = classOfSlot(slot);
     const k = `${cls.department}|${cls.year}|${cls.section}|${cls.semester}`;
-    if (!plans.has(k)) plans.set(k, examPlan(cls, now.day));
+    if (!plans.has(k)) plans.set(k, examPlan(cls, day));
   }
   const planOf = async (slot) => plans.get(`${slot.department}|${slot.year}|${slot.section}|${slot.semester}`);
   const examOf = await Promise.all(
@@ -807,33 +905,100 @@ export const getMyPeriods = asyncHandler(async (req, res) => {
       return { examBlocked: examBrief(blocking) || null, examTrigger: trigger ? triggerApi(trigger) : null };
     })
   );
+  return slots.map((slot, i) => {
+    const session = bySlot[String(slot._id)];
+    const window = session || slot;
+    const holiday = holidays.find((h) => appliesTo(h, slot, day));
+    return {
+      holiday: toHolidayApi(holiday),
+      ...examOf[i],
+      slotId: slot._id,
+      period: window.period,
+      startTime: window.startTime,
+      endTime: window.endTime,
+      subject: session ? { _id: session.subject, name: session.subjectName, code: session.subjectCode } : slot.subject,
+      department: slot.department,
+      section: slot.section,
+      semester: slot.semester,
+      year: slot.year,
+      room: window.room,
+      status: statusOf(window),
+      marked: Boolean(session && marked.has(String(session._id))),
+      ...coverFields(coverOf[String(slot._id)], slot, user),
+      _slot: slot,
+    };
+  });
+}
+
+/**
+ * Day-wise details for each period of `day`: whether it is the class's
+ * morning period, whether the caller can take / correct it right now, and a
+ * short note for the card. Same rules as assertCanWrite.
+ */
+async function annotateDayWise(periods, user, day, now) {
+  const plans = new Map();
+  for (const p of periods) {
+    const cls = classOfSlot(p._slot);
+    const k = `${cls.department}|${cls.year}|${cls.section}|${cls.semester}`;
+    if (!plans.has(k)) plans.set(k, classDayPlan(cls, day));
+    p._plan = plans.get(k);
+  }
+  const today = daysSince(day, now) === 0;
+  const afterEditFrom = now.time >= DAY_WISE_EDIT_FROM;
+  for (const p of periods) {
+    const plan = await p._plan;
+    const isMorning = isMorningSlot(plan, p.slotId);
+    const closed = p.holiday || p.examBlocked || p.coveredBy || p.cover?.kind === 'not_conducted';
+    let canEdit = false;
+    let note;
+    if (user.role === 'faculty') {
+      if (today && !afterEditFrom) {
+        canEdit = isMorning && p.status === 'ACTIVE';
+        note = isMorning
+          ? 'Morning attendance — copied to every period of this class today'
+          : `Filled from the morning attendance · corrections open at ${fmt12h(DAY_WISE_EDIT_FROM)}`;
+      } else {
+        canEdit = facultyWindowOpen(day, now);
+        note = canEdit ? `Correction open until ${fmt12h(DAY_WISE_EDIT_FROM)} ${today ? 'tomorrow' : 'today'}` : 'Correction window closed';
+      }
+    } else {
+      canEdit = user.role === 'admin' || hodWindowOpen(day, now);
+      note = isMorning ? 'Morning attendance — copied to every period of this class' : 'Filled from the morning attendance';
+    }
+    p.dayWise = { isMorning, canEdit: Boolean(canEdit && !closed), note };
+  }
+}
+
+const fmt12h = (t) => {
+  const [h, m] = t.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+const stripInternal = (periods) => periods.map(({ _slot, _plan, ...p }) => p);
+
+export const getMyPeriods = asyncHandler(async (req, res) => {
+  const now = campusNow();
+  const periods = await periodsOfDay(req.user, now.day, now.weekday, (w) => periodStatus(w, now.time));
+  const flow = await flowFor(now.day);
+  if (flow === 'day') await annotateDayWise(periods, req.user, now.day, now);
+
+  // Day-wise: until 3:00 PM, yesterday's periods can still be corrected.
+  let previousDay = null;
+  const yesterday = addDays(now.day, -1);
+  if (now.time < DAY_WISE_EDIT_FROM && (await flowFor(yesterday)) === 'day') {
+    const past = await periodsOfDay(req.user, yesterday, weekdayOf(yesterday), () => 'COMPLETED');
+    if (past.length) {
+      await annotateDayWise(past, req.user, yesterday, now);
+      previousDay = { date: dayKey(yesterday), weekday: weekdayOf(yesterday), editUntil: DAY_WISE_EDIT_FROM, periods: stripInternal(past) };
+    }
+  }
 
   res.json({
     date: dayKey(now.day),
     weekday: now.weekday,
     time: now.time,
-    periods: slots.map((slot, i) => {
-      const session = bySlot[String(slot._id)];
-      const window = session || slot;
-      const holiday = holidays.find((h) => appliesTo(h, slot, now.day));
-      return {
-        holiday: toHolidayApi(holiday),
-        ...examOf[i],
-        slotId: slot._id,
-        period: window.period,
-        startTime: window.startTime,
-        endTime: window.endTime,
-        subject: session ? { _id: session.subject, name: session.subjectName, code: session.subjectCode } : slot.subject,
-        department: slot.department,
-        section: slot.section,
-        semester: slot.semester,
-        year: slot.year,
-        room: window.room,
-        status: periodStatus(window, now.time),
-        marked: Boolean(session && marked.has(String(session._id))),
-        ...coverFields(coverOf[String(slot._id)], slot, req.user),
-      };
-    }),
+    flow,
+    periods: stripInternal(periods),
+    previousDay,
   });
 });
 
@@ -1858,3 +2023,42 @@ export const notifyStudentLowAttendance = asyncHandler(async (req, res) => {
   res.json({ ok: true, message: `Notification sent to ${student.name}` });
 });
 
+
+// ── Attendance flow (Principal) ────────────────────────────────────
+
+/** The college-wide attendance flow: period-wise or day-wise. */
+export const getAttendanceFlow = asyncHandler(async (_req, res) => {
+  res.json(await flowState());
+});
+
+/**
+ * Principal only: choose period-wise or day-wise. The change starts on the
+ * next class day; teaching staff are told when it starts.
+ */
+export const setAttendanceFlow = asyncHandler(async (req, res) => {
+  const { flow } = req.body;
+  const { changed, from } = await setFlow(flow, req.user);
+  if (changed) {
+    const label = flow === 'day' ? 'Day-wise' : 'Period-wise';
+    logActivity(req, 'attendance.flow_changed', { entityType: 'attendance_flow', entityId: req.user._id, summary: `${label} attendance from ${dayKey(from)}` });
+    notifyRoles(
+      ['faculty', 'hod', 'admin'],
+      {
+        type: 'attendance',
+        title: `${label} attendance from ${fmtClassDate(from)}`,
+        message:
+          flow === 'day'
+            ? `The Principal switched attendance to day-wise. From ${fmtClassDate(from)}, the first period's attendance is copied to every period of the day; faculty can correct their own period from ${fmt12h(DAY_WISE_EDIT_FROM)} until ${fmt12h(DAY_WISE_EDIT_FROM)} the next day, and the HOD for 48 hours from ${fmt12h(DAY_WISE_EDIT_FROM)}.`
+            : `The Principal switched attendance back to period-wise. From ${fmtClassDate(from)}, every period is taken by its own faculty while it runs.`,
+        link: '/attendance',
+      },
+      { category: 'attendance', eventKey: `attendance-flow:${flow}:${dayKey(from)}`, exclude: req.user._id }
+    ).catch((err) => console.error('[attendance] flow notification failed:', err.message));
+  }
+  res.json({ ...(await flowState()), changed });
+});
+
+/** "2026-11-27" class day → "Fri, 27 Nov". */
+function fmtClassDate(day) {
+  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: '2-digit', month: 'short', timeZone: 'UTC' }).format(day);
+}

@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { AlertTriangle, ArrowLeft, CheckCircle2, LogIn, LogOut, ScanLine, ShieldCheck, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, LogIn, LogOut, ScanLine, ShieldCheck, XCircle, Zap } from 'lucide-react';
 import { useRecordGateInMutation, useRecordGateOutMutation, useVerifyGatePassMutation, useVerifyReturnCredentialMutation } from '../../services/api';
 import { Avatar, Button, Card, PageHeader, cn } from '../../components/ui/primitives';
 import QrScannerModal from '../../components/QrScannerModal';
+import FastGateScan from '../../components/FastGateScan';
 import { isCompleteGateCode, scanProblem } from '../../utils/gateQr';
 import { StatusBadge } from '../../components/insights';
 import { errMsg, fmtClassDay, titleCase, displayName } from '../../utils/format';
@@ -39,6 +40,7 @@ export default function GateVerify({ direction }) {
   const isReturn = direction === 'in';
   const [code, setCode] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+  const [fastOpen, setFastOpen] = useState(false);
   const [result, setResult] = useState(null);
   const [verifyExit, { isLoading: exitChecking }] = useVerifyGatePassMutation();
   const [verifyReturn, { isLoading: returnChecking }] = useVerifyReturnCredentialMutation();
@@ -100,9 +102,15 @@ export default function GateVerify({ direction }) {
       <PageHeader icon={copy.icon} title={copy.title} subtitle={copy.subtitle} />
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
-          <Button type="button" icon={ScanLine} className="mb-3 w-full" onClick={() => setScanOpen(true)}>
-            Scan QR code
-          </Button>
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <Button type="button" icon={ScanLine} className="w-full" onClick={() => setScanOpen(true)}>
+              Scan QR code
+            </Button>
+            <Button type="button" variant="success" icon={Zap} className="w-full" onClick={() => setFastOpen(true)}>
+              Fast scan (no taps)
+            </Button>
+          </div>
+          <p className="mb-2 text-center text-[11px] muted">Fast scan keeps the camera on and records each student's exit or return as soon as their QR is seen.</p>
           <p className="mb-2 text-center text-xs muted">or enter code manually</p>
           <form onSubmit={check} className="flex flex-col gap-2 sm:flex-row">
             <input
@@ -175,6 +183,12 @@ export default function GateVerify({ direction }) {
           )}
         </Card>
       </div>
+      <FastGateScan
+        open={fastOpen}
+        onClose={() => {
+          setFastOpen(false);
+        }}
+      />
       <QrScannerModal
         open={scanOpen}
         onClose={() => setScanOpen(false)}

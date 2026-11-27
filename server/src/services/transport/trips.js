@@ -83,31 +83,64 @@ export async function startTrip(user, busId, { bindDevice = false, direction = n
     }
   }
   const deviceKey = bindDevice && source === 'phone' ? crypto.randomBytes(32).toString('base64url') : null;
-  const journey = await journeyFields(bus.route, direction);
   let trip;
   try {
-    trip = await BusTrip.create({
-      bus: bus._id,
-      route: bus.route,
-      ...journey,
+    trip = await createTrip(bus, {
       source,
+      direction,
       sharedBy: source === 'phone' ? user._id : undefined,
       startedBy: user._id,
       channel: bindDevice ? 'web' : 'app',
-      ...(deviceKey ? { deviceKeyHash: hashKey(deviceKey) } : {}),
+      deviceKeyHash: deviceKey ? hashKey(deviceKey) : undefined,
     });
   } catch (err) {
     if (err.code === 11000 && err.keyPattern?.sharedBy) throw new ApiError(409, 'You are already sharing another bus. Stop that trip first.', undefined, { code: 'already_sharing' });
     if (err.code === 11000) throw new ApiError(409, busyMsg, undefined, { code: 'bus_busy' });
     throw err;
   }
-  announce(trip, { direction: trip.direction });
+  return { trip, bus, deviceKey };
+}
+
+/**
+ * Create an active trip for `bus`, announce it, record its start and tell the
+ * route's riders. Shared by a person starting a trip and by automatic tracker
+ * trips (`autoStarted`, no starter). Throws Mongo's 11000 when the bus
+ * already has an active trip.
+ */
+export async function createTrip(bus, { source, direction = null, sharedBy, startedBy, channel = 'app', deviceKeyHash, autoStarted = false }) {
+  const journey = await journeyFields(bus.route, direction);
+  const trip = await BusTrip.create({
+    bus: bus._id,
+    route: bus.route,
+    ...journey,
+    source,
+    sharedBy,
+    startedBy,
+    autoStarted,
+    channel,
+    ...(deviceKeyHash ? { deviceKeyHash } : {}),
+  });
+  announce(trip, { direction: trip.direction, ...(autoStarted ? { auto: true } : {}) });
   await recordTripStart(trip).catch((err) => console.error('[transport] trip start event failed:', err.message));
   if (bus.route) {
     const riders = await TransportAssignment.find({ route: bus.route }).distinct('user');
     notifyUsers(riders, { type: 'transport', title: `${bus.number} has started its trip`, message: 'Live tracking is on — open Bus Tracking to follow it.', link: `/transport?bus=${bus._id}` }, { category: 'transport', eventKey: `bus:trip:${trip._id}` });
   }
-  return { trip, bus, deviceKey };
+  return trip;
+}
+
+/** End an active trip without a person (automatic tracker trips). Null when it had already ended. */
+export async function endTripAutomatically(tripId, { status = 'completed', reason }) {
+  const updated = await BusTrip.findOneAndUpdate(
+    { _id: tripId, status: 'active' },
+    { $set: { status, endedAt: new Date(), endReason: String(reason).slice(0, 120) } },
+    { returnDocument: 'after' }
+  );
+  if (updated) {
+    announce(updated);
+    await recordTripEnd(updated).catch((err) => console.error('[transport] trip end event failed:', err.message));
+  }
+  return updated;
 }
 
 /** Stop a trip: the person sharing it, whoever started it, or a manager. */
@@ -124,6 +157,11 @@ export async function stopTrip(user, tripId, reason = 'completed') {
   if (updated) {
     announce(updated);
     await recordTripEnd(updated).catch((err) => console.error('[transport] trip end event failed:', err.message));
+    // A tracker bus stopped by hand: don't start it again automatically straight away.
+    const cfg = transportConfig();
+    if (updated.source === 'tracker' && cfg.autoPauseMinutes > 0) {
+      await Bus.updateOne({ _id: updated.bus }, { $set: { 'autoTrip.pausedUntil': new Date(Date.now() + cfg.autoPauseMinutes * 60000) } });
+    }
   }
   return updated || trip;
 }

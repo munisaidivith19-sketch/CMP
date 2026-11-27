@@ -20,7 +20,7 @@ import { STAFF_GRANT_ROLES, allowedRoles, holdsGrant, moduleForRole } from '../.
 import UserPoliciesModal from '../../components/UserPoliciesModal';
 import { ACADEMIC_YEARS, DEPARTMENTS, ROLES, ROLE_LABELS, SECTIONS, STAY_TYPES, STUDENT_ROLES, YEAR_LABELS, semestersOfYear } from '../../utils/constants';
 import { errMsg, fmtDate, timeAgo, displayName } from '../../utils/format';
-import { downloadProfilesPdf } from '../../services/reports';
+import DirectoryExportModal from '../../components/DirectoryExportModal';
 import { useDebounced } from '../../utils/useDebounced';
 
 const TITLE_OPTIONS = ['Ms', 'Mr', 'Dr'].map((t) => ({ value: t, label: t }));
@@ -377,17 +377,7 @@ export default function AdminUsers() {
   const [update, { isLoading: saving }] = useUpdateAdminUserMutation();
   const [removeUser, { isLoading: deletingSaving }] = useDeleteAdminUserMutation();
 
-  const handleExportPdf = async () => {
-    setDownloading(true);
-    try {
-      const filename = await downloadProfilesPdf();
-      toast.success(`Downloaded ${filename}`);
-    } catch (e) {
-      toast.error(e?.message || errMsg(e));
-    } finally {
-      setDownloading(false);
-    }
-  };
+  const handleExportPdf = () => setDownloading(true);
 
   const apply = async (id, body, msg) => {
     try {
@@ -408,7 +398,7 @@ export default function AdminUsers() {
           adminTab === 'accounts' ? (
             <div className="flex flex-wrap items-center gap-2">
               {canExport && (
-                <Button variant="secondary" icon={Download} loading={downloading} onClick={handleExportPdf}>
+                <Button variant="secondary" icon={Download} onClick={handleExportPdf}>
                   Export Directory (PDF)
                 </Button>
               )}
@@ -421,6 +411,7 @@ export default function AdminUsers() {
           ) : null
         }
       />
+      <DirectoryExportModal open={downloading} onClose={() => setDownloading(false)} />
       <div className="mb-6">
         <Tabs
           tabs={[

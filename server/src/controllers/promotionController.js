@@ -13,7 +13,7 @@ const PREVIEW_ROWS = 2000;
 const CHANGED_OUTCOMES = ['promoted', 'moved', 'graduated'];
 
 /** The students a scope covers. Never matches a graduate: their role is no longer a student role. */
-function scopeFilter({ kind, department, year, section, rollNos } = {}) {
+function scopeFilter({ kind, department, year, section, semester, rollNos } = {}) {
   const filter = { role: { $in: PROMOTABLE_ROLES } };
   if (kind === 'college') return filter;
   if (kind === 'student') {
@@ -28,6 +28,11 @@ function scopeFilter({ kind, department, year, section, rollNos } = {}) {
   if (kind === 'year' || kind === 'section') {
     if (!year) throw new ApiError(422, 'Choose a year');
     filter.year = Number(year);
+    // Optional: only the students in this semester of the year (e.g. Semester 5 → 6).
+    if (semester) {
+      if (yearOfSemester(semester) !== Number(year)) throw new ApiError(422, `Semester ${semester} is not in year ${year}`);
+      filter.semester = Number(semester);
+    }
   }
   if (kind === 'section') {
     if (!section) throw new ApiError(422, 'Choose a section');
@@ -151,7 +156,7 @@ export const applyPromotion = asyncHandler(async (req, res) => {
   // Recorded first: whatever happens next, the change can be seen and undone.
   const batch = await PromotionBatch.create({
     createdBy: req.user._id,
-    scope: { kind: scope.kind, department: scope.department, year: scope.year, section: scope.section, rollNos: scope.rollNos },
+    scope: { kind: scope.kind, department: scope.department, year: scope.year, section: scope.section, semester: scope.semester, rollNos: scope.rollNos },
     counts,
     items,
   });

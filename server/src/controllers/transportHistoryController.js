@@ -94,6 +94,7 @@ function historyFilter(req) {
 }
 
 const operatorOf = (trip, viewer, names) => {
+  if (trip.autoStarted && !trip.sharedBy) return { name: 'Automatic (GPS tracker)', role: null, auto: true };
   const id = trip.sharedBy || trip.startedBy;
   if (sameId(id, viewer)) return { name: 'You', self: true };
   return seesAllHistory(viewer) ? { name: names.get(String(id)) || 'Unknown', role: null } : null;

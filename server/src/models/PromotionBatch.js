@@ -24,6 +24,8 @@ const promotionBatchSchema = new Schema(
       department: { type: String, maxlength: 80 },
       year: Number,
       section: { type: String, maxlength: 10 },
+      // The semester the students were in (Semester N → N+1), when chosen.
+      semester: Number,
       rollNos: { type: [String], default: undefined },
     },
     status: { type: String, enum: ['applied', 'undoing', 'undone'], default: 'applied', index: true },

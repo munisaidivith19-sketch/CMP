@@ -266,11 +266,11 @@ test('security verification: valid, invalid, expired, used, unauthorized — and
   assert.equal((await verify(code)).status, 404, 'used code fails');
   assert.equal((await out(id, code)).status, 409, 'cannot be used twice');
 
-  const expired = await approvedPass('principal');
-  await ctx.models.GatePass.updateOne({ _id: expired.id }, { verificationExpiry: new Date(Date.now() - 1000) });
-  assert.equal((await verify(expired.code)).status, 404, 'expired code fails');
-  assert.equal((await out(expired.id, expired.code)).status, 422);
-  assert.equal((await ctx.models.GatePass.findById(expired.id)).status, 'expired');
+  // Gate passes never expire: an old date left on a pass is ignored.
+  const old = await approvedPass('principal');
+  await ctx.models.GatePass.updateOne({ _id: old.id }, { verificationExpiry: new Date(Date.now() - 1000) });
+  assert.equal((await verify(old.code)).status, 200, 'an approved code keeps working');
+  assert.equal((await ctx.models.GatePass.findById(old.id)).status, 'approved');
 });
 
 test('two guards confirming at once consume the credential exactly once', async () => {

@@ -20,6 +20,7 @@ import { requestMetrics } from './services/soc/metrics.js';
 import { captureRateLimited } from './middleware/error.js';
 import { forceHttpsEnabled, httpsOnly, trustProxySetting } from './middleware/https.js';
 import { turnstileEnabled } from './services/turnstile.js';
+import { createStudyDoubtsRouter } from '../ai/router.js';
 
 /**
  * Origins the bus map may load its style, tiles, glyphs and sprites from: the
@@ -178,6 +179,10 @@ export function createApp({ forceHttps = forceHttpsEnabled() } = {}) {
   app.use('/api', correlationId, requestMetrics, captureRateLimited);
   app.get('/api/health', (_req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
   app.use('/api', apiLimiter, csrfAndOriginGuard, routes);
+  // Self-hosted Study Doubts model (server/ai) — separate from the Groq assistant;
+  // answers 503 unless LOCAL_AI_ENABLED=true. apiLimiter and the CSRF/origin
+  // guard above already ran for this request (it fell through `routes`).
+  app.use('/api', createStudyDoubtsRouter());
   app.use('/api', notFound);
 
   // The built web app (client/dist) is the only other thing served — never

@@ -198,3 +198,28 @@ test('history lists promotions, and a batch shows each student before and after'
   assert.equal(one.body.items[0].to.semester, 2);
   assert.ok(await ctx.models.AuditLog.exists({ action: 'STUDENTS_PROMOTED' }));
 });
+
+test('a chosen semester promotes only the students in it (Semester 5 → 6), and must belong to the year', async () => {
+  const dept = `SEM${uniq()}`;
+  const odd = await student(5, { department: dept, section: 'B' });
+  const even = await student(6, { department: dept, section: 'B' });
+  const res = await preview({ scope: { kind: 'section', department: dept, year: 3, section: 'B', semester: 5 } });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(outcomeOf(res, odd).to.semester, 6);
+  assert.equal(outcomeOf(res, even), undefined, 'semester 6 is not in this promotion');
+
+  const byYear = await preview({ scope: { kind: 'year', department: dept, year: 3, semester: 6 } });
+  assert.equal(outcomeOf(byYear, even).to.semester, 7);
+  assert.equal(outcomeOf(byYear, even).to.year, 4);
+  assert.equal(outcomeOf(byYear, odd), undefined);
+
+  assert.equal((await preview({ scope: { kind: 'year', year: 3, semester: 2 } })).status, 422);
+  assert.equal((await preview({ scope: { kind: 'year', year: 3, semester: 9 } })).status, 422);
+
+  const done = await apply({ scope: { kind: 'section', department: dept, year: 3, section: 'B', semester: 5 } });
+  assert.equal(done.status, 201, JSON.stringify(done.body));
+  assert.equal((await fresh(odd)).semester, 6);
+  assert.equal((await fresh(even)).semester, 6);
+  const batch = await ctx.models.PromotionBatch.findOne({ 'items.student': odd._id }).lean();
+  assert.equal(batch.scope.semester, 5);
+});

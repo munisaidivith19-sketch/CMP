@@ -399,7 +399,7 @@ If a secret leaks into git, **rotate it first**, then purge it from history (`gi
 
 - **Tokens:** access tokens last 15 minutes and are held in memory only (never in `localStorage`). Web clients keep the refresh token in an `httpOnly`, `SameSite=Strict` cookie scoped to `/api/auth`. Mobile apps keep it in encrypted device storage, and the Gate Scanner in Windows DPAPI.
 - **Per-device sessions:** refresh tokens rotate on every use, and replaying an old one revokes that session (theft detection). A user can sign out one device or all other devices. Password change or reset, a role change or a suspension revokes sessions and their live sockets immediately.
-- **Idle timeout:** most web sessions end after **2 minutes** without activity, and the server enforces this. Chairman, security, admin and principal web sessions, and all mobile sessions, use a 7-day idle rule.
+- **Idle timeout:** web sessions of **students and IT support only** end after **2 minutes** without activity, and the server enforces this. Every other role's web sessions, and all mobile sessions, use a 7-day idle rule.
 - **Brute force:** a 5-failure account lockout (15 minutes), IP rate limits on auth routes and generic sign-in errors (no user enumeration). Passwords must follow the password rule, and a password change is required at first login.
 - **Request hardening:** helmet with a strict CSP, an origin and CSRF guard, a CORS allow-list, JSON body size limits, `x-powered-by` removed, HTTPS redirect and HSTS in production.
 - **Input:** `express-validator` on every write, mass-assignment whitelisting, NoSQL operator sanitising, escaped and length-capped regex search, and an `http(s)`-only rule for user-supplied links.
@@ -552,7 +552,7 @@ A live bus map on the web (**Bus Tracking**) and in the Android app. Each bus is
 Every fix passes one validated ingestion path ([ingest.js](server/src/services/transport/ingest.js)): coordinates, age, accuracy, speed, implied jumps, ordering and rate are all checked.
 
 1. **Staff phone:** *Bus Tracking → Start <bus>* starts a trip with a foreground location service. It ends when the trip ends, when a manager stops it, or on timeout (`TRIP_IDLE_MINUTES`, `TRIP_MAX_HOURS`). The app never requests background location permission.
-2. **Vehicle GPS tracker:** point the vendor's push feature at `POST /api/transport/tracker/locations`. This is enabled by `TRACKER_WEBHOOK_SECRET`.
+2. **Vehicle GPS tracker:** point the vendor's push feature at `POST /api/transport/tracker/locations`. This is enabled by `TRACKER_WEBHOOK_SECRET`. Tracker buses start and end trips by themselves ([autoTrips.js](server/src/services/transport/autoTrips.js)): a trip starts once the bus moves `TRIP_AUTO_START_M` (500 m) from where it stood, heading home if it set off near the college stop. It ends at the final stop, after `TRIP_AUTO_PARK_MINUTES` (10) parked, or on the usual timeouts. Switch it off per bus in Transport Admin, or everywhere with `TRACKER_AUTO_TRIPS=false`.
    ```
    X-Tracker-Timestamp: <unix ms, within 5 minutes>
    X-Tracker-Signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw JSON body>")>

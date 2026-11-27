@@ -4,7 +4,8 @@ import { useGetChatUnreadQuery, useGetCurrentClassQuery, useGetGatePassesQuery, 
 import { Card, cn } from './ui/primitives';
 
 const STUDENT_ROLES = ['student', 'club_admin'];
-const NO_TIMETABLE_ROLES = ['warden', 'security'];
+// Only students, faculty and HODs get the "Next class" card (club_admin is a student).
+const NEXT_CLASS_ROLES = ['student', 'club_admin', 'faculty', 'hod'];
 
 function Tile({ to, icon: Icon, label, value, hint, tone }) {
   return (
@@ -26,7 +27,7 @@ function Tile({ to, icon: Icon, label, value, hint, tone }) {
 /** "Today" shortcuts on the dashboard: current class, attendance, gate pass, unread chats. */
 export default function TodayStrip({ user }) {
   const isStudent = STUDENT_ROLES.includes(user.role);
-  const noTimetable = NO_TIMETABLE_ROLES.includes(user.role);
+  const noTimetable = !NEXT_CLASS_ROLES.includes(user.role);
   const { data: now } = useGetCurrentClassQuery(undefined, { pollingInterval: 120000, skip: noTimetable });
   const { data: att } = useGetMyAttendanceQuery({ range: 'semester' }, { skip: !isStudent });
   const { data: passes } = useGetGatePassesQuery({ limit: 5 }, { skip: !isStudent });
@@ -35,7 +36,7 @@ export default function TodayStrip({ user }) {
 
   const cls = now?.current || now?.next;
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className={cn('grid gap-4 sm:grid-cols-2', noTimetable ? 'xl:grid-cols-3' : 'xl:grid-cols-4')}>
       {!noTimetable && (
         <Tile
           to="/timetable"

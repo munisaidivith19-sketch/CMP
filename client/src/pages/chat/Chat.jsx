@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
-  Clock,
   Info,
   Lock,
   CornerUpLeft,
@@ -26,7 +25,6 @@ import {
   useGetConversationQuery,
   useGetChatKeysQuery,
   useGetConversationsQuery,
-  useGetGroupRequestsQuery,
   useGetMessagesQuery,
   useGetUsersQuery,
   useLazyGetMessagesQuery,
@@ -59,8 +57,6 @@ const PRIVATE_SCOPE = {
   faculty: 'Students of the classes you handle or are in charge of, and campus staff.',
   hod: 'Students of your department and of classes you handle, and campus staff.',
 };
-/** Who approves a pending group request. */
-const APPROVER = { hod: 'the principal', faculty: 'an admin' };
 
 const sameId = (a, b) => String(a?._id || a) === String(b?._id || b);
 
@@ -131,10 +127,7 @@ function NewChatModal({ open, onClose, me, onHodGroup }) {
         group ? { type: 'group', name: name.trim(), participantIds: ids } : { type: 'private', participantIds: ids }
       ).unwrap();
       onClose();
-      if (conv.pending) {
-        toast.success(`Group request sent — it goes live once ${APPROVER[me.role] || 'an admin'} approves it`);
-        return;
-      }
+      if (group) toast.success('Group created');
       navigate(`/chat/${conv._id}`);
     } catch (e) {
       toast.error(errMsg(e, 'Could not start the conversation'));
@@ -225,7 +218,6 @@ function NewChatModal({ open, onClose, me, onHodGroup }) {
 function ConversationList({ activeId, me, presence, typing, onNew }) {
   const [search, setSearch] = useState('');
   const { data, isLoading, error, refetch } = useGetConversationsQuery(search ? { search } : undefined);
-  const { data: requests = [] } = useGetGroupRequestsQuery(undefined, { skip: !['hod', 'faculty'].includes(me.role) });
   // End-to-end encrypted previews are decrypted on this device.
   const conversations = useDecrypted(data, convIdOf);
 
@@ -252,22 +244,6 @@ function ConversationList({ activeId, me, presence, typing, onNew }) {
             action={!search && <Button size="sm" icon={Plus} onClick={onNew}>New message</Button>}
           />
         )}
-        {!search &&
-          requests.map((r) => (
-            <div key={r._id} className="flex items-center gap-3 rounded-2xl p-2.5 opacity-80" title={r.rejectReason || undefined}>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/60 text-ink-muted dark:bg-white/5">
-                {r.status === 'pending' ? <Clock className="h-5 w-5" /> : <X className="h-5 w-5" />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold">{r.name}</p>
-                <p className={cn('truncate text-xs', r.status === 'pending' ? 'text-amber-700 dark:text-amber-400' : 'text-rose-700 dark:text-rose-400')}>
-                  {r.status === 'pending'
-                    ? `Waiting for ${me.role === 'hod' ? 'principal' : 'admin'} approval`
-                    : `Not approved${r.rejectReason ? ` — ${r.rejectReason}` : ''}`}
-                </p>
-              </div>
-            </div>
-          ))}
         {conversations.map((c) => {
           const d = describe(c, me);
           const online = d.other ? presence[d.other._id] ?? d.other.online : false;

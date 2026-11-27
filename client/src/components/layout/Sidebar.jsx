@@ -2,7 +2,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { X } from 'lucide-react';
 import { cn } from '../ui/primitives';
-import { useGetChatUnreadQuery, useGetGroupRequestsQuery } from '../../services/api';
+import { useGetChatUnreadQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
 import { setSidebar } from '../../features/uiSlice';
 
@@ -43,7 +43,6 @@ export default function Sidebar() {
   // Badges only for modules this account can open (an unticked module's API answers 403).
   const chatOpen = campusItems.some((i) => i.to === '/chat');
   const { data: unread } = useGetChatUnreadQuery(undefined, { skip: !user || !chatOpen });
-  const { data: groupRequests } = useGetGroupRequestsQuery(undefined, { skip: !adminItems.some((i) => i.to === '/admin/chat-requests'), pollingInterval: 60000 });
 
 
   return (
@@ -87,7 +86,7 @@ export default function Sidebar() {
             <>
               <p className="px-3.5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-black dark:text-white">Administration</p>
               {adminItems.map((i) => (
-                <NavItem key={i.to} item={i} onClick={close} badge={i.badge === 'groups' ? groupRequests?.length : 0} />
+                <NavItem key={i.to} item={i} onClick={close} />
               ))}
             </>
           )}

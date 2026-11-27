@@ -163,19 +163,22 @@ export default function Login() {
         className="space-y-4" noValidate>
         {/* Active Lockout Banner with Live Monospace Countdown */}
         {lockout.isLocked && (
-          <div className="rounded-2xl border border-white/45 bg-white/10 p-4 text-center backdrop-blur-xs">
+          <div
+            role="alert"
+            className="rounded-2xl border border-rose-300/70 bg-rose-50 p-4 text-center backdrop-blur-xs dark:border-white/45 dark:bg-white/10"
+          >
             <div className="flex items-center justify-center gap-2">
-              <ShieldAlert className="auth-red h-6 w-6" />
-              <p className="auth-red text-lg font-extrabold">Account Temporarily Locked</p>
+              <ShieldAlert className="auth-red h-6 w-6 text-rose-600 dark:text-rose-400" />
+              <p className="auth-red text-lg font-extrabold text-rose-700 dark:text-rose-400">Account Temporarily Locked</p>
             </div>
-            <p className="mt-1 text-sm font-semibold text-white">
+            <p className="mt-1 text-sm font-semibold text-ink dark:text-white">
               Too many consecutive failed sign-in attempts. For your security, please wait:
             </p>
-            <div className="mt-3 flex items-center justify-center gap-2 font-mono text-3xl font-extrabold tracking-wider text-white">
-              <Clock className="h-6 w-6 animate-pulse" />
+            <div className="mt-3 flex items-center justify-center gap-2 font-mono text-3xl font-extrabold tracking-wider text-ink dark:text-white">
+              <Clock className="h-6 w-6 animate-pulse text-rose-600 dark:text-white" />
               <span>{formatCountdown(lockout.secondsLeft)}</span>
             </div>
-            <p className="mt-3 border-t border-white/30 pt-2.5 text-sm font-bold text-white">{PASSWORD_HELP}</p>
+            <p className="mt-3 border-t border-rose-200 pt-2.5 text-sm font-bold text-ink-soft dark:border-white/30 dark:text-white">{PASSWORD_HELP}</p>
           </div>
         )}
 

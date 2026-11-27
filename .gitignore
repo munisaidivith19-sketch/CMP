@@ -34,5 +34,5 @@ docs/GATE_SCANNER.md
 docs/LEGAL_POLICIES.md
 docs/*.pdf
 docs/vps-guide/
-
-
+# AI Doubts emergency-stop lock file (server state, never committed).
+server/ai/.emergency-stop.json

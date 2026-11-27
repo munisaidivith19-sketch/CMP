@@ -134,7 +134,7 @@ for (const [label, make] of [
   });
 }
 
-test('expired, foreign and unauthorized scans are refused without changing the pass', async () => {
+test('foreign and unauthorized scans are refused without changing the pass', async () => {
   const { id, student } = await approvedNormal();
   const payload = await scannedPayload(id, student);
 
@@ -148,9 +148,10 @@ test('expired, foreign and unauthorized scans are refused without changing the p
     assert.ok(!JSON.stringify(res.body).match(/stack|mongo|Error:/i), 'no internal details');
   }
 
+  // Gate passes never expire: an old date left on a pass is ignored.
   await ctx.models.GatePass.updateOne({ _id: id }, { verificationExpiry: new Date(Date.now() - 1000) });
-  assert.equal((await scanVerify(payload)).status, 404, 'expired QR fails');
-  assert.equal((await ctx.models.GatePass.findById(id)).status, 'expired');
+  assert.equal((await scanVerify(payload)).status, 200, 'an approved pass keeps working');
+  assert.equal((await ctx.models.GatePass.findById(id)).status, 'approved');
 });
 
 test('return QR: the scanned CCRT token verifies on the return screen and is separate from the exit QR', async () => {

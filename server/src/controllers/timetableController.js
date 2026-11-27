@@ -5,7 +5,8 @@ import { ApiError, asyncHandler, pick } from '../utils/http.js';
 import { logActivity } from '../utils/activity.js';
 import { emitToRoles } from '../config/socket.js';
 import { campusParts, toDay } from '../utils/dates.js';
-import { ACADEMIC_OVERSIGHT_ROLES, FIRST_YEAR_HOD_DEPT, TIMETABLE_VIEW_ROLES, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
+import { safeFilename } from '../utils/pdf.js';
+import { ACADEMIC_OVERSIGHT_ROLES, FIRST_YEAR_HOD_DEPT, TIMETABLE_VIEW_ROLES, YEAR_LABEL, isBranchHod, isFirstYearHod, yearOfSemester } from '../constants.js';
 import { STUDENT_ROLES, classInChargeFilter, facultyClassInChargeScope, ownDepartment } from '../utils/academicScope.js';
 import { annotateWeek, findHoliday, toApi as toHolidayApi } from '../services/holidays.js';
 import { clock } from '../utils/clock.js';
@@ -390,6 +391,52 @@ export const getMasterTimetable = asyncHandler(async (req, res) => {
 /**
  * Export Master Timetable as official PDF in landscape A4.
  */
+/**
+ * The weekly class timetable as a PDF or Word (.docx) download. Exactly the
+ * slots GET /timetable would return to this viewer (same scope rules), so an
+ * export never shows another class than the Week view does.
+ */
+export const exportTimetable = asyncHandler(async (req, res) => {
+  const format = req.query.format === 'docx' ? 'docx' : 'pdf';
+  const filter = await timetableReadScope(req.user, req.query);
+  if (!filter) throw new ApiError(422, 'Your account has no class assigned yet, so there is no timetable to export');
+  if (!STUDENT_ROLES.includes(req.user.role) && req.user.role !== 'faculty' && !req.query.section) {
+    throw new ApiError(422, 'Choose a class (year and section) before exporting');
+  }
+  const slots = sortSlots(await populateSlot(TimetableSlot.find(filter)).lean());
+  const { timetablePdf, timetableDocx, weekModel } = await import('../services/timetableExport.js');
+
+  const classes = [...new Map(slots.filter((s) => !s.isBreak).map((s) => [`${s.department}|${s.year}|${s.section}|${s.semester}`, s])).values()];
+  const one = classes.length === 1 ? classes[0] : null;
+  const handling = req.user.role === 'faculty' && req.query.scope !== 'class';
+  let title;
+  if (handling) title = `Handling Class - ${req.user.name}${req.query.semester ? ` - Semester ${req.query.semester}` : ''}`;
+  else if (one) title = `${one.department} - ${YEAR_LABEL[one.year] || `Year ${one.year}`} - Section ${one.section} - Semester ${one.semester}`;
+  else if (classes.length) title = `${classes.length} classes`;
+  else title = [req.query.department || req.user.department, req.query.year && (YEAR_LABEL[req.query.year] || `Year ${req.query.year}`), req.query.section && `Section ${String(req.query.section).toUpperCase()}`, req.query.semester && `Semester ${req.query.semester}`].filter(Boolean).join(' - ') || 'Class timetable';
+
+  const model = weekModel(slots);
+  const generated = toDay(new Date()).toISOString().slice(0, 10);
+  const academicYear = slots.find((s) => s.academicYear)?.academicYear;
+  const facts = [
+    ['Class', handling ? `${model.classCount} class(es) you teach` : one ? `${one.department} ${YEAR_LABEL[one.year] || ''} ${one.section}`.replace(/\s+/g, ' ') : title],
+    ['Semester', one ? String(one.semester) : req.query.semester ? String(req.query.semester) : '-'],
+    ['Periods per week', String(model.periodsPerWeek)],
+    ['Subjects', String(model.subjects.length)],
+    ...(academicYear ? [['Academic year', academicYear]] : []),
+    ['Generated', generated],
+  ];
+  const footer = `J.N.N Institute of Engineering - Class Timetable - Generated ${generated}`;
+  const buffer = format === 'docx' ? timetableDocx({ slots, title, facts, footer }) : timetablePdf({ slots, title, facts, footer });
+
+  const filename = safeFilename(`Timetable_${title}.${format}`);
+  res.setHeader('Content-Type', format === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', buffer.length);
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(buffer);
+});
+
 export const exportMasterTimetablePdf = asyncHandler(async (req, res) => {
   if (req.user.role !== 'hod') {
     throw new ApiError(403, 'Master timetable is only accessible to HODs');
@@ -755,21 +802,82 @@ export const getCurrentClass = asyncHandler(async (req, res) => {
 
 const overlaps = (startTime, endTime) => ({ startTime: { $lt: endTime }, endTime: { $gt: startTime } });
 
-/** Reject obvious clashes: same section, same faculty or same room at overlapping times. */
+/** "09:50" → "9:50 AM". */
+const to12h = (t) => {
+  const [h, m] = String(t).split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+const titleWeekday = (d) => (d ? d.charAt(0).toUpperCase() + d.slice(1) : '');
+
+/** One faculty member's existing period that overlaps a requested time. */
+function facultyClashOf(slot) {
+  return {
+    faculty: String(slot.faculty?._id || slot.faculty),
+    facultyName: slot.faculty?.name || '',
+    slotId: String(slot._id),
+    subjectCode: slot.subject?.code || '',
+    subjectName: slot.subject?.name || '',
+    department: slot.department,
+    year: slot.year,
+    section: slot.section,
+    semester: slot.semester,
+    dayOfWeek: slot.dayOfWeek,
+    startTime: slot.startTime,
+    endTime: slot.endTime,
+    room: slot.room || '',
+  };
+}
+
+/** "MR.VIJAY is already assigned to 22CYP502 (CSE, Year 3, Section A) on Monday 9:00 AM–10:00 AM." */
+export function facultyClashMessage(c) {
+  const who = c.facultyName || 'This faculty member';
+  const cls = [c.department, c.year && `Year ${c.year}`, c.section && `Section ${c.section}`].filter(Boolean).join(', ');
+  return `${who} is already assigned to ${c.subjectCode || 'another class'}${cls ? ` (${cls})` : ''} on ${titleWeekday(c.dayOfWeek)} ${to12h(c.startTime)}–${to12h(c.endTime)}. Choose another faculty member or time.`;
+}
+
+/**
+ * Reject clashes: same class, same faculty or same room at overlapping times.
+ * Overlap means any shared minute (9:50–10:40 clashes with 9:00–10:00);
+ * back-to-back periods (9:00–10:00 then 10:00–10:50) do not.
+ */
 async function assertNoConflict(slot, excludeId) {
   const base = { isActive: true, dayOfWeek: slot.dayOfWeek, ...overlaps(slot.startTime, slot.endTime) };
   if (excludeId) base._id = { $ne: excludeId };
 
   const [sectionClash, facultyClash, roomClash] = await Promise.all([
     TimetableSlot.findOne({ ...base, section: slot.section, department: slot.department, year: slot.year, semester: slot.semester }).populate('subject', 'code').lean(),
-    slot.isBreak || !slot.faculty ? null : TimetableSlot.findOne({ ...base, faculty: slot.faculty, isBreak: { $ne: true } }).populate('subject', 'code').lean(),
+    slot.isBreak || !slot.faculty
+      ? null
+      : TimetableSlot.findOne({ ...base, faculty: slot.faculty, isBreak: { $ne: true } }).populate('subject', 'code name').populate('faculty', 'name').lean(),
     slot.isBreak || !slot.room ? null : TimetableSlot.findOne({ ...base, room: slot.room, isBreak: { $ne: true } }).populate('subject', 'code').lean(),
   ]);
-  const at = (c) => `${c.dayOfWeek} ${c.startTime}–${c.endTime}`;
+  const at = (c) => `${titleWeekday(c.dayOfWeek)} ${to12h(c.startTime)}–${to12h(c.endTime)}`;
   if (sectionClash) throw new ApiError(409, `Section ${slot.section} already has ${sectionClash.subject?.code || sectionClash.breakLabel || 'a slot'} on ${at(sectionClash)}`);
-  if (facultyClash) throw new ApiError(409, `This faculty is already assigned during this time — ${facultyClash.subject?.code}, ${facultyClash.department} section ${facultyClash.section}, ${at(facultyClash)}`);
+  if (facultyClash) {
+    const clash = facultyClashOf(facultyClash);
+    throw new ApiError(409, facultyClashMessage(clash), undefined, { code: 'FACULTY_BUSY', clash });
+  }
   if (roomClash) throw new ApiError(409, `Room ${slot.room} is already booked for ${roomClash.subject?.code} (section ${roomClash.section}) on ${at(roomClash)}`);
 }
+
+/**
+ * Faculty who already teach at an overlapping time on a day — the "Add
+ * period" form marks them busy before anything is saved. `excludeId` leaves
+ * out the period being edited. Saving still re-checks (assertNoConflict).
+ */
+export const listFacultyBusy = asyncHandler(async (req, res) => {
+  const { dayOfWeek, startTime, endTime, excludeId } = req.query;
+  if (!(endTime > startTime)) return res.json([]);
+  const filter = { isActive: true, isBreak: { $ne: true }, faculty: { $ne: null }, dayOfWeek, ...overlaps(startTime, endTime) };
+  if (excludeId) filter._id = { $ne: excludeId };
+  const slots = await TimetableSlot.find(filter)
+    .select('faculty subject department year section semester dayOfWeek startTime endTime room')
+    .populate('subject', 'code name')
+    .populate('faculty', 'name')
+    .sort({ startTime: 1 })
+    .lean();
+  res.json(slots.map(facultyClashOf));
+});
 
 // Who can be scheduled to teach a period — any department, college-wide.
 const TEACHING_ROLES = ['faculty', 'hod'];

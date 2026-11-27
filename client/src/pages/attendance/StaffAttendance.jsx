@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import AttendanceFlowPanel from './AttendanceFlowPanel';
 import { useSearchParams } from 'react-router-dom';
 import { CoverManager, EarlyExitButton, LowAttendanceMonitor, StaffReport } from './StaffMonitoring';
 import { useSelector } from 'react-redux';
@@ -46,6 +47,7 @@ import {
   useGetLowAttendanceQuery,
   useGetReportOptionsQuery,
   useGetMyPeriodsQuery,
+  useGetAttendanceFlowQuery,
   useGetRosterQuery,
   useGetStudentAttendanceQuery,
   useGetSubjectAttendanceQuery,
@@ -344,6 +346,46 @@ function AttendanceHeroDashboard({ onQuickMark }) {
         </div>
       )}
 
+      {/* Day-wise: yesterday's periods stay correctable until 3:00 PM today. */}
+      {periodsData?.previousDay?.periods?.length > 0 && (
+        <Card className="p-4 border border-primary-500/20 shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-primary-400" />
+              <h4 className="text-sm font-bold tracking-tight">
+                Correct yesterday’s attendance · open until {to12h(periodsData.previousDay.editUntil)} today
+              </h4>
+            </div>
+            <span className="text-xs text-ink-muted">{fmtClassDay(periodsData.previousDay.date, 'EEEE, dd MMM')}</span>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+            {periodsData.previousDay.periods.map((p) => (
+              <div key={p.slotId} className="shrink-0 w-64 rounded-2xl border border-white/10 bg-white/5 p-3.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-primary-400">Period {p.period}</span>
+                <p className="font-bold text-sm text-ink truncate">{p.subject?.name}</p>
+                <p className="text-xs text-ink-muted truncate">
+                  {p.subject?.code} · {p.department}
+                  {p.section ? ` · Sec ${p.section}` : ''}
+                </p>
+                <p className="text-[11px] text-ink-muted mt-1 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {to12h(p.startTime)} – {to12h(p.endTime)}
+                </p>
+                <div className="mt-3 pt-2 border-t border-white/10">
+                  {p.dayWise?.canEdit ? (
+                    <Button size="sm" variant="outline" className="w-full text-xs py-1" icon={Pencil} onClick={() => onQuickMark('mark', { slotId: p.slotId, date: periodsData.previousDay.date })}>
+                      Correct Sheet
+                    </Button>
+                  ) : (
+                    <span className="block py-1 text-center text-[11px] text-ink-muted">{p.holiday ? 'Holiday' : p.examBlocked ? 'Exam' : 'Not editable'}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Today's Quick Mark Widget (For Faculty & HOD teaching classes) */}
       {todayPeriods.length > 0 && (
         <Card className="p-4 border border-white/10 shadow-lg">
@@ -361,7 +403,11 @@ function AttendanceHeroDashboard({ onQuickMark }) {
               // A holiday or an exam cancels the period: never offer to take attendance.
               const exam = !p.holiday && p.examBlocked;
               // A period someone else covers, or that was not conducted, is not theirs to take.
-              const isActive = p.status === 'ACTIVE' && !p.holiday && !exam && !p.coveredBy && p.cover?.kind !== 'not_conducted';
+              // Day-wise: the server says whether this period can be taken / corrected now.
+              const isActive = p.dayWise
+                ? p.dayWise.canEdit
+                : p.status === 'ACTIVE' && !p.holiday && !exam && !p.coveredBy && p.cover?.kind !== 'not_conducted';
+              const takeLabel = p.dayWise && !p.dayWise.isMorning ? 'Correct Sheet' : p.marked ? 'Update Sheet' : 'Take Attendance';
 
               return (
                 <div
@@ -411,6 +457,7 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                     {p.substituteFor && <p className="mt-1 text-[11px] font-semibold text-sky-700 dark:text-sky-300">Substitute for {p.substituteFor.name}</p>}
                     {p.coveredBy && <p className="mt-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">Covered by {p.coveredBy.name}</p>}
                     {p.cover?.kind === 'not_conducted' && <p className="mt-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300">Recorded as not conducted</p>}
+                    {p.dayWise?.note && !p.holiday && !exam && <p className="mt-1 text-[11px] font-semibold text-primary-700 dark:text-primary-300">{p.dayWise.note}</p>}
                   </div>
 
                   <div className="mt-3 pt-2 border-t border-white/10">
@@ -431,21 +478,21 @@ function AttendanceHeroDashboard({ onQuickMark }) {
                         variant={p.marked ? 'outline' : 'primary'}
                         className="w-full text-xs py-1"
                         icon={ClipboardCheck}
-                        onClick={() => onQuickMark('mark', { slotId: p.slotId })}
+                        onClick={() => onQuickMark('mark', { slotId: p.slotId, date: periodsData?.date })}
                       >
-                        {p.marked ? 'Update Sheet' : 'Take Attendance'}
+                        {takeLabel}
                       </Button>
                     ) : p.marked ? (
                       <button
                         type="button"
-                        onClick={() => onQuickMark('mark', { slotId: p.slotId })}
+                        onClick={() => onQuickMark('mark', { slotId: p.slotId, date: periodsData?.date })}
                         className="w-full rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 py-1 text-center text-xs font-semibold text-emerald-700 dark:text-emerald-400 transition-colors"
                       >
                         Review Marks →
                       </button>
                     ) : (
                       <span className="text-center block text-[11px] text-ink-muted font-medium py-1">
-                        {p.status === 'UPCOMING' ? `Opens at ${to12h(p.startTime)}` : 'Period Ended'}
+                        {p.dayWise && !p.dayWise.isMorning ? 'Filled from morning' : p.status === 'UPCOMING' ? `Opens at ${to12h(p.startTime)}` : 'Period Ended'}
                       </span>
                     )}
                   </div>
@@ -838,6 +885,7 @@ function MarkAttendance({ preset, onPresetUsed }) {
   const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'list'
 
   const [save, { isLoading: saving }] = useMarkClassAttendanceMutation();
+  const { data: flowInfo } = useGetAttendanceFlowQuery();
 
   const handleClassChange = (patch) => {
     setCls((c) => {
@@ -866,8 +914,10 @@ function MarkAttendance({ preset, onPresetUsed }) {
     Boolean(form.slotId) ||
     Boolean(form.subjectId && form.date && form.period && (!selectedSubject?.sections?.length || form.section));
 
+  // Faculty work on today's periods; a day-wise correction of yesterday sends its date.
+  const facultyDate = form.date && form.date !== todayKey() ? { date: form.date } : {};
   const rosterArgs = form.slotId
-    ? { slotId: form.slotId, ...(isFaculty ? {} : { date: form.date }) }
+    ? { slotId: form.slotId, ...(isFaculty ? facultyDate : { date: form.date }) }
     : { subjectId: form.subjectId, date: form.date, period: form.period, section: form.section || undefined };
 
   const { data: roster, isFetching, error } = useGetRosterQuery(rosterArgs, {
@@ -891,10 +941,12 @@ function MarkAttendance({ preset, onPresetUsed }) {
     try {
       const res = await save(
         form.slotId
-          ? { slotId: form.slotId, ...(isFaculty ? {} : { date: form.date }), records }
+          ? { slotId: form.slotId, ...(isFaculty ? facultyDate : { date: form.date }), records }
           : { subjectId: form.subjectId, date: form.date, period: Number(form.period), section: form.section || undefined, records }
       ).unwrap();
       toast.success(`${res.message} · ${res.created} new, ${res.modified} updated`);
+      // Day-wise morning period: copied to the class's other periods today.
+      if (res.dayWise?.periods) toast.success(`Copied to ${res.dayWise.periods} more period${res.dayWise.periods === 1 ? '' : 's'} today (day-wise attendance)`);
       // The first class you mark today records you present for the whole day.
       if (res.facultyMarkedPresent) toast.success('You are marked present for today');
       // First period after an exam: Present students' exam-blocked periods were marked too.
@@ -940,7 +992,9 @@ function MarkAttendance({ preset, onPresetUsed }) {
         <div className="flex items-center gap-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 p-3.5 text-xs text-sky-700 dark:text-sky-300">
           <Lock className="h-4 w-4 shrink-0 text-sky-400" />
           <span>
-            As HOD, you can mark or update attendance for today only. Earlier dates are protected — contact an admin for prior corrections.
+            {flowInfo?.current === 'day'
+              ? 'Day-wise attendance: as HOD you can edit a class day on the day itself and until 3:00 PM two days later. Older dates are protected — contact an admin for prior corrections.'
+              : 'As HOD, you can mark or update attendance for today only. Earlier dates are protected — contact an admin for prior corrections.'}
           </span>
         </div>
       )}
@@ -1081,6 +1135,19 @@ function MarkAttendance({ preset, onPresetUsed }) {
             <div className="m-4 flex items-center gap-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 p-3.5 text-xs text-amber-700 dark:text-amber-300">
               <Lock className="h-4 w-4 shrink-0 text-amber-500" />
               <span>{roster.lockedReason || 'This attendance sheet is locked.'}</span>
+            </div>
+          )}
+          {/* Day-wise: where this sheet's marks come from. */}
+          {roster.dayWise && !roster.holiday && (
+            <div className="m-4 flex items-start gap-3 rounded-2xl bg-primary-500/10 border border-primary-500/20 p-3.5 text-xs text-primary-700 dark:text-primary-300" role="note">
+              <CalendarCheck2 className="h-4 w-4 shrink-0 text-primary-500" />
+              <span>
+                {roster.dayWise.isMorning
+                  ? 'Day-wise attendance: this is the morning period. Saving it copies each student’s status to every other period of this class today (periods already corrected by their faculty are kept).'
+                  : roster.dayWise.copiedCount > 0
+                  ? `Day-wise attendance: ${roster.dayWise.copiedCount} mark${roster.dayWise.copiedCount === 1 ? ' was' : 's were'} copied from the morning period (P${roster.dayWise.morningPeriod}). Saving this sheet makes them this period’s own marks.`
+                  : `Day-wise attendance: this period is filled from the morning period (P${roster.dayWise.morningPeriod ?? 1}).`}
+              </span>
             </div>
           )}
           {/* First period after an exam: Present here also covers the exam-blocked periods. */}
@@ -2152,6 +2219,8 @@ export default function StaffAttendance() {
     ...(seesSummary && !isOffice ? [{ value: 'low-monitor', label: 'Below 75% Monitor' }] : []),
     ...(COVER_MANAGERS.includes(me.role) ? [{ value: 'cover', label: 'Cover & Early Exits' }] : []),
   ];
+  // The Principal chooses the college-wide flow (period-wise / day-wise).
+  if (me.role === 'principal') primaryTabs.push({ value: 'flow', label: 'Attendance Flow' });
 
   const allTabs = [...primaryTabs, ...secondaryTabs];
 
@@ -2322,6 +2391,7 @@ export default function StaffAttendance() {
         {currentTab === 'reports' && <AttendanceReports />}
         {currentTab === 'corrections' && <Corrections />}
         {currentTab === 'od-leave' && <ODLeaveReviewQueue />}
+        {currentTab === 'flow' && me.role === 'principal' && <AttendanceFlowPanel />}
       </div>
 
       <p className="flex items-center gap-1.5 text-xs text-ink-muted">

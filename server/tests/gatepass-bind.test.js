@@ -214,7 +214,7 @@ test('Principal: rejects one student, approves the group once; codes are queued,
     assert.equal(p.verificationCode, undefined, 'no code yet — the queue issues it');
     assert.equal(p.codeIssue.state, 'queued');
     assert.ok(p.codeIssue.scheduledAt);
-    assert.ok(p.verificationExpiry);
+    assert.equal(p.verificationExpiry ?? null, null, 'gate passes never expire');
   }
 
   // The student is told when the QR and code will be generated.

@@ -66,6 +66,13 @@ export function transportConfig() {
     detourWaitMs: num('ROUTE_DETOUR_WAIT_MS', 2500, 0, 15000),
     // Inbound vehicle-tracker webhook (disabled unless a secret is set).
     trackerSecret: process.env.TRACKER_WEBHOOK_SECRET || '',
+    // Automatic trips for GPS-tracker buses (services/transport/autoTrips.js).
+    autoTrips: process.env.TRACKER_AUTO_TRIPS !== 'false',
+    autoStartM: num('TRIP_AUTO_START_M', 500, 100, 5000),
+    autoParkM: num('TRIP_AUTO_PARK_M', 150, 30, 1000),
+    autoParkMinutes: num('TRIP_AUTO_PARK_MINUTES', 10, 2, 120),
+    autoPauseMinutes: num('TRIP_AUTO_PAUSE_MINUTES', 30, 0, 240),
+    autoCollegeM: num('TRIP_AUTO_COLLEGE_M', 1500, 100, 10000),
   };
 }
 

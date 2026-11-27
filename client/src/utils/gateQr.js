@@ -39,3 +39,35 @@ export function createScanGate(onScan) {
  * Mirrors GATE_CODE_PATTERN on the server, which still makes the decision.
  */
 export const isCompleteGateCode = (value) => /^(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{4}$/.test(String(value || '').trim().toUpperCase());
+
+/**
+ * Fast (supermarket-style) scanning: fires for every NEW value straight away,
+ * while the same QR held in front of the camera is ignored until it has been
+ * out of view for `windowMs` — so one student is sent once, and the next
+ * student can be scanned immediately after.
+ */
+export function createRepeatGate(onScan, { windowMs = 3000, now = () => Date.now() } = {}) {
+  const lastSeen = new Map(); // value → last time it was in a frame
+  return {
+    handle(value) {
+      if (!value) return false;
+      const v = String(value);
+      const t = now();
+      const seen = lastSeen.get(v);
+      lastSeen.set(v, t);
+      for (const [k, at] of lastSeen) if (t - at > windowMs * 4) lastSeen.delete(k);
+      if (seen !== undefined && t - seen < windowMs) return false;
+      onScan(v);
+      return true;
+    },
+    reset() {
+      lastSeen.clear();
+    },
+  };
+}
+
+/** A fresh scan id for POST /gate-scanner/scans (the server processes each id once). */
+export function newScanId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}

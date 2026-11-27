@@ -242,9 +242,9 @@ export default function FacultyClassCards({ periods = [], periodsDate, correctio
                 ) : (
                   <Badge color={p.status === 'ACTIVE' ? 'info' : 'neutral'}>{p.status === 'ACTIVE' ? 'In progress' : p.status === 'UPCOMING' ? 'Upcoming' : 'Not marked'}</Badge>
                 )}
-                {!p.holiday && !p.examBlocked && (p.status === 'ACTIVE' || p.marked) && (
-                  <Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => { setOpen(null); onQuickMark?.('mark', { slotId: p.slotId }); }}>
-                    {p.marked ? 'Review' : 'Take'}
+                {!p.holiday && !p.examBlocked && ((p.dayWise ? p.dayWise.canEdit : p.status === 'ACTIVE') || p.marked) && (
+                  <Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => { setOpen(null); onQuickMark?.('mark', { slotId: p.slotId, date: periodsDate }); }}>
+                    {p.dayWise?.canEdit && !p.dayWise.isMorning ? 'Correct' : p.marked ? 'Review' : 'Take'}
                   </Button>
                 )}
               </li>

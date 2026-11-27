@@ -1,14 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import toast from 'react-hot-toast';
 import { Download, GraduationCap, Search, ShieldCheck } from 'lucide-react';
 import { useGetPeopleFiltersQuery, useGetUsersQuery } from '../../services/api';
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, cn } from '../../components/ui/primitives';
 import { ACADEMIC_YEARS, ROLE_LABELS, YEAR_LABELS } from '../../utils/constants';
 import { displayName } from '../../utils/format';
 import { selectUser } from '../../features/authSlice';
-import { downloadProfilesPdf } from '../../services/reports';
+import DirectoryExportModal from '../../components/DirectoryExportModal';
 import { useDebounced } from '../../utils/useDebounced';
 
 /**
@@ -50,17 +49,8 @@ export default function People() {
     setPage(1);
   };
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const filename = await downloadProfilesPdf();
-      toast.success(`Downloaded ${filename}`);
-    } catch (err) {
-      toast.error(err?.message || 'Could not download profile directory');
-    } finally {
-      setDownloading(false);
-    }
-  };
+  // Opens the export card (role, department, year, section).
+  const handleDownload = () => setDownloading(true);
 
   // The filter row wraps rather than using a fixed grid, so one filter (faculty)
   // or four (HOD) both lay out, down to a 320 px screen, without side-scrolling.
@@ -88,7 +78,6 @@ export default function People() {
               variant="secondary"
               size="sm"
               icon={Download}
-              loading={downloading}
               onClick={handleDownload}
               title="Download complete institutional directory PDF"
             >
@@ -97,6 +86,7 @@ export default function People() {
           ) : null
         }
       />
+      <DirectoryExportModal open={downloading} onClose={() => setDownloading(false)} />
 
       {loadingConfig ? (
         <Skeleton className="mb-6 h-[74px] rounded-[28px]" />

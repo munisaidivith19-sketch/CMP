@@ -17,6 +17,7 @@ import Bus from '../models/Bus.js';
 import BusLocation from '../models/BusLocation.js';
 import BusRoute from '../models/BusRoute.js';
 import BusTrip from '../models/BusTrip.js';
+import TrackerPing from '../models/TrackerPing.js';
 import TransportAssignment from '../models/TransportAssignment.js';
 import User from '../models/User.js';
 import { ApiError, asyncHandler, escapeRegex } from '../utils/http.js';
@@ -31,8 +32,9 @@ import { FixRejected, ingestFix } from '../services/transport/ingest.js';
 import { deviceKeyMatches, startTrip, stopTrip, tripApi } from '../services/transport/trips.js';
 import { cumulative, project, validLatLng } from '../services/transport/geo.js';
 import { generateRoadGeometry, MAX_GEOMETRY_POINTS, RoutingError, stopsKey } from '../services/transport/routing.js';
-import { journeyView, recordTripEnd } from '../services/transport/stopEvents.js';
+import { journeyView, recordTripEnd, routeStats } from '../services/transport/stopEvents.js';
 import { busDetour } from '../services/transport/detour.js';
+import { autoTripStep } from '../services/transport/autoTrips.js';
 
 const isManager = (u) => TRANSPORT_MANAGE_ROLES.includes(u.role);
 const nowMinutes = () => {
@@ -64,7 +66,7 @@ function busApi(bus, viewer, trip) {
     location: locationApi(bus.lastLocation),
     tracking: freshness(bus.lastLocation?.at, Date.now(), cfg),
     trip: trip ? tripApi(trip, viewer) : null,
-    ...(isManager(viewer) ? { registrationNumber: bus.registrationNumber || null, trackerDeviceId: bus.trackerDeviceId || null, trackingStaff: bus.trackingStaff } : {}),
+    ...(isManager(viewer) ? { registrationNumber: bus.registrationNumber || null, trackerDeviceId: bus.trackerDeviceId || null, autoTrips: bus.autoTrips !== false, trackingStaff: bus.trackingStaff } : {}),
   };
 }
 
@@ -137,7 +139,7 @@ export const getBus = asyncHandler(async (req, res) => {
   res.json({
     bus: busApi({ ...bus, route: route ? { _id: route._id, name: route.name, code: route.code } : null }, req.user, trip),
     // geometryExact false = no road geometry: the line is straight stop-to-stop and labelled approximate.
-    route: route ? { _id: route._id, name: route.name, code: route.code || null, stops: route.stops, geometry: route.geometry || null, geometryExact: route.geometry?.length >= 2 } : null,
+    route: route ? { _id: route._id, name: route.name, code: route.code || null, stops: route.stops, geometry: route.geometry || null, geometryExact: route.geometry?.length >= 2, stats: await routeStats(route) } : null,
     journeyRoute: followed ? { _id: followed._id, name: followed.name, code: followed.code || null, stops: followed.stops, geometry: followed.geometry || null, geometryExact: followed.geometry?.length >= 2 } : null,
     progress: progress(route, bus.lastLocation),
     eta,
@@ -164,19 +166,26 @@ export const listRoutes = asyncHandler(async (req, res) => {
   const scope = await requireScope(req.user);
   const filter = isManager(req.user) && req.query.all === 'true' ? {} : { isActive: true };
   if (!scope.all) filter._id = { $in: scope.routes };
+  // Every route carries its planned distance and time (stats); the road line itself is not sent.
+  const withStats = async (r) => {
+    const stats = await routeStats(r);
+    const points = r.geometry?.length || 0;
+    delete r.geometry;
+    return { route: r, stats, points };
+  };
   if (!isManager(req.user)) {
-    const routes = await BusRoute.find(filter).select('name code stops isActive').sort({ name: 1 }).lean();
-    return res.json({ routes });
+    const routes = await BusRoute.find(filter).select('name code stops isActive geometry').sort({ name: 1 }).lean();
+    const out = await Promise.all(routes.map(withStats));
+    return res.json({ routes: out.map(({ route, stats }) => ({ ...route, stats })) });
   }
   // Managers also see each route's geometry status (point count only — not the line itself).
-  const routes = await BusRoute.find(filter).select('name code stops isActive returnRoute geometrySource geometryProvider geometryUpdatedAt geometryStopsKey').sort({ name: 1 }).lean();
-  const counts = await BusRoute.aggregate([{ $match: { _id: { $in: routes.map((r) => r._id) } } }, { $project: { n: { $size: { $ifNull: ['$geometry', []] } } } }]);
-  const pointsOf = new Map(counts.map((c) => [String(c._id), c.n]));
+  const routes = await BusRoute.find(filter).select('name code stops isActive returnRoute geometry geometrySource geometryProvider geometryUpdatedAt geometryStopsKey').sort({ name: 1 }).lean();
+  const out = await Promise.all(routes.map(withStats));
   res.json({
-    routes: routes.map((r) => {
-      const info = geometryInfo(r, pointsOf.get(String(r._id)) || 0);
+    routes: out.map(({ route: r, stats, points }) => {
+      const info = geometryInfo(r, points);
       delete r.geometryStopsKey;
-      return { ...r, geometryInfo: info };
+      return { ...r, stats, geometryInfo: info };
     }),
   });
 });
@@ -187,7 +196,7 @@ export const getRoute = asyncHandler(async (req, res) => {
   if (!scope.all && !scope.routes.includes(String(req.params.id))) throw new ApiError(404, 'Route not found');
   const route = await BusRoute.findOne({ _id: req.params.id, ...(isManager(req.user) ? {} : { isActive: true }) }).lean();
   if (!route) throw new ApiError(404, 'Route not found');
-  res.json({ route, ...(isManager(req.user) ? { geometryInfo: geometryInfo(route) } : {}) });
+  res.json({ route, stats: await routeStats(route), ...(isManager(req.user) ? { geometryInfo: geometryInfo(route) } : {}) });
 });
 
 /** Search buses (number), routes (name / code) and stops (name) the viewer may see. */
@@ -303,9 +312,105 @@ export const trackerWebhook = asyncHandler(async (req, res) => {
   const fixes = Array.isArray(req.body?.fixes) ? req.body.fixes : null;
   if (typeof deviceId !== 'string' || !deviceId || !fixes || !fixes.length || fixes.length > 50) throw new ApiError(422, 'deviceId and 1–50 fixes are required');
   const bus = await Bus.findOne({ trackerDeviceId: deviceId, gpsSource: 'tracker', isActive: true }).lean();
-  if (!bus) throw new ApiError(404, 'Unknown tracker device');
+  if (!bus) {
+    // Remembered so "Test tracker" can say data arrives but the device is not linked yet.
+    await recordPing(deviceId, { result: 'unknown_device', received: fixes.length });
+    throw new ApiError(404, 'Unknown tracker device');
+  }
   const trip = await BusTrip.findOne({ bus: bus._id, status: 'active' }).lean();
-  res.json(await ingestMany(bus, fixes, { source: 'tracker', trip }));
+  const result = await ingestMany(bus, fixes, { source: 'tracker', trip });
+  await recordPing(deviceId, { result: result.accepted ? 'accepted' : 'rejected', bus: bus._id, received: fixes.length, accepted: result.accepted, rejects: result.rejected });
+  // Tracker buses start and end their trips by themselves (autoTrips.js).
+  const auto = result.accepted ? await autoTripStep(bus._id) : null;
+  res.json({ ...result, ...(auto ? { trip: auto.action } : {}) });
+});
+
+/** Last contact of a tracker device (TrackerPing). Never fails the webhook. */
+async function recordPing(deviceId, { result, bus, received = 0, accepted = 0, rejects = [] }) {
+  const now = new Date();
+  await TrackerPing.updateOne(
+    { _id: deviceId },
+    {
+      $set: {
+        lastSeenAt: now,
+        lastResult: result,
+        ...(bus ? { bus } : {}),
+        ...(accepted ? { lastAcceptedAt: now } : {}),
+        lastRejects: rejects.slice(0, 5).map((r) => ({ code: String(r.code || ''), reason: String(r.reason || '').slice(0, 200) })),
+      },
+      $inc: { received, accepted },
+    },
+    { upsert: true }
+  ).catch((err) => console.error('[transport] tracker ping failed:', err.message));
+}
+
+/**
+ * Managers: "Test tracker" on the bus form. Is anything arriving from this
+ * device id, is it linked to a bus, and is that bus live right now?
+ *   status: disabled | never | unlinked | other_bus | rejected | live | stale | offline
+ */
+export const trackerStatus = asyncHandler(async (req, res) => {
+  const cfg = transportConfig();
+  const deviceId = String(req.query.deviceId || '').trim();
+  const busId = req.query.busId ? String(req.query.busId) : null;
+  const [ping, linked] = await Promise.all([
+    TrackerPing.findById(deviceId).lean(),
+    Bus.findOne({ trackerDeviceId: deviceId }).select('number gpsSource isActive lastLocation').lean(),
+  ]);
+  const trip = linked ? await BusTrip.findOne({ bus: linked._id, status: 'active' }).select('status direction startedAt autoStarted').lean() : null;
+  const otherBus = Boolean(linked && busId && !sameId(linked._id, busId));
+  const lastAt = linked?.lastLocation?.source === 'tracker' ? linked.lastLocation.at : null;
+  const fresh = freshness(lastAt, Date.now(), cfg);
+  const recent = ping?.lastSeenAt && Date.now() - new Date(ping.lastSeenAt).getTime() <= cfg.staleSeconds * 1000;
+
+  let status;
+  let message;
+  if (!cfg.trackerSecret) {
+    status = 'disabled';
+    message = 'The tracker connection is switched off on the server. Set TRACKER_WEBHOOK_SECRET, then test again.';
+  } else if (otherBus) {
+    status = 'other_bus';
+    message = `This device ID is already linked to bus ${linked.number}.`;
+  } else if (!ping) {
+    status = 'never';
+    message = 'No data has ever arrived from this device ID. Check that the tracker (or its relay) is switched on, sends to this server, and uses exactly this ID.';
+  } else if (ping.lastResult === 'unknown_device' && recent) {
+    status = 'unlinked';
+    message = linked && linked.gpsSource !== 'tracker'
+      ? `Data is arriving, but bus ${linked.number} is not set to "Vehicle GPS tracker". Change the GPS source and save.`
+      : linked && !linked.isActive
+        ? `Data is arriving, but bus ${linked.number} is inactive. Tick Active and save.`
+        : 'Data is arriving from this tracker, but it is not linked to a bus yet. Save this bus to link it.';
+  } else if (fresh === 'live') {
+    status = 'live';
+    message = `Live — bus ${linked.number} is reporting its position now.`;
+  } else if (ping.lastResult === 'rejected' && recent) {
+    status = 'rejected';
+    message = 'Data is arriving, but the positions are being refused. See the reasons below.';
+  } else if (fresh === 'stale') {
+    status = 'stale';
+    message = 'The tracker reported a few minutes ago, but not in the last minute (weak signal, or the engine is off).';
+  } else {
+    status = 'offline';
+    message = 'The tracker has worked before, but nothing has arrived recently. Check that it is switched on and has signal.';
+  }
+
+  res.json({
+    deviceId,
+    status,
+    message,
+    enabled: Boolean(cfg.trackerSecret),
+    lastSeenAt: ping?.lastSeenAt || null,
+    lastAcceptedAt: ping?.lastAcceptedAt || null,
+    lastResult: ping?.lastResult || null,
+    lastRejects: ping?.lastRejects || [],
+    received: ping?.received || 0,
+    accepted: ping?.accepted || 0,
+    bus: linked ? { _id: linked._id, number: linked.number } : null,
+    location: lastAt ? locationApi(linked.lastLocation) : null,
+    trip: trip ? { status: trip.status, direction: trip.direction || null, startedAt: trip.startedAt, auto: Boolean(trip.autoStarted) } : null,
+    checkedAt: new Date().toISOString(),
+  });
 });
 
 // ── Management (admin / transport officer) ─────────────────────────
@@ -470,6 +575,7 @@ async function busData(body, partial = false) {
     if (!['tracker', 'phone'].includes(body.gpsSource)) throw new ApiError(422, 'GPS source must be tracker or phone');
     data.gpsSource = body.gpsSource;
   }
+  if (body.autoTrips !== undefined) data.autoTrips = Boolean(body.autoTrips);
   if (body.trackerDeviceId !== undefined) data.trackerDeviceId = body.trackerDeviceId ? String(body.trackerDeviceId).trim().slice(0, 80) : undefined;
   if (body.route !== undefined) {
     if (body.route === null) data.route = null;

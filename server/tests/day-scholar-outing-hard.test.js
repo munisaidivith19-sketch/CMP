@@ -313,14 +313,12 @@ test('H16 mismatch flag is for reviewers only, and is false now that the typed n
 });
 
 // 17
-test('H17 an approved but unused Outing stops working once its window closes, and cannot be used tomorrow', async () => {
+test('H17 gate passes never expire: an approved but unused Outing still works after its old window', async () => {
   const { id, code } = await approvedOuting();
   await ctx.models.GatePass.updateOne({ _id: id }, { $set: { verificationExpiry: new Date(Date.now() - 60000) } });
   const out = await outAt(id, code);
-  assert.notEqual(out.status, 200, JSON.stringify(out.body));
-  const p = await passOf(id);
-  assert.notEqual(p.status, 'completed');
-  assert.equal(p.actualExit, undefined);
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal((await passOf(id)).status, 'completed');
 });
 
 // 18

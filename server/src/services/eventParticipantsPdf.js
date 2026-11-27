@@ -64,8 +64,8 @@ export async function generateEventParticipantsPdfBuffer(event) {
 
   const columns = [
     { header: '#', width: 0.45, align: 'right' },
-    { header: 'Roll No', width: 1.15 },
-    { header: 'Participant Name', width: 2.7, bold: true },
+    { header: 'Roll No', width: 1.5, shrink: true },
+    { header: 'Participant Name', width: 2.35, bold: true },
     { header: 'Department', width: 1.5 },
     { header: 'Yr / Sec', width: 0.9 },
     { header: 'Status', width: 0.95, align: 'center' },

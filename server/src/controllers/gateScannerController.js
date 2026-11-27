@@ -124,7 +124,6 @@ async function notFound(req, event, unknownCode) {
 /** Resolve the credential and run the existing commit. Business refusals come back as results; only real failures throw. */
 async function processScan(req, event, parsed) {
   if (parsed.direction === 'out') {
-    await expireGatePasses();
     const pass = await GatePass.findOne({ verificationCode: parsed.code }).select('student status actualExit verificationExpiry leaveAt fromDate dayScholarOuting passType');
     if (!pass) return notFound(req, event, 'UNKNOWN_CREDENTIAL');
     await GateScanEvent.updateOne({ _id: event._id }, { $set: { gatePass: pass._id, student: pass.student } });
@@ -232,6 +231,9 @@ export const session = asyncHandler(async (req, res) => {
 /** POST /gate-scanner/scans { scanId, payload, source, kind? } — process one scan exactly once. */
 export const submitScan = asyncHandler(async (req, res) => {
   const { scanId, payload, source, kind } = req.body;
+  // Parsing is pure, so it runs first and the row is written once with its
+  // direction and digest (one round trip fewer per scan at a busy gate).
+  const parsed = parseScanPayload(payload, { kind, source });
   let event;
   try {
     event = await GateScanEvent.create({
@@ -241,6 +243,7 @@ export const submitScan = asyncHandler(async (req, res) => {
       source,
       gate: cleanLabel(req.get('x-gate-name')),
       device: cleanLabel(req.get('x-device-name')),
+      ...(parsed.error ? {} : { direction: parsed.direction, payloadDigest: digestOf(parsed.digestKey) }),
     });
   } catch (err) {
     if (err?.code !== 11000) throw err;
@@ -248,14 +251,10 @@ export const submitScan = asyncHandler(async (req, res) => {
     return res.status(view.pending ? 202 : 200).json(view);
   }
 
-  const parsed = parseScanPayload(payload, { kind, source });
   if (parsed.error) {
     await finish(event, { outcome: 'rejected', ...parsed.error });
     return res.json(await scanView(event));
   }
-  event.direction = parsed.direction;
-  event.payloadDigest = digestOf(parsed.digestKey);
-  await event.save();
 
   // An unexpected failure leaves the row "processing" with the pass attached;
   // the client's retry (same scanId) settles it from the pass itself.

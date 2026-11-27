@@ -47,7 +47,6 @@ const AdminClubs = lazy(() => import('./pages/admin/AdminClubs'));
 const AdminActivity = lazy(() => import('./pages/admin/AdminActivity'));
 const AdminAcademics = lazy(() => import('./pages/admin/AdminAcademics'));
 const AttendanceDashboard = lazy(() => import('./pages/admin/AttendanceDashboard'));
-const AdminChatRequests = lazy(() => import('./pages/admin/AdminChatRequests'));
 const Promotions = lazy(() => import('./pages/principal/Promotions'));
 const SecurityLogs = lazy(() => import('./pages/admin/SecurityLogs'));
 const ClassStudents = lazy(() => import('./pages/class/ClassStudents'));
@@ -97,6 +96,16 @@ const PolicyPage = lazy(() => import('./pages/legal/PolicyPage'));
  * (Users, Security & Logs, Activity). The server authorizes every request;
  * this only decides whether to render the page or go home.
  */
+// Insights (/analytics) and Analytics (/admin) are removed for the Principal.
+const NO_ANALYTICS_ROLES = ['principal'];
+
+/** Sends the listed roles back to the dashboard. */
+function NotForRoles({ children, roles }) {
+  const user = useSelector((s) => s.auth.user);
+  if (user && roles.includes(user.role)) return <Navigate to="/" replace />;
+  return children;
+}
+
 function RequireAdminPage({ children, roles, page }) {
   const user = useSelector((s) => s.auth.user);
   const grantee = STAFF_GRANT_ROLES.includes(user?.role);
@@ -293,7 +302,7 @@ export default function App() {
             <Route path="profile" element={<Profile />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="search" element={<Search />} />
-            <Route path="admin" element={<RequireAuth roles={staff}><AdminAnalytics /></RequireAuth>} />
+            <Route path="admin" element={<RequireAuth roles={staff.filter((r) => !NO_ANALYTICS_ROLES.includes(r))}><AdminAnalytics /></RequireAuth>} />
             <Route path="admin/reports" element={<RequireAuth roles={staff}><AdminReports /></RequireAuth>} />
             <Route path="admin/users" element={<RequireAdminPage page="/admin/users" roles={['admin', SUPER_ADMIN]}><AdminUsers /></RequireAdminPage>} />
             <Route path="admin/clubs" element={<RequireAuth roles={['admin']}><AdminClubs /></RequireAuth>} />
@@ -302,7 +311,6 @@ export default function App() {
             <Route path="class/students" element={<RequireAuth roles={['faculty']}><ClassStudents /></RequireAuth>} />
             <Route path="admin/academics" element={<RequireAuth roles={['admin', 'hod']}><AdminAcademics /></RequireAuth>} />
             <Route path="admin/attendance" element={<RequireAuth roles={staff}><AttendanceDashboard /></RequireAuth>} />
-            <Route path="admin/chat-requests" element={<RequireAuth roles={['admin', 'principal']}><AdminChatRequests /></RequireAuth>} />
             <Route path="principal/promotions" element={<RequireAuth roles={['principal']}><Promotions /></RequireAuth>} />
             <Route path="dev/otp" element={<RequireAuth roles={['admin']}><DevOtpPortal /></RequireAuth>} />
             <Route path="settings/security" element={<Security />} />
@@ -319,7 +327,7 @@ export default function App() {
             <Route path="lost-found" element={<LostFound />} />
             <Route path="lost-found/:id" element={<LostFoundDetail />} />
             <Route path="attendance/corrections" element={<Navigate to="/attendance?tab=corrections" replace />} />
-            <Route path="analytics" element={<Insights />} />
+            <Route path="analytics" element={<NotForRoles roles={NO_ANALYTICS_ROLES}><Insights /></NotForRoles>} />
             <Route path="complaints" element={<Complaints />} />
             <Route path="complaints/:id" element={<ComplaintDetail />} />
             <Route path="admin/complaints" element={<RequireAuth roles={['admin', 'chairman']}><ComplaintDashboard /></RequireAuth>} />

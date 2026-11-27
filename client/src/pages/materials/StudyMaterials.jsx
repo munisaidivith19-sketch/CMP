@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { BookOpen, ClipboardList, Download, FileText, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { BookOpen, ClipboardList, Download, FileText, Pencil, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useDeleteStudyMaterialMutation, useGetMyTeachingAssignmentsQuery, useGetStudyMaterialsQuery } from '../../services/api';
 import { selectUser } from '../../features/authSlice';
-import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton } from '../../components/ui/primitives';
+import { Avatar, Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Skeleton, Tabs } from '../../components/ui/primitives';
 import { ConfirmDialog } from '../../components/ui/Modal';
 import { DEPARTMENTS, STUDY_MATERIAL_CATEGORY_LABELS, STUDY_MATERIAL_STATUS_ROLES } from '../../utils/constants';
 import { errMsg, safeHref, fmtClassDay, titleCase, displayName } from '../../utils/format';
 import UploadMaterialModal from './UploadMaterialModal';
 import MaterialStatusModal from './MaterialStatusModal';
 import StudyAssistant from '../../components/StudyAssistant';
+import StudyDoubtsChat from '../../components/StudyDoubtsChat';
 
 const STUDENT_ROLES = ['student', 'club_admin'];
 const WRITE_ROLES = ['faculty', 'hod', 'admin'];
@@ -68,6 +70,19 @@ export default function StudyMaterials() {
   const [editing, setEditing] = useState(undefined); // undefined = closed, null = new, object = edit
   const [del, setDel] = useState(null);
   const [statusOpen, setStatusOpen] = useState(false);
+  // Two tabs: the materials (with the existing Study Assistant card) and AI Doubts (self-hosted model).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === 'ai' ? 'ai' : 'materials';
+  const setTab = (value) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === 'ai') next.set('tab', 'ai');
+        else next.delete('tab');
+        return next;
+      },
+      { replace: true }
+    );
 
   const { data, isLoading, error, refetch } = useGetStudyMaterialsQuery({
     page,
@@ -122,6 +137,18 @@ export default function StudyMaterials() {
         }
       />
 
+      <Tabs
+        tabs={[
+          { value: 'materials', label: <><BookOpen className="h-4 w-4" /> Study Materials</> },
+          { value: 'ai', label: <><Sparkles className="h-4 w-4" /> AI Doubts</> },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+
+      {tab === 'ai' ? (
+        <StudyDoubtsChat />
+      ) : (
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
         {/* JNN Study Assistant: above the list on small screens, a sticky side card on wide ones */}
         <StudyAssistant className="xl:sticky xl:top-4 xl:order-2" />
@@ -183,6 +210,7 @@ export default function StudyMaterials() {
           )}
         </div>
       </div>
+      )}
 
       {STATUS_ROLES.includes(me.role) && <MaterialStatusModal open={statusOpen} onClose={() => setStatusOpen(false)} me={me} />}
       {canWrite && <UploadMaterialModal open={editing !== undefined} material={editing} onClose={() => setEditing(undefined)} />}

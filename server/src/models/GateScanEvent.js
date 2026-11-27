@@ -3,7 +3,8 @@ import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 export const GATE_SCAN_OUTCOMES = ['success', 'rejected', 'duplicate'];
-export const GATE_SCAN_SOURCES = ['hid', 'serial', 'manual'];
+// camera = the web / Android phone camera in fast (continuous) scan mode.
+export const GATE_SCAN_SOURCES = ['hid', 'serial', 'manual', 'camera'];
 export const GATE_SCAN_DIRECTIONS = ['out', 'in'];
 
 /**

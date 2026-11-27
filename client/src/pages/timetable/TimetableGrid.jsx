@@ -37,17 +37,21 @@ function SlotActions({ slot, onEdit, onDelete, light }) {
   );
 }
 
-export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }) {
+export function SlotCard({ slot, state, showSection, compact, inGrid, onEdit, onDelete }) {
   // A break is not a period: it never shows a period number.
   if (slot.isBreak) {
     return (
-      <div className="flex items-center gap-3 rounded-2xl border border-dashed border-primary-300/50 px-4 py-2.5 text-sm muted">
-        <Coffee className="h-4 w-4" />
-        <span className="font-semibold">{slot.breakLabel || 'Break'}</span>
-        <span className="ml-auto text-xs">
+      <div className={cn('rounded-2xl border border-dashed border-primary-300/50 text-sm muted', inGrid ? 'flex h-full flex-col justify-center px-3 py-2.5' : 'flex items-center gap-3 px-4 py-2.5')}>
+        <div className={cn('flex min-w-0 items-center gap-2', !inGrid && 'contents')}>
+          <Coffee className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 font-semibold [overflow-wrap:anywhere]">{slot.breakLabel || 'Break'}</span>
+          {inGrid && <span className="ml-auto" />}
+          {inGrid && <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} />}
+        </div>
+        <span className={cn('whitespace-nowrap text-xs', inGrid ? 'mt-1 block' : 'ml-auto')}>
           {to12h(slot.startTime)} – {to12h(slot.endTime)}
         </span>
-        <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} />
+        {!inGrid && <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} />}
       </div>
     );
   }
@@ -55,13 +59,13 @@ export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }
   // is untouched and comes back by itself after the holiday.
   if (slot.holiday) {
     return (
-      <div className="relative overflow-hidden rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5" title={`Holiday: ${slot.holiday.reason}`}>
+      <div className={cn('relative overflow-hidden rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5', inGrid && 'flex h-full flex-col')} title={`Holiday: ${slot.holiday.reason}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wide text-rose-700 dark:text-rose-300">
               <CalendarOff className="h-3.5 w-3.5" /> Holiday · P{slot.period}
             </p>
-            <p className="truncate font-bold">{slot.holiday.reason}</p>
+            <p className={cn('font-bold', inGrid ? '[overflow-wrap:anywhere]' : 'truncate')}>{slot.holiday.reason}</p>
           </div>
           <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} />
         </div>
@@ -81,26 +85,33 @@ export function SlotCard({ slot, state, showSection, compact, onEdit, onDelete }
     <div
       className={cn(
         'relative overflow-hidden rounded-2xl p-3.5 transition-all duration-300',
+        inGrid && 'flex h-full flex-col',
         state === 'now' ? 'bg-gradient-to-br from-primary-400 to-primary-600 text-white shadow-glow' : 'bg-white/60 dark:bg-white/5',
         state === 'past' && 'opacity-60'
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className={cn('text-[11px] font-bold uppercase tracking-wide', state === 'now' ? 'text-white/90 font-extrabold' : 'text-primary-700 dark:text-primary-400')}>
+          <p className={cn('text-[11px] font-bold uppercase tracking-wide', inGrid && 'whitespace-nowrap', state === 'now' ? 'text-white/90 font-extrabold' : 'text-primary-700 dark:text-primary-400')}>
             {slot.subject?.code} · P{slot.period}
           </p>
-          <p className="truncate font-bold">{slot.subject?.name}</p>
+          {!inGrid && <p className="truncate font-bold">{slot.subject?.name}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {state === 'now' && <Badge className="!bg-white/25 !text-white">Now</Badge>}
           {state === 'next' && <Badge color="info">Next</Badge>}
-          {slot.subject?.type === 'lab' && state !== 'now' && <Badge color="warning">Lab</Badge>}
+          {!inGrid && slot.subject?.type === 'lab' && state !== 'now' && <Badge color="warning">Lab</Badge>}
           <SlotActions slot={slot} onEdit={onEdit} onDelete={onDelete} light={state === 'now'} />
         </div>
       </div>
-      <div className={cn('mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs', state === 'now' ? 'text-white/85' : 'muted')}>
-        <span className="flex items-center gap-1">
+      {inGrid && (
+        <p className="mt-0.5 font-bold leading-snug [overflow-wrap:anywhere]" title={slot.subject?.name}>
+          {slot.subject?.name}
+        </p>
+      )}
+      <div className={cn('flex flex-wrap gap-x-3 gap-y-1 text-xs', inGrid ? 'mt-auto pt-2' : 'mt-2', state === 'now' ? 'text-white/85' : 'muted')}>
+        {inGrid && slot.subject?.type === 'lab' && state !== 'now' && <Badge color="warning">Lab</Badge>}
+        <span className="flex items-center gap-1 whitespace-nowrap">
           <Clock className="h-3.5 w-3.5" />
           {to12h(slot.startTime)} – {to12h(slot.endTime)}
         </span>
@@ -218,11 +229,11 @@ export function WeekGrid({ slots, week, now, day, onDayChange, compact, showSect
                 {DAYS.map((d) => {
                   const cell = byDay[d].filter((s) => s.startTime === p.startTime && s.endTime === p.endTime);
                   return (
-                    <td key={d} className="align-top">
+                    <td key={d} className="h-px align-top">
                       {cell.length ? (
-                        <div className="space-y-1.5">
+                        <div className="flex h-full flex-col gap-1.5 [&>*]:flex-1">
                           {cell.map((s) => (
-                            <SlotCard key={s._id} slot={s} state={slotState(s, d, now)} compact={compact} showSection={showSection} {...editProps} />
+                            <SlotCard key={s._id} slot={s} state={slotState(s, d, now)} compact={compact} showSection={showSection} inGrid {...editProps} />
                           ))}
                         </div>
                       ) : onAdd ? (

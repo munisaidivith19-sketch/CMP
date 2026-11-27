@@ -52,7 +52,7 @@ export const Select = forwardRef(function Select({ label, error, hint, className
           {options.map((o) => {
             const opt = typeof o === 'object' ? o : { value: o, label: String(o).replace('-', ' ') };
             return (
-              <option key={opt.value} value={opt.value} className="bg-white text-ink dark:bg-[#131427] dark:text-primary-50">
+              <option key={opt.value} value={opt.value} disabled={opt.disabled} className="bg-white text-ink disabled:text-ink-muted dark:bg-[#131427] dark:text-primary-50">
                 {opt.label}
               </option>
             );

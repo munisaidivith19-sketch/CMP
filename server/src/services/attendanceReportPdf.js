@@ -39,8 +39,8 @@ function headerFacts(header) {
 
 const NAME_COLUMNS = [
   { header: '#', width: 0.45, align: 'right' },
-  { header: 'Roll No', width: 1.1 },
-  { header: 'Student Name', width: 3.1 },
+  { header: 'Roll No', width: 1.55, shrink: true },
+  { header: 'Student Name', width: 2.75 },
   { header: 'Department', width: 2.1 },
   { header: 'Year', width: 0.8 },
   { header: 'Sec', width: 0.6 },
@@ -60,8 +60,8 @@ const nameRows = (students, status) =>
 
 const SUMMARY_COLUMNS = [
   { header: '#', width: 0.45, align: 'right' },
-  { header: 'Roll No', width: 1.1 },
-  { header: 'Student Name', width: 2.9 },
+  { header: 'Roll No', width: 1.55, shrink: true },
+  { header: 'Student Name', width: 2.45 },
   { header: 'Dept', width: 1.7 },
   { header: 'Yr', width: 0.45 },
   { header: 'Sec', width: 0.5 },
